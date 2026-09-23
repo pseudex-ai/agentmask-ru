@@ -67,7 +67,7 @@ from bench.agentpii4.compare import ArmRun, ObservedCall, substitutes_for
 from bench.agentpii4.gateway import HarnessError, PassThrough, RealGateway
 from bench.agentpii4.mock import CallLog
 from bench.agentpii4.records import ArmMeta, arm_record
-from bench.agentpii4.schema import ARMS, EXCLUDED_TERMINATIONS, Ladder, tier
+from bench.agentpii4.schema import ARMS, EXCLUDED_TERMINATIONS, Case, Ladder, tier
 from bench.agentpii5 import build as corpus_build
 from bench.agentpii5 import provider
 from bench.agentpii5 import records as r
@@ -560,26 +560,93 @@ async def run_arm_v5(case: CaseV5, arm: str, repeat: int, gateway: GatewayV5,
     return ArmOutcomeV5(v4_harness.ArmOutcome(base, meta), run)
 
 
+def transport_blip(error: BaseException) -> bool:
+    """Обрыв провайдера НА ПЛЕЧЕ — и никогда наш собственный дедлайн (§1.4).
+
+    `runinfo.is_transport_error` держит закрытую таблицу имён классов SDK плюс
+    `ConnectionError` и `TimeoutError`. На плече второй из встроенных надо
+    вычесть: `run_arm_v5` и v4's `run_arm` ограничивают плечо собственным
+    `asyncio.wait_for`, а `asyncio.TimeoutError is TimeoutError` начиная с
+    3.11 — то есть дедлайн, который мы поставили сами, неотличим по типу от
+    таймаута провайдера. Повторять его трижды значит трижды прождать
+    `_timeout(case)` секунд и заплатить три потолка за одно зависшее плечо, а
+    у него уже есть честный ответ — v4's `timeout` с полным начислением.
+    Собственный таймаут SDK приходит СВОИМ классом (`APITimeoutError`), он в
+    таблице имён и повторяется.
+    """
+    if isinstance(error, asyncio.TimeoutError):
+        return False
+    return runinfo.is_transport_error(error)
+
+
+def arm_verdict(case: Case, arm: str, repeat: int, broken: BaseException, cap: float,
+                run_id: str) -> v4_harness.ArmOutcome:
+    """Вердикт v4 по исключению ОДНОГО плеча — одно место на все три.
+
+    ОБРЫВ ПРОВАЙДЕРА ОТСЮДА УЛЕТАЕТ НАВЕРХ, и это вся починка §1.4: защита
+    была написана вокруг тройки (`run_with_retries`), а до неё не доезжало
+    ничего — `ConnectionError` это `OSError`, `asyncio.TimeoutError` ловился
+    первым, и оба превращались в снятое плечо ещё внутри стража. Провайдер
+    моргал — прогон молча терял плечо и шёл дальше с числом, которое уже
+    ничего не значит.
+
+    ВЕРДИКТЫ — v4's, слово в слово (`bench/agentpii4/harness.py::_guarded_arm`),
+    потому что записи плеч читает v4's же `arm_record`, а второе написание
+    термина «timeout» — это второй словарь, который придётся держать равным
+    первому. Своя функция, а не вызов `v4_harness._guarded_arm`, по одной
+    причине: v4 — база сравнения, его файл не наш, а его страж глотает обрыв.
+    Всё, что не наше и не обрыв, летит дальше: `except Exception` у
+    вызывающего не ловит `BaseException`, так что `CancelledError` и
+    `KeyboardInterrupt` проходят насквозь, как и раньше.
+    """
+    if transport_blip(broken):
+        raise broken
+    if isinstance(broken, asyncio.TimeoutError):
+        return v4_harness._failed_arm(case, arm, repeat, "timeout",
+                                      f"таймаут {v4_harness._timeout(case):.0f}s",
+                                      cap, cap, run_id)
+    if isinstance(broken, HarnessError):
+        return v4_harness._failed_arm(case, arm, repeat, "harness_error",
+                                      f"HarnessError: {broken}", cap, 0.0, run_id)
+    if isinstance(broken, (OSError, ValueError, KeyError, TypeError, RuntimeError)):
+        # An exception out of the masking path is the PRODUCT failing closed —
+        # `gateway_5xx` on the gateway arm, counted, never excluded.
+        kind = "gateway_5xx" if arm == "I" else "harness_error"
+        return v4_harness._failed_arm(case, arm, repeat, kind,
+                                      f"{type(broken).__name__}: {broken}", cap, 0.0, run_id)
+    raise broken
+
+
 async def _guarded_arm_v5(case: CaseV5, repeat: int, gateway: GatewayV5, backend: BackendV5,
                           model: str, cap: float, run_id: str) -> ArmOutcomeV5:
-    """Never raises for one arm: v4's rule, and v4's charge for a timeout (it
-    DID bill, and a ledger that books it at zero lets the next case spend money
-    already gone)."""
+    """Never raises for one arm — EXCEPT on a provider blip, which §1.4's retry
+    owns and which `arm_verdict` sends back up.
+
+    v4's rule otherwise, and v4's charge for a timeout (it DID bill, and a
+    ledger that books it at zero lets the next case spend money already gone).
+    """
     try:
         return await run_arm_v5(case, "I", repeat, gateway, backend, model, cap, run_id)
-    except asyncio.TimeoutError:
-        failed = v4_harness._failed_arm(case.base, "I", repeat, "timeout",
-                                        f"таймаут {v4_harness._timeout(case.base):.0f}s",
-                                        cap, cap, run_id)
-    except HarnessError as broken:
-        failed = v4_harness._failed_arm(case.base, "I", repeat, "harness_error",
-                                        f"HarnessError: {broken}", cap, 0.0, run_id)
-    except (OSError, ValueError, KeyError, TypeError, RuntimeError) as broken:
-        # An exception out of the masking path is the PRODUCT failing closed —
-        # `gateway_5xx`, counted, never excluded.
-        failed = v4_harness._failed_arm(case.base, "I", repeat, "gateway_5xx",
-                                        f"{type(broken).__name__}: {broken}", cap, 0.0, run_id)
+    except Exception as broken:      # noqa: BLE001 — `arm_verdict` re-raises what is not ours
+        failed = arm_verdict(case.base, "I", repeat, broken, cap, run_id)
     return ArmOutcomeV5(failed, _empty_run(case, repeat))
+
+
+async def _guarded_control(case: CaseV5, arm: str, repeat: int, backend: BackendV5,
+                           model: str, cap: float, run_id: str) -> v4_harness.ArmOutcome:
+    """Плечо контроля — v4's `run_arm` под НАШИМ стражем.
+
+    v4's `_guarded_arm` делает то же самое, но обрыв провайдера у него никуда
+    не улетает, а `bench/agentpii4/` — база сравнения и правится не здесь. Так
+    что зовём v4's `run_arm` (его опции, его таймаут, его запись) и отдаём
+    исключение общему `arm_verdict`: контрольные плечи ходят в ту же модель и
+    моргает провайдер на них ровно так же, как на плече шлюза.
+    """
+    try:
+        return await v4_harness.run_arm(case.base, arm, repeat, PassThrough(case.base),
+                                        backend, model, cap, run_id)
+    except Exception as broken:      # noqa: BLE001 — `arm_verdict` re-raises what is not ours
+        return arm_verdict(case.base, arm, repeat, broken, cap, run_id)
 
 
 def _empty_run(case: CaseV5, repeat: int) -> ArmRunV5:
@@ -780,8 +847,8 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
     spent = 0.0
     turn_residual = 0
     try:
-        control = await v4_harness._guarded_arm(
-            case.base, "C", repeat, PassThrough(case.base), seed_backend_v5(case), model, cap, run_id)
+        control = await _guarded_control(case, "C", repeat, seed_backend_v5(case),
+                                         model, cap, run_id)
         outcomes.append(control)
         spent += control.run.cost_usd
         if control.run.termination in EXCLUDED_TERMINATIONS:
@@ -792,8 +859,7 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
                             MaskCache(256))
         intervention, second = await asyncio.gather(
             _guarded_arm_v5(case, repeat, gateway, seed_backend_v5(case), model, cap, run_id),
-            v4_harness._guarded_arm(case.base, "C2", repeat, PassThrough(case.base),
-                                    seed_backend_v5(case), model, cap, run_id))
+            _guarded_control(case, "C2", repeat, seed_backend_v5(case), model, cap, run_id))
         outcomes.extend((intervention.base, second))
         spent += intervention.base.run.cost_usd + second.run.cost_usd
         excluded = [one.run.arm for one in outcomes if one.run.termination in EXCLUDED_TERMINATIONS]
@@ -1617,7 +1683,14 @@ def main() -> int:
     # МЕТКА — ЕДИНСТВЕННАЯ ДВЕРЬ, через которую в файл, лежащий в репозитории
     # вечно, может приехать ключ или настоящее значение: её пишет человек по
     # памяти. Отказ до прогона, а не вычистка после.
-    values = runinfo.corpus_values(cases)
+    #
+    # ПРОТИВ ВСЕГО КОРПУСА, А НЕ ПРОТИВ ВЫБОРКИ. Человек пишет метку по памяти о
+    # том, что он видел — а видел он и случаи, которых в ЭТОМ прогоне нет:
+    # приёмка вписала в `--note` настоящее значение случая long_support-005,
+    # запустив `--ids single-001`, и оно легло в реестр дословно. Реестр лежит в
+    # репозитории вечно, поэтому вопрос «принадлежит ли значение выборке» здесь
+    # не значит ничего: значение холдаутного случая в нём так же недопустимо.
+    values = runinfo.corpus_values(everything)
     for field, text in (("--label", args.label), ("--note", args.note)):
         try:
             runinfo.refuse_secrets(text, field)

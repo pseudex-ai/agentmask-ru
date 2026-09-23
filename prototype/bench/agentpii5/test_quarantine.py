@@ -264,9 +264,24 @@ def test_the_registry_is_read_or_refused_by_name() -> list[str]:
         # есть. Проверка держит связь двух файлов, написанных врозь.
         registry.write_text(json.dumps({"runs": [{"run_id": "run-a", "run_dir": "run-a"}]}),
                             encoding="utf-8")
-        found = q.run_dirs_from_registry(registry)
+        found, skipped = q.run_dirs_from_registry(registry)
         if found != (root / "run-a",):
             problems.append(f"the registry's relative path resolved to {found}")
+        if skipped:
+            problems.append(f"a finished run was reported as skipped: {skipped}")
+        # ПРЕРВАННЫЙ ПРОГОН — СТРОКА РЕЕСТРА, А НЕ ПАДЕНИЕ. §1.2 требует, чтобы
+        # прогон, потративший деньги и остановленный, остался в реестре; своего
+        # `meta.json` он не написал, и до этой правки первый же Ctrl-C в истории
+        # ломал `quarantine --runs-file` сырым traceback'ом.
+        registry.write_text(json.dumps({"runs": [
+            {"run_id": "run-a", "run_dir": "run-a", "state": "finished"},
+            {"run_id": "run-dead", "run_dir": "run-dead", "state": "interrupted"}]}),
+            encoding="utf-8")
+        found, skipped = q.run_dirs_from_registry(registry)
+        if found != (root / "run-a",):
+            problems.append(f"the interrupted run was not skipped: {found}")
+        if skipped != ("run-dead",):
+            problems.append(f"the skipped run was not named: {skipped}")
         # И ИМЯ КЛЮЧА СВЕРЕНО С ТЕМ, КТО ЕГО ПИШЕТ. Фикстура выше — это наше
         # представление о чужом файле; без этой строки переименование поля в
         # `runinfo.RunRecord` оставило бы фикстуру зелёной, а карантин —

@@ -411,6 +411,42 @@ def _run_id(run_dir: Path) -> str:
     return found[0].name[: -len(".arms.jsonl")]
 
 
+def run_judge_model(run_dir: Path) -> str:
+    """Какой судья судил ЭТОТ прогон — из его же `meta.json`.
+
+    ИМЯ МОДЕЛИ ЖИВЁТ В ТРЁХ МЕСТАХ и расходится молча: `stamp()` считает
+    только строки своей модели, `report.calibration_problems` сверяет модель
+    штампа с `contracts.JUDGE_MODEL`, а в лист она попадала из флага. Забытый
+    флаг — это триста размеченных вручную строк, по которым `stamp` печатает
+    n=0, потому что фильтрует их по пустой строке. Флаг остаётся — он нужен,
+    когда калибруют не ту модель, которая судила, — но по умолчанию берётся
+    то, что прогон записал о себе сам.
+    """
+    path = r.run_file(run_dir, _run_id(run_dir), "<run>.meta.json")
+    if not path.exists():
+        return ""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return str(raw.get("judge_model", "")) if isinstance(raw, dict) else ""
+
+
+def holdout_ids(ladder_path: Path) -> frozenset[str]:
+    """Случаи яруса `holdout` из лестницы — квота в 20% (спека §8.5).
+
+    ЧИТАЕТСЯ КАК ФАЙЛ, а не через `schema.tier`: `tier` сверяет дайджест
+    ЦЕЛОГО корпуса, а в каталоге прогона лежит снимок ЯРУСА — то есть
+    отказал бы всегда. Без этой функции квоту пришлось бы набирать руками:
+    `--holdout` принимает запятые, а в ярусе полтораста id, и тот, кто их не
+    набрал, получал выборку с нулём из holdout и нигде об этом не читал.
+    """
+    if not ladder_path.exists():
+        return frozenset()
+    raw = json.loads(ladder_path.read_text(encoding="utf-8"))
+    tiers = raw.get("tiers") if isinstance(raw, dict) else None
+    if not isinstance(tiers, dict):
+        return frozenset()
+    return frozenset(str(one) for one in tiers.get("holdout", ()))
+
+
 def judge_verdicts_of(run_dir: Path) -> dict[tuple[str, int], JudgeVerdict]:
     """(case, repeat) → the WHOLE verdict from `<run>.judge.jsonl`.
 
@@ -848,7 +884,10 @@ def main() -> int:
     export.add_argument("--run", required=True, type=Path)
     export.add_argument("--out", required=True, type=Path)
     export.add_argument("--seed", type=int, default=5150)
-    export.add_argument("--judge-model", default="")
+    export.add_argument("--judge-model", default="",
+                        help="по умолчанию — судья самого прогона из <run>.meta.json")
+    export.add_argument("--ladder", default=str(Path(__file__).resolve().parent / "ladder.json"),
+                        help="откуда берётся ярус holdout, когда --holdout не задан")
     export.add_argument("--holdout", default="", help="запятые: id случаев яруса holdout")
     export.add_argument("--repeats", type=int, default=1,
                         help=f"сколько раз спросить судью об одном ответе подвыборки "
@@ -872,18 +911,34 @@ def main() -> int:
 
     args = parser.parse_args()
     if args.command == "export":
+        # МОДЕЛЬ И ЯРУС — ИЗ ПРОГОНА И ИЗ ЛЕСТНИЦЫ, а не из памяти владельца:
+        # забытый `--judge-model` стоит триста размеченных вручную строк
+        # (`run_judge_model`), забытый `--holdout` — квоты §8.5 (`holdout_ids`).
+        judge_model = args.judge_model or run_judge_model(args.run)
+        if not judge_model:
+            raise CalibrationError(
+                f"{args.run}: судья не назван ни флагом --judge-model, ни <run>.meta.json — "
+                f"штамп считает только строки СВОЕЙ модели, так что лист без имени "
+                f"судьи вернётся размеченным и даст n=0")
         holdout = frozenset(one.strip() for one in args.holdout.split(",") if one.strip())
+        from_ladder = not holdout
+        if from_ladder:
+            holdout = holdout_ids(Path(args.ladder))
         gated = gated_answers(judge_verdicts_of(args.run))
         sample = draw_sample(observations_of(args.run), CALIBRATION, args.seed, holdout, gated)
-        rows = sheet_rows(args.run, sample, args.judge_model)
+        rows = sheet_rows(args.run, sample, judge_model)
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text("".join(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
                                     for row in rows), encoding="utf-8")
         print(f"слепой лист разметки: {args.out} · строк {len(rows)} · "
               f"вне выборки претгейтом {len(gated)} · промпт {prompt_sha256()[:12]}")
+        print(f"судья {judge_model} ({'флаг' if args.judge_model else 'meta.json прогона'}) · "
+              f"holdout в листе {sum(1 for one in sample if one.holdout)}/{len(sample)} "
+              f"из {len(holdout)} известных "
+              f"({'лестница ' + str(args.ladder) if from_ladder else 'флаг --holdout'})")
         if args.repeats > 1:
             extra = _spend_repeats(args.run, sample, args.seed, args.repeats,
-                                   args.judge_model, args.ceiling, args.out)
+                                   judge_model, args.ceiling, args.out)
             print(f"повторы судьи: {repeats_path(args.out)} · вердиктов {len(extra)} · "
                   f"t={JUDGE_TEMPERATURE} (как в прогоне) · "
                   f"потрачено ${sum(one.cost_usd for one in extra):.4f}")

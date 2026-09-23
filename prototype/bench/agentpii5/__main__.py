@@ -84,7 +84,8 @@ def usage_lines() -> list[str]:
     out += [f"  {one.name:{width}}  {one.summary}" for one in COMMANDS]
     out += ["",
             "«<команда> --help» печатает аргументы этой команды.",
-            "Рецепты на пять шагов — bench/agentpii5/README.md."]
+            "Рецепты (добавить случаи · прогон · сравнить · повторить · один случай · "
+            "откалибровать судью) — bench/agentpii5/README.md."]
     return out
 
 

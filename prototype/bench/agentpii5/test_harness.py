@@ -20,6 +20,7 @@ import ast
 import asyncio
 import contextlib
 import inspect
+import dataclasses
 import io
 import json
 import sys
@@ -48,6 +49,9 @@ from bench.agentpii5.judge import JUDGE_TEMPERATURE, JudgeConfig, prompt_sha256
 RUN_ID: str = "abc123"
 REAL_NAME: str = NAME_ITEM.value
 SUBSTITUTE: str = "Пахомова Ольга"
+# Значение случая, которого в выборке прогона НЕТ, — отдельной константой,
+# чтобы проверка не могла случайно совпасть с именем выбранного случая.
+OUTSIDE_NAME: str = "Долгополов Аркадий"
 
 
 def _fixture_case() -> CaseV5:
@@ -1027,6 +1031,215 @@ def test_the_retry_waits_between_attempts() -> list[str]:
     return failures
 
 
+class OverloadedError(Exception):
+    """Класс с ИМЕНЕМ из `runinfo.TRANSPORT_ERROR_NAMES`.
+
+    Таблица закрыта и ведётся ПО ИМЕНИ КЛАССА, а не по импорту (классы ошибок
+    живут в SDK, которого на машине может не быть), поэтому и стоит здесь
+    класс с настоящим именем, а не `_Overloaded`: под приватным именем страж
+    поднимал его наверх как «не наше», проверка зеленела, а таблица имён так
+    и оставалась непройденной. Отдельно от `ConnectionError`: один —
+    встроенный тип, второй — имя, и починка, закрывшая только первый,
+    выглядела бы зелёной.
+    """
+
+
+def _raising(error: BaseException) -> Callable[..., object]:
+    """Плечо, которое всегда падает одним и тем же исключением."""
+    async def arm(*args: object, **kwargs: object) -> object:
+        raise error
+    return arm
+
+
+# Стражи получают шлюз и мок, которых скриптованное плечо НЕ КАСАЕТСЯ: оно
+# падает или возвращает готовый исход раньше, чем до них доходит дело. Именно
+# None, а не пустой объект: то, чем можно случайно воспользоваться, однажды
+# используют, и проверка начнёт молча зависеть от мока.
+_UNUSED_GATEWAY = None       # type: ignore[assignment]
+_UNUSED_BACKEND = None       # type: ignore[assignment]
+
+
+def test_a_provider_blip_is_not_a_verdict() -> list[str]:
+    """§1.4, БЛОКЕР: обрыв провайдера обязан ДОЛЕТЕТЬ до повтора.
+
+    Защита §1.4 написана вокруг ТРОЙКИ (`run_with_retries`), а страж плеча
+    ловил обрыв раньше: `ConnectionError` — это `OSError`, `asyncio.
+    TimeoutError` стоял первым `except`, и оба превращались в снятое плечо
+    внутри `_guarded_arm_v5`. Провайдер моргал — прогон молча терял плечо и
+    продолжал с числом, посчитанным на два плеча из трёх. Повтор при этом
+    исправно проверялся собственным `runner`, который бросал `ConnectionError`
+    МИМО стража, то есть на пути, которого в живом прогоне нет.
+
+    НЕГАТИВЫ ЗДЕСЬ ГЛАВНЕЕ ПОЗИТИВА: «поднимать наверх всё» — тоже красный,
+    только он роняет прогон на нашем собственном дефекте. Вердикты v4 обязаны
+    остаться вердиктами, и собственный дедлайн плеча — тоже
+    (`asyncio.TimeoutError is TimeoutError` начиная с 3.11, так что отличить
+    наш `wait_for` от таймаута провайдера по типу нельзя, а начисление за него
+    у v4 уже есть — полный потолок).
+    """
+    failures: list[str] = []
+    case = _fixture_case()
+    cap = 0.5
+
+    def guarded_arm() -> h.ArmOutcomeV5:
+        return asyncio.run(h._guarded_arm_v5(
+            case, 0, _UNUSED_GATEWAY, _UNUSED_BACKEND, "m", cap, RUN_ID))
+
+    def guarded_control(arm: str) -> v4_harness.ArmOutcome:
+        return asyncio.run(h._guarded_control(case, arm, 0, _UNUSED_BACKEND, "m", cap, RUN_ID))
+
+    original_v5, original_v4 = h.run_arm_v5, v4_harness.run_arm
+    try:
+        for name, broken in (("ConnectionError", ConnectionError("сброс")),
+                             ("OverloadedError", OverloadedError("529"))):
+            h.run_arm_v5 = _raising(broken)
+            v4_harness.run_arm = _raising(broken)
+            try:
+                swallowed = guarded_arm().base.run.termination
+                failures.append(f"{name} на плече шлюза страж съел и вернул {swallowed!r} — "
+                                f"повтор §1.4 этого не увидит")
+            except (ConnectionError, OverloadedError):
+                pass
+            try:
+                swallowed = guarded_control("C").run.termination
+                failures.append(f"{name} на контрольном плече страж съел и вернул "
+                                f"{swallowed!r} — повтор §1.4 этого не увидит")
+            except (ConnectionError, OverloadedError):
+                pass
+        # НЕГАТИВЫ: вердикты v4 на месте, и ни один из них не летит наверх.
+        h.run_arm_v5 = _raising(ValueError("маскирование упало"))
+        v4_harness.run_arm = _raising(ValueError("маскирование упало"))
+        if guarded_arm().base.run.termination != "gateway_5xx":
+            failures.append("ValueError на плече шлюза перестал быть gateway_5xx")
+        if guarded_control("C").run.termination != "harness_error":
+            failures.append("ValueError на контроле перестал быть harness_error")
+        h.run_arm_v5 = _raising(HarnessError("наш дефект"))
+        if guarded_arm().base.run.termination != "harness_error":
+            failures.append("HarnessError перестал быть harness_error")
+        h.run_arm_v5 = _raising(asyncio.TimeoutError())
+        v4_harness.run_arm = _raising(asyncio.TimeoutError())
+        timed_out = guarded_arm().base.run
+        if timed_out.termination != "timeout":
+            failures.append(f"собственный дедлайн плеча стал {timed_out.termination!r} — "
+                            f"его будут повторять трижды по `_timeout(case)` секунд")
+        elif timed_out.cost_usd != cap:
+            failures.append(f"таймаут начислен ${timed_out.cost_usd}, а v4 начисляет полный "
+                            f"потолок ${cap}: он ДЕЙСТВИТЕЛЬНО списался")
+        if guarded_control("C2").run.termination != "timeout":
+            failures.append("собственный дедлайн контрольного плеча перестал быть timeout")
+    finally:
+        h.run_arm_v5, v4_harness.run_arm = original_v5, original_v4
+    # И разница названа там, где она живёт: таблица `runinfo` держит
+    # `TimeoutError`, потому что НА УРОВНЕ ТРОЙКИ он приходит только от судьи;
+    # на плече его вычитает `transport_blip`.
+    if not runinfo.is_transport_error(asyncio.TimeoutError()):
+        failures.append("runinfo перестал считать TimeoutError обрывом — тогда вычитать "
+                        "его на плече нечего и проверка ни о чём")
+    if h.transport_blip(asyncio.TimeoutError()):
+        failures.append("собственный дедлайн плеча признан обрывом провайдера")
+    for blip in (ConnectionError("сброс"), OverloadedError("529")):
+        if not h.transport_blip(blip):
+            failures.append(f"{type(blip).__name__} не признан обрывом провайдера")
+    for ours in (ValueError("наш дефект"), FileNotFoundError("нет файла")):
+        if h.transport_blip(ours):
+            failures.append(f"{type(ours).__name__} признан обрывом — наш дефект будут "
+                            f"повторять с отступом")
+    return failures
+
+
+def test_the_blip_is_retried_through_the_real_guard() -> list[str]:
+    """§1.4 целиком, на НАСТОЯЩИХ стражах: два обрыва подряд — третья попытка
+    доезжает; обрыв навсегда — случай снят, прогон идёт дальше, счёт печатается
+    и ложится в `runs.json`.
+
+    `test_a_transport_break_does_not_kill_the_run` гоняет тот же драйвер, но
+    его `runner` бросает `ConnectionError` сам, МИМО стража. Здесь между
+    драйвером и обрывом стоят оба настоящих стража (`_guarded_control` для C и
+    C′, `_guarded_arm_v5` для I), и до починки проверка красная на обеих
+    половинах: первый случай «доезжает» с первой попытки со снятым плечом,
+    второй никогда не помечается `terminated: transport`.
+    """
+    failures: list[str] = []
+    good = _fixture_case()
+    bad = replace(good, base=replace(good.base, id="c-0002"))
+    cap = 0.5
+    # Обрыв на РАЗНЫХ плечах: у первого случая — на контрольном (страж вокруг
+    # v4's `run_arm`), у второго — на плече шлюза (страж вокруг `run_arm_v5`).
+    # Починка, закрывшая одно из двух, была бы наполовину зелёной.
+    tries: dict[tuple[str, str], int] = {}
+    by_id = {good.base.id: good, bad.base.id: bad}
+
+    async def control_arm(one: object, arm: str, repeat: int, *rest: object) -> object:
+        case_id = str(getattr(one, "id", ""))
+        tries[(case_id, arm)] = tries.get((case_id, arm), 0) + 1
+        if case_id == good.base.id and arm == "C" and tries[(case_id, arm)] <= 2:
+            raise ConnectionError("сброс")
+        return _arm(by_id[case_id], arm, "Нашёл.")
+
+    async def gateway_arm(one: CaseV5, arm: str, repeat: int, *rest: object) -> h.ArmOutcomeV5:
+        tries[(one.base.id, arm)] = tries.get((one.base.id, arm), 0) + 1
+        if one.base.id == bad.base.id:
+            raise ConnectionError("сброс")
+        return h.ArmOutcomeV5(v4_harness.ArmOutcome(_gateway_run(one).base, _meta()),
+                              _gateway_run(one))
+
+    async def runner(one: CaseV5, repeat: int) -> h.TripleResult:
+        # ТРИ НАСТОЯЩИХ СТРАЖА, а дальше — готовая строка тройки: собирать её
+        # здесь заново значило бы проверять сборку (её держит
+        # `test_run_files_written`), а утверждение этой проверки — про повтор.
+        await h._guarded_control(one, "C", repeat, _UNUSED_BACKEND, "m", cap, RUN_ID)
+        await h._guarded_arm_v5(one, repeat, _UNUSED_GATEWAY, _UNUSED_BACKEND, "m", cap, RUN_ID)
+        await h._guarded_control(one, "C2", repeat, _UNUSED_BACKEND, "m", cap, RUN_ID)
+        return _canned(one)
+
+    original_v5, original_v4 = h.run_arm_v5, v4_harness.run_arm
+    screen = io.StringIO()
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = Path(tmp) / "v5"
+        run_dir.mkdir()
+        runs = Path(tmp) / "runs.json"
+        h.write_corpus(run_dir, [good, bad], "deadbeef")
+        try:
+            h.run_arm_v5 = gateway_arm
+            v4_harness.run_arm = control_arm
+            with contextlib.redirect_stdout(screen):
+                outcome = asyncio.run(h.drive_v5([good, bad], 1, runner, run_dir, RUN_ID, 1,
+                                                 frozenset(), _policy(3, 0.0)))
+        finally:
+            h.run_arm_v5, v4_harness.run_arm = original_v5, original_v4
+        if tries.get((good.base.id, "C")) != 3:
+            failures.append(f"попыток на оборвавшемся контрольном плече "
+                            f"{tries.get((good.base.id, 'C'))}, ожидались 3 "
+                            f"(два обрыва и ответ)")
+        if tries.get((bad.base.id, "I")) != 3:
+            failures.append(f"попыток на оборвавшемся плече шлюза "
+                            f"{tries.get((bad.base.id, 'I'))}, ожидались 3")
+        if outcome.transport_terminated != 1:
+            failures.append(f"снятых обрывом {outcome.transport_terminated}, ожидался один: "
+                            f"обрыв навсегда — это снятый случай, а не упавший прогон")
+        rows = {str(row["case_id"]): row for row in r.read_rows(
+            r.run_file(run_dir, RUN_ID, "<run>.triples.jsonl"))}
+        if str(rows.get(good.base.id, {}).get("status")) != "complete":
+            failures.append(f"случай, доехавший с третьей попытки, записан как "
+                            f"{rows.get(good.base.id, {}).get('status')!r}")
+        if runinfo.TRANSPORT_TERMINATED not in str(rows.get(bad.base.id, {}).get("reason")):
+            failures.append(f"снятый случай не назван обрывом: "
+                            f"{rows.get(bad.base.id, {}).get('reason')!r}")
+        # СЧЁТ ПЕЧАТАЕТСЯ — иначе оператор узнает о нём только из файла, в
+        # который не полезет, пока числа не станут странными.
+        if runinfo.TRANSPORT_TERMINATED not in screen.getvalue():
+            failures.append("про снятый случай на экране не сказано ничего")
+        # …И ЛОЖИТСЯ В РЕЕСТР ТЕМ ЖЕ ЧИСЛОМ, которым его посчитал драйвер.
+        h.register_run(_context(run_dir, runs), state="finished",
+                       triples_done=len(outcome.triples),
+                       transport_terminated=outcome.transport_terminated,
+                       spent_usd=0.1, wall_s=1.0, verdict="полный")
+        written = runinfo.read_runs(runs)
+        if len(written) != 1 or written[0].transport_terminated != outcome.transport_terminated:
+            failures.append(f"реестр не получил счёт снятых обрывом: {written}")
+    return failures
+
+
 def test_the_cost_brake_stops_the_run() -> list[str]:
     """§7.1: средняя цена случая выше ожидаемой вдвое — прогон стоит, и сказано,
     на каком случае и с какими числами."""
@@ -1145,6 +1358,45 @@ def test_the_label_is_demanded_before_a_dollar() -> list[str]:
     elif not (plan[0] < bundle[0] and label[0] < bundle[0]):
         failures.append(f"оценка ({plan[0]}) или метка ({label[0]}) стоят после бандла "
                         f"({bundle[0]}) — деньги уже потрачены")
+    return failures
+
+
+def test_a_value_of_a_case_outside_the_selection_is_refused() -> list[str]:
+    """§8: свободное поле сверяется со ВСЕМ корпусом, а не с выборкой прогона.
+
+    ПОЧЕМУ ЭТО НЕ ПЕДАНТИЗМ. Метку и заметку человек пишет по памяти о том, что
+    он видел, — а видел он и случаи, которых в этом прогоне нет. Приёмка третьего
+    захода вписала в `--note` настоящее значение случая long_support-005, запустив
+    `--ids single-001`: отказа не было, значение легло дословно в `runs.json`, а
+    этот файл лежит в репозитории вечно. Так туда уезжает и значение holdout'ного
+    случая — то есть корпус, который иначе не публикуется никогда.
+    """
+    failures: list[str] = []
+    other = dataclasses.replace(
+        _fixture_case(),
+        base=dataclasses.replace(_fixture_case().base, id="c-0002", conversation_id="c-0002",
+                                 pii=(dataclasses.replace(NAME_ITEM, id="p9",
+                                                          value=OUTSIDE_NAME,
+                                                          canonical=OUTSIDE_NAME),)))
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        corpus = _corpus_file(root, (_fixture_case(), other))
+        argv = [str(corpus), "--ids", "c-0001", "--out", str(root / "run"),
+                "--runs", str(root / "runs.json"), "--ceiling", "0", "--no-judge",
+                "--label", "проверка выборки"]
+        # ИМЕННО ЭТОТ ОТКАЗ, А НЕ ЛЮБОЙ: ниже по `main` стоит сверка дайджеста
+        # корпуса с лестницей, и она тоже говорит слово «корпус» — проверка на
+        # него одна зеленела бы и без всякой защиты свободного поля.
+        refusal = "значение из корпуса"
+        code, printed = _main(argv + ["--note", f"сломалось на {OUTSIDE_NAME}"])
+        if code != 2 or refusal not in printed:
+            failures.append(f"значение случая вне выборки прошло в реестр: "
+                            f"{code} {printed[:200]}")
+        # И ПРОТИВОПОЛОЖНАЯ СТОРОНА: обычный текст этой защитой не отвергается,
+        # иначе проверка «отказывает на всём» была бы зелёной и бесполезной.
+        code, printed = _main(argv + ["--note", "перепроверить адресное плечо"])
+        if refusal in printed:
+            failures.append(f"обычная заметка отвергнута как значение корпуса: {printed[:200]}")
     return failures
 
 
@@ -1662,11 +1914,16 @@ def main() -> int:
         ("a_resume_refuses_a_shared_run_directory",
          test_a_resume_refuses_a_shared_run_directory),
         ("a_transport_break_does_not_kill_the_run", test_a_transport_break_does_not_kill_the_run),
+        ("a_provider_blip_is_not_a_verdict", test_a_provider_blip_is_not_a_verdict),
+        ("the_blip_is_retried_through_the_real_guard",
+         test_the_blip_is_retried_through_the_real_guard),
         ("the_retry_waits_between_attempts", test_the_retry_waits_between_attempts),
         ("the_cost_brake_stops_the_run", test_the_cost_brake_stops_the_run),
         ("the_dry_run_spends_nothing_and_writes_nothing",
          test_the_dry_run_spends_nothing_and_writes_nothing),
         ("the_label_is_demanded_before_a_dollar", test_the_label_is_demanded_before_a_dollar),
+        ("a_value_of_a_case_outside_the_selection_is_refused",
+         test_a_value_of_a_case_outside_the_selection_is_refused),
         ("the_registry_row_is_written_on_both_ends", test_the_registry_row_is_written_on_both_ends),
         ("a_run_that_paid_and_fell_over_still_leaves_a_row",
          test_a_run_that_paid_and_fell_over_still_leaves_a_row),

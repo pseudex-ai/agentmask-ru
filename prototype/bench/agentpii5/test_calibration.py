@@ -19,9 +19,10 @@ from bench.agentpii4.records import ArmMeta
 from bench.agentpii5 import calibration as c
 from bench.agentpii5 import judge
 from bench.agentpii5 import records as r
+from bench.agentpii5 import report
 from bench.agentpii5.contracts import (
-    CALIBRATION, ArmRunV5, CalibrationRecord, CalibrationStamp, CaseV5, HopObservation,
-    JudgeInput, JudgeVerdict, MentionRecord, RunObservation, ToolResultRecord)
+    CALIBRATION, JUDGE_LABELS, ArmRunV5, CalibrationRecord, CalibrationStamp, CaseV5,
+    HopObservation, JudgeInput, JudgeVerdict, MentionRecord, RunObservation, ToolResultRecord)
 from bench.agentpii5.fixtures import (
     NAME_ITEM, PHONE_ITEM, _case, _hop, _run, _with_replies, _with_subs)
 from bench.agentpii5.form import form_match
@@ -738,6 +739,259 @@ def test_the_sheet_shows_the_masked_dialogue() -> list[str]:
     return failures
 
 
+# --- the whole loop, offline: export -> labelling -> repeats -> import -> stamp ---------
+
+# Шесть страт (2 семьи × 3 регистра) по шестьдесят ответов: выборка спеки —
+# 300 строк при поле в 20 на страту, и корпус, в котором их меньше, проверяет
+# не путь, а пониженные пороги.
+STRATA: tuple[tuple[str, str], ...] = (
+    ("single", "chat"), ("single", "voice_raw"), ("single", "sloppy"),
+    ("rag", "chat"), ("rag", "voice_raw"), ("rag", "sloppy"))
+PER_STRATUM: int = 60
+# Каждый двадцать пятый ответ судья и человек читают по-разному. Не ноль:
+# при полном согласии κ описывает выборку, на которой разметчик мог быть
+# константой, а порог, который не может не пройти, ничего не сертифицирует.
+DISAGREE_EVERY: int = 25
+
+
+def _calibratable_case(case_id: str, behaviour: str, register: str) -> CaseV5:
+    case = _answer_case(case_id)
+    return replace(case, behaviour=behaviour, base=replace(case.base, register=register))
+
+
+def _calibratable_run(root: Path, holdout: frozenset[str]) -> tuple[Path, list[CaseV5]]:
+    """Каталог прогона, на котором калибровка МОЖЕТ пройти.
+
+    Написан теми же сериализаторами `records`, что и живой (`_run_dir` говорит
+    почему), но большой: пороги спеки читаются из `contracts.CALIBRATION` и
+    флагом не опускаются, так что путь «лист → разметка → штамп» можно
+    проверить целиком только на корпусе, где 300 размеченных строк существуют.
+    Вердикты судьи чередуются, иначе κ не определена и `stamp` вернёт 0.0.
+    """
+    run_dir = root / "v5-live-medium"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    meta = ArmMeta("fixture", 1, 0, "sess", "success", False, None, (), "", 0.0)
+    cases: list[CaseV5] = []
+    for behaviour, register in STRATA:
+        for index in range(PER_STRATUM):
+            cases.append(_calibratable_case(
+                f"{behaviour}-{register}-{index:03d}", behaviour, register))
+    (run_dir / "corpus.v5.json").write_text(json.dumps(
+        {"corpus": [case_v5_to_json(case) for case in cases], "digest": "digest-v5"},
+        ensure_ascii=False), encoding="utf-8")
+    judge_path = r.run_file(run_dir, RUN_ID, "<run>.judge.jsonl")
+    for case in cases:
+        run = _answer_run(case)
+        r.append_row(r.run_file(run_dir, RUN_ID, "<run>.arms.jsonl"),
+                     {"case_id": case.base.id, "repeat": 0, "arm": "I", "termination": "done"})
+        r.append_row(r.run_file(run_dir, RUN_ID, "<run>.arms.v5.jsonl"),
+                     r.arm_v5_record(run, meta, case.base))
+        r.append_row(r.run_file(run_dir, RUN_ID, "<run>.hops.jsonl"),
+                     r.hop_observation_to_json(HopObservation(
+                         case_id=case.base.id, repeat=0, hop=case.hops[0], declared=True,
+                         pii_type="NAME", produced=NAME_ITEM.value, reference=NAME_ITEM.value,
+                         status="observed",
+                         verdict=form_match("NAME", NAME_ITEM.value, NAME_ITEM.value))))
+        r.append_row(judge_path, r.judge_row_to_json(r.JudgeRow(
+            case_id=case.base.id, repeat=0, input_sha256="a" * 64,
+            verdict=JudgeVerdict(label=_judge_label(case.base.id),
+                                 reason="запись та же · цитата: «Передал»",
+                                 judged_by="model", cost_usd=0.01))))
+    r.run_file(run_dir, RUN_ID, "<run>.meta.json").write_text(json.dumps(
+        {"run_id": RUN_ID, "benchmark": "agentpii5", "model": "claude-haiku-4-5-20251001",
+         "judge_model": MODEL, "tier": "medium", "repeats": 1, "digest": "digest-v5",
+         "prompt_sha256": c.prompt_sha256()}, ensure_ascii=False), encoding="utf-8")
+    # ШТАМП, КОТОРЫЙ ПИШЕТ САМ ПРОГОН: «не откалиброван», потому что сказать
+    # ему обратное до разметки нечем. Именно его отчёт читает нулевой строкой.
+    c.write_stamp(run_dir, RUN_ID, c.stamp((), MODEL, c.prompt_sha256()))
+    (root / "ladder.json").write_text(json.dumps(
+        {"version": 1, "seed": 5150, "corpus_sha256": "digest-v5",
+         "tiers": {"holdout": sorted(holdout)}}, ensure_ascii=False), encoding="utf-8")
+    return run_dir, cases
+
+
+def _index_of(case_id: str) -> int:
+    return int(case_id.rsplit("-", 1)[1])
+
+
+def _judge_label(case_id: str) -> str:
+    """Метка судьи — ФУНКЦИЯ ОТ ИМЕНИ СЛУЧАЯ, а не от позиции в файле.
+
+    Лист разметки отсортирован по стратам, прогон записан в порядке семей, и
+    метка, привязанная к номеру строки, склеивает человека с вердиктом другого
+    ответа: согласие получилось 0.48 — ровно шум, — и проверка обвинила бы в
+    этом пороги.
+    """
+    return "верно" if _index_of(case_id) % 2 == 0 else "частично"
+
+
+def _human_label(case_id: str) -> str:
+    """Метка человека: та же, что у судьи, кроме каждого DISAGREE_EVERY-го."""
+    agreed = _judge_label(case_id)
+    if _index_of(case_id) % DISAGREE_EVERY:
+        return agreed
+    return "частично" if agreed == "верно" else "верно"
+
+
+class _RunEchoJudge:
+    """Судья повторов, отвечающий то же, что записано в прогоне.
+
+    Устойчивый судья — это `repeat_disagreement` = 0.0, и «устойчивый» здесь
+    значит «согласный с самим собой», то есть со своим же вердиктом из
+    `<run>.judge.jsonl`. Судья, который всегда говорит одно слово, на
+    чередующихся вердиктах прогона даёт расхождение 0.46 — не потому, что
+    он неустойчив, а потому, что это другой судья.
+    """
+
+    def __init__(self, label_of: Callable[[str], str]) -> None:
+        self._label_of = label_of
+        self.asked = 0
+
+    async def __call__(self, request: JudgeInput, minted: tuple[str, ...]) -> JudgeVerdict:
+        self.asked += 1
+        return JudgeVerdict(label=self._label_of(request.case_id),
+                            reason=f"цитата: «{request.restored_answer[:10]}»",
+                            judged_by="model", cost_usd=0.0)
+
+
+def _fill_sheet(sheet: Path, label_of: Callable[[str], str]) -> None:
+    """То, что делает владелец руками: проставляет `human_label` в слепом листе."""
+    rows = r.read_rows(sheet)
+    sheet.write_text("".join(
+        json.dumps({**row, "human_label": label_of(str(row["case_id"]))},
+                   ensure_ascii=False, sort_keys=True) + "\n" for row in rows),
+        encoding="utf-8")
+
+
+def _script_the_repeats(run_dir: Path, sheet: Path, seed: int) -> int:
+    """K−1 ПОВТОРОВ СУДЬИ БЕЗ МОДЕЛИ, в тот самый файл, который читает `import`.
+
+    В живом пути эти вердикты покупает `export --repeats 3` (`_spend_repeats`)
+    — это настоящие вызовы и настоящие деньги. Здесь на месте модели стоит
+    `_ScriptedJudge`, и это ЕДИНСТВЕННОЕ, что подменено во всей проверке:
+    выборка, лист, стыковка, пороги и штамп — тот же код, которым пойдёт
+    владелец. Без повторов `repeat_check` не спрашивали, `stamp` ставит
+    расхождение 1.0, и откалиброваться нельзя ничем.
+    """
+    sample = c.read_sheet(sheet)
+    repeats = c.draw_repeats(sample, CALIBRATION, seed)
+    verdicts = asyncio.run(c.ask_repeats(run_dir, repeats, _RunEchoJudge(_judge_label)))
+    c.repeats_path(sheet).write_text("".join(
+        json.dumps(c.repeat_verdict_to_json(one), ensure_ascii=False, sort_keys=True) + "\n"
+        for one in verdicts), encoding="utf-8")
+    return len(verdicts)
+
+
+def _cli(argv: list[str]) -> int:
+    """CLI как его зовёт владелец — через `main()`, а не мимо него.
+
+    Проверка, которая дёргает `draw_sample` и `stamp` напрямую, зелёная и при
+    сломанном `main`: разбор флагов, умолчание модели, поиск файла повторов и
+    запись штампа живут именно там.
+    """
+    saved = sys.argv
+    try:
+        sys.argv = ["calibration", *argv]
+        return c.main()
+    finally:
+        sys.argv = saved
+
+
+def test_the_whole_loop_runs_offline() -> list[str]:
+    """§8.5 ОТ НАЧАЛА ДО КОНЦА: `export` → разметка → `import` → штамп на
+    прогоне → отчёт перестал быть НЕПОЛНЫМ по судье.
+
+    Куски этого пути были проверены по одному и с ПОНИЖЕННЫМИ порогами
+    (`sample_size=2`), так что ни одна проверка репозитория не видела
+    `calibrated=True`, пришедшего из конвейера, — и ни одна не спрашивала
+    отчёт, изменилось ли для него хоть что-нибудь. Пока так, «НЕПОЛНЫЙ: судья
+    не откалиброван» стоит в каждом отчёте, и прочитать ось ответа нельзя
+    никогда.
+
+    ЕДИНСТВЕННОЕ, ЧТО ПОДМЕНЕНО, — модель: K−1 повторов судьи даёт
+    `_ScriptedJudge`. Всё остальное — тот же `main()`, те же пороги
+    `contracts.CALIBRATION`, тот же `report.judge_half`, который решает, что
+    отчёт неполный.
+    """
+    failures: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        # Четверть случаев — holdout, и он приезжает ЛЕСТНИЦЕЙ, а не запятыми:
+        # квота §8.5 в полтораста id руками не набирается.
+        holdout = frozenset(f"{behaviour}-{register}-{index:03d}"
+                            for behaviour, register in STRATA
+                            for index in range(PER_STRATUM // 4))
+        run_dir, _cases = _calibratable_run(root, holdout)
+        prompt = c.prompt_sha256()
+        before = report.judge_half(run_dir)
+        if not before.problems:
+            failures.append("прогон без разметки прочитан как откалиброванный — "
+                            "проверка ни о чём")
+        elif not any("размеченных" in one for one in before.problems):
+            failures.append(f"отказ до разметки не называет её: {before.problems}")
+        sheet = root / "sheet.jsonl"
+        # БЕЗ --judge-model И БЕЗ --holdout: имя судьи берётся из meta.json
+        # прогона, ярус — из лестницы. Оба забытых флага стоили бы трёхсот
+        # размеченных вручную строк.
+        code = _cli(["export", "--run", str(run_dir), "--out", str(sheet),
+                     "--ladder", str(root / "ladder.json")])
+        if code != 0:
+            failures.append(f"export вернул {code}")
+        rows = r.read_rows(sheet)
+        if len(rows) != CALIBRATION.sample_size:
+            failures.append(f"в листе {len(rows)} строк, спека просит "
+                            f"{CALIBRATION.sample_size}")
+        if any(row.get("judge_model") != MODEL for row in rows):
+            failures.append("в листе не тот судья — умолчание из meta.json не сработало")
+        if any(row.get("judge_label") for row in rows):
+            failures.append("лист не слепой")
+        drawn = sum(1 for row in rows if row.get("holdout"))
+        wanted = int(round(len(rows) * CALIBRATION.holdout_share))
+        if drawn < wanted:
+            failures.append(f"holdout в листе {drawn}/{len(rows)}, квота §8.5 — {wanted}: "
+                            f"ярус не доехал из лестницы")
+        _fill_sheet(sheet, _human_label)
+        extra = _script_the_repeats(run_dir, sheet, 5150)
+        if extra != CALIBRATION.repeat_sample * (CALIBRATION.repeats - 1):
+            failures.append(f"повторов судьи {extra}, спека просит "
+                            f"{CALIBRATION.repeat_sample}×{CALIBRATION.repeats - 1}")
+        code = _cli(["import", "--sheet", str(sheet), "--run", str(run_dir),
+                     "--out", str(root / "calibration.jsonl")])
+        if code != 0:
+            failures.append(f"import вернул {code} — штамп не принят")
+        after = report.judge_half(run_dir)
+        if after.stamp is None:
+            failures.append("штамп не лёг нулевой строкой в <run>.judge.jsonl")
+        elif after.problems:
+            failures.append(f"отчёт всё ещё считает судью некалиброванным: {after.problems}")
+        elif after.stamp.n != CALIBRATION.sample_size:
+            failures.append(f"в штампе {after.stamp.n} строк, размечено "
+                            f"{CALIBRATION.sample_size}")
+        # И ВЕРДИКТЫ ПРОГОНА НА МЕСТЕ: штамп — нулевая строка, а не замена файла.
+        kept = sum(after.labels.values())
+        if kept != len(STRATA) * PER_STRATUM - after.pregate:
+            failures.append(f"штамп съел вердикты прогона: осталось {kept} из "
+                            f"{len(STRATA) * PER_STRATUM}")
+        # НЕГАТИВ: разметка наугад — тот же путь, и отчёт остаётся НЕПОЛНЫМ.
+        random_sheet = root / "random.jsonl"
+        random_sheet.write_text(sheet.read_text(encoding="utf-8"), encoding="utf-8")
+        _fill_sheet(random_sheet,
+                    lambda case_id: JUDGE_LABELS[_index_of(case_id) % len(JUDGE_LABELS)])
+        c.repeats_path(random_sheet).write_text(
+            c.repeats_path(sheet).read_text(encoding="utf-8"), encoding="utf-8")
+        code = _cli(["import", "--sheet", str(random_sheet), "--run", str(run_dir),
+                     "--out", str(root / "random-calibration.jsonl")])
+        if code == 0:
+            failures.append("разметка наугад принята как калибровка")
+        refused = report.judge_half(run_dir)
+        if not refused.problems:
+            failures.append("после разметки наугад отчёт снова полный — "
+                            "штамп пишется не из чисел")
+        elif not any("κ" in one for one in refused.problems):
+            failures.append(f"отказ не называет κ: {refused.problems}")
+    return failures
+
+
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("no_pseudex", test_no_pseudex),
@@ -754,6 +1008,7 @@ def main() -> int:
         ("import_joins_and_stamps_the_run", test_import_joins_and_stamps_the_run),
         ("minted_of_is_the_runs_own_list", test_minted_of_is_the_runs_own_list),
         ("the_sheet_shows_the_masked_dialogue", test_the_sheet_shows_the_masked_dialogue),
+        ("the_whole_loop_runs_offline", test_the_whole_loop_runs_offline),
     )
     failures: list[str] = []
     for name, check in checks:

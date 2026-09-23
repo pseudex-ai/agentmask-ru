@@ -55,6 +55,10 @@ KIND: str = "arm row"
 # refusal below — BY NAME, listing what the row does carry — is what tells a
 # reader whose file is genuinely older that it is.
 REGISTRY_DIR_KEYS: tuple[str, ...] = ("run_dir",)
+# Registry states whose runs this tool reads past. `runinfo.RUN_STATES` is
+# («finished», «interrupted»); an interrupted run has no `meta.json`, so it
+# carries no conditions to compare under — and §1.2 requires its row to stay.
+SKIPPED_STATES: frozenset[str] = frozenset({"interrupted"})
 # What makes two runs comparable at all. A case that behaves differently under
 # another model, another judge or another corpus has told us nothing about
 # itself — and these four are exactly what `meta.json` records about a run.
@@ -195,6 +199,14 @@ def run_dirs_from_registry(path: Path) -> tuple[Path, ...]:
     models, the digest — is read from the runs themselves, so a registry row
     that drifted from the directory it points at cannot make two runs look
     comparable when they are not.
+
+    AN INTERRUPTED RUN IS SKIPPED, AND SAID OUT LOUD (second return value). The
+    registry is required to keep the row of a run that spent money and stopped
+    (§1.2), and such a run never wrote a `meta.json` — so `read_run` refuses it
+    by design, and the whole command died on the first Ctrl-C in the history.
+    Skipping is not silence about a condition: the registry already RECORDED the
+    state, so this is reading the file rather than guessing. A directory named by
+    hand is still refused — there nobody said the run was interrupted.
     """
     if not path.exists():
         raise QuarantineError(f"{path}: реестра прогонов нет; передайте каталоги прогонов "
@@ -205,6 +217,7 @@ def run_dirs_from_registry(path: Path) -> tuple[Path, ...]:
         raise QuarantineError(f"{path}: ожидался список прогонов или "
                               f"{{\"runs\": [...]}}, найдено {type(rows).__name__}")
     directories: list[Path] = []
+    skipped: list[str] = []
     for index, row in enumerate(rows):
         if not isinstance(row, dict):
             raise QuarantineError(f"{path}[{index}]: ожидался объект, найдено {row!r}")
@@ -212,9 +225,12 @@ def run_dirs_from_registry(path: Path) -> tuple[Path, ...]:
         if not named:
             raise QuarantineError(f"{path}[{index}]: строка не называет каталог прогона "
                                   f"(искали {list(REGISTRY_DIR_KEYS)}), есть {sorted(row)}")
+        if str(row.get("state", "")) in SKIPPED_STATES:
+            skipped.append(str(row.get("run_id", named[0])))
+            continue
         candidate = Path(named[0])
         directories.append(candidate if candidate.is_absolute() else path.parent / candidate)
-    return tuple(directories)
+    return tuple(directories), tuple(skipped)
 
 
 # --- the question ----------------------------------------------------------------------
@@ -330,13 +346,27 @@ def main() -> int:
     args = parser.parse_args()
 
     directories = [Path(one) for one in args.runs]
-    if args.runs_file:
-        directories.extend(run_dirs_from_registry(Path(args.runs_file)))
-    if not directories:
-        print("нечего читать: передайте каталоги прогонов или --runs-file", file=sys.stderr)
+    # ОТКАЗ — СТРОКОЙ, А НЕ TRACEBACK'ОМ. Всё, что ниже отказывается, отказывается
+    # по названной причине (`QuarantineError`), и сырой стек вместо неё послал бы
+    # читателя чинить этот модуль вместо своего реестра.
+    try:
+        if args.runs_file:
+            from_registry, skipped = run_dirs_from_registry(Path(args.runs_file))
+            directories.extend(from_registry)
+            if skipped:
+                print(f"пропущено прерванных прогонов: {len(skipped)} "
+                      f"({', '.join(skipped)}) — у прерванного прогона нет meta.json, "
+                      f"то есть условий, под которыми его можно сравнивать")
+        if not directories:
+            print("нечего читать: передайте каталоги прогонов или --runs-file",
+                  file=sys.stderr)
+            return 2
+        readings = [read_run(one) for one in directories]
+        lines = report(readings, args.window)
+    except QuarantineError as refused:
+        print(str(refused), file=sys.stderr)
         return 2
-    readings = [read_run(one) for one in directories]
-    for line in report(readings, args.window):
+    for line in lines:
         print(line)
     # ZERO WHATEVER IS FOUND. A suspect is a question for a person, not a failed
     # check; a non-zero exit would put this report into a pipeline, and the next

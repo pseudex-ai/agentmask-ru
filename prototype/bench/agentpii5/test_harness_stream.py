@@ -22,12 +22,21 @@ restorations disagree on a few percent of replies. Both texts are KEPT (R-54,
 reader who then asks WHICH text the customer lost had nothing on disk to look
 at while the whole-text leg was restored for a `len()` and thrown away.
 """
+import asyncio
 import json
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
+from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+
 from bench.agentpii3 import score
+from bench.agentpii3.live import judge as v3_judge
+from bench.agentpii4 import harness as v4_harness
 from bench.agentpii4.schema import message_text
+from bench.agentpii5 import harness as h
+from bench.agentpii5 import records, runinfo
+from bench.agentpii5.contracts import CaseV5
 from bench.agentpii5.harness import (
     STREAM_CHUNK, GatewayV5, answer_leg, restore_stream, restored_turn_replies, stream_verdict,
     turn_restorer)
@@ -294,12 +303,134 @@ def test_restoration_runs_on_the_conversation_view() -> list[str]:
     return failures
 
 
+# --- §1.4 обрыв провайдера НА НАСТОЯЩЕМ ПУТИ --------------------------------------------
+
+# Сколько обрывов подряд имитирует скрипт транспорта. Считаются ВЫЗОВЫ
+# `receive_response`, а первым плечом тройки идёт контрольное, так что два
+# обрыва — это две попытки тройки, снятые на первом же её плече.
+_BREAKS_LEFT: dict[str, int] = {"left": 0, "forever": 0}
+
+
+class _ScriptedTransport:
+    """Клиент SDK, которого подменили скриптом: рвётся, потом отвечает.
+
+    ЭТО ЕДИНСТВЕННЫЙ СПОСОБ проверить §1.4 на живом пути, не позвав модель.
+    Повтор написан вокруг ТРОЙКИ, а рвётся ПЛЕЧО — и между ними стоят стражи
+    (`_guarded_control`, `_guarded_arm_v5`) и `run_triple_v5` с его `finally`
+    по леджеру. Проверка на подменённом `run_arm_v5` (`test_harness`) не видит
+    ни стражей в связке, ни того, что тройка по дороге ничего не глотает;
+    проверка отсюда видит весь путь от `drive_v5` до `ClaudeSDKClient`.
+    """
+
+    def __init__(self, options: object = None, **kwargs: object) -> None:
+        self._options = options
+        self._pending: list[str] = []
+
+    async def __aenter__(self) -> "_ScriptedTransport":
+        return self
+
+    async def __aexit__(self, *exc: object) -> bool:
+        return False
+
+    async def query(self, text: str) -> None:
+        self._pending.append(text)
+
+    async def receive_response(self):          # type: ignore[no-untyped-def]
+        if _BREAKS_LEFT["forever"]:
+            raise ConnectionError("провайдер оборвал связь (скрипт, навсегда)")
+        if _BREAKS_LEFT["left"] > 0:
+            _BREAKS_LEFT["left"] -= 1
+            raise ConnectionError("провайдер оборвал связь (скрипт)")
+        yield AssistantMessage(content=[TextBlock(text="Готово.")], model="scripted-model")
+        yield ResultMessage(subtype="success", duration_ms=1, duration_api_ms=1, is_error=False,
+                            num_turns=1, session_id="scripted", total_cost_usd=0.001,
+                            model_usage={"scripted-model": {"costUSD": 0.001}})
+
+
+def _drive(case: CaseV5, run_dir: Path, run_id: str) -> object:
+    """Одна тройка КОРПУСНОГО случая через `drive_v5` → `run_triple_v5` →
+    настоящие стражи → скриптованный транспорт. Судья выключен: он спрашивает
+    модель, а здесь её нет."""
+    load_dev_bundle()
+    detector = Detector()
+    ledger = v3_judge.SpendLedger(run_dir / f"{run_id}.spend.tsv", 10.0)
+    runner = h.triple_runner(detector, ledger, None, "scripted-model", run_id)
+    h.write_corpus(run_dir, [case], "deadbeef")
+    policy = h.DrivePolicy(attempts=3, pause=_no_pause, jitter=lambda: 1.0,
+                           expected_per_case_usd=0.0)
+    return asyncio.run(h.drive_v5([case], 1, runner, run_dir, run_id, 1, frozenset(), policy))
+
+
+async def _no_pause(seconds: float) -> None:
+    """Отступ без ожидания: кривая отступа проверяется в `test_runinfo`, а
+    честные 2 + 4 секунды здесь — это шесть секунд к батарее и выключенная
+    через неделю проверка."""
+    return None
+
+
+def test_a_provider_blip_is_retried_on_the_real_path() -> list[str]:
+    """§1.4 на настоящем пути: два обрыва подряд — третья попытка доезжает;
+    обрыв навсегда — случай снят, прогон доходит до конца.
+
+    ДО ПОЧИНКИ ЭТА ПРОВЕРКА КРАСНАЯ И НА ТОЙ, И НА ДРУГОЙ ПОЛОВИНЕ: страж
+    плеча ловил `ConnectionError` (это `OSError`) и возвращал снятое плечо, так
+    что `run_with_retries` не видел ни одной попытки повторить, а тройка
+    записывалась как `excluded` по вердикту плеча — не как снятая обрывом.
+    Разница читателю видна только по причине в строке, и «плечо не доиграло»
+    он спишет на модель.
+    """
+    failures: list[str] = []
+    here = Path(__file__).resolve().parent
+    raw = json.loads((here / CORPUS).read_text(encoding="utf-8"))
+    case = case_v5_from_json(raw["corpus"][0])
+    original_v5, original_v4 = h.ClaudeSDKClient, v4_harness.ClaudeSDKClient
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            h.ClaudeSDKClient = _ScriptedTransport
+            v4_harness.ClaudeSDKClient = _ScriptedTransport
+            _BREAKS_LEFT.update(left=2, forever=0)
+            good_dir = Path(tmp) / "good"
+            good_dir.mkdir()
+            outcome = _drive(case, good_dir, "run-good")
+            if _BREAKS_LEFT["left"] != 0:
+                failures.append(f"скрипт оборвал связь не дважды: осталось "
+                                f"{_BREAKS_LEFT['left']}")
+            if outcome.transport_terminated:
+                failures.append(f"случай снят обрывом, хотя третья попытка обязана была "
+                                f"доехать: {outcome.transport_terminated}")
+            rows = records.read_rows(records.run_file(good_dir, "run-good",
+                                                      "<run>.triples.jsonl"))
+            if len(rows) != 1 or str(rows[0].get("status")) != "complete":
+                failures.append(f"тройка после двух обрывов записана как "
+                                f"{[row.get('status') for row in rows]}, ожидался complete")
+            _BREAKS_LEFT.update(left=0, forever=1)
+            bad_dir = Path(tmp) / "bad"
+            bad_dir.mkdir()
+            gone = _drive(case, bad_dir, "run-bad")
+            if gone.transport_terminated != 1:
+                failures.append(f"снятых обрывом {gone.transport_terminated}, ожидался один — "
+                                f"прогон обязан идти дальше, а не падать")
+            rows = records.read_rows(records.run_file(bad_dir, "run-bad",
+                                                      "<run>.triples.jsonl"))
+            if len(rows) != 1:
+                failures.append(f"строк троек {len(rows)}: случай, о котором не написано "
+                                f"ничего, читается как случай, который не выбирали")
+            elif runinfo.TRANSPORT_TERMINATED not in str(rows[0].get("reason")):
+                failures.append(f"снятый случай не назван обрывом: {rows[0].get('reason')!r}")
+        finally:
+            h.ClaudeSDKClient, v4_harness.ClaudeSDKClient = original_v5, original_v4
+            _BREAKS_LEFT.update(left=0, forever=0)
+    return failures
+
+
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("chunked_answer", test_chunked_answer),
         ("corpus_answer_is_what_the_client_read", test_corpus_answer_is_what_the_client_read),
         ("restoration_runs_on_the_conversation_view",
          test_restoration_runs_on_the_conversation_view),
+        ("a_provider_blip_is_retried_on_the_real_path",
+         test_a_provider_blip_is_retried_on_the_real_path),
     )
     failures: list[str] = []
     for name, check in checks:
