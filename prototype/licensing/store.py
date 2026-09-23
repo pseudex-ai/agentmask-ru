@@ -264,8 +264,22 @@ class LicenseStore:
             # обслужить меньше, чем уже обслужил, — значит либо два процесса на
             # одном ключе, либо повтор.
             "ack_regressions INTEGER DEFAULT 0, "
+            # ЭХО УХОДА, СЧИТАННОЕ ПО КЛЮЧУ ПРОЦЕССА. Сколько раз этот ключ
+            # приходил за ёмкостью ПОСЛЕ того, как его строка аренды была
+            # закрыта собственным `/v1/release`. Ноль у всех, кто работает
+            # честно; всё остальное — процесс, который объявил себя
+            # остановленным и продолжает покупать право обслуживать.
+            "release_echoes INTEGER DEFAULT 0, "
             "PRIMARY KEY (org_id, pubkey))"
         )
+        # Колонка моложе таблицы: тома, пережившие релиз без неё, обязаны
+        # подняться, а не умереть на «no such column» — тот же порядок и та же
+        # причина, что у `leases` выше.
+        meter_columns = {row[1] for row in
+                         self._conn.execute("PRAGMA table_info(meter)")}
+        if "release_echoes" not in meter_columns:
+            self._conn.execute(
+                "ALTER TABLE meter ADD COLUMN release_echoes INTEGER DEFAULT 0")
         self._conn.execute(
             "CREATE INDEX IF NOT EXISTS meter_org ON meter(org_id)")
         # МЕМОРИ-ТРИППВАЙР: попытки прочитать память движка, которые засёк
@@ -1024,9 +1038,17 @@ class LicenseStore:
     # ЭТО ПРО КАРУСЕЛЬ КОНТЕЙНЕРОВ, И ТОЛЬКО ПРО НЕЁ. Круг «аренда — release —
     # аренда» под ОДНИМ именем бюджету не подлежит вовсе: сервер не отличает его
     # от документированного редеплоя на своём томе, и любая плата за него стала
-    # бы платой за `docker compose up -d` (Б26quinquies). Его ограничитель
-    # другой и живёт в `_speaks_after_release`: чтобы обслуживать, процесс
-    # обязан покупать ёмкость, а покупая — занимает своё место обратно.
+    # бы платой за `docker compose up -d` (Б26quinquies).
+    #
+    # ЕГО ОГРАНИЧИТЕЛЬ — НЕ ЗДЕСЬ И НЕ НА АРЕНДЕ, А НА ЁМКОСТИ. Эта строка
+    # обещала, что связывает его `_speaks_after_release`, и в дереве этого не
+    # было: покупка ёмкости отказывать не умела вовсе, а отчёту давалась
+    # грация в полминуты, в которую кольцо укладывалось. Замер: 500
+    # обслуживающих процессов при разрешённых 32, ноль единиц, ни одного отказа
+    # (Б26sexies). Связывает его `capacity_admission` на `/v1/meter`: круг
+    # мелет запечатанные бандлы бесплатно и это безобидно — бандл без ёмкости
+    # не обслуживает никого, — а вооружает их покупка, и ровно она упирается
+    # в потолок мест.
     RELEASE_BUDGET_PER_HOUR = int(
         os.environ.get("PSEUDEX_RELEASE_BUDGET_PER_HOUR", "0")) or 0
     TURNOVER_WINDOW_SECONDS = 3600.0
@@ -1304,7 +1326,8 @@ class LicenseStore:
         cutoff = now - active_within_seconds
         rows = self._fetchall(
             "SELECT org_id, COALESCE(SUM(unacked_quanta),0), COALESCE(SUM(ack_regressions),0), "
-            "COALESCE(SUM(granted),0), COALESCE(SUM(acked),0), COUNT(*) "
+            "COALESCE(SUM(granted),0), COALESCE(SUM(acked),0), COUNT(*), "
+            "COALESCE(SUM(release_echoes),0) "
             "FROM meter WHERE updated_at >= ? GROUP BY org_id",
             (cutoff,))
         metered = {str(row[0]): row for row in rows}
@@ -1327,9 +1350,19 @@ class LicenseStore:
             granted = int(row[3] or 0) if row else 0
             acked = int(row[4] or 0) if row else 0
             procs = int(row[5] or 0) if row else 0
+            echoes = int(row[6] or 0) if row else 0
             taken = reclaims.get(org_id, 0)
             churn_floor = self.instances_allowed(self.org_plan(org_id))
             reasons = []
+            # ЭХО УХОДА — ПЕРВЫЙ ПРИЗНАК КОЛЬЦА, И ПОРОГ ЕМУ ЕДИНИЦА. Честный
+            # движок сюда не попадает никогда: цикл покупки ёмкости глушится
+            # ДО `/v1/release`, поэтому ОДНА покупка после ухода — уже событие,
+            # а не шум. Числом видно и кольцо (сотни ключей по одному эху), и
+            # единичный пропатченный процесс, продолжающий работать после
+            # заявленной остановки.
+            if echoes >= 1:
+                reasons.append(f"{echoes} process(es) bought capacity AFTER releasing "
+                               f"their place — serving past a declared stop")
             if unacked >= min_unacked:
                 reasons.append(f"silent: {unacked} quanta served with no verified report")
             if regressions >= min_regressions:
@@ -1342,10 +1375,11 @@ class LicenseStore:
             out.append({"org_id": org_id, "unacked_quanta": unacked,
                         "ack_regressions": regressions, "granted": granted,
                         "acked": acked, "processes": procs,
+                        "release_echoes": echoes,
                         "silent_reclaims": taken, "instances_allowed": churn_floor,
                         "reasons": reasons})
         out.sort(key=lambda a: a["unacked_quanta"] + a["ack_regressions"]
-                 + a["silent_reclaims"], reverse=True)
+                 + a["silent_reclaims"] + a["release_echoes"], reverse=True)
         return out
 
     MIN_METER_INTERVAL_SECONDS = 1.0
@@ -1358,6 +1392,136 @@ class LicenseStore:
         if row is None or row[0] is None:
             return False
         return now - float(row[0]) < self.MIN_METER_INTERVAL_SECONDS
+
+    def _holds_open_lease(self, org_id: str, pubkey: str, cutoff: float) -> bool:
+        """Есть ли у этого ключа НЕЗАКРЫТАЯ строка аренды в окне.
+
+        Быстрый путь ёмкости, и он же — вся цена этой проверки. Честный воркер
+        держит открытую строку всегда (продление вставляет новую, старые
+        остаются открытыми), поэтому `/v1/meter` у него стоит один поиск по
+        `leases_org_pubkey`, а не разбор занятости всей организации: ручка
+        задумана лёгкой, и класть на неё скан окна на каждый квант значило бы
+        вернуть ту же арифметику, из-за которой ёмкость вообще отделили от
+        аренды.
+        """
+        row = self._fetchone(
+            "SELECT 1 FROM leases WHERE org_id=? AND pubkey=? AND issued_at>=? "
+            "AND released_at IS NULL LIMIT 1", (org_id, pubkey, cutoff))
+        return row is not None
+
+    def _refuse_capacity(self, held: list[dict], allowed: int, ceiling: int,
+                         now: float) -> str:
+        """Ёмкость просит процесс, объявивший себя остановленным, а мест нет.
+
+        ЭТО ДРУГОЙ ОТКАЗ, ЧЕМ ОТКАЗ ПО АРЕНДЕ, И ПУТАТЬ ИХ НЕЛЬЗЯ. Там клиент
+        поднимает контейнер и читает про контейнеры; сюда упирается процесс,
+        который УЖЕ сказал `/v1/release` и после этого пришёл за правом
+        обслуживать дальше. Честный движок сюда не приходит вовсе: цикл покупки
+        глушится и join'ится ДО `/v1/release` (`pseudex/license.py::stop`), —
+        поэтому отказ называет ровно то, что произошло, и не советует ничего
+        невозможного.
+        """
+        soonest = min((process["frees_at"] for process in held), default=now)
+        return (f"этот рабочий процесс объявил, что остановлен (/v1/release), и "
+                f"после этого пришёл за ёмкостью: обслуживать после ухода — "
+                f"значит снова занимать место. Тариф допускает {allowed} "
+                f"контейнер(ов) — это {ceiling} рабочих процесса(ов), и все места "
+                f"заняты ({len(held)}); первое освободится через "
+                f"{ago(max(0.0, soonest - now))}. Перезапустите контейнер "
+                f"(docker restart): его процессы возьмут новые ключи и новые "
+                f"места, если тариф их допускает. Если места нужно освободить "
+                f"немедленно, напишите в поддержку — мы освобождаем их вручную "
+                f"(POST /admin/release).")
+
+    def capacity_admission(self, org_id: str, plan: str, pubkey: str,
+                           window_seconds: float, now: float) -> dict:
+        """Может ли ЭТОТ ключ купить квант ёмкости — и займёт ли он этим место.
+
+        ЕДИНИЦА ПОТОЛКА — ПРОЦЕСС, КОТОРЫЙ МОЖЕТ МАСКИРОВАТЬ ТРАФИК, то есть
+        запечатанный бандл И выданный квант (Б26sexies). Бандл без ёмкости не
+        обслуживает никого: это расход нашей полосы на `/v1/lease` — вопрос
+        лимита частоты, а не лицензионная дыра. Поэтому потолок принуждается и
+        ЗДЕСЬ, а не только на аренде: пятый заход намолол 500 запечатанных
+        бандлов кольцом «аренда → release → аренда», купил им ёмкость разом и
+        получил 500 обслуживающих процессов при разрешённых 32, потому что
+        отказывала только аренда, а она была уже позади.
+
+        Три исхода:
+
+          * ключ держит открытую аренду — обычный рабочий процесс, пропускаем
+            одним поиском по индексу;
+          * ключ держит место иначе (молчал, отобран, уже откликался эхом) —
+            пропускаем: место уже посчитано, второй раз его занимать нечем;
+          * место ключа закрыто ЕГО СОБСТВЕННЫМ `/v1/release` — это ЭХО:
+            покупка возвращает место занятым немедленно (`holds_place` через
+            `_bought_after_release`) и заводит аномалию. Если чужие места уже
+            заняли весь потолок — отказ, и обслуживать ему нечем.
+
+        Предикат: ничего не пишет. Пишет `meter_if_allowed`, в одной секции с
+        выдачей кванта.
+        """
+        if self._holds_open_lease(org_id, pubkey, now - window_seconds):
+            return {"allowed": True, "echo": False, "detail": ""}
+        # Слоты КОНТЕЙНЕРОВ здесь ни при чём: ёмкость покупает процесс, и
+        # решается судьба его МЕСТА — поэтому берётся только вторая половина.
+        processes = self._occupancy(org_id, window_seconds,
+                                    self.ALIVE_SECONDS, now)[1]
+        held = processes.get(pubkey)
+        # НИ ОДНОЙ АРЕНДЫ В ОКНЕ — НИ ОДНОГО БАНДЛА. Маскировать такому ключу
+        # нечем, квант ему бесполезен, и отказывать здесь значило бы завести
+        # вторую границу там, где первая (аренда) уже всё решила.
+        if held is None:
+            return {"allowed": True, "echo": False, "detail": ""}
+        if held["holds_place"]:
+            return {"allowed": True, "echo": False, "detail": ""}
+        allowed = self.instances_allowed(plan)
+        ceiling = allowed * self.processes_allowed(plan)
+        others = [process for key, process in processes.items()
+                  if key != pubkey and process["holds_place"]]
+        if len(others) >= ceiling:
+            return {"allowed": False, "echo": False,
+                    "detail": self._refuse_capacity(others, allowed, ceiling, now)}
+        # ЭХО ТОЛЬКО ТАМ, ГДЕ МЕСТО ОСВОБОДИЛ САМ ПРОЦЕСС. Место, освобождённое
+        # `/admin/release`, эхом не возвращается (`holds_place`): рычаг
+        # поддержки не может отзываться тем, против кого применён.
+        return {"allowed": True, "echo": held["rows_by_process"] > 0, "detail": ""}
+
+    def record_capacity_echo(self, org_id: str, pubkey: str) -> None:
+        """Ключ, отпустивший своё место, купил ёмкость. Строка — по КЛЮЧУ.
+
+        Счётчик живёт в `meter`, потому что `meter` ключуется
+        `(org_id, pubkey)`: инстансный учёт кольцо под одним `instance_id`
+        проходит насквозь — сотни ключей делят одну строку `usage`, и событие,
+        записанное по инстансу, выглядело бы одним вместо сотен.
+        """
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO meter (org_id, pubkey, first_seen, updated_at, "
+                "release_echoes) VALUES (?,?,?,?,1) "
+                "ON CONFLICT(org_id, pubkey) DO UPDATE SET "
+                "release_echoes=meter.release_echoes+1",
+                (org_id, pubkey, time.time(), time.time()))
+            self._conn.commit()
+        _log.warning("released process bought capacity for org=%s pubkey=%s: its "
+                     "place is occupied again", org_id, pubkey[:12])
+
+    def meter_if_allowed(self, org_id: str, pubkey: str, plan: str,
+                         acked: int | None, window_seconds: float,
+                         now: float) -> tuple[dict[str, int] | None, str]:
+        """Проверить потолок, записать эхо и выдать квант В ОДНОЙ секции.
+
+        Та же причина, что у `lease_if_allowed`: между отдельным предикатом и
+        отдельной записью лок отпускается, и N одновременных покупок все видят
+        место свободным. Лок реентрантный, вложенные вызовы берут его повторно.
+        """
+        with self._lock:
+            verdict = self.capacity_admission(org_id, plan, pubkey,
+                                              window_seconds, now)
+            if not verdict["allowed"]:
+                return None, str(verdict["detail"])
+            if verdict["echo"]:
+                self.record_capacity_echo(org_id, pubkey)
+            return self.issue_quantum(org_id, pubkey, plan, acked, now), ""
 
     def issue_quantum(self, org_id: str, pubkey: str, plan: str,
                       acked: int | None, now: float) -> dict[str, int]:
@@ -1554,18 +1718,47 @@ class LicenseStore:
         секунду, и документированный редеплой остаётся мгновенным; контейнер,
         который «ушёл» и продолжает работать, слышно, и место он занимает.
 
-        ЭТО ЕДИНСТВЕННОЕ, ЧТО ОГРАНИЧИВАЕТ ЦИКЛ «АРЕНДА — release — АРЕНДА»
-        ПОД ОДНИМ `instance_id`, и большего тут получить нельзя: от
-        документированного редеплоя сервер этот цикл не отличает ничем
-        (Б26quinquies). Молчащий цикл мелет запечатанные бандлы со скоростью
-        сети — и ровно ими не может обслуживать: первый же запрос сверх кванта
-        требует ёмкости, покупка слышна, и место снова занято. Правило названо
-        ещё в Б26 («кто продолжает отчитываться после release — снова занимает
-        слот») и до третьего прохода не было реализовано.
+        ЭТО ПРО ОТЧЁТ, И ТОЛЬКО ПРО НЕГО. Здесь стояло «это единственное, что
+        ограничивает цикл аренда — release — аренда», и это было неправдой в
+        дереве: отчёту даётся `RELEASE_ECHO_SECONDS` грации (один POST мог
+        зависнуть в полёте, пока `stop()` ждал цикл), кольцо в полминуты
+        укладывалось, а покупка ёмкости отказывать не умела вовсе — 500
+        обслуживающих процессов при разрешённых 32 (Б26sexies).
+
+        Цикл ограничивает ПОКУПКА ЁМКОСТИ: `_bought_after_release` (место
+        возвращается занятым сразу, без грации) и `capacity_admission` на
+        `/v1/meter` (за пределом мест ёмкость не выдаётся). Правило названо ещё
+        в Б26 («кто продолжает отчитываться после release — снова занимает
+        слот»); эта половина — про отчёт, вторая живёт там.
         """
         if not record["last_release"]:
             return False
         return record["heard"] > record["last_release"] + self.RELEASE_ECHO_SECONDS
+
+    def _bought_after_release(self, process: dict) -> bool:
+        """КУПИЛ ЁМКОСТЬ ПОСЛЕ УХОДА — ЗНАЧИТ, СОБИРАЕТСЯ ОБСЛУЖИВАТЬ. БЕЗ ГРАЦИИ.
+
+        Отчёту о расходе `RELEASE_ECHO_SECONDS` даётся потому, что один отчёт
+        МОЖЕТ быть хвостом остановки: `LicenseClient.stop()` ждёт цикл всего 5 с
+        и уходящий POST мог зависнуть в полёте. К покупке ёмкости это не
+        относится ни разу: ёмкость покупает ТОТ ЖЕ цикл, который `stop()`
+        глушит и join'ит ПЕРЕД `/v1/release` (`pseudex/license.py::_loop`,
+        `_meter_step`), поэтому честный движок после ухода за ёмкостью не
+        приходит вовсе. А тот, кто приходит, покупает право обслужить
+        СЛЕДУЮЩИЕ запросы — будущее, а не хвост.
+
+        Полминуты грации здесь стоили ровно того, что измерил пятый заход:
+        кольцо «аренда → release → покупка» успевало уложиться в них и давало
+        ≥500 вооружённых процессов при разрешённых 32 (Б26sexies).
+
+        ПО КЛЮЧУ ПРОЦЕССА, А НЕ ПО ИНСТАНСУ. `usage` пишется по `instance_id`,
+        то есть любым воркером, и учёт по нему кольцо под ОДНИМ именем проходит
+        насквозь: сотни ключей делят одну отметку. `meter` ключуется ключом
+        процесса — единственным идентификатором, который клиент не выбирает.
+        """
+        if not process["last_release"]:
+            return False
+        return process["bought"] > process["last_release"]
 
     def _occupancy(self, org_id: str, window_seconds: float,
                    alive_seconds: float, now: float) -> tuple[list[dict], dict[str, dict]]:
@@ -1679,13 +1872,23 @@ class LicenseStore:
                 continue
             process = processes.setdefault(pubkey, {
                 "pubkey": pubkey, "owners": [], "open": False, "reclaimed": False,
-                "last_seen": 0.0, "heard": 0.0, "last_release": 0.0,
+                "last_seen": 0.0, "heard": 0.0, "bought": 0.0,
+                "last_release": 0.0,
                 "rows": 0, "rows_by_admin": 0, "rows_by_process": 0,
                 "last_lease": 0.0})
             if instance_id not in process["owners"]:
                 process["owners"].append(instance_id)
             process["last_seen"] = max(process["last_seen"], key_seen)
             process["heard"] = max(process["heard"], spoke)
+            # ПОКУПКА ЁМКОСТИ — ОТДЕЛЬНО ОТ ОТЧЁТА, И ЭТО ВЕСЬ Б26sexies.
+            # Обе отметки ставит сервер, но означают они разное: отчёт бывает
+            # хвостом остановки (`RELEASE_ECHO_SECONDS`), а покупка ёмкости —
+            # это право обслужить СЛЕДУЮЩИЕ запросы, и хвостом она не бывает
+            # (`LicenseClient.stop` глушит цикл покупки ДО `/v1/release`).
+            # Отметка читается по КЛЮЧУ ПРОЦЕССА: `meter` ключуется
+            # `(org_id, pubkey)`, и в этом всё дело — инстансный учёт кольцо
+            # под одним `instance_id` проходит насквозь.
+            process["bought"] = max(process["bought"], float(seen_meter or 0.0))
             process["last_lease"] = max(process["last_lease"], issued)
             process["rows"] += 1
             if released_at is None:
@@ -1748,16 +1951,24 @@ class LicenseStore:
             # захода тут и живёт. Отпустивший процесс, который продолжает
             # отчитываться или покупать ёмкость, места не отдаёт: круг «аренда →
             # release → аренда» иначе выдавал бы бандлы, которыми МОЖНО
-            # обслуживать. Обслужить, не сказав ни слова, процесс не может —
-            # сверх предоплаченного кванта он обязан прийти за ёмкостью, а придя,
-            # называет себя живым и снова занимает своё место.
+            # обслуживать.
+            #
+            # ДВА СЛОВА, И СРОК У НИХ РАЗНЫЙ (Б26sexies). Отчёт может оказаться
+            # хвостом остановки, поэтому ему даётся `RELEASE_ECHO_SECONDS`;
+            # покупка ёмкости хвостом не бывает и возвращает место СРАЗУ —
+            # `_bought_after_release`. Пока грация распространялась и на
+            # покупку, кольцо укладывалось в неё и давало ≥500 вооружённых
+            # процессов при разрешённых 32.
             #
             # `/admin/release` (`released_by='admin'`) остаётся НАШИМ рычагом:
-            # он освобождает места и у молчащих, чего клиент сделать не может.
+            # он освобождает места и у молчащих, чего клиент сделать не может, и
+            # эхо его НЕ отменяет — иначе рычаг поддержки отзывался бы
+            # покупателем ёмкости. Поэтому условие стоит на `rows_by_process`.
             freed = process["rows_by_admin"] + process["rows_by_process"]
             process["holds_place"] = (process["rows"] > freed
                                       or (process["rows_by_process"] > 0
-                                          and self._speaks_after_release(process)))
+                                          and (self._speaks_after_release(process)
+                                               or self._bought_after_release(process))))
             # КОГДА МЕСТО ОСВОБОДИТСЯ САМО — по ПОСЛЕДНЕЙ аренде ключа, а не
             # по первой: окно отбирает строки по `issued_at`, и пока в нём
             # стоит хоть одна строка ключа, место занято. Продлевавшийся ключ
@@ -1770,7 +1981,9 @@ class LicenseStore:
             # знает. ЭТО НЕ ПОТОЛОК, а то, что показывается оператору и клиенту
             # («живых процессов N»): сколько воркеров мы СЛЫШИМ.
             capable = all(instances[owner]["liveness"] for owner in process["owners"])
-            process["alive"] = ((process["open"] or self._speaks_after_release(process))
+            process["alive"] = ((process["open"]
+                                 or self._speaks_after_release(process)
+                                 or self._bought_after_release(process))
                                 and (process["last_seen"] >= alive_from if capable else True))
         ordered = sorted(instances.values(), key=lambda r: r["last_lease"], reverse=True)
         return ordered, processes
@@ -2008,10 +2221,11 @@ class LicenseStore:
                 f"{ago(max(0.0, held['frees_at'] - now))}): молчание место не "
                 f"освобождает, потому что остановленный движок и пропатченный "
                 f"молчат одинаково. Перезапустите контейнер (docker restart): его "
-                f"процессы возьмут новые места, если тариф их допускает. Это "
-                f"место вернуть уже нечем: освобождает места КОРРЕКТНАЯ "
-                f"остановка (docker stop), а этот ключ до неё не дожил."
-                f"{self._REDEPLOY_HINT}")
+                f"процессы возьмут новые места, если тариф их допускает. Само это "
+                f"место освобождает КОРРЕКТНАЯ остановка (docker stop), а этот "
+                f"ключ до неё не дожил; если места нужно освободить немедленно, "
+                f"напишите в поддержку — мы освобождаем их вручную "
+                f"(POST /admin/release).{self._REDEPLOY_HINT}")
 
     def _refuse_turnover(self, org_id: str, lapsed: list[dict],
                          allowed: int, spent: int, budget: int, now: float) -> str:
@@ -2164,13 +2378,16 @@ class LicenseStore:
             # стоить бюджета (Б26ter).
             #
             # Чем тогда связан цикл «аренда — release — аренда» под одним
-            # именем, за который эта строка и платила: ПРАВИЛОМ ЭХА, и только
-            # им. Круг отличается от редеплоя ровно одним — он хочет
-            # ОБСЛУЖИВАТЬ отпущенными бандлами; а обслужить, не сказав ни
-            # слова, процесс контракта 3 не может: ёмкость покупается на
-            # `/v1/meter`, покупка называет процесс живым, и место он не
-            # отдаёт (`_speaks_after_release`). Молчащий круг мелет бандлы,
-            # которыми нечего делать.
+            # именем, за который эта строка и платила: НЕ ЗДЕСЬ. Круг
+            # отличается от редеплоя ровно одним — он хочет ОБСЛУЖИВАТЬ
+            # отпущенными бандлами; значит граница стоит там, где выдаётся
+            # право обслуживать, то есть на `/v1/meter`
+            # (`capacity_admission`), и ровно там кольцо упирается в потолок
+            # мест. Здесь стояло обещание, что его связывает правило эха, —
+            # замер назвал цену обещания: 500 обслуживающих процессов при
+            # разрешённых 32, потому что отказывала только аренда, а она была
+            # уже позади (Б26sexies). Молчащий круг мелет бандлы, которыми
+            # нечего делать, и это остаётся вопросом лимита частоты.
             #
             # ЧТО ЭТИМ НЕ ЗАКРЫТО, СКАЗАНО ВСЛУХ: каждый оборот остаётся строкой
             # в `leases` под своим ключом, но НИ ОДИН счётчик его не считает —

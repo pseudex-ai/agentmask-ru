@@ -711,11 +711,30 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   released 0.3.17 does not have, i.e. a fix worse than the defect. The ring
   «lease → release → lease» under one `instance_id` is therefore unbounded, and
   it must be: the server cannot tell it from `docker compose up -d`. What bounds
-  it is the ECHO rule — a released process that keeps reporting or buying
-  capacity keeps its place, and a contract-3 engine cannot serve a request
-  without buying capacity. The other early release of a place is OURS,
-  `POST /admin/release` (`released_by='admin'`), which frees even a silent one.
-  Pins: `licensing/test_metering_attacks.py`, `licensing/test_admin_api.py`.
+  it is the CAPACITY boundary, not the lease (see the next rule). The other
+  early release of a place is OURS, `POST /admin/release`
+  (`released_by='admin'`), which frees even a silent one and is NOT revoked by
+  the echo — a lever the customer could cancel is not a lever. Pins:
+  `licensing/test_metering_attacks.py`, `licensing/test_admin_api.py`.
+- **THE UNIT OF THE CEILING IS A PROCESS THAT CAN MASK TRAFFIC: a sealed bundle
+  AND an issued capacity quantum** (Б26sexies). A bundle with no capacity serves
+  nobody, so the silent ring is a rate-limit question, not a licence hole —
+  measured: 200 bundles, 0 armed. What arms them is `/v1/meter`, so the ceiling
+  is enforced THERE as well as on the lease — `capacity_admission` and
+  `meter_if_allowed` of `licensing/store.py`. While the lease alone refused, the ring ground 500 free
+  bundles and bought them capacity afterwards — 500 serving processes against 32
+  allowed, zero budget units, not one refusal. Buying capacity with a key whose
+  row was closed by its OWN `/v1/release` returns the place to OCCUPIED AT ONCE
+  (`_bought_after_release`, no `RELEASE_ECHO_SECONDS` grace — the report may be
+  a stop's tail, a purchase of the right to serve NEXT requests cannot be) and
+  raises an anomaly counted BY PROCESS KEY (`meter.release_echoes`): the ring
+  runs under one `instance_id`, so instance-level bookkeeping counts one event
+  instead of hundreds and walks past. Residual, stated because a ceiling is only
+  claimed after the measurement that confirms it: a quantum bought BEFORE the
+  release is indistinguishable from an honest worker's, so each turn carries off
+  ONE quantum (billed); CONTINUING to serve needs a second one, and that is where
+  the ceiling stands — measured 200 armed once, 32 able to continue. Pins:
+  `licensing/test_metering_attacks.py`, `licensing/test_admin_api.py`.
 - **A unit of the turnover budget is spent by an ADMISSION that displaced
   another container's slot, and by nothing else** (Б26bis, Б26ter). Not by a
   release (a `docker stop` of a 4-worker container that had renewed three times

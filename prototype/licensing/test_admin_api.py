@@ -20,6 +20,7 @@
 """
 
 import os
+import secrets
 import subprocess
 import sys
 import tempfile
@@ -530,6 +531,85 @@ release_as(redeploy_key, "vol-one", first)
 redeploy = lease_as(redeploy_key, "vol-one", generate_process_key().public)
 check("переразвёртывание на том же томе поднимается сразу", redeploy == 200,
       f"POST /v1/lease -> {redeploy}")
+
+# ── КОЛЬЦО «АРЕНДА → /v1/release → АРЕНДА» В ЕДИНИЦЕ, КОТОРАЯ ЧТО-ТО ЗНАЧИТ.
+#
+# Единица потолка — процесс, который может МАСКИРОВАТЬ ТРАФИК: запечатанный
+# бандл И выданный квант (Б26sexies §1). Пятый заход мерил АРЕНДЫ и получал
+# «кольцо прижато к 32», а замер вооружённых процессов дал ≥500 при
+# разрешённых 32: аренды отказывали, но ёмкость покупалась уже ПОСЛЕ них, и
+# ровно она вооружает. Поэтому здесь ходят обе ручки, и по настоящему HTTP.
+def meter_as(key: str, instance: str, pubkey: str):
+    return public.post("/v1/meter", json={
+        "key": key, "instance_id": instance, "pubkey": pubkey,
+        "nonce": secrets.token_urlsafe(12)})
+
+
+ring_key = admin.post("/admin/issue", json={"org_id": "ring", "plan": "start"},
+                      headers=ADMIN).json()["key"]
+# СНАЧАЛА МОЛЧА: кольцо мелет бандлы и НИ РАЗУ не покупает ёмкость. По
+# определению (1) это безобидно, и число это подтверждает, а не прячет.
+ring_keys = []
+for number in range(120):
+    process = generate_process_key().public
+    if lease_as(ring_key, "vol-ring", process, version="0.3.17") != 200:
+        break
+    release_as(ring_key, "vol-ring", process)
+    ring_keys.append(process)
+check("молчащее кольцо не ограничено — оно и есть редеплой на своём томе",
+      len(ring_keys) == 120, f"оборотов {len(ring_keys)}")
+armed_ring = [process for process in ring_keys
+              if meter_as(ring_key, "vol-ring", process).status_code == 200]
+check("но ВООРУЖИТЬ оно может ровно столько, сколько мест по тарифу",
+      len(armed_ring) == 32,
+      f"бандлов {len(ring_keys)}, из них с ёмкостью {len(armed_ring)} при 32 местах")
+ring_refusal = meter_as(ring_key, "vol-ring", ring_keys[-1]).json()
+check("и отказывает ЁМКОСТЬ кодом, который движок читает как ОТВЕТ",
+      ring_refusal.get("error") in _license_answer_codes,
+      f"{ring_refusal.get('error')!r} против {sorted(_license_answer_codes)}")
+check("а отказ называет, что именно произошло: ушёл и вернулся за ёмкостью",
+      "объявил, что остановлен" in ring_refusal.get("detail", "")
+      and "admin/release" in ring_refusal.get("detail", ""),
+      ring_refusal.get("detail", "")[:150])
+# ЭХО ПРИВЯЗАНО К КЛЮЧУ ПРОЦЕССА, А НЕ К ИНСТАНСУ, И ЭТО ВЕСЬ СМЫСЛ: всё
+# кольцо крутилось под ОДНИМ `instance_id`, поэтому инстансный учёт насчитал
+# бы одно событие вместо тридцати двух и прошёл бы мимо.
+ring_anomaly = [row for row in admin.get("/admin/anomalies", headers=ADMIN).json()
+                ["anomalies"] if row["org_id"] == "ring"]
+check("эхо ухода посчитано ПО КЛЮЧАМ и поднято в аномалии",
+      len(ring_anomaly) == 1 and ring_anomaly[0]["release_echoes"] == 32,
+      f"{[(row['org_id'], row.get('release_echoes')) for row in ring_anomaly]}")
+check("и причина названа словами, а не одним числом",
+      any("AFTER releasing" in reason for reason in ring_anomaly[0]["reasons"]),
+      str(ring_anomaly[0]["reasons"]))
+
+# ЧЕСТНЫЙ ВОРКЕР ПОКУПАЕТ ЁМКОСТЬ ПРИ ОТКРЫТОЙ АРЕНДЕ — НИ ЭХА, НИ АНОМАЛИИ.
+# Эта строка и есть цена всей правки: если она покраснеет, мы снова заперли
+# клиента, который просто работает (Б26quinquies).
+honest_key = admin.post("/admin/issue", json={"org_id": "honest", "plan": "start"},
+                        headers=ADMIN).json()["key"]
+honest_starts = 0
+for number in range(10):
+    process = generate_process_key().public
+    if lease_as(honest_key, "vol-honest", process, version="0.3.17") != 200:
+        break
+    if meter_as(honest_key, "vol-honest", process).status_code != 200:
+        break
+    honest_starts += 1
+    release_as(honest_key, "vol-honest", process)      # docker stop
+check("десять честных редеплоев с покупкой ёмкости — все проходят",
+      honest_starts == 10, f"прошло {honest_starts} из 10")
+# ИМЕННО ЭХО, А НЕ «НИ ОДНОЙ АНОМАЛИИ»: честный прогон без подписанных отчётов
+# честно попадает в `silent: N quanta served with no verified report` — это
+# другой сигнал и он верен. Проверяется то, что правка добавила.
+honest_anomaly = [row for row in admin.get("/admin/anomalies", headers=ADMIN).json()
+                  ["anomalies"] if row["org_id"] == "honest"]
+check("и ни одного эха: покупка при ОТКРЫТОЙ аренде — не уход",
+      all(row["release_echoes"] == 0 for row in honest_anomaly)
+      and not any("AFTER releasing" in reason
+                  for row in honest_anomaly for reason in row["reasons"]),
+      str([(row["org_id"], row["release_echoes"], row["reasons"])
+           for row in honest_anomaly]))
 
 # СЛОТ УПАВШЕГО КОНТЕЙНЕРА ОСВОБОЖДАЕТСЯ САМ (Б26). Контейнер не отпускал
 # ничего — он умер; раньше клиент ждал до суток и читал «остановите лишний

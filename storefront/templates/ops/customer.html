@@ -122,9 +122,9 @@
       <td>
         <span class="pill {{ slot.pill_class }}">{{ slot.pill }}</span>
         {% if slot.state == 'active' %}{% if slot.frees_in %}<span style="color:var(--dim-2);font-size:12px"> освободит через {{ slot.frees_in }}, если замолчит</span>{% else %}<span style="color:var(--amber);font-size:12px"> без признака жизни — по окну аренды</span>{% endif %}
-        {% elif slot.state == 'reclaimed' %}<span style="color:var(--amber);font-size:12px"> место отдано другому контейнеру; этот получит 409 на следующем продлении{% if slot.heard_recently %} — и он ещё отчитывается, то есть работает{% endif %}</span>
+        {% elif slot.state == 'reclaimed' %}<span style="color:var(--amber);font-size:12px"> СЛОТ отдан другому запуску; МЕСТА его процессов (столбец слева) остаются за ним до конца окна аренды — молчание их не освобождает. На следующем продлении он получит 409{% if slot.heard_recently %} — и он ещё отчитывается, то есть работает{% endif %}</span>
         {% comment %}«СЛЫШАЛИ НЕДАВНО» ОСТАЁТСЯ ТОЛЬКО ДЛЯ ОСВОБОЖДЁННОГО, и смысл у него другой: заявление об уходе действует до первого слова после него, поэтому контейнер, который отпустил слот и продолжает отчитываться, снова займёт его сам. У `silent` этой оговорки быть не может по построению — состояние и значит «свежего признака жизни нет».{% endcomment %}
-        {% elif slot.heard_recently %}<span style="color:var(--amber);font-size:12px"> но слышали его меньше {{ slots.alive_label }} назад — если он работает, следующее продление снова займёт слот</span>{% endif %}
+        {% elif slot.heard_recently %}<span style="color:var(--amber);font-size:12px"> но слышали его меньше {{ slots.alive_label }} назад: заявление об уходе действует до первого слова после него — покупка ёмкости возвращает МЕСТО его процесса сразу, продление вернёт и слот</span>{% endif %}
       </td>
     </tr>
     {% empty %}<tr><td colspan="6" style="color:var(--dim-2)">Аренд в окне нет.</td></tr>{% endfor %}

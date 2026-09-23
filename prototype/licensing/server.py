@@ -934,8 +934,28 @@ async def meter(body: Annotated[dict, Depends(json_object)]) -> JSONResponse:
     if STORE.metered_too_recently(record.org_id, pubkey, time.time()):
         return JSONResponse({"error": "too_fast", "detail": "one grant per second"},
                             status_code=429)
-    quantum = STORE.issue_quantum(record.org_id, pubkey, record.plan, acked,
-                                  time.time())
+    # ПОТОЛОК ПРИНУЖДАЕТСЯ И ЗДЕСЬ, ПОТОМУ ЧТО ЕДИНИЦА ПОТОЛКА — ПРОЦЕСС,
+    # КОТОРЫЙ МОЖЕТ МАСКИРОВАТЬ ТРАФИК (Б26sexies §1): запечатанный бандл И
+    # выданный квант. Отказывала только аренда — и кольцо «аренда → release →
+    # аренда» намалывало бандлы бесплатно, а потом покупало им ёмкость разом:
+    # 500 обслуживающих процессов при разрешённых 32, ноль единиц бюджета, ни
+    # одного отказа. Бандл без ёмкости не обслуживает никого, поэтому мелющее
+    # кольцо остаётся вопросом лимита частоты; вооружает его ЭТА ручка, и
+    # граница стоит на ней.
+    #
+    # 409 `instance_limit`, а не новый код: он входит в `_ANSWER_CODES` КАЖДОГО
+    # выпущенного движка (`pseudex/license.py`), то есть читается как ОТВЕТ, а
+    # не как наш сбой, и grace к нему не применяется. Процесс доживает на уже
+    # купленном кванте и перестаёт маскировать, когда тот кончится, — ровно то,
+    # что требуется. Новый код выпущенные образы приняли бы за нашу аварию и
+    # обслуживали бы всё время грации.
+    quantum, why_not = STORE.meter_if_allowed(record.org_id, pubkey, record.plan,
+                                              acked, _TTL_SECONDS, time.time())
+    if quantum is None:
+        _log.warning("capacity refused for org=%s pubkey=%s: %s",
+                     record.org_id, pubkey[:12], why_not)
+        return JSONResponse({"error": "instance_limit", "detail": why_not},
+                            status_code=409)
     payload: dict[str, object] = {
         "kind": "capacity",
         # Квант не может быть прочитан как лиза, а лиза как квант: тип внутри
