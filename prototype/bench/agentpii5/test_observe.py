@@ -18,7 +18,7 @@ from dataclasses import replace
 
 from bench.agentpii4.schema import Locus
 from bench.agentpii5 import contracts
-from bench.agentpii5.contracts import Hop
+from bench.agentpii5.contracts import ArmRunV5, CaseV5, Hop
 from bench.agentpii5.fixtures import (
     FAKE_NAME,
     OTHER_NAME,
@@ -50,7 +50,9 @@ from bench.agentpii5.observe import (
     leaf_holds,
     merged_opcodes,
     observe,
+    own_pair,
     own_stems,
+    own_stretch,
     stem_of,
     survives_in,
     turn_request,
@@ -897,6 +899,134 @@ def test_a_shared_answer_span_is_narrowed_to_one_item() -> list[str]:
     return problems
 
 
+def _sms(written: str, restored: str) -> tuple[CaseV5, ArmRunV5]:
+    """One PHONE crossing a FREE leaf — `notify_sms.text`, the SMS body a live
+    agent writes prose into. The substitute is written grouped, so the two
+    notations are distinguishable at all."""
+    phone = _item("s1", "PHONE", REAL_PHONE, REAL_PHONE, "i1", _in_message(0, 0, 12))
+    hop = _hop("OUT", "template", "s1", 0, 0, "notify_sms", 0, -1, "text")
+    case = _case("obs-sms", "single", ("напишите клиенту",), (phone,), (hop,))
+    run = _with_subs(_with_calls(_run("obs-sms"),
+                                 (_call("notify_sms", {"to": "+7 999 000-11-22", "text": written},
+                                        {"to": REAL_PHONE, "text": restored}, {}, "", 0),),
+                                 (0,)),
+                     {"s1": "+7 999 000-11-22"})
+    return case, run
+
+
+FREE_LEAF_CANON = "Курьер позвонит на +79164021187 в 10:00, заказ №48213."
+FREE_LEAF_AGENT = "Курьер позвонит на +7 916 402-11-87 в 10:00, заказ №48213."
+FREE_LEAF_WRITTEN = "Курьер позвонит на +7 999 000-11-22 в 10:00, заказ №48213."
+
+
+def test_a_free_leaf_is_compared_by_the_value_not_the_sentence() -> list[str]:
+    """THE SENTENCE IS NOT THE DATUM. Every extractor in `form.py` reads the
+    whole string it is handed, so a second number in the same SMS — an order
+    number, a time — made `prefix` and `grouping` read `other` on BOTH sides
+    and `separators` read `mixed` on both, and a gateway that answered the
+    canon while the agent wrote «+7 999 000-11-22» scored «same».
+
+    BOTH DIRECTIONS, or this pins nothing: the canon in the agent's sentence
+    must DIFFER, and the agent's own notation in the same sentence must MATCH.
+    Measured on the corpus: 781 declared OUT hops sit on free leaves, and all
+    54 summary/PHONE hops of the phone-canon mutant scored «same» before the
+    narrowing and «differs» after it."""
+    problems: list[str] = []
+    canon = _one(*_sms(FREE_LEAF_WRITTEN, FREE_LEAF_CANON)).hops[0]
+    if canon.status != "observed" or canon.verdict is None:
+        return [f"the canon leaf must be an ordinary OUT hop, got {canon.status}"]
+    if "заказ" in canon.produced or "заказ" in canon.reference:
+        problems.append(f"the sentence reached the comparator: "
+                        f"({canon.produced!r}, {canon.reference!r})")
+    if canon.verdict.same:
+        problems.append("a canon phone against a grouped one scored «same» — the leaf's "
+                        "own prose is being compared, not the value")
+    elif not {"prefix", "grouping"} & canon.verdict.differs:
+        problems.append(f"the notation difference is named by {sorted(canon.verdict.differs)}, "
+                        f"which does not include the prefix or the grouping")
+    kept = _one(*_sms(FREE_LEAF_WRITTEN, FREE_LEAF_AGENT)).hops[0]
+    if kept.verdict is None or not kept.verdict.same:
+        problems.append(f"the SAME sentence with the agent's own notation must MATCH, got "
+                        f"{None if kept.verdict is None else sorted(kept.verdict.differs)} "
+                        f"on ({kept.produced!r}, {kept.reference!r})")
+    return problems
+
+
+def test_a_narrowing_never_truncates_the_value() -> list[str]:
+    """THE OTHER HALF OF THE NARROWING, and the half a first version got wrong.
+
+    A narrowing built from ROLE needles can hand the comparator a PART: a
+    by-fields address written «Самара⟦SEP⟧Луговая⟦SEP⟧10» holds no whole
+    reading of «Самара, улица Луговая, 10» — the separators are the tool's —
+    so the only needle that lands is the street stem, and narrowing to it
+    compares «Луговая» for a ten-feature LOC value. `own_stretch` therefore
+    narrows by WHOLE readings alone and otherwise hands back the leaf.
+
+    Pinned here as well as through `parent_path_joins_the_leaves_in_field_
+    order` because that check reads the joined text and this one reads the
+    rule: a stretch shorter than the value is a truncation, not a narrowing."""
+    value = "Самара, улица Луговая, 10"
+    by_fields = f"Самара{contracts.FIELD_SEP}Луговая{contracts.FIELD_SEP}10"
+    problems: list[str] = []
+    if own_stretch("LOC", by_fields, (value,)):
+        problems.append(f"a by-fields leaf was narrowed to "
+                        f"{own_stretch('LOC', by_fields, (value,))!r}, which is a part of "
+                        f"{value!r}, not a place it stands whole")
+    produced, reference = own_pair("LOC", by_fields, (value,), by_fields, (value,))
+    if (produced, reference) != (by_fields, by_fields):
+        problems.append(f"an unlocatable value must leave the leaf whole, got "
+                        f"({produced!r}, {reference!r})")
+    prose = f"Курьер приедет на {value} сегодня."
+    if own_stretch("LOC", prose, (value,)) != value:
+        problems.append(f"a value standing WHOLE in prose must still be narrowed to itself, "
+                        f"got {own_stretch('LOC', prose, (value,))!r}")
+    return problems
+
+
+A_REAL, A_FAKE = "Васильев Иван Павлович", "Соколов Пётр Иванович"
+B_REAL, B_FAKE = "Букин Сергей Иванович", "Ершов Иван Олегович"
+
+
+def test_an_answer_hop_is_judged_on_its_own_region() -> list[str]:
+    """TWO PEOPLE IN ONE REPLY, and each region names both.
+
+    `answer_spans` attributes a region to every item whose needles reach into
+    it, and the given-name stem «иван» of one substitute is the head of the
+    other's patronymic «Иванович» — so the first region lists BOTH items.
+    Taking the first such region judged «Букин Сергей Иванович» on the text
+    that carries «Васильев Иван Павлович»; the old stem-wise narrowing then
+    cut that text down to «иван» and the value check accepted it, so two
+    wrong readings cancelled and the line printed a hit. On the corpus this
+    was `same_tool_other_target-001` and -019, and it is why `answer_real`
+    read 637/637 while two of its answers carried another person's name."""
+    a = _item("a1", "NAME", A_REAL, A_REAL, "i1", _in_message(0, 0, len(A_REAL)))
+    b = _item("b1", "NAME", B_REAL, B_REAL, "i2", _in_message(0, 30, 30 + len(B_REAL)))
+    case = _case("obs-two", "single", ("двое",), (a, b),
+                 (_hop("OUT", "answer", "a1", 0, 0, "", -1, -1, ""),
+                  _hop("OUT", "answer", "b1", 1, 0, "", -1, -1, "")))
+    run = _with_subs(_with_replies(
+        _run("obs-two"),
+        f"Готово. Пункт 1: {A_FAKE} — записано. Пункт 2: {B_FAKE} — записано.",
+        f"Готово. Пункт 1: {A_REAL} — записано. Пункт 2: {B_REAL} — записано.",
+        "Готово."), {"a1": A_FAKE, "b1": B_FAKE})
+    problems: list[str] = []
+    spans = answer_spans(case, run)
+    if not any(len(span.item_ids) > 1 for span in spans):
+        problems.append("the fixture no longer produces a region naming two items, so it "
+                        "cannot tell the two attributions apart")
+    got = {one.hop.item_id: one for one in _one(case, run).hops if one.hop.owner == "answer"}
+    for item_id, real, fake in (("a1", A_REAL, A_FAKE), ("b1", B_REAL, B_FAKE)):
+        one = got.get(item_id)
+        if one is None:
+            problems.append(f"{item_id}: no answer hop")
+            continue
+        if one.produced != real or one.reference != fake:
+            problems.append(f"{item_id}: judged on another person's region — "
+                            f"({one.produced!r}, {one.reference!r}), expected "
+                            f"({real!r}, {fake!r})")
+    return problems
+
+
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("no_pseudex", test_no_pseudex),
@@ -935,6 +1065,12 @@ def main() -> int:
         ("an_unknown_needle_kind_raises", test_an_unknown_needle_kind_raises),
         ("a_shared_answer_span_is_narrowed_to_one_item",
          test_a_shared_answer_span_is_narrowed_to_one_item),
+        ("a_free_leaf_is_compared_by_the_value_not_the_sentence",
+         test_a_free_leaf_is_compared_by_the_value_not_the_sentence),
+        ("a_narrowing_never_truncates_the_value",
+         test_a_narrowing_never_truncates_the_value),
+        ("an_answer_hop_is_judged_on_its_own_region",
+         test_an_answer_hop_is_judged_on_its_own_region),
     )
     failures: list[str] = []
     for name, check in checks:

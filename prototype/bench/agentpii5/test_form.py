@@ -595,6 +595,147 @@ def test_features_of_covers_the_type(form: ModuleType) -> list[str]:
     return failures
 
 
+def test_nothing_is_not_a_form(form: ModuleType) -> list[str]:
+    """AN EMPTY SIDE CANNOT AGREE WITH A FORM — the comparator's half of
+    `observe.py`'s fourth rule.
+
+    Every extractor that reads letters answered `none` on an empty string and
+    abstained; every extractor that reads digit runs found none and answered
+    its own «nothing» label. So `("EMAIL", "", "ivan@mail.ru")`,
+    `("PLATE", "", "А123ВС77")` and `("LOC", "", "Ленина 14")` all came back
+    `same`, and a gateway that answered the customer's tool with an EMPTY leaf
+    printed 100% on `form_hOUT` for those types — 400 of 1147 such hops on the
+    `medium` tier.
+
+    BOTH HALVES. Every type must refuse an empty side, and the whitespace-only
+    string is the same nothing; and a type whose features happen to fire on
+    emptiness («NAME», whose `parts` counts words) must still refuse it for the
+    stated reason and not by accident, so the set is the type's WHOLE feature
+    list rather than whichever subset an extractor stumbled into."""
+    failures: list[str] = []
+    for kind, features in contracts.FORM_FEATURES.items():
+        lettered = {"NAME": "Иванов Пётр", "PHONE": "+7 916 402-11-87",
+                    "LOC": "улица Ленина, 14", "DOB": "14.03.1987", "DATE": "14.03.1987",
+                    "EMAIL": "ivan@mail.ru", "CARD": "4276 3800 1234 5678",
+                    "SNILS": "112-233-445 95", "INN": "770708389915",
+                    "PASSPORT": "4510 123456", "PLATE": "А123ВС77"}[kind]
+        for empty in ("", "   "):
+            verdict = form.form_match(kind, empty, lettered)
+            if verdict.same:
+                failures.append(f"{kind}: an empty produced scored «same» against {lettered!r}")
+            elif verdict.differs != frozenset(features):
+                failures.append(f"{kind}: an empty side must differ on every feature, "
+                                f"got {sorted(verdict.differs)}")
+            mirrored = form.form_match(kind, lettered, empty)
+            if mirrored.same:
+                failures.append(f"{kind}: an empty REFERENCE scored «same» against "
+                                f"{lettered!r} — the rule is not one-sided")
+        if form.form_match(kind, lettered, lettered).same is False:
+            failures.append(f"{kind}: the fixture's own value differs from itself, so the "
+                            f"check above proves nothing about emptiness")
+    return failures
+
+
+def test_a_female_surname_is_not_a_masculine_genitive(form: ModuleType) -> list[str]:
+    """THE HALF OF Б24 THE CASE SETS COULD NOT SEE.
+
+    «Иванова» carries {nomn, gent, accs} — but `nomn` is the reading of the
+    FEMININE surname and {gent, accs} of the MASCULINE one, two words spelled
+    alike. Compared as bare case sets, «Иванова» and «Пахомовой» «could both
+    be genitive» and scored «same», and EVERY Russian female surname in
+    -ова/-ева/-ина is built that way: a gateway answering the nominative while
+    the agent wrote the dative went uncaught on 271 of 271 female surname
+    leaves of the corpus and 103 of 400 male ones. Pairing the case with the
+    gender the parse names is what sees it.
+
+    THE OTHER THREE CLAUSES ARE HERE TOO, because a rule that only tightens is
+    a rule that invents misses: a right restoration inside one gender still
+    matches, a Latin rendering still abstains, and a pair that shares no
+    gender at all is compared on its cases alone — otherwise the gateway would
+    be scored a case miss for having minted a woman's name for a man's.
+
+    The price is named in `form.name_gram_case_same` and not pinned here: a
+    phrase can share a gender by an accident of the dictionary («Петру» is
+    read as the accusative of the feminine «Петра» as well as the dative of
+    «Пётр»), and a cross-gender restoration that kept the case then reads as a
+    difference. It moves nothing on the corpus, where the probe mints within
+    gender, and pinning a residue pair here would make an improvement red."""
+    failures: list[str] = []
+    differ: tuple[tuple[str, str], ...] = (
+        ("Иванова", "Пахомовой"),                # femn nomn vs femn oblique — the blind spot
+        ("воронина", "белобородовой"),
+        ("захаров", "абдуллаеву"),
+        ("Иванова Елена", "Пахомовой Ольге"),
+        ("Иванов Пётр", "Пахомову Ольгу"),       # no shared gender, and the cases disagree
+        ("Сергею", "Ольга"),                     # no shared gender, dative against nominative
+    )
+    for produced, reference in differ:
+        if "gram_case" not in form.form_match("NAME", produced, reference).differs:
+            failures.append(f"{produced!r} against {reference!r} must be a case difference")
+    same: tuple[tuple[str, str], ...] = (
+        ("Иванова", "Пахомова"),
+        ("Ивановой", "Пахомовой"),
+        ("Иванов", "Пахомов"),
+        ("Иванову", "Пахомову"),
+        ("Иванова Елена", "Пахомова Ольга"),
+        ("Ивану", "Елене"),                      # no shared gender, one and the same case
+        ("Ivanov Petr", "Иванов Пётр"),          # no Russian case on one side at all
+    )
+    for produced, reference in same:
+        differs = form.form_match("NAME", produced, reference).differs
+        if "gram_case" in differs:
+            failures.append(f"{produced!r} against {reference!r} scored a case difference "
+                            f"a right gateway cannot remove")
+    return failures
+
+
+def test_the_part_count_abstention_is_declared(form: ModuleType) -> list[str]:
+    """«HOW MANY ABSTENTION RULES ARE THERE» MUST HAVE ONE ANSWER.
+
+    `contracts.FORM_ABSTAIN` is the normative list of «this LABEL says
+    nothing» (R-05). A SECOND rule — a comparator that refuses to answer when
+    the two strings hold a different number of parts — lived only in two
+    docstrings, so no check could reach it apart from the pair table, and a
+    reader counting the rules from the registry counted one too few.
+
+    Both halves: every feature the registry names must actually abstain across
+    part counts and still answer within one, and a feature the registry does
+    NOT name must not claim the abstention."""
+    failures: list[str] = []
+    across: dict[str, tuple[str, str]] = {
+        "order": ("Иванов Пётр", "Пахомова"),
+        "initials": ("П.О.", "Иванова Елена"),
+    }
+    for kind, feature in sorted(form.FORM_PART_COUNT_ABSTAIN):
+        if kind != "NAME":
+            failures.append(f"{kind}.{feature}: the abstention is written for NAME only")
+            continue
+        if (kind, feature) not in form.FEATURE_COMPARATORS:
+            failures.append(f"{kind}.{feature}: declared but has no comparator to read it")
+            continue
+        produced, reference = across[feature]
+        if feature in form.form_match(kind, produced, reference).differs:
+            failures.append(f"{kind}.{feature} fired across part counts "
+                            f"({produced!r} vs {reference!r}), which `parts` names once")
+    inside = form.form_match("NAME", "Иванов Пётр", "Пётр Иванов")
+    if "order" not in inside.differs:
+        failures.append("`order` stopped firing WITHIN one part count — the abstention "
+                        "swallowed the feature instead of bounding it")
+    squeezed = form.form_match("NAME", "П.О.", "Пахомова")
+    if "initials" not in squeezed.differs:
+        failures.append("`initials` stopped firing within one part count")
+    for feature in ("gram_case", "case_class", "parts", "script"):
+        if ("NAME", feature) in form.FORM_PART_COUNT_ABSTAIN:
+            continue
+        try:
+            form._part_counts_differ(feature, "Иванов Пётр", "Пахомова")
+        except ValueError:
+            continue
+        failures.append(f"NAME.{feature} was granted the part-count abstention without "
+                        f"being declared for it")
+    return failures
+
+
 _TESTS = (
     test_no_pseudex,
     test_extractor_keys_equal_contract,
@@ -621,6 +762,9 @@ _TESTS = (
     test_comparators_match_the_declared_readings,
     test_corner_labels,
     test_letterless_abstains,
+    test_nothing_is_not_a_form,
+    test_a_female_surname_is_not_a_masculine_genitive,
+    test_the_part_count_abstention_is_declared,
     test_features_of_covers_the_type,
 )
 

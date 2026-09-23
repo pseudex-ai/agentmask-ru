@@ -136,13 +136,13 @@ def gate(metric: Metric, fixtures: Sequence[Fixture]) -> GateVerdict:
     would take the whole report down instead of printing the one line that
     matters.
 
-    THERE IS NO SEPARATION COMPARISON ANY MORE (R-55). It read «one minus zero
-    ≥ FIXTURE_MIN_SEPARATION» after the exact-fraction check had already
-    refused every fixture that printed anything but its declared x/n, and
-    `fixtures.py` declares the `zero` fixture at 0/n and the `one` fixture at
-    n/n — so the branch could not fire, and a check that cannot go red is
-    decoration in the one place of v5 that decides whether numbers are printed
-    at all."""
+    THERE IS NO SEPARATION COMPARISON ANY MORE (R-55). It read «rate(one)
+    minus rate(zero) ≥ 1.0» after the exact-fraction check had already refused
+    every fixture that printed anything but its declared x/n, and `fixtures.py`
+    declares the `zero` fixture at 0/n and the `one` fixture at n/n — so the
+    branch could not fire, and a check that cannot go red is decoration in the
+    one place of v5 that decides whether numbers are printed at all. The
+    constant it read is gone too, so nothing can grow a second reader."""
     name = fixtures[0].metric if fixtures else "?"
     kinds = {fixture.kind for fixture in fixtures}
     missing = [kind for kind in contracts.FIXTURE_KINDS if kind not in kinds]

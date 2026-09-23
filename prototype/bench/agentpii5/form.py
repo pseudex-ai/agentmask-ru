@@ -194,34 +194,67 @@ def name_gram_case(text: str) -> str:
     return max(set(votes), key=lambda case: (votes.count(case), -votes.index(case)))
 
 
-def _phrase_cases(text: str) -> frozenset[str]:
-    """Every grammatical case that could put THIS phrase in one case.
+# ONE READING of a word: the gender a parse names and the case it names, as
+# plain strings. `""` is «this parse names no gender» (a plural, a word the
+# analyser tags without one) and it is a WILDCARD, never a fourth gender — a
+# reading that says nothing about gender must not fail to meet one that does.
+Reading = tuple[str, str]
 
-    Per word, the set of `_GRAM_CASES` its parses carry; over the phrase, the
-    INTERSECTION, because a run of words is in one case or in none. Words that
-    carry no case at all (an initial, a Latin rendering, a digit) do not
-    narrow it — they are silent, not universal denials.
+
+def _compatible(left: frozenset[Reading], right: frozenset[Reading]) -> frozenset[Reading]:
+    """The readings two sets SHARE: same case, and a gender neither contradicts.
+
+    This is set intersection with the wildcard honoured, and it is used twice —
+    across the words of one phrase (a run of words is in one case and of one
+    gender, or in none) and across the two sides of a comparison."""
+    return frozenset((left_gender or right_gender, left_case)
+                     for left_gender, left_case in left
+                     for right_gender, right_case in right
+                     if left_case == right_case
+                     and not (left_gender and right_gender and left_gender != right_gender))
+
+
+def _phrase_readings(text: str) -> frozenset[Reading]:
+    """Every (gender, case) reading that could put THIS phrase in one case.
+
+    Per word, the readings its parses carry; over the phrase, the COMPATIBLE
+    ones, because a run of words is in one case or in none. Words that carry
+    no case at all (an initial, a Latin rendering, a digit) do not narrow it —
+    they are silent, not universal denials.
 
     The set and not the top parse, because the top parse among equally scored
     readings is arbitrary: «Громова» reads `gent`, «Титова» `accs`, «Марина»
     `nomn`, and all three carry {nomn, gent, accs}. `name_gram_case` still
     prints one label for the report's histogram; the COMPARISON is made here
-    (`contracts.FORM_LEXEME_READINGS`)."""
-    out: frozenset[str] | None = None
+    (`contracts.FORM_LEXEME_READINGS`).
+
+    THE GENDER RIDES WITH THE CASE, and dropping it was a blind spot worth
+    more than half the feature. «Иванова» carries {nomn, gent, accs} — but
+    `nomn` is the reading of the FEMININE surname and {gent, accs} of the
+    MASCULINE one, two different words that happen to be spelled alike. So a
+    bare set of cases said that «Иванова» and «Пахомовой» could both be
+    genitive and scored them «same», and EVERY Russian female surname in
+    -ова/-ева/-ина is built that way: measured on the corpus, a gateway that
+    answered the nominative while the agent wrote the dative went uncaught on
+    271 of 271 female surname leaves and on 103 of 400 male ones — 374 of 671,
+    the very defect the feature exists for (`docs/known-issues.md` Б24). Paired
+    with the gender the readings no longer meet, and the residue is 65."""
+    out: frozenset[Reading] | None = None
     for word in _words(text):
         for piece in word.split("-"):
             letters = _letters(piece)
             if len(letters) < 2 or not all(_is_cyrillic(char) for char in letters):
                 continue
-            cases = _word_cases(piece)
-            if cases is None:
+            readings = _word_readings(piece)
+            if readings is None:
                 continue
-            out = cases if out is None else (out & cases)
+            out = readings if out is None else _compatible(out, readings)
     return frozenset() if out is None else out
 
 
-def _word_cases(piece: str) -> frozenset[str] | None:
-    """The cases ONE word can be in, or None when it cannot say.
+def _word_readings(piece: str) -> frozenset[Reading] | None:
+    """The (gender, case) readings ONE word can wear, or None when it cannot
+    say.
 
     The parses the analyser tags as a personal name (`Surn` / `Name` / `Patr`)
     are preferred over the rest: «Иванову» is the dative of a surname and the
@@ -252,13 +285,14 @@ def _word_cases(piece: str) -> frozenset[str] | None:
     named = [parse for parse in parses
              if any(tag in parse.tag for tag in ("Surn", "Name", "Patr"))]
     chosen = named or parses
-    cases = frozenset(str(parse.tag.case) for parse in chosen
-                      if parse.tag.case is not None and str(parse.tag.case) in _GRAM_CASES)
-    if not cases:
+    readings = frozenset(("" if parse.tag.gender is None else str(parse.tag.gender),
+                          str(parse.tag.case)) for parse in chosen
+                         if parse.tag.case is not None and str(parse.tag.case) in _GRAM_CASES)
+    if not readings:
         return None
     if not named and _surname_shaped(piece):
         return None
-    return cases
+    return readings
 
 
 def name_gram_case_same(produced: str, reference: str) -> bool:
@@ -268,13 +302,42 @@ def name_gram_case_same(produced: str, reference: str) -> bool:
     written out in `contracts.FORM_LEXEME_READINGS`). A side that reads no
     case at all abstains — a Latin rendering and a bare initial have no
     Russian case, which is the same judgement `FORM_ABSTAIN`'s `unknown`
-    makes. Disjoint sets are a real difference: «Иванов Пётр» {nomn} against
-    «Иванову Петру» {accs, datv} is the nominative-for-the-tool defect
-    (`docs/known-issues.md` Б24) and stays a miss."""
-    left, right = _phrase_cases(produced), _phrase_cases(reference)
+    makes. Readings that cannot meet are a real difference: «Иванов Пётр»
+    {(masc, nomn)} against «Иванову Петру» {(masc, datv)} is the
+    nominative-for-the-tool defect (`docs/known-issues.md` Б24) and stays a
+    miss, and so now is «Иванова» against «Пахомовой», which the case sets
+    alone called «same» (see `_phrase_readings`).
+
+    A GENDER THE TWO SIDES DO NOT SHARE IS NO EVIDENCE, and the last clause
+    says what to do then instead of letting the pairing decide. A gateway may
+    mint a feminine substitute for a masculine name, and then no reading can
+    meet whatever the cases are — «Ивану» (masc datv) against «Елене» (femn
+    datv) would read as a case difference no gateway could remove. Where the
+    two sides share NO gender the cases are the only evidence there is and are
+    compared alone; «Иванов Пётр» {nomn} against «Пахомову Ольгу» {accs} is
+    still the Б24 defect and still fires.
+
+    THE ONE PRICE, MEASURED AND STATED. When the sides DO share a gender the
+    comparison is made inside it, and a phrase can share one by an accident of
+    the dictionary: «Иванова Петра» is masculine accusative, but pymorphy3 also
+    reads «Петра» as the feminine given name, so the pair shares `femn` with
+    «Пахомову Ольгу» and the two disagree under it — a cross-gender
+    restoration that kept the case reads as a difference. It costs nothing
+    measurable — a perfect gateway over all 1736 cases prints the same
+    form_hOUT 15753/15753 and the same form_hIN 11062/11730 with the rule and
+    without it, because the probe mints within gender, as the engine's own
+    `docs/tz-name-gender-canonical.md` says it does — and buying the 374
+    female-surname misses back is worth a residue that appears only where the
+    gateway has ALREADY changed the person's gender."""
+    left, right = _phrase_readings(produced), _phrase_readings(reference)
     if not left or not right:
         return True
-    return bool(left & right)
+    if _compatible(left, right):
+        return True
+    if ({gender for gender, _case in left if gender}
+            & {gender for gender, _case in right if gender}):
+        return False
+    return bool({case for _gender, case in left} & {case for _gender, case in right})
 
 
 def _surname_shaped(core: str) -> bool:
@@ -330,14 +393,43 @@ def _part_count(text: str) -> int:
     return len(text.split())
 
 
+# THE SECOND ABSTENTION, AND IT IS A REGISTRY BECAUSE IT WAS PROSE.
+# `contracts.FORM_ABSTAIN` is the normative list of «this LABEL says nothing»
+# (R-05); a feature that also refuses to answer when the two strings hold a
+# different NUMBER of parts was stated only in two docstrings, so «how many
+# abstention rules are there» had two answers depending on which file you
+# read, and no test could reach the rule apart from the pair table. Named
+# here, read by both comparators, and pinned by
+# `test_form.test_the_part_count_abstention_is_declared`.
+#
+# WHY IT EXISTS: «Иванов Пётр» against «Пахомова» differ in a way `parts`
+# already names once, and «П.О.» is one part against «Иванова Елена»'s two —
+# reporting `order` or `initials` as well would make one violation two or
+# three features wide and triple its weight in the report's histogram.
+FORM_PART_COUNT_ABSTAIN: frozenset[tuple[str, str]] = frozenset({
+    ("NAME", "order"),
+    ("NAME", "initials"),
+})
+
+
+def _part_counts_differ(feature: str, produced: str, reference: str) -> bool:
+    """Does `("NAME", feature)` abstain on THIS pair for want of a common part
+    count? Raises on a feature that is not in the registry rather than
+    answering False, so a comparator cannot quietly claim an abstention the
+    list does not grant it."""
+    if ("NAME", feature) not in FORM_PART_COUNT_ABSTAIN:
+        raise ValueError(f"NAME.{feature} asked for the part-count abstention without being "
+                         f"in FORM_PART_COUNT_ABSTAIN, which holds "
+                         f"{sorted(FORM_PART_COUNT_ABSTAIN)}")
+    return _part_count(produced) != _part_count(reference)
+
+
 def name_order_same(produced: str, reference: str) -> bool:
     """Did the two strings put the surname in the same place.
 
     Abstains on `other` (through the label in `contracts.FORM_ABSTAIN`) and on
-    a pair whose part COUNTS differ — «Иванов Пётр» against «Пахомова» is a
-    difference `parts` already names, and naming it twice would make one
-    violation two features wide."""
-    if _part_count(produced) != _part_count(reference):
+    a pair whose part COUNTS differ (`FORM_PART_COUNT_ABSTAIN`)."""
+    if _part_counts_differ("order", produced, reference):
         return True
     left, right = name_order(produced), name_order(reference)
     abstain = FORM_ABSTAIN[("NAME", "order")]
@@ -345,9 +437,10 @@ def name_order_same(produced: str, reference: str) -> bool:
 
 
 def name_initials_same(produced: str, reference: str) -> bool:
-    """Were initials squeezed the same way. Not comparable across part counts:
-    «П.О.» is one part and «Иванова Елена» two, and `parts` says so once."""
-    if _part_count(produced) != _part_count(reference):
+    """Were initials squeezed the same way. Not comparable across part counts
+    (`FORM_PART_COUNT_ABSTAIN`): «П.О.» is one part and «Иванова Елена» two,
+    and `parts` says so once."""
+    if _part_counts_differ("initials", produced, reference):
         return True
     return name_initials(produced) == name_initials(reference)
 
@@ -917,6 +1010,25 @@ def form_match(type: str, produced: str, reference: str) -> FormVerdict:
     if features is None:
         raise ValueError(f"form_match: no form features declared for type {type!r}; "
                          f"declared types are {sorted(contracts.FORM_FEATURES)}")
+    # NOTHING IS NOT A FORM, and this is the comparator's half of `observe.py`'s
+    # fourth rule. A side with no characters carries no feature, so every
+    # extractor that reads letters answers `none` and abstains, every extractor
+    # that reads digit runs finds none and answers its own «nothing» label — and
+    # the two sides «agreed». `form_match("EMAIL", "", "ivan@mail.ru")`,
+    # `("PLATE", "", "А123ВС77")` and `("LOC", "", "Ленина 14")` all returned
+    # `same`, so a gateway that answered the customer's tool with an EMPTY leaf
+    # printed 100% on `form_hOUT` for those types. Measured on the `medium`
+    # tier against a gateway that blanks every restored leaf: 400 of its 1 484
+    # OUT tool leaves scored «same» on a value that never arrived, and the line
+    # read 1727/2811 instead of 1327/2811. The value lines (`end_to_end`,
+    # `round_trip`) caught it, the form line by type did not, and a line that
+    # cannot fail on nothing at all is not a line.
+    #
+    # EVERY feature differs rather than the ones the other side happens to read:
+    # the claim is not «the case is wrong», it is «no form arrived», and naming
+    # a subset would invite a reader to think the rest survived.
+    if not produced.strip() or not reference.strip():
+        return FormVerdict(same=False, differs=frozenset(features))
     differs: set[str] = set()
     for feature in features:
         # A LEXEME-DEPENDENT feature is decided by its comparator and by

@@ -18,6 +18,8 @@ docstring can hold on its own:
 No pytest here, as everywhere in `prototype/`: `main()` prints PASS/FAIL and
 returns the exit code.
 """
+import ast
+import pathlib
 import sys
 
 
@@ -38,6 +40,26 @@ def _spec_features() -> dict[str, tuple[str, ...]]:
         "PASSPORT": ("series_number_split",),
         "PLATE": ("case_class", "spaces", "region_sep"),
     }
+
+
+def _v3_judge_constant(name: str) -> float:
+    """A number read off v3's judge SOURCE, never by importing it.
+
+    Spec §8.5 says the judge's budget is «как в v4», and v4's harness takes
+    that number from `bench.agentpii3.live.judge` — which reaches
+    `bench.agentpii3.score`, which imports the engine at module level, while
+    `contracts.PSEUDEX_ALLOWED_MODULES` names only `harness`. So the file is
+    parsed instead of imported: «as in v4» becomes a check rather than a
+    sentence, and a silent change of the per-query ceiling — the number that
+    decides whether an expensive run is cut off — goes red here.
+    """
+    source = (pathlib.Path(__file__).resolve().parents[1] / "agentpii3" / "live" / "judge.py")
+    for node in ast.parse(source.read_text(encoding="utf-8")).body:
+        target = (node.target if isinstance(node, ast.AnnAssign)
+                  else node.targets[0] if isinstance(node, ast.Assign) and node.targets else None)
+        if isinstance(target, ast.Name) and target.id == name and node.value is not None:
+            return ast.literal_eval(node.value)
+    raise AssertionError(f"{name} is no longer declared in {source} — «как в v4» names nothing")
 
 
 def _spec_metrics() -> tuple[str, ...]:
@@ -134,10 +156,11 @@ def main() -> int:
         failures.append("generator split does not cover BEHAVIOURS")
     if set(c.GENERATOR_A_BEHAVIOURS) & set(c.GENERATOR_B_BEHAVIOURS):
         failures.append("a behaviour is owned by both generators")
-    # Spec §8.2 writes 45/25/15/10 — 95%; the five points are deliberately
-    # unassigned and absorbed by SHARE_TOLERANCE, so the check is a band.
-    if not 0.95 - 1e-9 <= sum(c.REGISTER_SHARES.values()) <= 1.0 + 1e-9:
-        failures.append("register shares outside [0.95, 1.0]")
+    # R-09/R-16: the five points §8.2 left unassigned went to `chat` (0.30) and
+    # the mix sums to 1.00 exactly. A band would accept the superseded reading
+    # as readily as the ruled one, which is no check at all.
+    if abs(sum(c.REGISTER_SHARES.values()) - 1.0) > 1e-9:
+        failures.append(f"R-16: register shares sum to {sum(c.REGISTER_SHARES.values())}, not 1.00")
     if set(c.V4_KIND_TO_BEHAVIOUR) != set(c.V4_SCENARIO_KINDS):
         failures.append("V4_KIND_TO_BEHAVIOUR does not cover v4's kinds exactly")
     if any(value not in c.BEHAVIOURS for value in c.V4_KIND_TO_BEHAVIOUR.values()):
@@ -202,6 +225,12 @@ def main() -> int:
         failures.append("CALIBRATION drifted from spec §8.5")
     if set(c.JUDGE_LABELS) != {"верно", "частично", "неверно", "выдумал"}:
         failures.append("judge labels drifted from spec §8.5")
+    # §8.5 names no number for the budget and says «как в v4», so v4's own
+    # source is what the claim is checked against.
+    for name, value in (("QUERY_CAP_USD", c.QUERY_CAP_USD), ("RETRIES", c.RETRIES)):
+        theirs = _v3_judge_constant(name)
+        if value != theirs:
+            failures.append(f"§8.5 «как в v4»: {name} is {value}, v4 spends {theirs}")
 
     # 8. the Phase-3 rulings that changed a SHAPE, pinned so a revert is red
     doc_fields = tuple(c.DocumentSpec.__dataclass_fields__)

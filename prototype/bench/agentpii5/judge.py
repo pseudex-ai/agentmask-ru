@@ -60,6 +60,7 @@ import sys
 import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Protocol
 
@@ -74,7 +75,8 @@ from claude_agent_sdk import (
 from bench.agentpii4.parts import parts_of
 from bench.agentpii4.schema import message_text
 from bench.agentpii5.contracts import (
-    ECHO_TAG_PREFIX, JUDGE_LABELS, ArmRunV5, CaseV5, DialogueTurn, JudgeInput, JudgeVerdict)
+    ECHO_TAG_PREFIX, JUDGE_LABELS, ArmRunV5, CaseV5, DialogueTurn, JudgeInput, JudgeVerdict,
+    Needle)
 # THE ONE GENERIC VOCABULARY, IMPORTED RATHER THAN RESTATED (contracts §4bis,
 # rule N4). `GENERIC_WORDS` and `fold` are what `metrics._surviving_piece` and
 # `observe.own_stems` already use to tell «the generic word of an address» from
@@ -85,7 +87,7 @@ from bench.agentpii5.contracts import (
 # (`contracts.PSEUDEX_ALLOWED_MODULES`) and neither imports this one, so the
 # edge is one-way.
 from bench.agentpii5.form_tables import GENERIC_WORDS
-from bench.agentpii5.observe import fold
+from bench.agentpii5.observe import fold, latin_prefixes, stem_of, survival, value_needles
 
 # The roles of a substitute that are NOT ours to flag. The settlement inside a
 # minted address is the customer's own city (vault `_settlement_of`), and
@@ -93,13 +95,17 @@ from bench.agentpii5.observe import fold
 # reported every «Самара» in an honest reply as a substitute shown — the defect
 # v4 found on its 04.09 run and fixed in `gateway._pieces`.
 EXEMPT_ROLES: frozenset[str] = frozenset({"city", "gender"})
-# Below four characters a «piece» is ordinary Russian and the gate turns into
-# noise. Same constant, same reason, as v3's `_MIN_LITERAL` and `observe.MIN_PIECE`.
+# Below four characters a string is ordinary Russian and hunting it turns into
+# noise. Same constant, same reason, as v3's `_MIN_LITERAL` and
+# `observe.MIN_PIECE` (= `contracts.PIECE_MIN_CHARS`); read by `assert_blind`,
+# which refuses to call a shorter string a leak, and by the Latin prefixes of
+# `own_needle_stems`, which are cut to the same length as the stems they cancel.
 MIN_PIECE: int = 4
-# Only these types split into pieces worth hunting: a NAME, an address and a
-# passport carry parts a model can retell one at a time. A phone or a card
-# either stands whole or does not stand at all, and splitting it yields digit
-# runs that match order numbers.
+# The types `_exempt_words` splits a substitute under, to ask each splitter
+# whether it reads a word of it as an EXEMPT role. A NAME, an address and a
+# passport are the three whose splitters name roles at all; a phone or a card
+# splits into digit runs, which carry no `city` and no `gender`. This is NOT a
+# list of what is hunted — `NEEDLE_TYPES` is.
 PIECE_TYPES: tuple[str, ...] = ("NAME", "LOC", "PASSPORT")
 
 _SCHEMA: dict[str, object] = {
@@ -393,66 +399,108 @@ def _exempt_words(surface: str) -> frozenset[str]:
                      if role in EXEMPT_ROLES for word in _words(part))
 
 
-def substitute_pieces(substitutes_minted: Sequence[str],
-                      real_values: Sequence[str]) -> tuple[str, ...]:
-    """The parts of the minted substitutes whose survival is a leak of ours.
+# The types a minted substitute is hunted under. THE PRE-GATE IS HANDED
+# STRINGS AND NO TYPES — `harness.minted_substitutes` is a list of surfaces —
+# so the type `observe.needles_of` wants is not knowable here and the surface
+# is asked under every shape instead. Each builder self-gates on the surface it
+# reads: a letterless string yields no stem, a digitless one no signature, a
+# dateless one no fold, so a wrong guess costs needles that match nothing
+# rather than a wrong verdict.
+#   NAME  — the word stems, the Latin renderings and the squeezed initials
+#           (`DERIVED_PIECE_TYPES` is NAME alone)
+#   LOC   — the street stems with the settlement dropped BY ROLE (N4), which a
+#           name split cannot do: it types a city as a surname
+#   EMAIL — the local part, when there is an «@»
+#   PHONE — the digit signature, and the loosest of them: every other digit
+#           type's needle is the whole digit string while the phone's is its
+#           last ten, so a card, a СНИЛС and an ИНН are all found under it.
+#           It is also the one needle that reads a DICTATED identifier
+#           (`observe.spoken_digits_of`).
+#   DOB   — the ISO fold, so «14.03.1987» and «1987-03-14» are one date
+# PLATE IS NOT HERE and is added by `hunted_types` alone: the plate needle is
+# the surface with every separator dropped, and contracts §4bis gives that
+# squeeze to ONE type precisely because a general one welds two neighbouring
+# words of an answer into a needle.
+NEEDLE_TYPES: tuple[str, ...] = ("NAME", "LOC", "EMAIL", "PHONE", "DOB")
 
-    A substitute is split under each of `PIECE_TYPES` and the parts are unioned:
-    the caller of the protocol form knows only strings, and splitting an address
-    as a name is cheap while guessing the type wrong is not — a piece that is
-    not really a piece still has to stand as a whole word in the answer before
-    anything is decided.
 
-    A part made ENTIRELY of `own_vocabulary` words is not ours and is dropped:
-    the customer's own city, the generic street word, a month.
+def hunted_types(surface: str) -> tuple[str, ...]:
+    """The types ONE minted substitute is looked for under.
 
-    AND EVERY WORD OF THE SUBSTITUTE IS A CANDIDATE PART, because the splitters
-    do not cut a long address into words at all. `parts.address_parts` lumps
-    every word it cannot type into ONE `street` role and joins it ALPHABETICALLY
-    («орёл проспект рябиновый 100 кв 102» → «орёл рябиновый»), a string that
-    occurs neither in the answer nor in the address itself; the name splitter
-    returns nothing for six words. Measured on 120 corpus cases through the
-    production masking path, over answers carrying the minted address MINUS its
-    leading real city — the commonest way a model retells an address it was
-    given — and still carrying a fake word of it: 10 of 109 passed the gate
-    (90.8 % → 100 % caught), and a single fake WORD standing alone went 94.8 %
-    → 99.1 %. A word carries the same filters as a part (length, digits,
-    `own_vocabulary`, the exempt roles) and is hunted as a whole word, so the
-    customer's own city, «улица» and a month remain invisible to it; 1 914
-    honest sentences over 150 corpus cases are refused as before, which is
-    none.
-
-    THIS IS THE SECOND READER OF «did this value survive», AND IT SHOULD NOT
-    STAY ONE. `observe.survives_in` answers the same question with the needles
-    the metrics use (stems per word, digit signature, date fold) and round 4 is
-    re-specifying it as the package's one definition (H1.1). What this reader
-    still cannot see is what no SPLIT can reach: a fake PHONE, CARD or СНИЛС
-    written in another notation — «+7 943 239-11-74» retold as «8 943 239 11
-    74» — whose whole surface no longer matches and whose parts are digit runs
-    the filters drop. Those reach the customer past this gate and are caught by
-    `residual`, which asks the needles. The convergence is in
-    `contract_questions` rather than done here, because that function is
-    another owner's and its signature is being rewritten while this one runs.
+    THE SPLITTER IS WHAT SAYS «THIS IS A PLATE». `parts.plate_parts` returns
+    nothing for a string that is not one, so the squeeze is asked for exactly
+    where §4bis allows it and a guess of ours is not a second plate rule.
     """
-    own = own_vocabulary(real_values)
+    if parts_of("PLATE", surface):
+        return (*NEEDLE_TYPES, "PLATE")
+    return NEEDLE_TYPES
+
+
+@lru_cache(maxsize=2048)
+def substitute_needles(surface: str) -> tuple[Needle, ...]:
+    """Every shape ONE minted substitute may stand in a text as.
+
+    ONE BUILDER FOR BOTH HALVES OF THE SAME QUESTION. `observe.needles_of` is
+    what the `residual` line asks with, and this gate used to ask with a
+    second, weaker rule of its own — whole surfaces plus whole WORDS of them.
+    Three shapes ordinary Russian traffic is full of walked past it while
+    `residual` counted each a critical defect: a declined «Пахомовой Ольге», a
+    phone renotated «8 943 239 11 74», a card respaced «4276380012345678». The
+    judge was then PAID to read our own fake as the customer's value, against
+    §5 («подмена уехала в ответ — `неверно`, судья не спрашивается») and §8.5
+    («судья не видит подмен»).
+
+    MEASURED BOTH WAYS on 200 corpus cases masked through the production path
+    (`score._mask_message` with the engine's own vault), on answers carrying
+    the mint as a model rewrites it. Caught by the old rule → by this one:
+    declined names 2/189 → 188/189, renotated phones 0/169 → 169/169,
+    respaced cards 0/5 → 5/5, respaced СНИЛС 0/10 → 10/10. Addresses without
+    their city 71/83 → 70/83: the one loss is a mint whose rewritten shape is
+    «148кв62», a bare house and flat, which identifies nobody and which
+    `residual` does not count either (contracts §4bis, N3). And the other
+    direction, over 400 cases and 1 021 real mints: 0 of 800 honest answers —
+    the customer's own values read back, and their own sentence repeated —
+    refused.
+
+    Cached because the same handful of surfaces is hunted in every turn of
+    every dialogue and the build walks five splitters.
+    """
+    out: dict[Needle, None] = {}
+    for pii_type in hunted_types(surface):
+        for needle in value_needles(pii_type, surface):
+            out[needle] = None
+    return tuple(out)
+
+
+def own_needle_stems(real_values: Sequence[str]) -> frozenset[str]:
+    """`own_vocabulary` in the currency the needle layer cancels needles in (N5).
+
+    The vocabulary is WORDS and an exemptable needle is a STEM, so the
+    subtraction has to be made in the stem's own currency or it does not
+    happen at all: «Иванова» in the customer's own list must cancel the stem
+    «иван» of a substitute minted from the same pool. The Latin prefixes ride
+    along for the reason `observe.needles_of` makes them `stem` needles — a
+    real name the agent transliterated may not be reported as a surviving
+    substitute either.
+    """
     out: set[str] = set()
-    for surface in substitutes_minted:
-        if not surface.strip():
-            continue
-        exempt = _exempt_words(surface)
-        candidates: set[str] = set(_WORD.findall(surface))
-        for kind in PIECE_TYPES:
-            for role, part in parts_of(kind, surface).items():
-                if role not in EXEMPT_ROLES:
-                    candidates.add(part)
-        for part in candidates:
-            if len(part) < MIN_PIECE or part.isdigit():
-                continue
-            words = _words(part)
-            if words and all(word in own or word in exempt for word in words):
-                continue
-            out.add(part.casefold())
-    return tuple(sorted(out))
+    for word in own_vocabulary(real_values):
+        out.add(stem_of(word))
+        out.update(latin_prefixes(word, MIN_PIECE))
+    return frozenset(out)
+
+
+def residual_spans(surface: str, text: str,
+                   own: frozenset[str]) -> tuple[tuple[int, int], ...]:
+    """Where one minted substitute still stands in `text`, in any of its shapes.
+
+    `_exempt_words` rides BESIDE the customer's own stems rather than inside
+    them: the settlement of an address minted for a person the case declares
+    no item for stands in no `real_values` string, and hunting it would refuse
+    an honest answer naming an ordinary Russian city.
+    """
+    exempt = own | frozenset(stem_of(word) for word in _exempt_words(surface))
+    return survival(substitute_needles(surface), text, exempt).spans
 
 
 def residual_pregate_of(restored_answer: str, substitutes_minted: tuple[str, ...],
@@ -460,30 +508,32 @@ def residual_pregate_of(restored_answer: str, substitutes_minted: tuple[str, ...
     """«неверно» before the model is asked, or None — ask the judge.
 
     A substitute standing in the answer the CUSTOMER reads is the defect the
-    product exists to prevent, and it is decided by the same rule `residual`
-    counts — deterministically, for free, and without giving the judge a list
-    of fakes to hunt (which would end its blindness).
+    product exists to prevent, and it is decided by THE SAME RULE `residual`
+    counts — `observe`'s needles — deterministically, for free, and without
+    giving the judge a list of fakes to hunt (which would end its blindness).
 
     `real_values` are the customer's own strings (whole values and parts); a
-    piece made only of their words, of the generic address vocabulary or of a
+    shape made only of their words, of the generic address vocabulary or of a
     month is not ours — `own_vocabulary` says why, and the gate published a
     false «неверно» on 2.5 % of honest echo answers before it did.
     """
-    folded = restored_answer.casefold()
+    own = own_needle_stems(real_values)
     for surface in substitutes_minted:
-        if surface.strip() and surface.casefold() in folded:
-            return _refused(surface)
-    for piece in substitute_pieces(substitutes_minted, real_values):
-        # A whole WORD, never a fragment: «Дар» inside «дарим» is not a name the
-        # customer reads, and a gate that fires on it would report the product
-        # broken on ordinary prose.
-        if re.search(rf"(?<!\w){re.escape(piece)}(?!\w)", folded):
-            return _refused(piece)
+        if not surface.strip():
+            continue
+        spans = residual_spans(surface, restored_answer, own)
+        if spans:
+            start, end = spans[0]
+            return _refused(restored_answer[start:end], surface)
     return None
 
 
-def _refused(piece: str) -> JudgeVerdict:
-    return JudgeVerdict(label="неверно", reason=f"подмена в ответе: «{piece}»",
+def _refused(standing: str, surface: str) -> JudgeVerdict:
+    # BOTH STRINGS, because neither is the whole story: «Пахомовой» does not
+    # say which substitute it is a shape of, and the minted surface does not
+    # say what a reader should look for in the answer.
+    return JudgeVerdict(label="неверно",
+                        reason=f"подмена в ответе: «{standing}» (отчеканено «{surface}»)",
                         judged_by="residual_gate", cost_usd=0.0)
 
 
@@ -541,12 +591,18 @@ def mask_residual_turns(turns: Sequence[DialogueTurn], substitutes_minted: Seque
     """Every minted substitute still standing in a turn replaced by the marker,
     and HOW MANY turns carried one.
 
-    The whole substitute is replaced WITHOUT word boundaries — that is
-    `assert_blind`'s own rule, and matching it exactly is what makes the guard
-    hold by construction rather than by luck. A PIECE is replaced only as a
-    whole word (the pre-gate's rule): «Дар» inside «дарим» is not a substitute
-    the customer reads, and masking it would eat ordinary Russian out of the
-    context question 4 is asked about.
+    THE SAME SHAPES THE PRE-GATE REFUSES (`residual_spans`), because this is
+    the same defect one turn earlier and the judge is as blind to a declined
+    substitute in an answer as to one in the turn before it. A shape is
+    replaced where it STANDS — `observe`'s stem needle spans a whole word, its
+    digit needle a whole number run — so «Дар» inside «дарим» is not touched
+    and ordinary Russian survives into the context question 4 is asked about.
+
+    THE WHOLE SURFACE IS ALSO REPLACED ACROSS ANY WHITESPACE RUN, which no
+    needle can do: `assert_blind` compares under `_squeeze`, so «Пахомова\nОльга»
+    left standing here would make the guard raise on the very prompt this
+    function was called to clean. Matching what the guard matches is what makes
+    it hold by construction rather than by luck.
 
     MASKED EVERYWHERE, COUNTED ONLY WHERE THE AGENT SPOKE. Every turn is masked
     because the judge may read a substitute nowhere; the count is what
@@ -556,22 +612,43 @@ def mask_residual_turns(turns: Sequence[DialogueTurn], substitutes_minted: Seque
     with a mint is masked and not counted. The echo is not invisible: it is the
     OUT hop of the call that wrote it, where `residual` names it by the leaf.
     """
-    pieces = substitute_pieces(tuple(substitutes_minted), tuple(real_values))
+    own = own_needle_stems(real_values)
     out: list[DialogueTurn] = []
     flagged = 0
     for turn in turns:
-        text = turn.text
-        for surface in substitutes_minted:
-            if surface.strip():
-                text = re.sub(_whitespace_pattern(surface), RESIDUAL_MARKER, text,
-                              flags=re.IGNORECASE)
-        for piece in pieces:
-            text = re.sub(rf"(?<!\w){_whitespace_pattern(piece)}(?!\w)", RESIDUAL_MARKER, text,
-                          flags=re.IGNORECASE)
+        text = _masked_turn(turn.text, substitutes_minted, own)
         if text != turn.text and turn.role not in REAL_DIALOGUE_ROLES:
             flagged += 1
         out.append(DialogueTurn(role=turn.role, text=text))
     return tuple(out), flagged
+
+
+def _masked_turn(text: str, substitutes_minted: Sequence[str], own: frozenset[str]) -> str:
+    spans: list[tuple[int, int]] = []
+    for surface in substitutes_minted:
+        if not surface.strip():
+            continue
+        spans += [(hit.start(), hit.end()) for hit
+                  in re.finditer(_whitespace_pattern(surface), text, flags=re.IGNORECASE)]
+        spans += residual_spans(surface, text, own)
+    return _marked(text, spans)
+
+
+def _marked(text: str, spans: Sequence[tuple[int, int]]) -> str:
+    """`RESIDUAL_MARKER` over every span, RIGHT TO LEFT so the offsets still
+    ahead stay valid, and overlapping spans merged first: a whole surface and
+    the stem of one of its words describe one occurrence, and replacing them
+    one after another would put a marker inside a marker."""
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(spans):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            continue
+        merged.append((start, end))
+    out = text
+    for start, end in reversed(merged):
+        out = out[:start] + RESIDUAL_MARKER + out[end:]
+    return out
 
 
 def masked_dialogue(request: JudgeInput,

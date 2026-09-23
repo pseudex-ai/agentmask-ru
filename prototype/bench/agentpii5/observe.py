@@ -1169,7 +1169,9 @@ def _out_call(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem,
                          substitute_surfaces(run, item.id), minted_parts(run, item.id),
                          written, restored, own)
     if status == "observed":
-        return _observed(case, repeat, hop, True, item.type, restored, written)
+        produced, reference = own_pair(item.type, restored, (item.canonical, item.value),
+                                       written, substitute_surfaces(run, item.id))
+        return _observed(case, repeat, hop, True, item.type, produced, reference)
     return _flat(case, repeat, hop, True, item.type, restored, written, status)
 
 
@@ -1181,40 +1183,135 @@ def _narrowed(text: str, hits: Sequence[tuple[int, int]]) -> str:
     return text[min(start for start, _end in hits):max(end for _start, end in hits)]
 
 
+# The needle kind that reads ONE ROLE of a value; every other kind of
+# `contracts.NEEDLE_KINDS` reads the value WHOLE (the surface, its squeeze, its
+# initials, its digit signature, its date fold). `own_stretch` narrows by the
+# whole readings alone, and the reason is a truncation it otherwise makes: a
+# by-fields address written «Самара⟦SEP⟧Луговая⟦SEP⟧10» holds no whole reading
+# of «Самара, улица Луговая, 10» — the separators are the tool's — so the only
+# needle that lands is the street STEM, and narrowing to it hands the
+# comparator «Луговая» for a ten-feature LOC value: `by_fields`, `commas`,
+# `city_present`, `house_marker` and the rest all read off text that is no
+# longer there. A stretch built from role spans can be a PART of the value, and
+# a part is not a narrowing.
+PART_NEEDLE_KIND: str = "stem"
+
+
+def own_stretch(pii_type: str, text: str, surfaces: Sequence[str]) -> str:
+    """The stretch of `text` that holds THIS value WHOLE, or "" when no whole
+    reading of it stands there (see `PART_NEEDLE_KIND`)."""
+    spans: list[tuple[int, int]] = []
+    for surface in surfaces:
+        if not surface:
+            continue
+        for needle in value_needles(pii_type, surface):
+            if needle.kind == PART_NEEDLE_KIND:
+                continue
+            spans += _needle_spans(needle, text)
+    return _narrowed(text, sorted(set(spans)))
+
+
+def own_pair(pii_type: str, produced: str, produced_surfaces: Sequence[str],
+             reference: str, reference_surfaces: Sequence[str]) -> tuple[str, str]:
+    """(produced, reference) cut down to the text each side's OWN value covers.
+
+    THE COMPARATOR MUST BE HANDED A VALUE, NEVER THE SENTENCE AROUND IT. Every
+    extractor in `form.py` reads the WHOLE string it is given: `phone_prefix`
+    and `phone_grouping` read the digit runs of it, `phone_separators` the gaps
+    BETWEEN them, `_case_class_titled` every word, `name_parts` every space,
+    `_phrase_readings` every Cyrillic word, `date_notation` the first date in it.
+    So a free-text leaf — an SMS body, an escalation summary, a template line —
+    answered about its own prose and not about the datum: a second number in
+    the same sentence (an order number, a time, a house, a date of birth) made
+    `separators` read `mixed` on BOTH sides, a capital at the start of the
+    sentence made `case_class` read `mixed` on both, and the nominative of
+    «Клиент …» intersected every oblique case a surname could be in. Measured
+    on the corpus: 781 declared OUT hops sit on free leaves (summary 378,
+    template 223, tool_arg 180). Under a gateway that writes every phone in the
+    canon while the agent wrote «+7 999 000-11-22» and the same summary carries
+    an order number, all 54 summary/PHONE hops of the corpus scored «same»
+    un-narrowed and all 54 score «differs» narrowed — while the 2 422 identity
+    leaves of the same mutant, which hold the value alone, are unmoved.
+
+    THE SAME RULE `answer_pair` ALREADY OBEYS (C-200), and it belongs to both
+    legs for the same reason: the leg is not what makes a sentence unreadable,
+    the sentence is. Each side is narrowed by its OWN spellings — the produced
+    side by the real value's, the reference side by the substitute's — because
+    the two strings are different lengths and no offset carries across.
+
+    NARROWING NEEDS BOTH SIDES. A leaf the schema names for one PART of a value
+    («79», a passport series, a flat) holds no needle of the whole value, so
+    neither side can be located and the WHOLE leaf is the honest reading — the
+    same fallback `answer_pair` makes, and the reason this is not a switch on
+    the leaf's kind: the question is «can this value be found here», and the
+    answer decides, not the schema."""
+    produced_own = own_stretch(pii_type, produced, produced_surfaces)
+    reference_own = own_stretch(pii_type, reference, reference_surfaces)
+    if produced_own and reference_own:
+        return produced_own, reference_own
+    return produced, reference
+
+
 def answer_pair(run: ArmRunV5, item: PiiItem, span: AttributedSpan) -> tuple[str, str]:
     """(what the customer received, what the agent wrote) for ONE item of ONE
     rewritten region of the reply.
 
-    A SHARED REGION IS NARROWED TO THIS ITEM'S OWN TEXT. `answer_spans` keeps
-    the grouping rather than resolving it (`shared_block_answer` counts it),
-    and a region holding «+7 250 759-96-08. smumknko@example.ru» carries two
-    data: handing the comparator that whole string asked whether a PHONE's
-    grouping and separators are the same in a text that also holds an e-mail,
-    and the answer is a verdict about nothing — 254 of the form misses a
-    perfect gateway printed, on the only leg where the agent chooses how close
-    two values stand. Each side is narrowed by its OWN occurrences: the raw
-    side by the substitute's, the restored side by the real value's, because
-    the two strings are different lengths and no offset carries across.
+    A SHARED REGION IS NARROWED TO THIS ITEM'S OWN TEXT by `own_pair`, which
+    states the rule and the fallback. `answer_spans` keeps the grouping rather
+    than resolving it (`shared_block_answer` counts it), and a region holding
+    «+7 250 759-96-08. smumknko@example.ru» carries two data: handing the
+    comparator that whole string asked whether a PHONE's grouping and
+    separators are the same in a text that also holds an e-mail, and the
+    answer is a verdict about nothing — 254 of the form misses a perfect
+    gateway printed, on the only leg where the agent chooses how close two
+    values stand.
 
-    Narrowing needs BOTH sides; when either cannot be located the whole region
-    is the honest reading, which is also what a single-item region gets."""
+    A SINGLE-ITEM REGION IS PASSED WHOLE. The region is what the alignment
+    says the engine rewrote for this one datum, so there is nothing in it to
+    cut away; narrowing it as well moves no line of the probe (measured on
+    `medium`: form_hOUT, answer_real and chain_form identical either way), and
+    a narrowing that changes nothing is a step that can only lose text."""
     raw = run.reply_raw[span.raw_start:span.raw_end]
     restored = run.base.reply[span.restored_start:span.restored_end]
     if len(span.item_ids) < 2:
         return restored, raw
-    wrote = _narrowed(raw, [one for surface in substitute_surfaces(run, item.id)
-                            for one in occurrences_of(item.type, surface, raw)])
-    got = _narrowed(restored, [one for surface in (item.canonical, item.value) if surface
-                               for one in occurrences_of(item.type, surface, restored)])
-    return (got, wrote) if wrote and got else (restored, raw)
+    return own_pair(item.type, restored, (item.canonical, item.value),
+                    raw, substitute_surfaces(run, item.id))
+
+
+def answer_span_of(run: ArmRunV5, item: PiiItem,
+                   spans: Sequence[AttributedSpan]) -> AttributedSpan | None:
+    """WHICH rewritten region is THIS item's, when several name it.
+
+    `answer_spans` attributes a region to every item whose needles reach into
+    it, so two people mentioned in one reply can each be listed on both
+    regions — one's given name is a piece of the other's patronymic, one's
+    street is a word of the other's address. Taking the FIRST such region
+    scored one person's datum against another's text: «букин сергей иванович»
+    was judged on the region that carries «васильев иван павлович», and the
+    old stem-wise narrowing then cut that region down to the single word
+    «иван», which the value check accepted as the value being there. The
+    reading was wrong twice over and the two errors cancelled.
+
+    The region where BOTH sides can be located whole is this item's; when no
+    region can say that, the first is the honest reading, which is what a
+    single-item attribution gets anyway."""
+    holding = [span for span in spans if item.id in span.item_ids]
+    for span in holding:
+        raw = run.reply_raw[span.raw_start:span.raw_end]
+        restored = run.base.reply[span.restored_start:span.restored_end]
+        if (own_stretch(item.type, raw, substitute_surfaces(run, item.id))
+                and own_stretch(item.type, restored, (item.canonical, item.value))):
+            return span
+    return holding[0] if holding else None
 
 
 def _out_answer(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem,
                 spans: Sequence[AttributedSpan], residual: frozenset[str]) -> HopObservation | None:
-    for span in spans:
-        if item.id in span.item_ids:
-            produced, reference = answer_pair(run, item, span)
-            return _observed(case, repeat, hop, True, item.type, produced, reference)
+    span = answer_span_of(run, item, spans)
+    if span is not None:
+        produced, reference = answer_pair(run, item, span)
+        return _observed(case, repeat, hop, True, item.type, produced, reference)
     if item.id in residual:
         return _flat(case, repeat, hop, True, item.type, "", "", "residual")
     # The agent NAMED the person and wrote the real value: the gateway never

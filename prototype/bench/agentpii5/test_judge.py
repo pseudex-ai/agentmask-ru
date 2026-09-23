@@ -16,9 +16,10 @@ from collections.abc import Callable
 from pathlib import Path
 
 from bench.agentpii4.compare import ArmRun
+from bench.agentpii4.parts import parts_of
 from bench.agentpii4.schema import (Case, Expectation, Locus, Message, PiiItem, Provenance,
                                     SeedRecord)
-from bench.agentpii5 import judge
+from bench.agentpii5 import judge, observe
 from bench.agentpii5.contracts import (
     JUDGE_LABELS, ArmRunV5, CaseV5, DialogueTurn, JudgeInput, ToolResultRecord)
 
@@ -526,6 +527,90 @@ MINTED_ADDRESS: str = "нижний новгород переулок озёрн
 MINTED_SPOKEN_DOB: str = "двадцать третьего декабря восемьдесят второго года"
 
 
+def _needle_texts(surface: str) -> tuple[str, ...]:
+    """What the gate looks for, as bare strings — the shape a check can read."""
+    return tuple(sorted(needle.text for needle in judge.substitute_needles(surface)))
+
+
+# ONE MINTED SURFACE PER TYPE THE CORPUS DECLARES, and an answer carrying it in
+# a shape a model actually writes: declined, renotated, respaced, refolded,
+# transliterated, without its city. The gate must refuse every row, because
+# `residual` counts every row a critical defect — and the two asking different
+# questions is what let the judge be PAID to read our own fake as the
+# customer's value (§5, §8.5).
+REWRITTEN: tuple[tuple[str, str, str], ...] = (
+    ("NAME", "Пахомова Ольга", "Готово, передал Пахомовой Ольге."),
+    ("LOC", "орёл проспект рябиновый 100 кв 102", "Курьер приедет: проспект рябиновый 100 кв 102."),
+    ("EMAIL", "olga.pahomova@mail.ru", "Логин Pahomova создан."),
+    ("PHONE", "+7 943 239-11-74", "Перезвоню на 8 943 239 11 74."),
+    ("CARD", "4276 3800 1234 5678", "Списание с карты 4276380012345678 прошло."),
+    ("SNILS", "681-644-063 10", "СНИЛС 68164406310 принят."),
+    ("INN", "7736050003", "ИНН 7736 050003 сверен."),
+    ("PASSPORT", "4509 123456", "Паспорт 4509123456 проверен."),
+    ("DOB", "14.03.1987", "Дата рождения 1987-03-14 подтверждена."),
+    ("DATE", "14.03.1987", "Запись на 1987-03-14 сделана."),
+    ("PLATE", "а123вс777", "Машина а 123 вс 777 подана."),
+)
+
+
+def test_the_pregate_reads_the_shapes_a_model_writes() -> list[str]:
+    """The pre-gate and `residual` answer the SAME question (§5, §8.5).
+
+    Measured over 200 corpus cases masked through the production path, on
+    answers carrying the mint in the shape above: the whole-surface-and-whole-
+    word rule this gate used to carry caught 2 of 189 declined names, 0 of 169
+    renotated phones, 0 of 5 respaced cards and 0 of 10 respaced СНИЛС, while
+    `residual` counted every one of them. Those answers went to the judge with
+    our fake standing in them — the blindness §8.5 promises, spent on.
+    """
+    failures: list[str] = []
+    for pii_type, surface, answer in REWRITTEN:
+        if judge.residual_pregate_of(answer, (surface,), ()) is None:
+            failures.append(f"{pii_type}: переписанная подмена прошла претгейт: {answer!r}")
+        # THE CONVERGENCE ITSELF: the line and the gate must not disagree about
+        # one string, or the report says «критический дефект» about an answer
+        # the judge was meanwhile asked to grade.
+        if not observe.survives_in(pii_type, surface, answer, frozenset()):
+            failures.append(f"{pii_type}: линия residual перестала видеть {answer!r} — "
+                            f"таблица разошлась с прибором, а не претгейт с линией")
+    # THE NEGATIVE for all eleven at once: an answer that carries none of them
+    # is not refused, so the rows above fire on the SUBSTITUTE and not on the
+    # gate having become «отказывать всегда».
+    honest = "Готово, записал. Курьер приедет завтра до обеда, оператор перезвонит."
+    for pii_type, surface, _answer in REWRITTEN:
+        if judge.residual_pregate_of(honest, (surface,), ()) is not None:
+            failures.append(f"{pii_type}: честный ответ без подмены отказан")
+    return failures
+
+
+def test_an_earlier_turn_is_masked_in_the_same_shapes() -> list[str]:
+    """The judge is as blind to a declined substitute one turn back as to one
+    in the answer — `mask_residual_turns` asks `residual_spans` too.
+
+    The dialogue is where the engine's own unrestored lower-case mints live
+    (the chat / sloppy / voice registers mint exactly those), so a masker that
+    only knew whole surfaces handed the judge a fake to read as the customer's
+    value and counted `turn_residual` = 0 while it did.
+    """
+    failures: list[str] = []
+    turns = (DialogueTurn(role="user", text="это иванова елена, запишите"),
+             DialogueTurn(role="assistant", text="Секунду, открываю карточку Пахомовой Ольги."))
+    masked, flagged = judge.mask_residual_turns(turns, (SUBSTITUTE,), (REAL,))
+    if "Пахомов" in masked[1].text or judge.RESIDUAL_MARKER not in masked[1].text:
+        failures.append(f"склонённая подмена доехала до судьи: {masked[1].text!r}")
+    if flagged != 1:
+        failures.append(f"ход агента с подменой насчитан {flagged} раз вместо одного")
+    if masked[0].text != turns[0].text:
+        failures.append(f"собственная реплика клиента искажена: {masked[0].text!r}")
+    # THE NEGATIVE: the same turn with the customer's own name is untouched and
+    # uncounted, so the marker above is the SUBSTITUTE and not every name.
+    honest = (DialogueTurn(role="assistant", text="Секунду, открываю карточку Ивановой Елены."),)
+    kept, none = judge.mask_residual_turns(honest, (SUBSTITUTE,), (REAL,))
+    if kept[0].text != honest[0].text or none:
+        failures.append(f"настоящее имя клиента замаскировано как подмена: {kept[0].text!r}")
+    return failures
+
+
 def test_the_pregate_spares_ordinary_russian() -> list[str]:
     """G3.3: a generic street word, a month name and half a city are not ours.
 
@@ -536,25 +621,24 @@ def test_the_pregate_spares_ordinary_russian() -> list[str]:
     on «улица» is a published false defect of the product, bought for free.
     """
     failures: list[str] = []
-    generic = judge.substitute_pieces(("улица тополиная 5",), ())
-    if "улица" in generic:
-        failures.append(f"родовое слово адреса осталось нашей частью: {generic}")
+    generic = _needle_texts("улица тополиная 5")
+    if "улиц" in generic or "улица" in generic:
+        failures.append(f"родовое слово адреса осталось иглой: {generic}")
     # THE NEGATIVE for the same split: the street name IS ours, so the absence
-    # above is a subtraction and not an empty split.
-    if "тополиная" not in generic:
-        failures.append(f"разбор не дал ни одной части — проверка ни о чём: {generic}")
-    dated = judge.substitute_pieces((MINTED_SPOKEN_DOB,), ())
-    if "декабря" in dated:
-        failures.append(f"название месяца осталось нашей частью: {dated}")
-    if "третьего" not in dated:
-        failures.append(f"устная дата не дала ни одной части — проверка ни о чём: {dated}")
-    own = judge.substitute_pieces((MINTED_ADDRESS,), (REAL_ADDRESS,))
-    if "нижний" in own or "новгород" in own:
-        failures.append(f"половина города клиента осталась нашей частью: {own}")
-    bare = judge.substitute_pieces((MINTED_ADDRESS,), ())
-    if "нижний" not in bare or "новгород" not in bare:
-        failures.append(f"без настоящего адреса те же части не появились — вычитание "
-                        f"нечего было делать: {bare}")
+    # above is a subtraction and not an empty needle set.
+    if "топо" not in generic:
+        failures.append(f"разбор не дал ни одной иглы — проверка ни о чём: {generic}")
+    dated = _needle_texts(MINTED_SPOKEN_DOB)
+    if "дека" in dated:
+        failures.append(f"название месяца осталось иглой: {dated}")
+    if "трет" not in dated:
+        failures.append(f"устная дата не дала ни одной иглы — проверка ни о чём: {dated}")
+    own = judge.own_needle_stems((REAL_ADDRESS,))
+    if "нижн" not in own or "новг" not in own:
+        failures.append(f"половина города клиента не попала в вычитаемые стволы: {sorted(own)[:8]}")
+    bare = _needle_texts(MINTED_ADDRESS)
+    if "нижн" not in bare or "новг" not in bare:
+        failures.append(f"город не стал иглой подмены — вычитать было нечего: {bare}")
     honest = f"Готово, курьер приедет: {REAL_ADDRESS}. Ждите звонка."
     if judge.residual_pregate_of(honest, (MINTED_ADDRESS,), (REAL_ADDRESS,)) is not None:
         failures.append("претгейт отказал честному ответу на собственном адресе клиента")
@@ -664,13 +748,20 @@ def test_a_fake_street_without_its_city_is_refused() -> list[str]:
                    f"Записал: {REAL_SPOKEN_ADDRESS}."):
         if judge.residual_pregate_of(honest, minted, real) is not None:
             failures.append(f"честный ответ отказан: {honest!r}")
-    # …and the piece that does the work is the WORD, not the splitter's blob:
-    # the blob carries a space and can never stand as one word in an answer.
-    pieces = judge.substitute_pieces(minted, real)
-    if "рябиновый" not in pieces:
-        failures.append(f"слово подменной улицы не стало частью: {pieces}")
-    if not any(" " in piece for piece in pieces):
-        failures.append(f"разбор перестал давать склеенную часть — негатив ни о чём: {pieces}")
+    # …and the needle that does the work is built PER WORD, not from the
+    # splitter's blob: the blob is joined alphabetically, carries a space and
+    # stands nowhere in the address itself.
+    pieces = tuple(sorted(needle.text for needle in judge.substitute_needles(MINTED_SPOKEN_ADDRESS)
+                          if needle.role))
+    if "ряби" not in pieces:
+        failures.append(f"ствол подменной улицы не стал иглой: {pieces}")
+    # A needle that NAMES a role is one word: the whole surface has its own
+    # needle and a two-word piece would be the splitter's blob back again.
+    if any(" " in piece for piece in pieces):
+        failures.append(f"игла роли склеила два слова: {pieces}")
+    blob = parts_of("LOC", MINTED_SPOKEN_ADDRESS).get("street", "")
+    if " " not in blob or blob in MINTED_SPOKEN_ADDRESS:
+        failures.append(f"разбор перестал склеивать улицу — негатив ни о чём: {blob!r}")
     return failures
 
 
@@ -711,6 +802,10 @@ def main() -> int:
         ("rubric_names_four_questions", test_rubric_names_four_questions),
         ("rubric_has_no_form_rules", test_rubric_has_no_form_rules),
         ("residual_pregate_short_circuits", test_residual_pregate_short_circuits),
+        ("the_pregate_reads_the_shapes_a_model_writes",
+         test_the_pregate_reads_the_shapes_a_model_writes),
+        ("an_earlier_turn_is_masked_in_the_same_shapes",
+         test_an_earlier_turn_is_masked_in_the_same_shapes),
         ("quote_must_stand", test_quote_must_stand),
         ("prompt_sha_changes_with_rubric", test_prompt_sha_changes_with_rubric),
         ("judged_by_none_carries_no_label", test_judged_by_none_carries_no_label),

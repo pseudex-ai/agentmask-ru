@@ -1276,20 +1276,19 @@ AXES: tuple[str, ...] = (
 # decorative. Every metric ships THREE fixtures — one on which it MUST be 0/n
 # (`zero`), one on which it MUST be n/n (`one`), and one built to fool it
 # (`adversarial`, with the exact hits/total it must print). A metric missing a
-# kind, or whose zero and one fixtures do not SEPARATE (rate(one) - rate(zero)
-# < FIXTURE_MIN_SEPARATION), or whose adversarial fixture prints another
-# fraction, is NOT PRINTED — its name goes to `refused` with the reason — and
-# a report with any refused non-diagnostic metric carries the word
-# «НЕПОЛНЫЙ» in its header. Not printing is the only sanction that survives
-# a deadline.
+# kind, or whose fixture prints another fraction than the one it declares, is
+# NOT PRINTED — its name goes to `refused` with the reason — and a report with
+# any refused non-diagnostic metric carries the word «НЕПОЛНЫЙ» in its header.
+# Not printing is the only sanction that survives a deadline.
+#
+# THERE IS NO SEPARATION CONSTANT (R-55). It read «rate(one) − rate(zero) ≥
+# 1.0» after `Fixture.expected_hits`/`expected_total` had already pinned the
+# two rates at exactly 0/n and n/n, so the comparison could not fire on its
+# own; and the 0/0 pair it was kept for is refused one check earlier by
+# `test_fixtures.test_kind_invariants` («zero is 0 of n > 0»). A check that
+# cannot go red is decoration in the one place of v5 that decides whether
+# numbers are printed at all.
 FIXTURE_KINDS: tuple[str, ...] = ("zero", "one", "adversarial")
-# A SECOND LOCK ON A DOOR THE EXPECTATIONS ALREADY BOLT. `Fixture.
-# expected_hits`/`expected_total` pin the two rates exactly (0/n and n/n), so
-# the gate's separation check can no longer fire on its own — it is kept as the
-# guard against a PAIR that declares 0/0, where both rates would be 0.0 and the
-# equality checks would pass while the metric said nothing. Deleting it means
-# deleting its reader in `report.gate`, which belongs to another owner.
-FIXTURE_MIN_SEPARATION: float = 1.0      # rate(one) == 1.0 and rate(zero) == 0.0, exactly
 INCOMPLETE_REPORT_MARK: str = "НЕПОЛНЫЙ"
 
 
@@ -1595,11 +1594,17 @@ class JudgeRow:
 
 class ResidualPregate(Protocol):
     """`residual_pregate(restored_answer, substitutes_minted) -> JudgeVerdict
-    | None`: if any minted substitute (whole, or a piece ≥ 4 characters that is
-    not a real part) stands in the restored answer, the answer is `неверно`
-    with `judged_by="residual_gate"` and the judge is NOT asked (spec §5,
-    §8.5). None means «ask the judge». Deterministic; the same rule
-    `residual` counts."""
+    | None`: if any minted substitute still stands in the restored answer, the
+    answer is `неверно` with `judged_by="residual_gate"` and the judge is NOT
+    asked (spec §5, §8.5). None means «ask the judge».
+
+    «STANDS» IS THE NEEDLE LAYER OF §4bis AND NOTHING ELSE — the same rule
+    `residual` counts, asked through `observe.survival`, so the two halves of
+    one question cannot disagree. A gate with a reading of its own (whole
+    surfaces plus whole words of them) let a declined name, a renotated phone
+    and a respaced card reach the judge while `residual` called each a
+    critical defect, and a judge reading our fake is not the blind judge §8.5
+    promises."""
 
     def __call__(self, restored_answer: str, substitutes_minted: tuple[str, ...]) -> JudgeVerdict | None: ...
 

@@ -74,8 +74,6 @@ def test_fixture_expectations() -> list[str]:
             problems.append(f"{name}: the zero fixture is not 0.0 ({rates.get('zero')})")
         if rates.get("one", 0.0) != 1.0:
             problems.append(f"{name}: the one fixture is not 1.0 ({rates.get('one')})")
-        if rates.get("one", 0.0) - rates.get("zero", 1.0) < contracts.FIXTURE_MIN_SEPARATION:
-            problems.append(f"{name}: zero and one do not separate")
     return problems
 
 
