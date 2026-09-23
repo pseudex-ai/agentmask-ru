@@ -173,11 +173,14 @@ def main() -> int:
     if set(c.IN_OWNERS) & set(c.OUT_OWNERS):
         failures.append("an owner is both IN and OUT")
 
-    # 4. tools: 31 kept + 12 new, every one in exactly one vertical
+    # 4. tools: 31 kept + 13 new, every one in exactly one vertical. THIRTEEN,
+    # not §8.1's twelve: `patient_find` is the clinic's reading tool, ordered by
+    # §2 («book, slots, patient_find») and missing from §8.1's table, and its
+    # absence is why the vertical returned no personal data at all.
     if len(c.V4_TOOL_NAMES) != 31:
         failures.append(f"v4 registry has {len(c.V4_TOOL_NAMES)} tools, expected 31")
-    if len(c.NEW_TOOL_NAMES) != 12 or len(set(c.NEW_TOOL_NAMES)) != 12:
-        failures.append("12 distinct new tools expected")
+    if len(c.NEW_TOOL_NAMES) != 13 or len(set(c.NEW_TOOL_NAMES)) != 13:
+        failures.append("13 distinct new tools expected")
     if set(c.NEW_TOOL_NAMES) & set(c.V4_TOOL_NAMES):
         failures.append("a new tool name collides with v4")
     if set(c.TOOL_VERTICAL) != set(c.V4_TOOL_NAMES) | set(c.NEW_TOOL_NAMES):

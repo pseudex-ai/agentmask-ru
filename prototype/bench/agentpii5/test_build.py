@@ -30,6 +30,7 @@ from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
+from bench.agentpii4.build import build_ladder, ladder_problems
 from bench.agentpii4.schema import case_from_json
 from bench.agentpii5 import build as b
 from bench.agentpii5 import contracts as c
@@ -1110,6 +1111,377 @@ def test_the_acceptance_test_runs_on_every_push() -> list[str]:
     return problems
 
 
+def test_a_tier_is_a_miniature_and_the_old_draw_is_refused() -> list[str]:
+    """ПЕРЕРЕЗКА 23.09: каждый ярус повторяет корпус по регистру И по поведению,
+    и проверка, которая это требует, КРАСНЕЕТ на лестнице, прожившей до первого
+    живого прогона.
+
+    ПОЧЕМУ ОТРИЦАТЕЛЬНАЯ ПОЛОВИНА ЗДЕСЬ ГЛАВНАЯ. «nano = 30 голосовых сырых» не
+    красило ничего: `ladder_problems` требует от яруса все СЕМЬИ и молчит о
+    регистре, а `_register_round_robin(free, 1, rng)` при запросе в ОДИН случай
+    возвращает первый непустой регистр из `REGISTER_ORDER` — то есть всегда
+    `voice_raw`. Измерено на этом корпусе: nano 30/30, small 120/120, medium
+    300/300, large 446+154 — и приёмка прибора на каждый push шла на `medium`.
+    Поэтому старая жеребьёвка строится ЗДЕСЬ, из v4, и проверка обязана на ней
+    покраснеть; иначе зелёное на новой лестнице не значит ничего.
+    """
+    problems: list[str] = []
+    fresh = b.build_ladder_v5(CASES, SEED)
+    if b.ladder_problems_v5(CASES, fresh):
+        problems.append(f"стратифицированная лестница отказана самой себе: "
+                        f"{b.ladder_problems_v5(CASES, fresh)[:2]}")
+    if ladder_problems([case.base for case in CASES], fresh):
+        problems.append(f"v4-проверка отказала новой лестнице: "
+                        f"{ladder_problems([case.base for case in CASES], fresh)[:2]}")
+    # ОТРИЦАТЕЛЬНАЯ ПОЛОВИНА: прежняя жеребьёвка v4 на том же корпусе.
+    stale = build_ladder([case.base for case in CASES], SEED)
+    said = b.ladder_problems_v5(CASES, stale)
+    if not said:
+        problems.append("одноголосая лестница v4 признана миниатюрой корпуса")
+    if not any("nano" in line and "register" in line for line in said):
+        problems.append(f"проверка не назвала nano и регистр: {said[:3]}")
+    if not any("same_tool_other_target" in line for line in said):
+        problems.append(f"проверка не заметила семью, которой в nano нет: {said[:3]}")
+    if ladder_problems([case.base for case in CASES], stale):
+        problems.append("v4-проверка сама краснеет на своей же лестнице — тогда новая "
+                        "проверка не доказывает, что видит больше")
+    # …И ТРЕТЬЯ: ярус, у которого доли поехали НЕ ДО НУЛЯ. Покрытие такой ярус
+    # проходит — все значения на месте, — и без строки о пропорции он был бы
+    # зелёным, хотя чата в нём вдвое больше корпусного.
+    by_id = {case.base.id: case for case in CASES}
+    nano = [by_id[one] for one in fresh.tiers["nano"]]
+    spare = [case for case in CASES
+             if case.base.id not in set(fresh.tiers["nano"]) | set(fresh.tiers["holdout"])
+             and case.base.register == "chat"]
+    swapped = ([case for case in nano if case.base.register != "chat"][:-6]
+               + [case for case in nano if case.base.register == "chat"]
+               + spare[:6])
+    tilted = replace(fresh, tiers={**fresh.tiers,
+                                   "nano": tuple(sorted(case.base.id for case in swapped))})
+    said = b.ladder_problems_v5(CASES, tilted)
+    if not any("не миниатюра" in line and "chat" in line for line in said):
+        problems.append(f"перекошенный по доле ярус принят: {said[:3]}")
+    return problems
+
+
+def test_the_stratified_order_is_deterministic_and_order_independent() -> list[str]:
+    """Один и тот же набор случаев даёт один и тот же порядок — в любом порядке
+    подачи и с любой стороны.
+
+    ЭТО ТРЕБОВАНИЕ, А НЕ СВОЙСТВО. Срез и ярус обязаны быть повторимы: прогон
+    «до» и прогон «после» по одному правилу должны сыграть ОДНИ И ТЕ ЖЕ случаи,
+    иначе разница между их числами — это разница выборок. Проверяется и
+    независимость от порядка входа: корпус читается из файла, и однажды он
+    придёт в другом порядке.
+    """
+    problems: list[str] = []
+    sample = CASES[:400]
+    first = [case.base.id for case in b.stratified_order(sample, SEED)]
+    again = [case.base.id for case in b.stratified_order(sample, SEED)]
+    if first != again:
+        problems.append("два вызова дали разный порядок")
+    shuffled = list(reversed(sample))
+    if [case.base.id for case in b.stratified_order(shuffled, SEED)] != first:
+        problems.append("порядок зависит от порядка подачи")
+    if sorted(first) != sorted(case.base.id for case in sample):
+        problems.append("порядок потерял или размножил случаи")
+    # …и другой сид даёт ДРУГОЙ порядок: иначе «детерминирован» означало бы
+    # «не зависит ни от чего», и сид был бы украшением.
+    if [case.base.id for case in b.stratified_order(sample, SEED + 1)] == first:
+        problems.append("сид не влияет на порядок")
+    return problems
+
+
+def test_the_floor_fits_the_smallest_tier() -> list[str]:
+    """Пол — каждое значение каждой оси хотя бы раз — укладывается в самый
+    маленький ярус, и это ИЗМЕРЕНО, а не предположено.
+
+    22 семьи, 11 поведений, 5 регистров, 11 вертикалей и 10 типов ПД — 59
+    клеток, но случай закрывает несколько сразу, и жадный проход по полу берёт
+    23 случая из 30. Запас в семь; корпус, у которого семей станет больше
+    тридцати, обязан узнать об этом здесь, а не на первом прогоне, где ярус
+    молча потеряет семью. Длина пола меряется по самому порядку — первый
+    префикс, покрывший все клетки, — а не считается по формуле, которая
+    разошлась бы с кодом на первой же правке.
+
+    ПОЛ СПРАШИВАЕТСЯ ПО ОБОИМ СПИСКАМ ОСЕЙ, И ИМЕННО ЗДЕСЬ ЭТО ВИДНО. Пока он
+    шёл только по `LADDER_AXES`, эта проверка зеленела на лестнице, в которой
+    nano не нёс ни вертикали `calendar`, ни типа `INN` — она сверяла ярус с тем
+    же коротким списком, по которому его и рисовали.
+    """
+    problems: list[str] = []
+    fresh = b.build_ladder_v5(CASES, SEED)
+    by_id = {case.base.id: case for case in CASES}
+    smallest = min(b.DEBUG_TIERS, key=lambda name: len(fresh.tiers[name]))
+    members = [by_id[one] for one in fresh.tiers[smallest]]
+    for axis in b.LADDER_AXES:
+        whole = {b.case_axis(case, axis) for case in CASES}
+        here = {b.case_axis(case, axis) for case in members}
+        if whole - here:
+            problems.append(f"ярус {smallest} не несёт по оси {axis}: {sorted(whole - here)}")
+    for axis in b.LADDER_COVERAGE_AXES:
+        whole = {one for case in CASES for one in b.case_slice_values(case, axis)}
+        here = {one for case in members for one in b.case_slice_values(case, axis)}
+        if whole - here:
+            problems.append(f"ярус {smallest} не несёт по оси {axis}: {sorted(whole - here)}")
+    held = set(fresh.tiers["holdout"])
+    pool = [case for case in CASES if case.base.id not in held]
+    cells = {cell for case in pool for cell in b._floor_cells(case)}
+    order = b.stratified_order(pool, SEED)
+    seen: set[tuple[str, str]] = set()
+    floor = len(order)
+    for index, case in enumerate(order, start=1):
+        seen.update(b._floor_cells(case))
+        if seen == cells:
+            floor = index
+            break
+    if floor > len(fresh.tiers[smallest]):
+        problems.append(f"пол занимает {floor} случаев, а в {smallest} их "
+                        f"{len(fresh.tiers[smallest])}: ярус нечем добрать до пропорции")
+    # Отрицательная половина: ярус, из которого вынут единственный случай
+    # редкого значения, обязан быть назван по оси и по значению. Спрашивается по
+    # ОБОИМ спискам осей, потому что молчала проверка именно на многозначной.
+    thin = min(((axis, value) for axis in (*b.LADDER_AXES, *b.LADDER_COVERAGE_AXES)
+                for value in {one for case in members
+                              for one in _axis_values(case, axis)}),
+               key=lambda pair: sum(1 for case in members if pair[1] in _axis_values(case, pair[0])))
+    stripped = [case for case in members if thin[1] not in _axis_values(case, thin[0])]
+    broken = replace(fresh, tiers={**fresh.tiers,
+                                   smallest: tuple(sorted(case.base.id for case in stripped))})
+    said = b.ladder_problems_v5(CASES, broken)
+    if not any(f"не несёт ось {thin[0]}" in line and thin[1] in line for line in said):
+        problems.append(f"ярус без значения {thin[1]!r} оси {thin[0]} принят: {said[:3]}")
+    return problems
+
+
+def _axis_values(case: CaseV5, axis: str) -> frozenset[str]:
+    """Значения оси у случая — однозначной или многозначной, одним вызовом.
+
+    Отрицательные половины проверок обязаны уметь вынимать значение ЛЮБОЙ оси;
+    две ветки по месту вызова разошлись бы с `ladder_problems_v5` на первой же
+    правке, и отрицательная половина стала бы проверять не то, что стережёт.
+    """
+    if axis in b.LADDER_AXES:
+        return frozenset({b.case_axis(case, axis)})
+    return b.case_slice_values(case, axis)
+
+
+def test_the_recut_did_not_move_the_holdout() -> list[str]:
+    """Перерезка трогает только отладочные ярусы: холдаут — тот же, что рисует
+    v4, случай в случай.
+
+    ЕГО ЦЕННОСТЬ В ТОМ, ЧТО ОН ОТЛОЖЕН ДО ТОГО, КАК КТО-ЛИБО ПОСМОТРЕЛ. Новый
+    порядок мог бы сделать его пропорциональнее — и это был бы обмен
+    единственного, за что холдаут держится, на украшение. Здесь же названа цена
+    этого решения: холдаут НЕ пропорционален по регистру (`clean` 48 из 347 —
+    13.8% против 5.6% в корпусе), и `tier_mix_table` печатает обе доли, чтобы
+    читатель холдаутного числа это видел.
+    """
+    problems: list[str] = []
+    bases = [case.base for case in CASES]
+    fresh = b.build_ladder_v5(CASES, SEED)
+    if set(fresh.tiers["holdout"]) != set(build_ladder(bases, SEED).tiers["holdout"]):
+        problems.append("перерезка сдвинула холдаут")
+    if set(fresh.tiers["max"]) != {case.base.id for case in CASES}:
+        problems.append("ярус max не равен корпусу")
+    for smaller, bigger in zip(b.DEBUG_TIERS, b.DEBUG_TIERS[1:]):
+        if not set(fresh.tiers[smaller]) <= set(fresh.tiers[bigger]):
+            problems.append(f"{smaller} не вложен в {bigger}")
+    # Отрицательная половина вложенности: ярус, в котором один случай подменён
+    # чужим, обязан быть пойман — иначе строка выше зеленела бы на любом коде.
+    outsider = next(case.base.id for case in CASES
+                    if case.base.id not in set(fresh.tiers["small"])
+                    and case.base.id not in set(fresh.tiers["holdout"]))
+    torn = {**fresh.tiers, "nano": (*fresh.tiers["nano"][1:], outsider)}
+    if set(torn["nano"]) <= set(torn["small"]):
+        problems.append("подменённый nano всё ещё вложен в small — проверка вложенности "
+                        "не может покраснеть")
+    by_id = {case.base.id: case for case in CASES}
+    held = [by_id[one] for one in fresh.tiers["holdout"]]
+    if len({case.base.register for case in held}) != len({case.base.register
+                                                          for case in CASES}):
+        problems.append("холдаут несёт не все регистры — его пришлось бы перерисовать, "
+                        "и это решение владельца, а не флага")
+    printed = "\n".join(b.tier_mix_table(CASES, fresh))
+    if "clean 48" not in printed:
+        problems.append("таблица состава не называет перекос холдаута по clean")
+    return problems
+
+
+def test_a_slice_is_repeatable_and_never_reads_the_holdout() -> list[str]:
+    """СРЕЗ (просьба владельца): «дай 120 случаев только чата» — одна команда,
+    повторимая словом, и холдаута он не касается.
+
+    ХОЛДАУТ ИСКЛЮЧЁН БЕЗ ФЛАГА, И ЭТО ПРОВЕРЯЕТСЯ, А НЕ ОБЕЩАЕТСЯ. Дешёвый срез
+    по всему корпусу прочитал бы двадцать процентов, отложенных до того, как
+    кто-либо посмотрел, и штамп `holdout_touched_at` встал бы навсегда за
+    четыре доллара.
+    """
+    problems: list[str] = []
+    ladder = json.loads((b.HERE / "ladder.json").read_text(encoding="utf-8"))
+    held = ladder["tiers"]["holdout"]
+    clauses = b.parse_slice("register=chat", CASES)
+    first = b.slice_cases(CASES, held, clauses, 120, SEED)
+    again = b.slice_cases(CASES, list(reversed(held)),
+                          b.parse_slice("register=chat", CASES), 120, SEED)
+    if [case.base.id for case in first] != [case.base.id for case in again]:
+        problems.append("один и тот же срез дал два разных списка")
+    if len(first) != 120:
+        problems.append(f"срез в 120 дал {len(first)}")
+    if {case.base.register for case in first} != {"chat"}:
+        problems.append("срез по регистру взял чужой регистр")
+    if set(case.base.id for case in first) & set(held):
+        problems.append("срез прочитал холдаут")
+    # Отрицательная половина: без исключения холдаут в срез ПОПАДАЕТ. Если бы
+    # не попадал, строка выше зеленела бы и на коде, который ничего не отсекает.
+    unguarded = b.slice_cases(CASES, (), clauses, 0, SEED)
+    if not set(case.base.id for case in unguarded) & set(held):
+        problems.append("холдаут не попадает в срез и без исключения — проверка "
+                        "исключения не может покраснеть")
+    # Срез — тоже миниатюра ТОГО, ЧТО В НЁМ ОСТАЛОСЬ: набранный первыми по
+    # имени, он был бы той же болезнью в меньшем масштабе.
+    lost = {case.behaviour for case in CASES
+            if case.base.register == "chat" and case.base.id not in set(held)} - {
+        case.behaviour for case in first}
+    if lost:
+        problems.append(f"срез в 120 случаев потерял поведения: {sorted(lost)}")
+    # Имя КАНОНИЧЕСКОЕ: два написания одного среза — одна строка реестра.
+    one_way = b.slice_name(b.parse_slice("register=chat,vertical=clinic", CASES))
+    other_way = b.slice_name(b.parse_slice("vertical=clinic, register=chat", CASES))
+    if one_way != other_way:
+        problems.append(f"два написания одного среза дали два имени: {one_way} / {other_way}")
+    if b.selection_kind(one_way) != "slice":
+        problems.append(f"срез записан как {b.selection_kind(one_way)!r}")
+    if b.selection_kind("nano") != "tier" or b.selection_kind(b.IDS_SELECTION) != "ids":
+        problems.append("ярус или --ids записаны не своим видом выборки")
+    # Отказы: ось, значение, пустота, повтор оси. Срез, который молча вернул бы
+    # пустой список, отправил бы человека искать дефект корпуса вместо опечатки.
+    for text, want in (("nope=1", "нет оси"), ("register=Chat", "не несёт"),
+                       ("register", "одно «=»"), ("", "срез пуст"),
+                       ("register=chat,register=clean", "дважды")):
+        try:
+            b.parse_slice(text, CASES)
+            problems.append(f"срез {text!r} принят")
+        except b.SliceError as refused:
+            if want not in str(refused):
+                problems.append(f"срез {text!r} отказан не по делу: {refused}")
+    # И срез не выдаёт себя за ярус: замороженного состава у него нет.
+    provenance = b.run_provenance(CASES, first, one_way, b.HERE / "ladder.json", b.REPO, True)
+    if b.selection_is_the_tier(provenance) is not None:
+        problems.append("срез сравнён с замороженным составом, которого у него нет")
+    if b.provenance_json(provenance).get("selection_kind") != "slice":
+        problems.append("запись прогона не называет срез срезом")
+    return problems
+
+
+def test_the_result_pii_column_says_how_much_of_it_is_measured() -> list[str]:
+    """КОЛОНКА «ПД В РЕЗУЛЬТАТЕ» НАЗЫВАЕТ СВОЙ ОСТАТОК, и он заморожен поимённо.
+
+    ТЗ писало «вторая слепота закрыта», потому что пяти названным путям
+    (`courier_status.recipient.*`, `crm_upsert_contact.contact.*`) дали хопы.
+    Дали — а 106 объявлений из 151 по-прежнему не пересекает ни один IN/tool-хоп,
+    и ни V06 (объявление против формы возврата), ни K17 (хоп → объявление) в эту
+    сторону не смотрят: удаление любого из 106 сразу из `result_pii` и из формы
+    возврата не красило НИЧЕГО — тот же тест, который проходили те пятеро.
+
+    ЗАМОРОЗКА, А НЕ НОЛЬ, и цена названа: инструмент объявляет, что его API
+    МОЖЕТ вернуть, корпус решает, что он ВОЗВРАЩАЕТ. Проверка требует не нуля, а
+    того, чтобы остаток был ровно тем, на который однажды посмотрели, — поэтому
+    краснеет в обе стороны.
+    """
+    problems: list[str] = []
+    lines = b.result_pii_residue(CASES)
+    if any("ОТКАЗ" in line for line in lines):
+        problems.append(f"остаток разошёлся с замороженным списком: {lines[1:3]}")
+    if "151 объявлений" not in lines[0] or "106 держатся объявлением" not in lines[0]:
+        problems.append(f"строка остатка не называет обе половины: {lines[0]}")
+    # Отрицательная половина первая: объявление, которое НИКТО не пересекает и
+    # которого нет в списке, — отказ. Так выглядело бы новое декоративное поле.
+    spare = "kb_search.records[].invented_leaf"
+    watched = b.UNCROSSED_RESULT_PII
+    from bench.agentpii5.tools import REGISTRY_V5
+    name, leaf = spare.split(".", 1)
+    spec = REGISTRY_V5[name]
+    widened = replace(spec, base=replace(spec.base,
+                                         result_pii=(*spec.base.result_pii, leaf)))
+    REGISTRY_V5[name] = widened
+    try:
+        said = b.result_pii_residue(CASES)
+        if not any("ОТКАЗ" in line and spare in line for line in said):
+            problems.append(f"новое декоративное объявление принято молча: {said}")
+    finally:
+        REGISTRY_V5[name] = spec
+    # Отрицательная половина вторая: замороженное объявление, которое КОРПУС
+    # теперь пересекает, — тоже отказ, иначе список тихо стал бы потолком и
+    # остаток «106» пережил бы любое улучшение.
+    crossed_now = sorted(watched)[0]
+    tool, path = crossed_now.split(".", 1)
+    donor = next(case for case in CASES
+                 if any(hop.kind == "IN" and hop.owner == "tool" for hop in case.hops))
+    hop = next(one for one in donor.hops if one.kind == "IN" and one.owner == "tool")
+    patched = replace(donor, hops=tuple(replace(one, tool_name=tool, path=path)
+                                        if one is hop else one for one in donor.hops))
+    said = b.result_pii_residue([one if one is not donor else patched for one in CASES])
+    if not any("ОТКАЗ" in line and crossed_now in line for line in said):
+        problems.append(f"пересечённое замороженное объявление принято молча: {said}")
+    return problems
+
+
+def test_a_slice_axis_reads_the_case_and_not_the_offer() -> list[str]:
+    """ОБЕ многозначные оси среза считаются по ХОПАМ: вертикаль — не по
+    `base.tools`, тип ПД — не по `base.pii`.
+
+    `tools` — это то, что агенту ПРЕДЛОЖИЛИ. Случай, которому предложили
+    инструмент клиники и который туда не ходил, попал бы в срез «только
+    клиника», ничего о клинике не измеряя, — и число такого прогона описывало
+    бы не вертикаль, а список предложений.
+
+    `base.pii` — ТА ЖЕ БОЛЕЗНЬ НА ДРУГОЙ ОСИ, и полгода она стояла рядом с
+    закрытой. В нём лежат значения seed-записи мока, которых не произносит ни
+    одно сообщение и не возвращает ни один хоп: `pii_type=EMAIL` набирал 713
+    случаев, из которых 383 о почте не говорили ничего. ПРЕЖНЯЯ ПРОВЕРКА ЭТОГО
+    УВИДЕТЬ НЕ МОГЛА — она сверяла `case_slice_values(case, "pii_type")` с тем
+    же `base.pii`, из которого функция и читала, то есть сверяла функцию с
+    собой.
+
+    ОБЕ ПОЛОВИНЫ ЗДЕСЬ ОТРИЦАТЕЛЬНЫЕ: мало показать, что срез читает хопы, —
+    нужно, чтобы чтение по объявлению давало ДРУГОЙ ответ. Иначе проверка
+    зеленела бы и на корпусе, где эти два чтения совпадают, и на коде, который
+    вернулся к объявлению.
+    """
+    problems: list[str] = []
+    offered = {case.base.id for case in CASES
+               if any(c.TOOL_VERTICAL.get(name) == "clinic" for name in case.base.tools)}
+    walked = {case.base.id for case in CASES
+              if "clinic" in b.case_slice_values(case, "vertical")}
+    if not walked:
+        problems.append("ни один случай не ходит в клинику — срез по вертикали не проверен")
+    if walked >= offered and offered:
+        problems.append("срез по вертикали читает предложенные инструменты, а не хопы")
+    # Тип ПД: срез обязан быть СТРОГО уже объявления хотя бы на одном типе, и
+    # каждый взятый тип обязан иметь хоп с ИМЕННО ЭТОЙ записью.
+    narrowed: list[str] = []
+    for kind in sorted({item.type for case in CASES for item in case.base.pii}):
+        declared = {case.base.id for case in CASES
+                    if any(item.type == kind for item in case.base.pii)}
+        crossing = {case.base.id for case in CASES
+                    if kind in b.case_slice_values(case, "pii_type")}
+        if not crossing <= declared:
+            problems.append(f"срез по типу {kind} берёт случаи, которые типа не несут вовсе")
+        if crossing < declared:
+            narrowed.append(kind)
+    if not narrowed:
+        problems.append("срез по типу ПД совпал с объявлением на всех типах: "
+                        "либо он читает `base.pii`, либо корпус перестал нести "
+                        "необойдённые записи и проверку надо переписать")
+    for case in CASES:
+        crossed = {hop.item_id for hop in case.hops}
+        if b.case_slice_values(case, "pii_type") != {item.type for item in case.base.pii
+                                                     if item.id in crossed}:
+            problems.append(f"{case.base.id}: типы ПД среза не равны типам ПЕРЕСЕЧЁННЫХ записей")
+            break
+    return problems
+
 CHECKS: tuple[Callable[[], list[str]], ...] = (
     test_the_authored_and_the_revised_halves_are_counted_apart,
     test_regenerating_the_ladder_needs_the_assertion,
@@ -1132,7 +1504,15 @@ CHECKS: tuple[Callable[[], list[str]], ...] = (
     test_the_provenance_is_read_off_the_real_tree,
     test_every_tier_starts_and_a_foreign_selection_does_not,
     test_the_acceptance_test_runs_on_every_push,
-    test_widened_watch_is_restored)
+    test_widened_watch_is_restored,
+    # Перерезка 23.09: ярус — миниатюра корпуса, и выборка прогона настраиваема.
+    test_a_tier_is_a_miniature_and_the_old_draw_is_refused,
+    test_the_stratified_order_is_deterministic_and_order_independent,
+    test_the_floor_fits_the_smallest_tier,
+    test_the_recut_did_not_move_the_holdout,
+    test_a_slice_is_repeatable_and_never_reads_the_holdout,
+    test_a_slice_axis_reads_the_case_and_not_the_offer,
+    test_the_result_pii_column_says_how_much_of_it_is_measured)
 
 
 def main() -> int:

@@ -12,13 +12,28 @@ is a complication of. So the loop is written here, a hundred times, and
 `build.py --check` prints authored / revised / two-hop apart so the share is read
 for what it is.
 
-SEVEN VERTICALS AND FOUR RETURN FORMS, BY INDEX. crm (a card, `list`), bank (a
+EIGHT VERTICALS AND FOUR RETURN FORMS, BY INDEX. crm (a card, `list`), bank (a
 client, `single`), government (a vehicle, `single`), support (an open ticket,
 `list`), calendar (free windows, `list`), directory (an address normalised,
-`canon`) and search (a knowledge-base note, `chunks`). The verticals are not
-decoration: the four forms are four different shapes of result — a row, an
-object, one normalised line, ranked prose — and a family that measured one of
-them would report a property of that shape and call it the base loop.
+`canon`), search (a knowledge-base note, `chunks`) and clinic (a patient card,
+`single`). The verticals are not decoration: the four forms are four different
+shapes of result — a row, an object, one normalised line, ranked prose — and a
+family that measured one of them would report a property of that shape and call
+it the base loop.
+
+WHY THE EIGHTH ARRIVED LATE, AND WHY HERE. The clinic had five tools and all
+five WRITE: every value in their results is one the dialogue handed them a
+moment earlier, so the vertical declared 584 hops and not one IN/tool — «ДР ISO,
+СНИЛС с разделителями», the return notation ТЗ §2 names as the clinic's whole
+reason for being in the table, was the one format no run could check, and every
+form slice by that vertical printed «н/п». `patient_find` is the reading tool,
+and the base loop is where it belongs: nothing else is going on in the case, so
+what the slice reports is the vertical's own notation and not another family's
+complication. The count of the family does NOT move — 100 cases over eight
+shapes instead of seven, twelve or thirteen each, above `MIN_TYPE_DENOMINATOR`
+for every one of them — because §8.2's normative number is the size of a family
+and a corpus grown to carry one vertical would have moved eleven other shares to
+say one thing.
 
 WHAT IS DELIBERATELY ABSENT. No second call, no chain, no memory, no branch: a
 `single` case that needed a second tool would be another family's case wearing
@@ -37,15 +52,16 @@ from bench.agentpii4 import pools
 from bench.agentpii5.contracts import CaseV5, ReturnExpectation
 from bench.agentpii5.scenarios5 import common as c
 from bench.agentpii5.scenarios5.common import (answer_hop, arg_hop, bank_client_seed, full_name,
-                                               iso_date, minted, seeded, stored_name,
-                                               stored_phone, told, tool_hop, user_hop,
-                                               vehicle_seed)
+                                               iso_date, minted, patient_seed, seeded,
+                                               spaced_snils, stored_name, stored_phone, told,
+                                               tool_hop, user_hop, vehicle_seed)
 
 BEHAVIOUR: str = "single"
 TOOLS: tuple[str, ...] = (
     "crm_find_contact", "crm_add_note", "notify_sms", "bank_client_find", "account_statement",
     "vehicle_check", "ticket_create", "ticket_find", "escalate_to_human", "calendar_free",
-    "callback_schedule", "address_suggest", "delivery_create_order", "kb_search")
+    "callback_schedule", "address_suggest", "delivery_create_order", "kb_search",
+    "patient_find", "clinic_slots", "clinic_book")
 # Each shape offers the tool it reads plus two the vertical really has: a case
 # that offers ONE tool tells the agent what to call by elimination, and «did the
 # agent pick the right tool» is part of what an arm can get wrong.
@@ -56,6 +72,11 @@ _SUPPORT_TOOLS: tuple[str, ...] = ("ticket_find", "escalate_to_human", "notify_s
 _CALENDAR_TOOLS: tuple[str, ...] = ("calendar_free", "callback_schedule", "notify_sms")
 _DIRECTORY_TOOLS: tuple[str, ...] = ("address_suggest", "delivery_create_order", "notify_sms")
 _SEARCH_TOOLS: tuple[str, ...] = ("kb_search", "crm_find_contact", "crm_add_note")
+# The clinic's reader plus the two the vertical really offers beside it. A
+# booking tool in the set is what makes «which tool» a question the arm can get
+# wrong: the caller asks to be IDENTIFIED, not booked, and `clinic_book` is the
+# wrong answer that is available.
+_CLINIC_TOOLS: tuple[str, ...] = ("patient_find", "clinic_slots", "clinic_book")
 
 # The ledger lines an `account_statement` would filter. Not personal data and no
 # item is declared on them; they are here because `bank_client_seed` writes the
@@ -84,11 +105,12 @@ def build(seed: int, count: int) -> list[CaseV5]:
 
 
 def _one(ctx: c.Ctx) -> CaseV5:
-    """Seven verticals by index modulo seven, so the mix is a property of the
-    plan rather than of a draw — at a hundred cases every shape gets fourteen or
-    fifteen, above `MIN_TYPE_DENOMINATOR` for the four return forms."""
-    builders = (_crm_card, _bank_client, _vehicle, _ticket, _calendar, _directory, _note)
-    return builders[ctx.index % 7](ctx)
+    """Eight verticals by index modulo eight, so the mix is a property of the
+    plan rather than of a draw — at a hundred cases every shape gets twelve or
+    thirteen, above `MIN_TYPE_DENOMINATOR` for the four return forms."""
+    builders = (_crm_card, _bank_client, _vehicle, _ticket, _calendar, _directory, _note,
+                _patient_card)
+    return builders[ctx.index % len(builders)](ctx)
 
 
 def _conversation(ctx: c.Ctx) -> str:
@@ -369,4 +391,61 @@ def _note(ctx: c.Ctx) -> CaseV5:
     builder.declare_hop(answer_hop(chunk["who"], 4, turn, 2, False))
     builder.expect_return(ReturnExpectation("kb_search", 0, "chunks",
                                             (chunk["who"], chunk["tel"])))
+    return builder.build(BEHAVIOUR)
+
+
+def _patient_card(ctx: c.Ctx) -> CaseV5:
+    """«поднимите мою карту» — the МИС answers with the card, and every value on
+    it is in a notation the caller's register does not produce: the birth date
+    in ISO, the СНИЛС with the ПФР separators, the phone in E.164.
+
+    THE KEY IS THE PHONE, SAID ALOUD, AND IT COMES BACK. One datum crosses three
+    times in one case — dictated by the caller (IN/user), written into the search
+    (OUT/tool_arg), returned by the card (IN/tool) — so the comparator sees the
+    SAME value in the caller's form and in the clinic's, which is the crossing
+    the vertical was in the table for and the one no case could make while the
+    clinic had only writing tools.
+
+    THE СНИЛС IS NOT SAID AND IS ONLY READ BACK. A caller who dictates their
+    СНИЛС has already put it in the ПФР's own notation, and the hop would then
+    compare a format with itself; read off the card it arrives in a notation
+    nothing in the dialogue produced.
+    """
+    identity = f"p{ctx.index}"
+    drawn = c.draw(ctx, city=ctx.rng.choice(list(pools.CORPUS_CITIES)))
+    snils_digits = pools.snils_digits(ctx.rng)
+    builder = c.new_builder(ctx, "clinic", _CLINIC_TOOLS, ("patient_find",), identity,
+                            f"PHONE:{drawn.phone}",
+                            "базовая петля в клинике: телефон -> карта пациента -> ответ; "
+                            "ДР приходит в ISO, СНИЛС с разделителями ПФР", ())
+    builder.v4.conversation_id = _conversation(ctx)
+    row = patient_seed("pat-1", snils_digits, drawn, builder, identity)
+
+    draft = builder.draft()
+    draft.say(c.opener(ctx)).say("поднимите мою карту по телефону")
+    draft.value("ph", c.phone(ctx, drawn.phone))
+    draft.say("продиктуйте снилс и дату рождения как они у вас записаны")
+    draft.punct(".")
+    turn, said = told(builder, draft, {"ph": ("PHONE", identity, "required", False)})
+    builder.v4.must_contain = (spaced_snils(snils_digits),)
+
+    builder.declare_hop(user_hop(said["ph"], 0, turn))
+    builder.declare_hop(arg_hop(said["ph"], 1, turn, "patient_find", 0, "phone", 0, ""))
+    # EVERY LEAF THE CARD RETURNS IS DECLARED, all five. A value that comes back
+    # and crosses no hop is the shape this whole pass exists to remove: the
+    # result carries it, `toolresult_masked` counts it, and no form line would
+    # ever say what happened to it.
+    builder.declare_hop(tool_hop(row["last_name"], 2, turn, "patient_find", 0,
+                                 "patient.last_name"))
+    builder.declare_hop(tool_hop(row["first_name"], 3, turn, "patient_find", 0,
+                                 "patient.first_name"))
+    builder.declare_hop(tool_hop(row["birth_date"], 4, turn, "patient_find", 0,
+                                 "patient.birth_date"))
+    builder.declare_hop(tool_hop(row["snils"], 5, turn, "patient_find", 0, "patient.snils"))
+    builder.declare_hop(tool_hop(row["phone"], 6, turn, "patient_find", 0, "patient.phone"))
+    builder.declare_hop(answer_hop(row["snils"], 7, turn, 5, False))
+    builder.declare_hop(answer_hop(row["birth_date"], 8, turn, 4, True))
+    builder.expect_return(ReturnExpectation(
+        "patient_find", 0, "single",
+        (row["last_name"], row["first_name"], row["birth_date"], row["snils"], row["phone"])))
     return builder.build(BEHAVIOUR)

@@ -29,6 +29,7 @@ NOTHING HERE IMPORTS `pseudex` (`contracts.FORBIDDEN_IMPORT_PREFIX`).
 """
 import hashlib
 import json
+import re
 from collections.abc import Sequence
 from dataclasses import asdict
 
@@ -741,6 +742,121 @@ def validate_corpus_v5(cases: Sequence[CaseV5], registry_names: tuple[str, ...])
     if many < c.MIN_TYPE_DENOMINATOR:
         problems.append(f"K15 {many} cases return ≥ 2 items of one identity in one call, "
                         f"below {c.MIN_TYPE_DENOMINATOR}")
+
+    # K16 every vertical that has something to read back is read back
+    problems.extend(_unread_verticals(cases))
+    # K17 every crossed leaf is a declared one
+    problems.extend(_undeclared_result_paths(cases))
+    return problems
+
+
+# An array index inside a hop's path: the corpus writes the leaf it actually
+# crossed («contacts[0].phone» in a run, «contacts[].phone» in a declaration) and
+# the registry declares the shape. Erasing the index compares the two as leaves
+# rather than as occurrences.
+_ARRAY_INDEX = re.compile(r"\[\d+\]")
+
+
+def _undeclared_result_paths(cases: Sequence[CaseV5]) -> list[str]:
+    """K17: an IN/tool hop whose leaf the tool's `result_pii` does not declare.
+
+    THE OTHER HALF OF V06, AND THE HALF THAT MAKES A DELETION HURT. V06 keeps a
+    declaration reachable (some return form must name it); this keeps it
+    NECESSARY — delete a leaf the corpus crosses and the corpus says so. Before
+    the two existed together, `courier_status.recipient.{name,phone}` and
+    `crm_upsert_contact.contact.{first_name,last_name,phone}` could be deleted
+    without reddening a single check in the package, which is how they survived
+    a reversal (R-27 → R-41) decided by argument rather than by measurement.
+
+    IT ALSO CATCHES THE DRIFT THE OTHER WAY, and did on the day it was written:
+    126 hops crossed `error.message` — the body `retry_same_tool`'s scripted
+    refusal answers with — while the four tools declared only `error.subject`,
+    the body a DOMAIN error answers with. Two shapes, one declaration, and the
+    column said the wrong thing about all 126.
+
+    NOT A CHECK ON THE FORM, on purpose. Which of a tool's forms a given call
+    came back in is the case's `ReturnExpectation` and is checked by R19; this
+    asks only that the leaf be a leaf the tool is declared to carry, which is the
+    question the «ПД в результате» column answers.
+    """
+    from bench.agentpii5.tools import REGISTRY_V5
+    problems: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for case in cases:
+        for hop in case.hops:
+            if hop.kind != "IN" or hop.owner != "tool":
+                continue
+            spec = REGISTRY_V5.get(hop.tool_name)
+            if spec is None:
+                continue          # R08 names an unknown tool; one rule, one voice
+            leaf = _ARRAY_INDEX.sub("[]", hop.path)
+            if leaf in spec.base.result_pii or (hop.tool_name, leaf) in seen:
+                continue
+            seen.add((hop.tool_name, leaf))
+            problems.append(
+                f"K17 {case.base.id}: hop {hop.hop_index} crosses "
+                f"{hop.tool_name}.{leaf}, which {hop.tool_name}'s result_pii does not "
+                f"declare — declared {list(spec.base.result_pii)}")
+    return problems
+
+
+def _unread_verticals(cases: Sequence[CaseV5]) -> list[str]:
+    """K16: a vertical with a READING tool that declares result PII, and no
+    IN/tool hop anywhere in the corpus.
+
+    WHAT THIS CATCHES THAT K07 AND K13 DO NOT. K07 asks that every tool be
+    OFFERED, K13 that every hop owner have a denominator corpus-wide — and the
+    clinic satisfied both while giving 584 hops and zero IN/tool: five tools
+    that all WRITE, so every one of its crossings was an argument going out and
+    the return notation the spec put the vertical in the table for («ДР ISO,
+    СНИЛС с разделителями», §2) was checked by nothing. Every form slice by that
+    vertical printed «н/п» and the OUT hops made the column look covered.
+
+    A MUTATING-ONLY VERTICAL IS EXEMPT, AND THE EXEMPTION IS THE API'S, NOT
+    OURS. `messaging` sends: `notify_sms`, `send_template` and `email_send`
+    answer with a delivery id, and the value they carry is one the dialogue
+    handed them — an OUT/template hop, which is exactly what §2 asks of that
+    row. A rule that demanded an IN/tool hop there would be demanding a result
+    the real services do not return.
+
+    THE SCOPE IS THE CORPUS, NOT THE CASE. One vertical read back by five cases
+    is enough for its slice to print; asking every case to read is asking for a
+    corpus of lookups.
+
+    AND THE SCOPE IS WHAT THE CORPUS OFFERS, NOT WHAT THE REGISTRY HOLDS. A rule
+    keyed on the registry would demand a bank hop of a fixture that offers only
+    CRM tools — a corpus is entitled to leave a vertical out entirely, and only a
+    vertical it DOES put in front of the agent owes a reading back. The clinic
+    was offered by 145 cases of the corpus this rule was written for, which is
+    why 584 of its hops were declared and none of them read anything.
+    """
+    # Lazy, for `_declared_return_forms`'s reason: `scenarios5/common.py` imports
+    # this module and `tools.py` imports v4's registry, so a module-level import
+    # would close a cycle.
+    from bench.agentpii5.tools import REGISTRY_V5
+    offered: set[str] = {name for case in cases for name in case.base.tools}
+    readable: dict[str, list[str]] = {}
+    for name, spec in sorted(REGISTRY_V5.items()):
+        if spec.base.mutating or not spec.base.result_pii or name not in offered:
+            continue
+        readable.setdefault(spec.vertical, []).append(name)
+    crossed: dict[str, int] = {}
+    for case in cases:
+        for hop in case.hops:
+            if hop.kind != "IN" or hop.owner != "tool":
+                continue
+            vertical = c.TOOL_VERTICAL.get(hop.tool_name, "")
+            if vertical:
+                crossed[vertical] = crossed.get(vertical, 0) + 1
+    problems: list[str] = []
+    for vertical, readers in sorted(readable.items()):
+        seen = crossed.get(vertical, 0)
+        if seen < c.MIN_TYPE_DENOMINATOR:
+            problems.append(
+                f"K16 vertical {vertical!r} carries {seen} IN/tool hops, below "
+                f"{c.MIN_TYPE_DENOMINATOR}, while {readers} read personal data back — "
+                f"its return notation is checked by nothing and every form slice by it "
+                f"prints «н/п»")
     return problems
 
 

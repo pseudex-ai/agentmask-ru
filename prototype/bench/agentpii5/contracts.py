@@ -527,6 +527,8 @@ V5_CORPUS_RULES: tuple[str, ...] = (
     "K13 every owner in HOP_OWNERS is declared by ≥ MIN_TYPE_DENOMINATOR cases; every IN owner other than 'user' and every OUT owner other than 'tool_arg' also by ≥ MIN_TYPE_DENOMINATOR cases of ≥ 2 behaviours",
     "K14 every DOCUMENT_FORMATS value occurs in ≥ MIN_TYPE_DENOMINATOR document cases; every ANAPHORA_KINDS value other than 'none' in ≥ MIN_TYPE_DENOMINATOR memory cases; ≥ MIN_TYPE_DENOMINATOR memory cases carry ≥ 3 MemorySpecs and ≥ 2 identities across ≥ 5 user turns",
     "K15 ≥ MIN_TYPE_DENOMINATOR cases declare a ReturnExpectation whose result_item_ids hold ≥ 2 items of ONE identity (many records of one person)",
+    "K17 every IN/tool hop's path (array indexes erased) is one of its tool's declared result_pii paths — the other half of V06: a declaration a hop crosses can no longer be deleted in silence, and a hop can no longer cross a leaf the registry never claimed carries personal data (126 hops crossed `error.message` while four tools declared only `error.subject`)",
+    "K16 every vertical whose READING tool (non-mutating, result_pii non-empty) the corpus OFFERS carries ≥ MIN_TYPE_DENOMINATOR IN/tool hops — a vertical whose result notation nothing reads back prints «н/п» in every form slice while its OUT hops make it look covered (clinic: 584 hops, zero IN/tool). A vertical whose tools are all mutating is exempt and named: it has no result to read, by the API's design, not by ours",
 )
 
 
@@ -573,7 +575,7 @@ V4_TOOL_NAMES: tuple[str, ...] = tuple(REGISTRY)          # 31, kept whole
 NEW_TOOL_NAMES: tuple[str, ...] = (
     "kb_search", "doc_retrieve", "file_read", "form_parse", "bank_client_find",
     "account_statement", "vehicle_check", "snils_verify", "calendar_free",
-    "email_send", "ticket_history", "courier_status")
+    "email_send", "ticket_history", "courier_status", "patient_find")
 # The vertical of every v4 tool (a revision, spec §8.1) and of every new one
 # (spec §8.1 table). Closed here so two components cannot file one tool under
 # two verticals.
@@ -584,6 +586,7 @@ TOOL_VERTICAL: dict[str, str] = {
     "address_suggest": "directory", "normalize_contact": "directory",
     "clinic_book": "clinic", "clinic_slots": "clinic", "appointment_cancel": "clinic",
     "appointment_reschedule": "clinic", "referral_create": "clinic",
+    "patient_find": "clinic",
     "payment_create": "bank", "payment_status": "bank", "payment_refund": "bank",
     "receipt_fetch": "bank", "bank_client_find": "bank", "account_statement": "bank",
     "ticket_create": "support", "ticket_find": "support", "escalate_to_human": "support",
@@ -611,6 +614,13 @@ NEW_TOOL_RETURN_FORMS: dict[str, tuple[str, ...]] = {
     "email_send": ("single", "error_with_value"),
     "ticket_history": ("free_text", "empty"),
     "courier_status": ("nested", "error_with_value"),
+    # THE ONLY READING TOOL OF THE CLINIC, and it exists because the vertical
+    # had none: five booking/cancelling tools, 584 declared hops and not one
+    # IN/tool — so «ДР ISO, СНИЛС с разделителями» (spec §2) was the one return
+    # notation no run could check. `empty` rather than `error_with_value`: a МИС
+    # answers an unknown insured person with an empty match set, not a fault,
+    # and inventing a fault the API does not raise would measure our fiction.
+    "patient_find": ("single", "empty"),
 }
 NEW_TOOL_RESULT_TYPES: dict[str, tuple[str, ...]] = {
     "kb_search": ("NAME", "PHONE", "LOC"), "doc_retrieve": ("NAME", "PHONE", "LOC", "DOB", "EMAIL"),
@@ -622,6 +632,10 @@ NEW_TOOL_RESULT_TYPES: dict[str, tuple[str, ...]] = {
     # features exist for spans the ENGINE typed DATE (undeclared IN hops).
     "calendar_free": ("NAME", "DOB"), "email_send": ("EMAIL",),
     "ticket_history": ("NAME", "PHONE", "LOC", "EMAIL"), "courier_status": ("NAME", "PHONE", "LOC"),
+    # The clinic's own three notations, and the reason the tool is here: the
+    # birth date in ISO, the СНИЛС with the ПФР separators, the phone in E.164
+    # — three forms no speech register writes.
+    "patient_find": ("NAME", "DOB", "SNILS", "PHONE"),
 }
 # Per-vertical coverage every registry must satisfy (spec §8.1 «Итого»).
 VERTICAL_RULES: tuple[str, ...] = (
@@ -630,6 +644,7 @@ VERTICAL_RULES: tuple[str, ...] = (
     "V03 every vertical has ≥ 1 tool with differs_from_user_form",
     "V04 every tool declares ≥ 1 return form and ≥ 1 result path carrying PII (result_pii non-empty) — a tool whose result carries nothing has no IN/tool hop to measure",
     "V05 every tool has a non-empty source and a strict parse that refuses a malformed argument with a documented rule name",
+    "V06 every result_pii path is named by at least one declared ReturnForm.pii_paths — V04 checks the containment one way only (a form may not name a path result_pii does not), so a path declared in the union and in no form was measurable by nothing and deleting it broke nothing: five of the 142 lived that way",
 )
 
 

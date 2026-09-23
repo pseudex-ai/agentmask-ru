@@ -147,11 +147,29 @@ def _crm_found(ctx: c.Ctx) -> Case:
                                 "contact.address.street", 1, ""))
     builder.declare_hop(arg_hop(said["ph"], 6, turn, "crm_upsert_contact", 0,
                                 "contact.phone", 0, ""))
-    builder.declare_hop(answer_hop(card["last_name"], 7, turn, 3, True))
+    # THE UPDATE ANSWERS WITH THE CARD, AND UNTIL NOW NOTHING READ IT. amoCRM
+    # returns the merged contact, `mock._enrich` renders it off the STORED row —
+    # so these are the CRM's own notations coming back, the second IN/tool hop
+    # of the branch and the only one on the acting leg. The three leaves were
+    # declared in `result_pii` and promised by no return form, which is why
+    # deleting them reddened nothing (V06); declaring the hops is what makes the
+    # column a measurement. THE «FOUND» BRANCH IS THE ONLY PLACE THIS CAN LIVE:
+    # on the «not found» leg the update opens a NEW card, whose leaves carry no
+    # seeded item and would be a hop nobody can observe.
+    builder.declare_hop(tool_hop(card["last_name"], 7, turn, "crm_upsert_contact", 0,
+                                 "contact.last_name"))
+    builder.declare_hop(tool_hop(card["first_name"], 8, turn, "crm_upsert_contact", 0,
+                                 "contact.first_name"))
+    builder.declare_hop(tool_hop(card["phone"], 9, turn, "crm_upsert_contact", 0,
+                                 "contact.phone"))
+    builder.declare_hop(answer_hop(card["last_name"], 10, turn, 3, True))
     builder.expect_return(ReturnExpectation(
         "crm_find_contact", 0, "list",
         (card["last_name"], card["first_name"], card["phone"], card["birth_date"],
          card["address.street"])))
+    builder.expect_return(ReturnExpectation(
+        "crm_upsert_contact", 0, "single",
+        (card["last_name"], card["first_name"], card["phone"])))
     return builder.build(BEHAVIOUR)
 
 

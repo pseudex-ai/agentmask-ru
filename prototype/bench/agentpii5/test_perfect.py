@@ -2,37 +2,52 @@
 
     cd prototype && source .venv/bin/activate
     python3 -m bench.agentpii5.test_perfect              # tier medium, ~30 s
-    python3 -m bench.agentpii5.test_perfect --tier max   # the WHOLE corpus, ~2 min 15 s
+    python3 -m bench.agentpii5.test_perfect --tier max   # the WHOLE corpus, ~3 min
 
 Two halves, and neither is worth anything alone:
 
   * a RIGHT gateway (`perfect.simulate`) must clear a declared bound on EVERY
     line — the claim «these numbers are earnable» made checkable;
-  * four WRONG gateways must FAIL the same bounds — because an acceptance test
+  * SIX WRONG gateways must FAIL the same bounds — because an acceptance test
     a wrong gateway can also pass is not an acceptance test, it is a printout.
 
 And a third thing the round-4 proof taught: the three corrections that made the
 probe honest are themselves rules, so each is REVERTED here and the run must go
 red. A correction nobody can knock down is a correction nobody can trust.
 
-WHY `medium` (300 cases) IS THE DEFAULT AND NOT `small`. Runtime is not the
-constraint — one pass over the tier is under two seconds — the corrections are:
-reverting correction 1 moves NOTHING on `nano` or on `small` (measured), so a
-test on those tiers would certify a rule it cannot see. `medium` is the
-smallest tier on which all three corrections bite; the whole file is eight
+WHY `medium` (300 cases) IS THE DEFAULT, AND WHY THE OLD REASON IS GONE. It used
+to be «the smallest tier on which all three corrections bite»: reverting
+correction 1 moved nothing on `nano` or `small`, measured. That was a property of
+a ladder whose every debug tier was ONE register — 30, 120 and 300 `voice_raw`
+cases. On the recut ladder all three corrections bite on all three tiers
+(measured: nano 5 / 4 / 2 breaches, small 4 / 5 / 1, medium 4 / 5 / 1), so the
+default no longer rests on that. It rests on the DENOMINATORS: on `nano`,
+`consistency` is 3/3 and `answer_real` 10/10, and a line of three observations
+certifies almost nothing whichever way it lands. `medium` is the smallest tier
+whose every line has a denominator worth reading, and the whole file is thirteen
 passes, ~30 s.
 
 AND WHY THE DEFAULT IS NOT THE WHOLE STORY. Every number this benchmark
 publishes comes from `max` — all 1736 cases — and for five rounds nothing in
-the repository checked the floors there: `answer_real` was 101/101 on `medium`
+the repository checked the floors there: `answer_real` printed whole on `medium`
 and 636/637 on `max`, and only a scratch script ever saw the second number. A
 bound that is only ever tested on a slice of the corpus it is a claim about is
-a bound with a blind spot, so `--tier max` runs the SAME eight checks over the
-whole corpus: all eight, not a weakened subset — the three corrections and the
-four wrong gateways were measured to bite there too. It is slow (~2 min 15 s,
-eight passes of ~13 s plus the corpus load) and it is the run to make before
-any number is quoted; `medium` stays the default so the file remains cheap
-enough for every change.
+a bound with a blind spot, so `--tier max` runs the SAME checks over the
+whole corpus: all of them, not a weakened subset — the three corrections and the
+six wrong gateways were measured to bite there too. It is slow (~3 min) and it is
+the run to make before any number is quoted; `medium` stays the default so the
+file remains cheap enough for every change.
+
+WHICH CORPUS AND WHICH LADDER THE NUMBERS COME FROM, AND WHY BOTH. Every
+per-tier number a right gateway prints lives in `RECORDED` and is CHECKED
+against the probe on every run; every illustrative number in a docstring here is
+measured with `--tier max`, which moves only when the CORPUS moves and not when
+the ladder is recut. The two together are the lesson of the recut: the file used
+to quote «medium 2808/2808» and «medium 0.8139», measured on a `medium` of 300
+`voice_raw` cases, while the ladder on disk had been redrawn the same day — the
+paragraph named the corpus and not the tier, so the one thing that had changed
+was the one thing it did not pin. Corpus `b80300397179` (`corpus_digest_v5`;
+stamp `9d5b624572fa`), 1 736 cases, 2026-09-23.
 
 OFFLINE BY CONSTRUCTION: no model, no network, no keys, no engine — the corpus,
 the tool registry and arithmetic.
@@ -45,9 +60,11 @@ import sys
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, replace
 
+from bench.agentpii4.schema import PiiItem
 from bench.agentpii4.tools import flatten
 from bench.agentpii5 import contracts, metrics, observe, perfect
 from bench.agentpii5.contracts import ArmRunV5, CaseV5, Line
+from bench.agentpii5.observe import fold, value_needles
 
 # The tier the file runs on when `--tier` says nothing. See the module docstring
 # for why it is not `small` (correction 1 is invisible below 300 cases) and why
@@ -88,11 +105,12 @@ BOUNDS: dict[str, Bound] = {
     "round_trip_repaired": Bound(1.0, None, "the repaired twin of `round_trip`; a right "
                                             "gateway needs no repair, so the two are equal"),
     "end_to_end": Bound(1.0, None, _EARNED),
-    "overmask": Bound(1.0, None, "a right gateway touches no negative: medium 1.0000"),
+    "overmask": Bound(1.0, None, "a right gateway touches no negative; the counts per "
+                                 "tier are in `RECORDED`"),
     "consistency": Bound(1.0, None, _EARNED),
     "stability": Bound(1.0, None, _EARNED),
     "toolresult_masked": Bound(1.0, None, _EARNED),
-    "answer_real": Bound(1.0, None, "medium 1.0000, corpus 1.0000 (637/637) — NO residue. "
+    "answer_real": Bound(1.0, None, "NO residue on any tier (`RECORDED`; `max` 637/637). "
                                     "The «one answer whose required datum the probe's own "
                                     "prose cannot carry» this row used to name was never the "
                                     "prose: the observer derived the restored window from the "
@@ -115,30 +133,40 @@ BOUNDS: dict[str, Bound] = {
 
     # --- the form lines: the two that a right gateway cannot print whole
     "form_hOUT": Bound(0.99, None,
-                       "medium 0.9986 (2807/2811), corpus 0.9988 (15734/15753). ALL 19 corpus "
-                       "misses are ANSWER hops on a region the agent wrote as ONE phrase for "
-                       "2–10 data, which `answer_pair` then narrows per item (C-200): the raw "
-                       "side by the substitute's needles, the restored side by the real "
-                       "value's, and on a multi-part address or name the two needle sets do "
-                       "not land on the same parts — «Ауков, ул Фоеочая» against «Псковская "
-                       "область, г Псков, ул Рабочая». Measured: the UN-narrowed window "
-                       "compares `same` on all 19, so this is the narrowing's own cost and "
-                       "not a gateway defect. The floor sits below every tier (small 0.9974 "
-                       "is the weakest) so a real regression still shows — a gateway that "
-                       "normalises the form prints 0.72 here"),
+                       "EVERY TIER EARNS IT WHOLE — the counts are in `RECORDED` and are "
+                       "checked, not quoted. THE FLOOR STAYS UNDER 1.0000, and not out of "
+                       "caution: the answer half of the denominator rides on an ALIGNMENT of "
+                       "two strings, so a substitute of a different length can leave an "
+                       "OPTIONAL answer hop with no region to compare, and "
+                       "`observe._out_answer` drops such a hop by design — 17 of 15 758 left "
+                       "the denominator when the NAME pool arrived. A bound of 1.0000 would "
+                       "go red for that arithmetic rather than for a gateway. One percentage "
+                       "point is far under every gateway aimed at this line: on `max`, "
+                       "0.7254 for one that upper-cases, 0.8723 for one that answers a case "
+                       "of its own, 0.8440 for one that answers its own notation — and "
+                       "`test_wrong_gateways_are_caught` proves all three every run, so the "
+                       "distance is a check and these three figures are only its size"),
     "form_hIN": Bound(0.80, None,
-                      "medium 0.8121, small 0.8141, corpus 0.9431 — and the whole residue is "
-                      "DICTATED values against WRITTEN substitutes (docs/known-issues.md Б27, "
-                      "an ENGINE finding, not an instrument one: written items 10812/10812). "
-                      "The share of dictated hops differs by tier, which is why the floor sits "
-                      "under the weakest tier and why the line that catches a masking failure "
-                      "is `leak`, never this one"),
+                      "THE WHOLE RESIDUE IS DICTATED VALUES AGAINST WRITTEN SUBSTITUTES "
+                      "(docs/known-issues.md Б27, an ENGINE finding, not an instrument one: "
+                      "on `max`, written hops 10909/10909, dictated 253/923). The per-tier "
+                      "counts are in `RECORDED`. THE FLOOR IS NOT MOVED NOW THAT THE TIERS "
+                      "LOOK BETTER, and that is the point of a floor: the recut took every "
+                      "tier into 0.9368–0.9577 (`max` 0.9434), because the old «medium "
+                      "0.8139» was not a measurement of this line but of a tier made of 300 "
+                      "`voice_raw` cases — one register, the dictated one. The share of "
+                      "dictated hops is a property of a tier's register mix, and a future "
+                      "recut may move it again; raising the floor to today's band would be "
+                      "granting this line a promise decided after the numbers were seen. The "
+                      "line that catches a masking failure is `leak`, never this one"),
 
     # --- the lines that make no claim about the gateway
     "out_absent": Bound(None, 0.0,
                         "a CEILING, not a floor: it counts declared OUT hops the agent never "
-                        "wrote. A right agent writes them all — medium 0/2174 — and an agent "
-                        "that drops its last call prints 0.24 (`wrong_absent_call`)"),
+                        "wrote. A right agent writes them all (`RECORDED`, zero on every "
+                        "tier) and an agent that drops its last call prints about a quarter "
+                        "— `wrong_absent_call`, proved every run by "
+                        "`test_wrong_gateways_are_caught`"),
     "rewrite_ratio_v5": Bound(None, None,
                               "it compares the gateway arm's reply with the CONTROL arm's, and "
                               "this probe writes both — so it measures the probe's prose, not "
@@ -177,6 +205,260 @@ def build_probe(tier: str) -> Probe:
     cases = perfect.cases_of_tier(perfect.load_cases(perfect.CORPUS_PATH),
                                   perfect.load_ladder(perfect.LADDER_PATH), tier)
     return Probe(tier=tier, cases=tuple(cases), perfect=measure(cases, perfect.simulate))
+
+
+# --- what a right gateway ACTUALLY prints, tier by tier ------------------------------
+
+# Every single-arm line a right gateway (`perfect.simulate`) prints on every tier
+# of the RECORDED ladder, as (hits, total). Measured 23.09.2026 on corpus
+# `b80300397179` (`corpus_digest_v5`, stamp `9d5b624572fa`) and ladder tiers
+# nano `aabd26cb17de` · small `7aeb7b42af9e` · medium `745a0cb63e3e` · large
+# `73b832fa5ac2` · holdout `47fe55f7ad51` · max `f0f6dd85c768`.
+#
+# WHY A TABLE AND NOT A SENTENCE. The numbers used to live in the `why` of each
+# bound, as prose, and prose is not checked: two tracks of one session moved the
+# ladder and probed it, and the file shipped «medium 2808/2808» and «medium
+# 0.8139» for a `medium` that no longer existed — the same disease the docstring
+# above declares closed, reproduced in the same file on the same day. A number
+# nothing reads is a number nothing can keep true.
+#
+# WHY A REFUSAL AND NOT A WARNING. The point of re-measuring is that somebody
+# LOOKS: a recut of the ladder is exactly the moment to ask whether a bound still
+# describes what it claims to. A printed drift would be read by the same nobody
+# who read the stale sentence.
+#
+# A ROW IS NOT A BOUND. `BOUNDS` says what a right gateway MUST clear and never
+# moves with the corpus; this says what it DOES print and moves with every recut.
+# Merging them would turn every bound into «whatever we measured last», which is
+# a floor that cannot fail.
+RECORDED: dict[str, dict[str, tuple[int, int]]] = {
+    "nano": {
+        "answer_optional_only": (12, 22),
+        "answer_real": (10, 10),
+        "chain_form": (12, 12),
+        "chain_value": (12, 12),
+        "consistency": (3, 3),
+        "coverage": (192, 192),
+        "doc_extracted": (7, 7),
+        "doc_masked": (2, 2),
+        "end_to_end": (109, 109),
+        "form_hIN": (182, 192),
+        "form_hOUT": (218, 218),
+        "leak": (192, 192),
+        "memory_consistency": (11, 11),
+        "multi_all_out": (17, 17),
+        "multi_consistency": (17, 17),
+        "out_absent": (0, 184),
+        "overmask": (30, 30),
+        "rag_identity_kept": (6, 6),
+        "rag_masked": (6, 6),
+        "residual": (248, 248),
+        "retry_form": (2, 2),
+        "rewrite_ratio_v5": (0, 30),
+        "round_trip": (88, 88),
+        "round_trip_repaired": (88, 88),
+        "shared_block_answer": (30, 62),
+        "stability": (3, 3),
+        "stream_fidelity": (0, 0),
+        "toolresult_masked": (31, 31),
+        "typed": (107, 107),
+    },
+    "small": {
+        "answer_optional_only": (51, 94),
+        "answer_real": (43, 43),
+        "chain_form": (61, 61),
+        "chain_value": (61, 61),
+        "consistency": (32, 32),
+        "coverage": (807, 807),
+        "doc_extracted": (30, 30),
+        "doc_masked": (7, 7),
+        "end_to_end": (508, 508),
+        "form_hIN": (756, 807),
+        "form_hOUT": (1050, 1050),
+        "leak": (807, 807),
+        "memory_consistency": (41, 41),
+        "multi_all_out": (64, 64),
+        "multi_consistency": (78, 78),
+        "out_absent": (0, 835),
+        "overmask": (120, 120),
+        "rag_identity_kept": (25, 25),
+        "rag_masked": (27, 27),
+        "residual": (1170, 1170),
+        "retry_form": (9, 9),
+        "rewrite_ratio_v5": (0, 120),
+        "round_trip": (410, 410),
+        "round_trip_repaired": (410, 410),
+        "shared_block_answer": (154, 275),
+        "stability": (32, 32),
+        "stream_fidelity": (3, 3),
+        "toolresult_masked": (133, 133),
+        "typed": (473, 473),
+    },
+    "medium": {
+        "answer_optional_only": (128, 236),
+        "answer_real": (108, 108),
+        "chain_form": (162, 162),
+        "chain_value": (162, 162),
+        "consistency": (74, 74),
+        "coverage": (2059, 2059),
+        "doc_extracted": (68, 68),
+        "doc_masked": (18, 18),
+        "end_to_end": (1327, 1327),
+        "form_hIN": (1934, 2059),
+        "form_hOUT": (2716, 2716),
+        "leak": (2059, 2059),
+        "memory_consistency": (107, 107),
+        "multi_all_out": (166, 166),
+        "multi_consistency": (197, 197),
+        "out_absent": (0, 2153),
+        "overmask": (300, 300),
+        "rag_identity_kept": (51, 51),
+        "rag_masked": (58, 58),
+        "residual": (3016, 3016),
+        "retry_form": (22, 22),
+        "rewrite_ratio_v5": (0, 300),
+        "round_trip": (1073, 1073),
+        "round_trip_repaired": (1073, 1073),
+        "shared_block_answer": (390, 710),
+        "stability": (74, 74),
+        "stream_fidelity": (12, 12),
+        "toolresult_masked": (332, 332),
+        "typed": (1217, 1217),
+    },
+    "large": {
+        "answer_optional_only": (257, 470),
+        "answer_real": (213, 213),
+        "chain_form": (322, 322),
+        "chain_value": (322, 322),
+        "consistency": (136, 136),
+        "coverage": (4088, 4088),
+        "doc_extracted": (119, 119),
+        "doc_masked": (35, 35),
+        "end_to_end": (2682, 2682),
+        "form_hIN": (3839, 4088),
+        "form_hOUT": (5489, 5489),
+        "leak": (4088, 4088),
+        "memory_consistency": (210, 210),
+        "multi_all_out": (318, 318),
+        "multi_consistency": (387, 387),
+        "out_absent": (0, 4324),
+        "overmask": (600, 600),
+        "rag_identity_kept": (96, 96),
+        "rag_masked": (112, 112),
+        "residual": (6089, 6089),
+        "retry_form": (44, 44),
+        "rewrite_ratio_v5": (0, 600),
+        "round_trip": (2211, 2211),
+        "round_trip_repaired": (2211, 2211),
+        "shared_block_answer": (780, 1403),
+        "stability": (136, 136),
+        "stream_fidelity": (23, 23),
+        "toolresult_masked": (658, 658),
+        "typed": (2402, 2402),
+    },
+    "holdout": {
+        "answer_optional_only": (130, 267),
+        "answer_real": (137, 137),
+        "chain_form": (169, 169),
+        "chain_value": (169, 169),
+        "consistency": (75, 75),
+        "coverage": (2338, 2338),
+        "doc_extracted": (58, 58),
+        "doc_masked": (19, 19),
+        "end_to_end": (1502, 1502),
+        "form_hIN": (2239, 2338),
+        "form_hOUT": (2937, 2937),
+        "leak": (2338, 2338),
+        "memory_consistency": (130, 130),
+        "multi_all_out": (174, 174),
+        "multi_consistency": (218, 218),
+        "out_absent": (0, 2404),
+        "overmask": (347, 347),
+        "rag_identity_kept": (83, 83),
+        "rag_masked": (97, 97),
+        "residual": (3284, 3284),
+        "retry_form": (25, 25),
+        "rewrite_ratio_v5": (0, 347),
+        "round_trip": (1243, 1243),
+        "round_trip_repaired": (1243, 1243),
+        "shared_block_answer": (424, 790),
+        "stability": (75, 75),
+        "stream_fidelity": (18, 18),
+        "toolresult_masked": (379, 379),
+        "typed": (1359, 1359),
+    },
+    "max": {
+        "answer_optional_only": (720, 1357),
+        "answer_real": (637, 637),
+        "chain_form": (928, 928),
+        "chain_value": (928, 928),
+        "consistency": (369, 369),
+        "coverage": (11832, 11832),
+        "doc_extracted": (325, 325),
+        "doc_masked": (100, 100),
+        "end_to_end": (7747, 7747),
+        "form_hIN": (11162, 11832),
+        "form_hOUT": (15741, 15741),
+        "leak": (11832, 11832),
+        "memory_consistency": (619, 619),
+        "multi_all_out": (909, 909),
+        "multi_consistency": (1106, 1106),
+        "out_absent": (0, 12491),
+        "overmask": (1736, 1736),
+        "rag_identity_kept": (310, 310),
+        "rag_masked": (360, 360),
+        "residual": (17477, 17477),
+        "retry_form": (126, 126),
+        "rewrite_ratio_v5": (0, 1736),
+        "round_trip": (6404, 6404),
+        "round_trip_repaired": (6404, 6404),
+        "shared_block_answer": (2254, 4063),
+        "stability": (369, 369),
+        "stream_fidelity": (84, 84),
+        "toolresult_masked": (1908, 1908),
+        "typed": (6938, 6938),
+    },
+}
+
+
+def test_the_recorded_numbers_are_still_the_numbers(probe: Probe) -> list[str]:
+    """Every line prints on this tier exactly what `RECORDED` says it prints.
+
+    THIS IS THE CHECK THE STALE SENTENCES NEEDED AND DID NOT HAVE. It goes red on
+    a recut of the ladder, on a rebuilt corpus and on a changed probe alike — and
+    that is the whole intent: each of the three is a reason to re-read what the
+    bounds claim, and none of them used to leave a mark.
+    """
+    row = RECORDED.get(probe.tier)
+    if row is None:
+        return [f"tier {probe.tier} has no row in RECORDED — measure it and write it down, "
+                f"or the acceptance run on it certifies numbers nobody wrote"]
+    problems = [f"{name}: RECORDED says {row[name][0]}/{row[name][1]}, the probe prints "
+                f"{line.hits}/{line.total} on tier {probe.tier} — re-measure, and re-read "
+                f"every bound whose reason rests on the old number"
+                for name, line in sorted(probe.perfect.items())
+                if name in row and (line.hits, line.total) != row[name]]
+    problems += [f"{name}: RECORDED holds a row for a line the probe no longer prints"
+                 for name in sorted(row) if name not in probe.perfect]
+    problems += [f"{name}: the probe prints a line RECORDED does not hold"
+                 for name in sorted(probe.perfect) if name not in row]
+    return problems
+
+
+def test_every_tier_of_the_ladder_is_recorded(probe: Probe) -> list[str]:
+    """`RECORDED` holds a row for every tier the ladder names, and for no other.
+
+    A tier added to the ladder and not measured here would be a tier on which
+    `--tier` runs the acceptance against nothing; a row for a tier that is gone
+    is a number describing a corpus slice that does not exist. Read off the
+    LADDER FILE, not off `TIERS`, because the file is what a run reads.
+    """
+    named = set(perfect.load_ladder(perfect.LADDER_PATH).tiers)
+    problems = [f"tier {name} is in the ladder and not in RECORDED"
+                for name in sorted(named - set(RECORDED))]
+    problems += [f"tier {name} is in RECORDED and not in the ladder"
+                 for name in sorted(set(RECORDED) - named)]
+    return problems
 
 
 # --- the bounds a right gateway must clear ------------------------------------------
@@ -260,11 +542,11 @@ def test_correction_one_is_load_bearing(probe: Probe) -> list[str]:
     Reverted, the probe mints twice — once from the surface, once from the
     canonical — and `_keep_tail` puts «пётр» and «петра» in different length
     classes, so the model reads a fake that shares no stem with the fake in the
-    argument. Measured on this tier: `round_trip` 1132/1135, `end_to_end`
-    1359/1362, `multi_all_out` 154/157; over the whole corpus, twelve leaves
-    and twelve turns.
+    argument. Measured on `max`, which is the only tier a recut cannot move:
+    `round_trip` 6305/6404, `end_to_end` 7648/7747, `multi_all_out` 810/909,
+    `form_hOUT` 15642/15741 — ninety-nine leaves and ninety-nine turns.
     """
-    with _reverted("worn_like", lambda fake, real, surface: ""):
+    with _reverted("worn_like", lambda fake, real, surface, gender: ""):
         fell = _breaches(measure(probe.cases, perfect.simulate))
     return [] if fell else ["correction 1 (`worn_like`) reverted and every bound still held — "
                             "either the rule is dead or the tier is too small to see it"]
@@ -275,8 +557,7 @@ def test_correction_two_is_load_bearing(probe: Probe) -> list[str]:
 
     Reverted — one value per leaf path, the last hop winning — the other hops
     of a shared free leaf read as values the gateway dropped: `chain_value`
-    160/166 here, 892/928 over the corpus, and that is the round-4 caveat's
-    whole 36-miss story.
+    892/928 on `max`, and that is the round-4 caveat's whole 36-miss story.
     """
     with _reverted("compose_free_leaf", lambda values: (values[-1] if values else "")):
         fell = _breaches(measure(probe.cases, perfect.simulate))
@@ -354,6 +635,84 @@ def wrong_absent_call(case: CaseV5) -> ArmRunV5:
                    call_turns=run.call_turns[:-1])
 
 
+def _leaf_pair_with(fix: Callable[[str, str], str]) -> Callable[..., tuple[str, str]]:
+    """`perfect._leaf_pair` with `fix` laid over what the gateway RESTORED.
+
+    The seam is `_leaf_pair` and not the flat leaf map `_map_calls` reaches,
+    because both mutants below are about ONE type — a name's case, a phone's
+    notation — and `_leaf_pair` is the last place that still knows which item a
+    leaf holds. A mutant guessing the type from the string would inflect a
+    street that happens to parse as a surname, and stop being the defect it
+    names.
+    """
+    right = perfect._leaf_pair
+
+    def leaf(item: PiiItem, substitute: perfect.Substitute, tool: str,
+             path: str) -> tuple[str, str]:
+        written, restored = right(item, substitute, tool, path)
+        return written, fix(item.type, restored)
+
+    return leaf
+
+
+def _dative(pii_type: str, text: str) -> str:
+    """A NAME in the dative, word by word, capitalisation kept — so the ONLY
+    feature that can move is `gram_case`. Lower-casing it instead would be
+    caught by `case_class`, and the check would prove nothing about the case."""
+    if pii_type != "NAME":
+        return text
+    out: list[str] = []
+    for token in perfect._WORD.findall(text):
+        lexeme = perfect._lexeme_parse(token) if token.isalpha() else None
+        worn = None if lexeme is None else lexeme.inflect({"datv"})
+        out.append(token if worn is None else perfect._worn_case(worn.word, token))
+    return "".join(out)
+
+
+def wrong_case_form(case: CaseV5) -> ArmRunV5:
+    """RESTORES THE RIGHT NAME IN A CASE OF ITS OWN CHOOSING: the agent wrote
+    «Иванов» and the tool receives «Иванову».
+
+    `docs/known-issues.md` Б24 from the side this corpus can show. The defect
+    there is «the nominative for the tool», and the nominative is what the
+    corpus's own tool leaves already carry — a gateway whose canonical IS the
+    nominative would be right about them by accident, and a mutant that is
+    accidentally right proves nothing. So this one answers the dative: not the
+    case the agent wrote, whichever case that was.
+
+    ONE FEATURE CATCHES IT, `NAME.gram_case`, and that feature had no voice
+    until the substitute became a word (`perfect` §1bis).
+    `test_readable_fakes_are_load_bearing` takes the pool away and shows this
+    gateway walking past `form_hOUT` untouched.
+    """
+    with _reverted("_leaf_pair", _leaf_pair_with(_dative)):
+        return perfect.simulate(case)
+
+
+def _canonical_phone(pii_type: str, text: str) -> str:
+    """A PHONE in ONE notation of the gateway's own: «+7» and ten digits."""
+    digits = "".join(char for char in text if char.isdigit())
+    return "+7" + digits[-10:] if pii_type == "PHONE" and digits else text
+
+
+def wrong_normalised_number(case: CaseV5) -> ArmRunV5:
+    """RETURNS THE RIGHT NUMBER IN THE WRONG NOTATION: the agent wrote the ten
+    bare digits the leaf asks for and the gateway answers «+7…», its canonical.
+
+    THE FIFTH CLASS, AND THE ONE THE PRODUCT IS ACTUALLY MEASURED AGAINST.
+    `pseudex/vault.py` canonicalises on the way back — «detokenization returns
+    the CANONICAL form» — so a phone restored into a leaf the agent wrote bare
+    comes back with a country code the agent did not write. Four wrong gateways
+    stood here and none of them was this one.
+
+    It is also the cleanest statement of what `form_hOUT` exists for: the value
+    is right to the last digit, and only the notation was decided by the wrong
+    party. `test_number_mutant_moves_only_form_lines` holds it to exactly that.
+    """
+    with _reverted("_leaf_pair", _leaf_pair_with(_canonical_phone)):
+        return perfect.simulate(case)
+
+
 # Each wrong gateway names the ONE line that must catch it — the line whose
 # words are its defect. Others move too, and that is fine; what a test cannot
 # accept is «something somewhere changed».
@@ -362,6 +721,8 @@ WRONG_GATEWAYS: tuple[tuple[str, Callable[[CaseV5], ArmRunV5], str], ...] = (
     ("normalises the agent's form", wrong_normalised_form, "form_hOUT"),
     ("loses the substitute across turns", wrong_unstable_substitute, "stability"),
     ("never makes the last call", wrong_absent_call, "out_absent"),
+    ("answers a case of its own", wrong_case_form, "form_hOUT"),
+    ("returns the number in its own notation", wrong_normalised_number, "form_hOUT"),
 )
 
 
@@ -386,6 +747,136 @@ def test_wrong_gateways_are_caught(probe: Probe) -> list[str]:
     return problems
 
 
+# The lines whose hit condition READS a `FormVerdict`. Every other line asks
+# about the VALUE, and a gateway that returns the right number in the wrong
+# notation must leave all of them exactly where it found them.
+FORM_READING_LINES: frozenset[str] = frozenset({
+    "form_hIN", "form_hOUT", "chain_form", "retry_form", "multi_all_out"})
+
+
+def test_readable_fakes_are_load_bearing(probe: Probe) -> list[str]:
+    """THE POOL IS WHAT GIVES `NAME.gram_case` A VOICE.
+
+    Reverted — `pool_pick` refuses every word, so every name is minted by
+    letter substitution as it was before `perfect` §1bis — pymorphy3 knows none
+    of the substitutes, `form._word_readings` refuses a prediction made from an
+    ending, and `name_gram_case_same` abstains on the REFERENCE side of every
+    name hop. `wrong_case_form` then answers a case nobody wrote and
+    `form_hOUT` does not move: measured on the corpus, 6 200 of 6 200 NAME
+    substitutes silent against 93 of 6 200 real values.
+
+    The value lines still catch it, and that is not the point: the defect is a
+    FORM, `gram_case` is the feature whose words describe it, and a line that
+    cannot see the defect it names is the v4 disease this whole file exists to
+    keep out.
+    """
+    with _reverted("pool_pick", lambda word, gender, role, taken: ("", "")):
+        blind = measure(probe.cases, wrong_case_form)
+    caught = [one for one in _breaches(blind) if one.startswith("form_hOUT:")]
+    return [f"with the pool reverted `form_hOUT` still caught the case mutant ({caught}) — "
+            f"either the letter-mangled fakes were already readable, or the mutant moves "
+            f"some other feature and proves nothing about `gram_case`"] if caught else []
+
+
+def test_number_mutant_moves_only_form_lines(probe: Probe) -> list[str]:
+    """A NOTATION IS NOT A VALUE, and the line that says so must be alone.
+
+    `wrong_normalised_number` returns the customer's phone to the last digit
+    and writes it in the gateway's own notation. Every value line must print
+    what a right gateway prints; only the lines that read a form verdict may
+    move. Without this, «caught by form_hOUT» would be satisfied by a mutant
+    that quietly corrupted the number as well, and the row would stop being
+    evidence about the form.
+    """
+    lines = measure(probe.cases, wrong_normalised_number)
+    moved = [name for name, line in lines.items() if line != probe.perfect[name]]
+    problems = [f"{name}: {probe.perfect[name].hits}/{probe.perfect[name].total} -> "
+                f"{lines[name].hits}/{lines[name].total} under a gateway that changed a "
+                f"notation and no value — this line does not read a form verdict"
+                for name in moved if name not in FORM_READING_LINES]
+    if not any(name in FORM_READING_LINES for name in moved):
+        problems.append("the notation mutant moved no form line at all — it is not a mutant")
+    return problems
+
+
+def _corpus_reading(cases: Sequence[CaseV5]) -> tuple[frozenset[str], str]:
+    """(every NAME stem needle the corpus carries, every value of it in one
+    folded blob). The blob is joined on a newline so a match can never straddle
+    two values."""
+    stems: set[str] = set()
+    values: set[str] = set()
+    for case in cases:
+        for item in case.base.pii:
+            for surface in {item.value, item.canonical, *item.parts.values()}:
+                values.add(fold(surface))
+                if item.type != "NAME":
+                    continue
+                stems |= {needle.text for needle in value_needles("NAME", surface)
+                          if needle.kind == "stem"}
+    return frozenset(stems), "\n".join(sorted(values))
+
+
+def _pool_problems(entries: Sequence[str], stems: frozenset[str], blob: str) -> list[str]:
+    """Every way one entry is unfit to be minted from — the three rules written
+    out in `perfect` §1bis plus the one they all rest on, that pymorphy3 knows
+    the word and can inflect it."""
+    problems: list[str] = []
+    for entry in entries:
+        lexeme = perfect._lexeme_parse(entry)
+        worn = [] if lexeme is None else [lexeme.inflect({case}) for case in _GRAM_CASES]
+        forms = {entry} | {one.word for one in worn if one is not None}
+        if lexeme is None or any(one is None for one in worn):
+            problems.append(f"{entry}: unknown — pymorphy3 holds no name parse it can "
+                            f"inflect into all six cases")
+        if len(entry) < 5:
+            problems.append(f"{entry}: short — under five letters the four-letter stem "
+                            f"needle is the ending, and the ending moves")
+        moved = sorted({perfect._stem(one) for one in forms})
+        if len(moved) > 1:
+            problems.append(f"{entry}: stem-moves — {moved}")
+        clash = sorted({stem for stem in stems
+                        for mine in [perfect._stem(entry)]
+                        if stem.startswith(mine) or mine.startswith(stem)})
+        if clash:
+            problems.append(f"{entry}: corpus-stem — shares a needle with {clash}")
+        inside = sorted({one for one in forms if fold(one) in blob})
+        if inside:
+            problems.append(f"{entry}: inside-corpus — {inside} stands inside a corpus value")
+    return problems
+
+
+# Five entries, one broken rule each, and the check must name all five. A
+# checker that cannot fail is the thing this file exists to refuse, and a pool
+# check is the easiest one to write so that it never does.
+_UNFIT_POOL: tuple[str, ...] = ("зоя", "павел", "тарас", "панов", "укщыхьв")
+_GRAM_CASES: tuple[str, ...] = ("nomn", "gent", "datv", "accs", "ablt", "loct")
+_UNFIT_LABELS: tuple[str, ...] = ("short", "stem-moves", "corpus-stem", "inside-corpus",
+                                  "unknown")
+
+
+def test_pool_is_fit_to_mint_from(probe: Probe) -> list[str]:
+    """EVERY POOL ENTRY OBEYS THE THREE RULES, ENTRY BY ENTRY.
+
+    The bounds above already go red when an entry is unfit — a shared stem
+    prints as `coverage 0.9975` — and that is a number, not an instruction.
+    This names the word and the rule, which is what a reader needs when a
+    rebuilt corpus brings in a name the pool has held for months.
+
+    The second half poisons the pool with one entry per rule and demands a
+    complaint for each: «Зоя» too short, «Павел» whose vowel is fleeting,
+    «Тарас» sharing the needle of «Тарасова», «Панов» sitting inside
+    «стеПАНОВич», and a string no dictionary holds.
+    """
+    stems, blob = _corpus_reading(probe.cases)
+    entries = sorted({one for pool in perfect._POOL.values() for one in pool})
+    problems = _pool_problems(entries, stems, blob)
+    caught = _pool_problems(_UNFIT_POOL, stems, blob)
+    problems += [f"the pool check missed `{label}` on its own unfit pool — it cannot fail"
+                 for label in _UNFIT_LABELS
+                 if not any(f": {label}" in one for one in caught)]
+    return problems
+
+
 def test_no_engine_imported(probe: Probe) -> list[str]:
     """The probe is records and arithmetic. An engine import here would mean the
     acceptance numbers depend on the thing being accepted."""
@@ -405,11 +896,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     checks: tuple[tuple[str, Callable[[Probe], list[str]]], ...] = (
         ("no_engine_imported", test_no_engine_imported),
         ("every_metric_has_a_bound", test_every_metric_has_a_bound),
+        ("every_tier_of_the_ladder_is_recorded", test_every_tier_of_the_ladder_is_recorded),
+        ("the_recorded_numbers_are_still_the_numbers",
+         test_the_recorded_numbers_are_still_the_numbers),
         ("no_line_is_empty", test_no_line_is_empty),
         ("perfect_gateway_clears_every_bound", test_perfect_gateway_clears_every_bound),
         ("correction_one_is_load_bearing", test_correction_one_is_load_bearing),
         ("correction_two_is_load_bearing", test_correction_two_is_load_bearing),
         ("correction_three_is_load_bearing", test_correction_three_is_load_bearing),
+        ("pool_is_fit_to_mint_from", test_pool_is_fit_to_mint_from),
+        ("readable_fakes_are_load_bearing", test_readable_fakes_are_load_bearing),
+        ("number_mutant_moves_only_form_lines", test_number_mutant_moves_only_form_lines),
         ("wrong_gateways_are_caught", test_wrong_gateways_are_caught),
     )
     failures: list[str] = []

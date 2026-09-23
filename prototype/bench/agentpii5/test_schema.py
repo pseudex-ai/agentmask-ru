@@ -807,6 +807,66 @@ def test_k15() -> list[str]:
     return _corpus_expect(broken, "K15")
 
 
+def test_k16() -> list[str]:
+    """A vertical OFFERED and never read back — the clinic's own shape.
+
+    The break is the defect as it actually stood: `patient_find` is put in front
+    of the agent by one case and nothing in the corpus crosses an IN/tool hop of
+    the clinic. Before K16 that corpus passed every rule, and a vertical whose
+    return notation is checked by nothing looked covered because its OUT hops
+    counted — 584 of them.
+    """
+    broken = list(CORPUS)
+    first = broken[0]
+    broken[0] = replace(first, base=replace(
+        first.base, tools=(*first.base.tools, "patient_find")))
+    return _corpus_expect(broken, "K16")
+
+
+def test_k16_is_silent_on_a_writing_vertical() -> list[str]:
+    """The other side, and the reason the rule names the exemption out loud: a
+    vertical whose tools all WRITE owes no reading. `notify_sms` is offered by
+    every synthetic case and the messaging row of §2 asks for an OUT/template
+    hop, not an IN/tool one — a rule that demanded one there would be demanding a
+    result the real services do not return."""
+    if "K16" in _corpus_ids(CORPUS):
+        return [f"K16 fired on a corpus whose only other vertical writes: "
+                f"{[one for one in s.validate_corpus_v5(CORPUS, REGISTRY_NAMES) if one.startswith('K16')]}"]
+    return []
+
+
+def test_k17() -> list[str]:
+    """An IN/tool hop on a leaf the registry does not declare.
+
+    THE HALF THAT MAKES A DELETION HURT. V06 keeps a declaration reachable; this
+    keeps it necessary — remove `contacts[].last_name` from `crm_find_contact`'s
+    `result_pii` and the corpus that crosses it goes red. Five declared paths
+    lived through a whole release because neither half existed.
+    """
+    broken = list(CORPUS)
+    first = broken[0]
+    hops = tuple(replace(hop, path="contacts[].nickname")
+                 if hop.kind == "IN" and hop.owner == "tool" else hop
+                 for hop in first.hops)
+    broken[0] = replace(first, hops=hops)
+    return _corpus_expect(broken, "K17")
+
+
+def test_k17_erases_the_array_index() -> list[str]:
+    """A hop that crossed the SECOND row of a list is the same leaf as the
+    first. Without the erasure every list result in the corpus would be a K17
+    violation, and a rule that is red on everything is read by nobody."""
+    broken = list(CORPUS)
+    first = broken[0]
+    hops = tuple(replace(hop, path="contacts[3].last_name")
+                 if hop.kind == "IN" and hop.owner == "tool" else hop
+                 for hop in first.hops)
+    broken[0] = replace(first, hops=hops)
+    if "K17" in _corpus_ids(broken):
+        return ["K17 fired on an indexed occurrence of a declared leaf"]
+    return []
+
+
 # --- serialisation ---------------------------------------------------------------
 
 def test_json_round_trip() -> list[str]:
@@ -1169,6 +1229,8 @@ CHECKS: tuple[object, ...] = (
     test_synthetic_corpus_is_quiet, test_k01, test_k02_floor_not_ceiling, test_k03, test_k04,
     test_k05, test_k06, test_k07, test_k08, test_k09, test_k10, test_k11, test_k13,
     test_k13_one_behaviour, test_k14, test_k14_long_memory, test_k15,
+    test_k16, test_k16_is_silent_on_a_writing_vertical, test_k17,
+    test_k17_erases_the_array_index,
     test_json_round_trip, test_has_result,
     test_registers_v5_mix, test_plate, test_plate_spoken_parses, test_system_prompt_v5,
     test_builder_guards, test_builder_refuses_an_invalid_case, test_prose_seed,

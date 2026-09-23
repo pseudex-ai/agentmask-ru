@@ -8,7 +8,7 @@ THIS FILE PRINTS NUMBERS; IT JUDGES NOTHING. The floors those numbers must
 clear live in `test_perfect.BOUNDS`, and the command that CHECKS them on the
 corpus every published figure comes from is
 
-    python3 -m bench.agentpii5.test_perfect --tier max   # ~2 min 15 s
+    python3 -m bench.agentpii5.test_perfect --tier max   # ~3 min
 
 which is the run to make before any number of this benchmark is quoted. Reading
 the table below and nodding is what left `answer_real` at 636/637 for five
@@ -43,24 +43,39 @@ it was wrong, and each has a test that falls when it is reverted
 places where a plausible simulation charges the gateway for the probe's own
 bookkeeping.
 
-THE OTHER HALF lives in `test_perfect.py`: four wrong gateways must FAIL the
+THE OTHER HALF lives in `test_perfect.py`: SIX wrong gateways must FAIL the
 same bounds this one clears. An acceptance test a wrong gateway can also pass
 is not an acceptance test.
+
+AND THE MINT IS PART OF THE SPECIFICATION TOO (§1bis). A substitute the model
+reads has to be a WORD, not a string of the right length: a letter-mangled fake
+is in no dictionary, pymorphy3 will only guess at it, and `NAME.gram_case` —
+the most expensive feature §8.4 names — then abstains on every name in the run.
+Measured before the pool: 6 200 of 6 200 NAME substitutes silent against 93 of
+6 200 real values, so «a right gateway takes form_hOUT whole» was earned with
+that feature switched off and a gateway answering a case of its own choosing
+walked past the line. `test_perfect.test_readable_fakes_are_load_bearing` is
+that sentence made checkable.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import pathlib
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from pymorphy3.analyzer import Parse
+
 from bench.agentpii4.compare import ArmRun, ObservedCall
+from bench.agentpii4.parts import name_parts
 from bench.agentpii4.schema import Ladder, PiiItem, tier
-from bench.agentpii5 import contracts, metrics, observe
+from bench.agentpii5 import contracts, form, metrics, observe
 from bench.agentpii5.contracts import (ArmRunV5, CaseV5, Line, MentionRecord, RunObservation,
                                        ToolResultRecord)
+from bench.agentpii5.form_tables import NAME_PARTICLES
 from bench.agentpii5.metrics import parts_of
 from bench.agentpii5.schema import case_v5_from_json
 from bench.agentpii5.tools import REGISTRY_V5, expected_leaf_value, spec_v5_for
@@ -112,6 +127,322 @@ _NAME_ROLES: tuple[str, ...] = ("surname", "given", "patronymic")
 # needle stops finding it, for reasons that belong to this file.
 _SPLIT_ROLES: tuple[str, ...] = ("street", "surname", "given", "patronymic")
 _WORD = re.compile(r"[^\W\d_]+|\d+|\W+|_", re.UNICODE)
+
+
+# --- §1bis the NAME pool: a substitute has to be a WORD -------------------------------
+#
+# WHY THE LETTER-MANGLED FAKE BELOW IS NOT ENOUGH FOR A NAME. `_fake_word`
+# writes «удфгей» for «сергей»: same length, same script, same case class, and
+# in no dictionary anywhere. pymorphy3 answers about such a string by GUESSING
+# from its ending, `form._word_readings` refuses a guess (`parse.is_known`),
+# and so NAME.gram_case — the most expensive feature spec §8.4 names — printed
+# `unknown` on EVERY name this probe minted: 6 200 of 6 200 substitutes
+# measured silent, against 93 of 6 200 real values. «A right gateway takes
+# form_hOUT whole» was therefore earned with that feature switched off, and a
+# gateway that answers a case of its own choosing walked free.
+# `test_perfect.test_readable_fakes_are_load_bearing` reverts this section and
+# shows exactly that.
+#
+# WHAT THE ENGINE DOES, AND SO DOES THIS. `pseudex/vault.py` mints a name out
+# of the leased gazetteer — a real surname, a real given name, of the same
+# gender (`docs/tz-name-gender-canonical.md`) — and inflects it into the form
+# the customer wrote. The pool below is that promise written out offline: real
+# lexemes pymorphy3 knows, DISJOINT from every name the corpus uses, so a
+# substitute can never be read as the value it replaces.
+
+# ONE analyzer for the process, and it is the comparator's own. pymorphy3 loads
+# its dictionary from disk; a second instance here would load it twice to
+# answer the same questions `form` asks, and a mint read by one analyzer and
+# compared by another is two readings of one word.
+_ANALYZER = form._ANALYZER
+
+# Masculine surnames. The feminine ones are these plus «а» — a rule of the
+# language, not a second table that has to be kept in step with the first.
+#
+# THREE RULES EVERY ENTRY OBEYS, and each one was written by a number the probe
+# printed while it was broken. `test_perfect.test_pool_is_fit_to_mint_from`
+# checks all three entry by entry, so a rebuilt corpus says which word to drop
+# instead of leaving a reader to work it out from a coverage of 0.9975.
+#
+#  * IT SHARES NO STEM WITH A NAME OF THE CORPUS, in either direction. A NAME
+#    needle is a four-letter STEM (`observe.value_needles`), so the given name
+#    «Тарас» in a masked tool result answers the leak needle of the surname
+#    «Тарасова», and the probe reports a leak the gateway never committed —
+#    measured: coverage 2023/2028, toolresult_masked 313/317, doc_masked 15/17.
+#    «Виктория» against «Викторовна» is the same collision.
+#  * IT OCCURS IN NO VALUE OF THE CORPUS, in any of its six forms. «Лев» sits
+#    inside «поЛЕВая» and «Панов» inside «стеПАНОВич», and a `whole` needle is
+#    a substring search: `residual` then reports a substitute reaching the
+#    customer out of a street the gateway restored correctly.
+#  * ITS FIRST FOUR LETTERS DO NOT MOVE WHEN IT IS INFLECTED. The stem needle
+#    is those four letters, so «Зоя» read by the model and «Зою» written into
+#    the tool are two values as far as every needle is concerned, and the hop
+#    reads `unmasked`. That rules out everything under five letters, and
+#    «Павел», whose vowel is fleeting (павел → павла).
+_SURNAME_STEMS: tuple[str, ...] = (
+    "мельников", "титов", "гусев", "зайцев", "комаров", "рябов", "шилов", "щукин",
+    "голубев", "дроздов", "селезнев", "тетерин", "бобров", "куликов", "журавлев",
+    "сорокин", "скворцов", "чижов", "грачев", "филатов", "карпов", "ершов",
+    "окунев", "линев", "бычков", "барсуков", "волков", "киселев", "макаров",
+    "ковалев", "ильин", "гуляев", "пономарев")
+# Given names of BOTH readings the splitters know: ones a surname regex does
+# not touch («антон») and ones it does («юрий», «арина» — «-ий», «-ин»). Both
+# have to be here, because the pick must read the way the word it replaces
+# reads, and «Аркадий» reads as surname-shaped to `form` while «Иван» does not.
+_GIVEN_M: tuple[str, ...] = (
+    "антон", "вадим", "даниил", "денис", "матвей", "никита", "роман", "тимофей",
+    "филипп", "ярослав", "макар", "мирон", "прохор", "тихон", "назар", "трофим",
+    "родион", "елисей", "платон", "всеволод", "геннадий", "георгий", "григорий")
+_GIVEN_F: tuple[str, ...] = (
+    "дарья", "диана", "ксения", "надежда", "оксана", "раиса", "татьяна", "варвара",
+    "вероника", "елизавета", "жанна", "клавдия", "лариса", "маргарита", "алиса",
+    "анастасия", "ульяна", "алина", "ангелина", "антонина", "галина", "екатерина",
+    "карина", "кристина", "регина", "альбина")
+_PATRONYMIC_M: tuple[str, ...] = (
+    "антонович", "глебович", "егорович", "денисович", "романович", "матвеевич",
+    "тимофеевич", "филиппович", "вадимович", "маркович", "назарович", "платонович",
+    "макарович", "прохорович", "родионович", "трофимович", "ильич")
+_PATRONYMIC_F: tuple[str, ...] = (
+    "антоновна", "глебовна", "егоровна", "денисовна", "романовна", "матвеевна",
+    "тимофеевна", "филипповна", "вадимовна", "марковна", "назаровна", "платоновна",
+    "макаровна", "прохоровна", "родионовна", "трофимовна", "ильинична")
+
+_POOL: dict[tuple[str, str], tuple[str, ...]] = {
+    ("surname", "m"): _SURNAME_STEMS,
+    ("surname", "f"): tuple(stem + "а" for stem in _SURNAME_STEMS),
+    ("given", "m"): _GIVEN_M,
+    ("given", "f"): _GIVEN_F,
+    ("patronymic", "m"): _PATRONYMIC_M,
+    ("patronymic", "f"): _PATRONYMIC_F,
+}
+
+# The word a lone candidate is read BESIDE. Both readers of a name read a
+# PHRASE — `form.name_order` has nothing to say about one word except
+# «single», and `parts.name_parts` lets the neighbour decide — so the only way
+# to ask them what ONE word carries is to stand the same second word after the
+# candidate and after the original. A surname that is in neither the pool nor
+# the corpus, so the anchor can never be confused with what it anchors.
+_ROLE_ANCHOR: str = "ефремов"
+
+
+def _role_of(word: str) -> str:
+    """surname / given / patronymic, read by the instrument's OWN splitter.
+
+    Not by pymorphy3, although it is right here: the readers that will meet
+    this substitute are `parts.name_parts` — which every leak and round-trip
+    needle goes through — and `form.name_order`. A fake whose role only the
+    ANALYSER agrees about would be split differently from the value it
+    replaces, and the probe would be charging the gateway for its own mint.
+    """
+    return next(iter(name_parts(word)), "")
+
+
+def _reads_alike(candidate: str, word: str) -> bool:
+    """Do the two words carry the same role for BOTH readers of a name."""
+    return (_role_of(candidate) == _role_of(word)
+            and form.name_order(f"{candidate} {_ROLE_ANCHOR}")
+            == form.name_order(f"{word} {_ROLE_ANCHOR}"))
+
+
+def _known_name_parses(word: str) -> list[Parse]:
+    """The parses pymorphy3 KNOWS for this word, a personal-name reading first.
+
+    `is_known` is the whole point. The analyser answers about an unknown string
+    by predicting from its ending, out of a table that does not contain the
+    word, and `form._word_readings` refuses that prediction on the comparator's
+    side. Minting against a reading the comparator will never accept is minting
+    against nothing.
+    """
+    parses = [parse for parse in _ANALYZER.parse(word)
+              if parse.is_known and parse.tag.case is not None]
+    named = [parse for parse in parses
+             if any(tag in parse.tag for tag in ("Surn", "Name", "Patr"))]
+    return named or parses
+
+
+def _surface_parse(word: str, gender: str) -> Parse | None:
+    """What form the word the CUSTOMER wrote is in, read under the gender the
+    CORPUS says the person has.
+
+    The gender is evidence and the analyser has none: «Громова» is the feminine
+    surname in the nominative and the masculine one in the genitive, and the
+    top parse is the second. Read that way, the substitute was inflected into a
+    genitive nobody wrote, stopped reading as a surname, and fell back to the
+    letter-mangled fake for every entry of the pool — 3 612 of the corpus's
+    surnames are feminine and all of them are spelled like a masculine
+    genitive.
+    """
+    parses = _known_name_parses(word)
+    if gender:
+        same = [parse for parse in parses
+                if parse.tag.gender is not None and str(parse.tag.gender) == gender]
+        parses = same or parses
+    return parses[0] if parses else None
+
+
+def _lexeme_parse(word: str) -> Parse | None:
+    """The NOMINATIVE reading of a pool lexeme, and it has to be asked for.
+
+    Every string this is handed is a nominative — an entry of `_POOL`, or the
+    canonical mint built out of them — but the analyser does not know that, and
+    it reads «Мельникова» as the FEMININE nominative and the MASCULINE genitive
+    with equal confidence. Taking its top parse put a feminine surname into the
+    masculine lexeme's genitive and handed «Ворониной» the form «Мельникова»:
+    a gender the substitute never had, in a case the customer never wrote.
+    """
+    parses = _known_name_parses(word)
+    nominative = [parse for parse in parses if str(parse.tag.case) == "nomn"]
+    chosen = nominative or parses
+    return chosen[0] if chosen else None
+
+
+def _worn_case(word: str, like: str) -> str:
+    """`word` capitalised the way `like` is — the substitute must not move
+    NAME.case_class, which is a feature of its own."""
+    letters = [char for char in like if char.isalpha()]
+    if not letters:
+        return word
+    if len(letters) > 1 and all(char.isupper() for char in letters):
+        return word.upper()
+    return word[:1].upper() + word[1:] if letters[0].isupper() else word
+
+
+def gram_gender(gender: str) -> str:
+    """The corpus's «m» / «f» as the grammeme pymorphy3 prints. "" for a type
+    that carries no gender at all — an address has none."""
+    return {"m": "masc", "f": "femn"}.get(gender, "")
+
+
+def worn_by_morphology(fake: str, surface: str, gender: str) -> str:
+    """`fake` — a pool lexeme — in the grammatical form `surface` wears.
+
+    The fake is read as the NOMINATIVE it is (`_lexeme_parse`) and the surface
+    as whatever the customer wrote (`_surface_parse`); the case, and the number
+    when the surface names one, cross over. Nothing else does — the gender is
+    the pool entry's own, because the bucket it came from was chosen by the
+    item's gender.
+
+    "" when pymorphy3 knows neither side, or when the lexeme has no such form.
+    The caller then keeps the shared-prefix rule and the feature abstains,
+    exactly as it did before this pool existed.
+    """
+    read = _surface_parse(surface, gram_gender(gender))
+    if read is None:
+        return ""
+    lexeme = _lexeme_parse(fake)
+    if lexeme is None:
+        return ""
+    grammemes = {str(read.tag.case)}
+    if read.tag.number is not None:
+        grammemes.add(str(read.tag.number))
+    worn = lexeme.inflect(grammemes)
+    return "" if worn is None else _worn_case(worn.word, surface)
+
+
+def role_in(word: str, parts: dict[str, str]) -> str:
+    """The role this word plays IN THE VALUE IT BELONGS TO — the corpus's own
+    answer where it has one, the shape reading where it has not.
+
+    A WORD ALONE DOES NOT CARRY ITS ROLE, and reading it alone cost two items
+    of one person the same fake. `name_parts("миллер")` answers `given`,
+    because a lone word that wears no surname suffix is a given name; inside
+    «миллер валерий» the very same splitter answers `surname`, because the
+    OTHER word is the given one. Bucketed by the lone reading, «миллер» and
+    «валерий» drew from one pool and collided on «геннадий геннадий» — one
+    person written as one word twice, which `parts` then counts as a form the
+    gateway changed (measured: form_hOUT 2802/2812 on medium, four cases).
+    `parts` is what the corpus BUILT the value from, so it is the answer, and
+    the shape reading is what is left for a surface no part spells — an
+    inflected mention, which `worn_like` overwrites anyway.
+    """
+    folded = _fold(word)
+    for role in _NAME_ROLES:
+        if parts.get(role) and _fold(parts[role]) == folded:
+            return role
+    return _role_of(word)
+
+
+def pool_pick(word: str, gender: str, role: str, taken: frozenset[str]) -> tuple[str, str]:
+    """(the pool lexeme this word takes, that lexeme in the word's own form) —
+    or ("", "") when the pool holds nothing that READS the way this word reads:
+    a foreign surname, a particle, an initial, a word pymorphy3 does not know.
+    The caller then keeps the letter-mangled fake and `gram_case` abstains, as
+    it did for every name before this pool existed.
+
+    A SINGLE LETTER IS NEVER A LEXEME. «П.» is an initial and «m» is the note
+    the corpus keeps a name's gender in; expanding either into a full name
+    would move NAME.initials and invent parts nobody wrote.
+
+    THE NEAREST LENGTH WINS, and that is §1's promise («same shape, a different
+    lexeme») applied to a pool instead of a letter map. `_fake_word` preserved
+    the length exactly and the answer aligner never had to guess; a five-letter
+    fake for an eight-letter name lets `difflib` slide a sentence boundary and
+    hand ONE item's window two data («букин — записано. Пункт 2: новиков»).
+
+    `taken` is the four-letter STEMS `name_pool_map` has already spent in this
+    conversation; see there for why the assignment cannot be a function of the
+    word alone, and why it is spent by stem rather than by word.
+    """
+    if len(word) < 2 or word.casefold() in NAME_PARTICLES:
+        return "", ""
+    pool = [one for one in _POOL.get((role, gender), ()) if _stem(one) not in taken]
+    if not pool:
+        return "", ""
+    start = int.from_bytes(
+        hashlib.blake2s(word.casefold().encode("utf-8"), digest_size=4).digest(),
+        "big") % len(pool)
+    rotated = [pool[(start + step) % len(pool)] for step in range(len(pool))]
+    for candidate in sorted(rotated, key=lambda one: abs(len(one) - len(word))):
+        worn = worn_by_morphology(candidate, word.casefold(), gender)
+        if worn and _reads_alike(worn, word.casefold()):
+            return candidate, worn
+    return "", ""
+
+
+def name_pool_map(items: Sequence[PiiItem]) -> dict[str, str]:
+    """Every NAME word of ONE conversation and the fake it wears, lower case.
+
+    WHY THE ASSIGNMENT BELONGS TO THE CONVERSATION AND NOT TO THE WORD. A pool
+    is finite, so a pick keyed on the word alone is a hash, and a hash
+    collides: «Соколова» and «Воронина» — the customer of `rag-035` and a
+    stranger in a retrieved chunk — both drew «Макарова», and
+    `rag_identity_kept` read exactly what its own words describe, «the
+    gateway deciding two people are one». No local rule can see that coming;
+    an assignment that walks the conversation's items in order and never
+    spends an entry twice cannot produce it at all. It is also what
+    `pseudex/vault.py` does — one substitute per canonical, guarded against
+    collision at mint time — so the simulation is closer to the product for
+    the same change.
+
+    SPENT BY STEM, NOT BY WORD, because a needle is a stem. «Новиков Игорь»
+    drew «Макаров Макар» — two entries, two lexemes, one four-letter stem —
+    and the answer aligner, narrowing the raw side by the substitute's
+    needles, could not tell which of the two words was the given name: one
+    corpus hop of 15 796, and the only one left on `form_hOUT`.
+
+    The key is the word AS WRITTEN, which is correction 1's whole premise:
+    «пётр» and «петра» are two keys and draw two lexemes, so a probe that
+    mints the surface and the canonical independently hands the model one fake
+    and the tool another. `worn_like` is what reconciles them.
+    """
+    spent: set[str] = set()
+    out: dict[str, str] = {}
+    for item in items:
+        if item.type != "NAME":
+            continue
+        gender = item.parts.get("gender", "")
+        for text in (item.canonical, item.value, *item.parts.values()):
+            for token in _WORD.findall(text):
+                key = token.casefold()
+                if not token.isalpha() or key in out:
+                    continue
+                role = role_in(token, item.parts)
+                lexeme, worn = pool_pick(token, gender, role, frozenset(spent))
+                if not lexeme:
+                    continue
+                spent.add(_stem(lexeme))
+                out[key] = worn
+    return out
 
 
 def _keep_tail(word: str) -> int:
@@ -201,9 +532,27 @@ def _fake_words(text: str) -> str:
     return "".join(out)
 
 
-def mint(pii_type: str, surface: str, canonical: str, parts: dict[str, str]
-         ) -> tuple[str, str, dict[str, str]]:
-    """(substitute surface, substitute canonical, substitute parts)."""
+def _fake_name_words(text: str, fakes: dict[str, str]) -> str:
+    """A NAME, word for word, out of the conversation's pool assignment — and
+    out of `_fake_stem` for a word the pool could not mirror, which is where
+    `gram_case` keeps abstaining."""
+    out: list[str] = []
+    for token in _WORD.findall(text):
+        if token.isalpha():
+            fake = fakes.get(token.casefold(), "")
+            out.append(_worn_case(fake, token) if fake else _fake_stem(token))
+        elif token.isdigit():
+            out.append(_shift_digits(token, 3))
+        else:
+            out.append(token)
+    return "".join(out)
+
+
+def mint(pii_type: str, surface: str, canonical: str, parts: dict[str, str],
+         fakes: dict[str, str]) -> tuple[str, str, dict[str, str]]:
+    """(substitute surface, substitute canonical, substitute parts). `fakes` is
+    the conversation's NAME assignment (`name_pool_map`) and nothing else reads
+    it."""
     if pii_type in _DATE_TYPES:
         return (_fake_date(surface), _fake_date(canonical),
                 {role: _fake_date(value) for role, value in parts.items()})
@@ -212,6 +561,16 @@ def mint(pii_type: str, surface: str, canonical: str, parts: dict[str, str]
                 {role: (_fake_digits(value, pii_type) if any(c.isdigit() for c in value)
                         else _fake_word(value))
                  for role, value in parts.items()})
+    if pii_type == "NAME":
+        # THE GENDER IS THE ITEM'S, NOT THE WORD'S. «Иванова» is the feminine
+        # surname and the masculine genitive at once, so a mint reading the
+        # gender off each word would hand ONE person a masculine surname and a
+        # feminine patronymic. `parts["gender"]` is what the corpus BUILT the
+        # value from, and it is the same for every word of it. The `gender`
+        # part itself is a one-letter note, which `pool_pick` refuses, so it
+        # keeps travelling through `_fake_stem` as it always did.
+        return (_fake_name_words(surface, fakes), _fake_name_words(canonical, fakes),
+                {role: _fake_name_words(value, fakes) for role, value in parts.items()})
     if pii_type == "EMAIL":
         # WHAT THE PRODUCT ACTUALLY MINTS (`pseudex/vault.py`): eight letters at
         # `example.ru`. Keeping the customer's domain would leave «yandex.ru»
@@ -246,7 +605,14 @@ def _fold(word: str) -> str:
     return word.lower().replace("ё", "е")
 
 
-def worn_like(fake_canonical: str, real_canonical: str, real_surface: str) -> str:
+def _stem(word: str) -> str:
+    """The four folded letters a NAME needle is made of (`observe.value_
+    needles`). Two words with one stem are one value to every needle."""
+    return _fold(word)[:4]
+
+
+def worn_like(fake_canonical: str, real_canonical: str, real_surface: str,
+              gender: str) -> str:
     """CORRECTION 1 — ONE MINT PER ITEM, WORN IN THE SURFACE'S GRAMMATICAL FORM.
 
     A right gateway mints ONE substitute per identity and INFLECTS it; the
@@ -265,10 +631,17 @@ def worn_like(fake_canonical: str, real_canonical: str, real_surface: str) -> st
     `multi_all_out` over the whole corpus (three of each on the acceptance
     tier — `test_perfect.test_correction_one_is_load_bearing`).
 
-    So: take the ONE minted canonical, and wear the surface's ending — keep the
-    prefix the real canonical and the real surface share, and take the rest of
-    the ending from the surface itself. Word counts must line up; when they do
-    not the caller keeps the plain mint ("" is returned).
+    So: take the ONE minted canonical and wear the surface's form. Word counts
+    must line up; when they do not the caller keeps the plain mint ("" is
+    returned).
+
+    TWO WAYS TO WEAR A FORM, AND THE FIRST ONE IS THE REAL ONE. A pool lexeme
+    is a WORD — «антон» has a dative and pymorphy3 writes it — so the
+    substitute the model reads is a form of a word, which is the only kind of
+    string `form.name_gram_case_same` can read a case off (§1bis). A word the
+    pool could not mirror has no dative anywhere, so it keeps the shared-prefix
+    rule: the prefix the real canonical and the real surface share is taken
+    from the FAKE, and the rest of the ending from the SURFACE.
     """
     fakes = _WORD.findall(fake_canonical)
     reals = _WORD.findall(real_canonical)
@@ -279,6 +652,10 @@ def worn_like(fake_canonical: str, real_canonical: str, real_surface: str) -> st
     for fake, real, surface in zip(fakes, reals, surfaces):
         if not fake.isalpha():
             out.append(surface)
+            continue
+        worn = worn_by_morphology(fake, surface, gender)
+        if worn:
+            out.append(worn)
             continue
         common = 0
         for left, right in zip(_fold(real), _fold(surface)):
@@ -375,7 +752,7 @@ def _address_from_parts(parts: dict[str, str]) -> str:
     return " ".join(bits)
 
 
-def _substitute_for(item: PiiItem) -> Substitute:
+def _substitute_for(item: PiiItem, fakes: dict[str, str]) -> Substitute:
     """The one fake this item wears everywhere it is mentioned."""
     # A DICTATED value is replaced by a WRITTEN fake. `pseudex.vault` mints
     # `_fake_phone()` / `_fake_snils()` whatever the surface was; `looks_dictated`
@@ -384,9 +761,10 @@ def _substitute_for(item: PiiItem) -> Substitute:
     # does not exist — and it is why `form_hIN` cannot be 100 % for a right
     # gateway (docs/known-issues.md Б27).
     written = item.canonical if item.spoken else item.value
-    surface, canonical, parts = mint(item.type, written, item.canonical, dict(item.parts))
+    surface, canonical, parts = mint(item.type, written, item.canonical,
+                                     dict(item.parts), fakes)
     if item.type in ("NAME", "LOC") and not item.spoken and written != item.canonical:
-        worn = worn_like(canonical, item.canonical, written)
+        worn = worn_like(canonical, item.canonical, written, item.parts.get("gender", ""))
         if worn:
             surface = worn
     # A DICTATED ADDRESS is replaced by a WRITTEN one. «садовая сорок шесть
@@ -530,7 +908,8 @@ def _answer(case: CaseV5, items: dict[str, PiiItem], subs: dict[str, Substitute]
 def simulate(case: CaseV5) -> ArmRunV5:
     """The `ArmRunV5` a right gateway and a right agent leave behind on `case`."""
     items = {item.id: item for item in case.base.pii}
-    subs = {item.id: _substitute_for(item) for item in case.base.pii}
+    fakes = name_pool_map(case.base.pii)
+    subs = {item.id: _substitute_for(item, fakes) for item in case.base.pii}
     masked_spans, message_mentions = _masked_messages(case, subs)
     results, result_mentions = _tool_results(case, items, subs)
     calls, call_turns = _calls(case, items, subs)

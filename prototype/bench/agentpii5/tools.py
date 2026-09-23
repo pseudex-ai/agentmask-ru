@@ -279,7 +279,8 @@ BANK_CLIENT_FIND = ToolSpec(
             FieldSpec("phone", "identity", "PHONE", "digits")),
     parse=_bank_client_find_parse, mutating=False,
     result_pii=("client.name", "client.inn", "client.card",
-                "clients[].name", "clients[].inn", "clients[].card", "error.subject"))
+                "clients[].name", "clients[].inn", "clients[].card", "error.subject",
+                "error.message"))
 
 
 def _account_statement_parse(args: dict[str, object]) -> Parsed | Refusal:
@@ -343,7 +344,7 @@ VEHICLE_CHECK = ToolSpec(
     parse=_vehicle_check_parse, mutating=False,
     result_pii=("plate", "owner.last_name", "owner.first_name",
                 "registrations[].owner.last_name", "registrations[].owner.first_name",
-                "error.subject"))
+                "error.subject", "error.message"))
 
 
 def _snils_verify_parse(args: dict[str, object]) -> Parsed | Refusal:
@@ -368,7 +369,7 @@ SNILS_VERIFY = ToolSpec(
     fields=(FieldSpec("snils", "identity", "SNILS", "", required=True),),
     parse=_snils_verify_parse, mutating=False,
     result_pii=("snils", "person.last_name", "person.first_name", "person.birth_date",
-                "error.subject"))
+                "error.subject", "error.message"))
 
 
 def _calendar_free_parse(args: dict[str, object]) -> Parsed | Refusal:
@@ -406,7 +407,7 @@ CALENDAR_FREE = ToolSpec(
     fields=(FieldSpec("person", "identity", "NAME", "", required=True),
             FieldSpec("date", "plain", required=True)),
     parse=_calendar_free_parse, mutating=False,
-    result_pii=("person", "birth_date"))
+    result_pii=("person", "birth_date", "error.message"))
 
 
 def _email_send_parse(args: dict[str, object]) -> Parsed | Refusal:
@@ -500,9 +501,48 @@ COURIER_STATUS = ToolSpec(
     result_pii=("recipient.name", "recipient.phone", "address", "error.subject"))
 
 
+def _patient_find_parse(args: dict[str, object]) -> Parsed | Refusal:
+    tool = "patient_find"
+    present = [key for key in ("phone", "snils") if args.get(key) not in (None, "")]
+    if len(present) != 1:
+        # ONE KEY, LIKE THE BANK'S SEARCH AND FOR THE SAME REASON: a МИС that
+        # took both would decide for itself which one it trusted, and the case
+        # measures exactly which identifier the agent carried through.
+        return Refusal(tool, "", "exactly_one_key", ", ".join(present))
+    if present[0] == "snils":
+        digits = parse_snils(args["snils"], tool, "snils")
+        if isinstance(digits, Refusal):
+            return digits
+        return {"snils": digits}
+    phone = parse_e164(args["phone"], tool, "phone")
+    if isinstance(phone, Refusal):
+        return phone
+    return {"phone": phone}
+
+
+PATIENT_FIND = ToolSpec(
+    name="patient_find",
+    source="МИС (Медеск/Инфоклиника) GET /patients?phone=|snils= (карта пациента: ДР в ISO, СНИЛС в написании ПФР «XXX-XXX-XXX YY», телефон E.164)",
+    schema=v4tools._schema(
+        "patient_find",
+        "Найти карту пациента по телефону или по СНИЛС. Ровно один из двух параметров.",
+        {"phone": {"type": "string", "description": "Телефон в формате E.164, например +79161234567"},
+         "snils": {"type": "string", "description": "СНИЛС в формате XXX-XXX-XXX YY"}},
+        ()),
+    fields=(FieldSpec("phone", "identity", "PHONE", "digits"),
+            FieldSpec("snils", "identity", "SNILS", "")),
+    parse=_patient_find_parse, mutating=False,
+    # THE WHOLE CARD, AND NOTHING THAT IS NOT ON IT. The clinic's five other
+    # tools all WRITE, so every value in their results is one the dialogue just
+    # handed them; here the values come off a stored record, which is what makes
+    # them an IN/tool hop at all (R05 asks for a seed locus).
+    result_pii=("patient.last_name", "patient.first_name", "patient.birth_date",
+                "patient.snils", "patient.phone"))
+
+
 NEW_SPECS: tuple[ToolSpec, ...] = (
     KB_SEARCH, DOC_RETRIEVE, FILE_READ, FORM_PARSE, BANK_CLIENT_FIND, ACCOUNT_STATEMENT,
-    VEHICLE_CHECK, SNILS_VERIFY, CALENDAR_FREE, EMAIL_SEND, TICKET_HISTORY, COURIER_STATUS)
+    VEHICLE_CHECK, SNILS_VERIFY, CALENDAR_FREE, EMAIL_SEND, TICKET_HISTORY, COURIER_STATUS, PATIENT_FIND)
 NEW_REGISTRY: dict[str, ToolSpec] = {spec.name: spec for spec in NEW_SPECS}
 
 
@@ -558,6 +598,7 @@ RESULT_PII_V5: dict[str, tuple[str, ...]] = {
 DIFFERS_FROM_USER_FORM: frozenset[str] = frozenset({
     "address_suggest", "normalize_contact", "courier_book", "courier_status",
     "clinic_book", "referral_create", "passport_verify", "snils_verify", "vehicle_check",
+    "patient_find",
     "bank_client_find", "account_statement", "calendar_free", "ticket_history",
     "kb_search", "file_read", "form_parse", "crm_find_contact", "crm_import_csv",
     "email_send"})
@@ -585,10 +626,20 @@ RETURN_FORMS_BY_TOOL: dict[str, tuple[ReturnForm, ...]] = {
     "courier_status": (
         # The recipient block is rendered AND declared (R-41): on a seeded claim
         # it is the stored recipient in the courier's notation.
+        #
+        # AND THE FORM NOW NAMES IT, which is the whole of the 23.09 repair. The
+        # union said `recipient.name`/`recipient.phone` carried personal data and
+        # this form said the result carried only the address, so the two leaves
+        # were declared where nothing reads a declaration and named where every
+        # reader looks — the column «ПД в результате» held by an assertion no
+        # measurement could contradict. `single._courier_claim` now SEEDS the
+        # claim, which is the only way the mock can tag the block (a claim the
+        # dialogue itself booked is not a seed locus, R05), and the corpus
+        # crosses both leaves.
         _form("nested",
               '{"claim_id":"clm-1","status":"delivering","recipient":{"name":"Громова Марина",'
               '"phone":"+79164021187"},"address":"г. Ижевск, ул. Пушкина, д. 41, кв. 7"}',
-              ("address",)),
+              ("recipient.name", "recipient.phone", "address")),
         _form("error_with_value",
               '{"error":{"code":"CLAIM_ADDRESS_UNKNOWN","subject":"г. Ижевск, ул. Пушкина, д. 41, кв. 7"}}',
               ("error.subject",))),
@@ -703,8 +754,25 @@ RETURN_FORMS_BY_TOOL: dict[str, tuple[ReturnForm, ...]] = {
               '"card":"4276 1600 1234 5678","status":"active"}]}',
               ("clients[].name", "clients[].inn", "clients[].card")),
         _form("empty", '{"clients":[]}', ()),
+        # TWO ERROR BODIES, AND ONLY ONE OF THEM WAS NAMED. `_error` writes the
+        # domain refusal («not found», «blocked») with the value under
+        # `error.subject`; the SCRIPTED refusal of `retry_same_tool`
+        # (`mock._forced_call`) writes it under `error.message`, and 126 hops of
+        # the corpus cross that leaf. Naming it here is what lets K17 hold every
+        # crossed leaf to a declaration.
+        # TWO ERROR BODIES, TWO FORMS, AND ONLY ONE OF THEM WAS DECLARED. `_error`
+        # writes the domain refusal («not found», «blocked») with the value under
+        # `error.subject`; the SCRIPTED refusal of `retry_same_tool`
+        # (`mock._forced_call`, `Refusal.as_error`) writes it under
+        # `error.message`, and 126 hops of the corpus cross that leaf. They are
+        # separate `ReturnForm`s rather than one with both paths because an
+        # example must RESOLVE every path it names, and no single body carries
+        # both — one example naming two shapes is a declaration nothing can check.
         _form("error_with_value",
-              '{"error":{"code":"CLIENT_BLOCKED","subject":"165711234576"}}', ("error.subject",))),
+              '{"error":{"code":"CLIENT_BLOCKED","subject":"165711234576"}}', ("error.subject",)),
+        _form("error_with_value",
+              '{"error":{"code":"invalid_request","message":"invalid_request: параметр inn «165711234576» не прошёл проверку."}}',
+              ("error.message",))),
     "account_statement": (
         _form("list",
               '{"client_id":"bc-1","holder":{"name":"Громова Марина Борисовна",'
@@ -742,7 +810,16 @@ RETURN_FORMS_BY_TOOL: dict[str, tuple[ReturnForm, ...]] = {
               '{"person":"Громова Марина","birth_date":"1987-03-14","date":"2026-09-10",'
               '"slots":["2026-09-10T09:30:00+03:00","10.09.2026 11:00"]}',
               ("person", "birth_date")),
-        _form("empty", '{"person":"Громова Марина","date":"2026-09-10","slots":[]}', ())),
+        _form("empty", '{"person":"Громова Марина","date":"2026-09-10","slots":[]}', ()),
+        # THE CALENDAR HAD NO ERROR FORM AND THE CORPUS FORCED ONE ON IT 31
+        # TIMES. `retry_same_tool` scripts the refusal, the mock answers it and
+        # `_form_of_log` records `error_with_value`; a tool that can be refused
+        # and declares no refusal form is a tool whose commonest failure shape is
+        # unslicable. Adding a form is allowed (contracts may not be contradicted,
+        # only extended — V04's `dropped` check).
+        _form("error_with_value",
+              '{"error":{"code":"employee_unknown","message":"сотрудник Громова Марина не найден в расписании."}}',
+              ("error.message",))),
     "notify_sms": (
         _form("single", '{"id":"sms-1","status":"queued","number":"+79164021187"}', ("number",)),),
     "send_template": (
@@ -779,7 +856,10 @@ RETURN_FORMS_BY_TOOL: dict[str, tuple[ReturnForm, ...]] = {
               '{"from":"2023-02-16","to":"","owner":{"last_name":"Букин","first_name":"Сергей"}}]}',
               ("plate", "registrations[].owner.last_name", "registrations[].owner.first_name")),
         _form("error_with_value",
-              '{"error":{"code":"VEHICLE_NOT_FOUND","subject":"Х501УН36"}}', ("error.subject",))),
+              '{"error":{"code":"VEHICLE_NOT_FOUND","subject":"Х501УН36"}}', ("error.subject",)),
+        _form("error_with_value",
+              '{"error":{"code":"plate_format","message":"номер Х501УН36 не найден в формате ГОСТ Р 50577."}}',
+              ("error.message",))),
     "snils_verify": (
         _form("single",
               '{"snils":"112-233-445 95","status":"valid","person":{"last_name":"Громова",'
@@ -787,7 +867,10 @@ RETURN_FORMS_BY_TOOL: dict[str, tuple[ReturnForm, ...]] = {
               ("snils", "person.last_name", "person.first_name", "person.birth_date")),
         _form("empty", '{"snils":"112-233-445 95","found":false}', ()),
         _form("error_with_value",
-              '{"error":{"code":"SNILS_REVOKED","subject":"112-233-445 95"}}', ("error.subject",))),
+              '{"error":{"code":"SNILS_REVOKED","subject":"112-233-445 95"}}', ("error.subject",)),
+        _form("error_with_value",
+              '{"error":{"code":"snils_checksum","message":"СНИЛС 112-233-445 95 не прошёл проверку контрольной суммы ПФР."}}',
+              ("error.message",))),
     "kb_search": (
         _form("chunks",
               '{"query":"Громова Марина","total":2,"hits":[{"id":"kb-1","score":"0.91",'
@@ -846,10 +929,17 @@ RETURN_FORMS_BY_TOOL: dict[str, tuple[ReturnForm, ...]] = {
         # The card comes back — that is what amoCRM answers with, and the shape
         # the model reads must be the API's. Its leaves are declared (R-41): on a
         # seeded contact they are the STORED card, the CRM's notation coming back.
+        #
+        # THE FORM SAID `()` AND `result_pii` SAID THREE LEAVES, and the identical
+        # tool one entry below (`crm_merge_contacts`, same block, same renderer)
+        # named all three — so this was an omission, not a position. Naming them
+        # here is what makes `branching._crm_update` able to declare the IN hops
+        # on the stored card it updates; R19 checks a case's form against this
+        # table, and a declaration nothing can be checked against is the defect.
         _form("single",
               '{"id":"c-77","updated_fields":["address"],"contact":{"last_name":"громова",'
               '"first_name":"марина","phone":"+79164021187"}}',
-              ()),),
+              ("contact.last_name", "contact.first_name", "contact.phone")),),
     "crm_add_note": (
         _form("single",
               '{"id":"note-1","entity_id":"c-77","length":64,"entity":{"last_name":"громова",'
@@ -868,6 +958,13 @@ RETURN_FORMS_BY_TOOL: dict[str, tuple[ReturnForm, ...]] = {
               ("contact.last_name", "contact.first_name", "contact.phone")),
         _form("error_with_value",
               '{"error":{"code":"CONTACT_NOT_FOUND","subject":"c-77/c-99"}}', ())),
+    "patient_find": (
+        _form("single",
+              '{"found":true,"patient":{"last_name":"Громова","first_name":"Марина",'
+              '"birth_date":"1987-03-14","snils":"112-233-445 95","phone":"+79164021187"}}',
+              ("patient.last_name", "patient.first_name", "patient.birth_date",
+               "patient.snils", "patient.phone")),
+        _form("empty", '{"found":false}', ())),
     "crm_import_csv": (
         _form("list",
               '{"imported":2,"rejected":[],"rows":[{"id":"c-1","last_name":"Громова",'
@@ -1014,6 +1111,18 @@ def registry_problems(registry: dict[str, ToolSpecV5]) -> list[str]:
             if unknown:
                 problems.append(f"V04 {name}/{form.form}: pii_paths {unknown} are not in "
                                 f"result_pii")
+        # V06 IS V04's CONTAINMENT READ BACKWARDS, and it had to be written
+        # separately because the one-way check let a declaration live where
+        # nothing could reach it: `result_pii` is the union a hop's `path` is
+        # read against, `ReturnForm.pii_paths` is what a case's declared form
+        # promises, and a leaf in the union and in no form is promised by no
+        # form a case can declare. Five of the 142 were exactly that, and
+        # deleting them reddened nothing — which is how they lived.
+        in_forms = {path for form in spec.return_forms for path in form.pii_paths}
+        unpromised = sorted(declared - in_forms)
+        if unpromised:
+            problems.append(f"V06 {name}: result_pii {unpromised} named by no return form — "
+                            f"declared where nothing measures it")
         promised = set(NEW_TOOL_RETURN_FORMS.get(name, ()))
         # The tools component MAY add a form, never remove one contracts named.
         dropped = sorted(promised - {form.form for form in spec.return_forms})

@@ -1588,6 +1588,18 @@ def main() -> int:
     parser.add_argument("--tier", default="nano",
                         choices=("nano", "small", "medium", "large", "holdout", "max"))
     parser.add_argument("--ids", default="", help="запятые: точный список случаев вместо яруса")
+    # СРЕЗ — ТРЕТИЙ СПОСОБ ВЫБРАТЬ СЛУЧАИ, и он существует потому, что первых
+    # двух не хватало ни на один вопрос вида «а как оно на чате». `--ids`
+    # требует выписать сто двадцать имён руками (и через месяц никто не скажет,
+    # по какому правилу они выписаны), `--tier` даёт только замороженные шесть.
+    # Срез — это ПРАВИЛО, записанное в имя прогона, поэтому он повторяем словом,
+    # а не списком.
+    parser.add_argument("--slice", default="",
+                        help=f"срез вместо яруса: {corpus_build.SLICE_AND.join(f'{one}=…' for one in corpus_build.SLICE_AXES)}; "
+                             f"несколько значений одной оси — через {corpus_build.SLICE_ANY!r}. "
+                             f"Пример: --slice register=chat --slice-size 120")
+    parser.add_argument("--slice-size", type=int, default=0,
+                        help="сколько случаев взять из среза; 0 — все")
     parser.add_argument("--repeats", type=int, default=1)
     parser.add_argument("--ceiling", type=float, default=12.0, help="потолок на прогон, USD")
     parser.add_argument("--model", default=AGENT_MODEL)
@@ -1640,17 +1652,66 @@ def main() -> int:
 
     everything, digest = _load_corpus(Path(args.corpus))
     by_id = {case.base.id: case for case in everything}
-    if args.ids:
+    ladder_path = Path(args.ladder)
+    # ТРИ СПОСОБА ВЫБОРА, И ДВА ИЗ НИХ ВМЕСТЕ НЕ ЗНАЧАТ НИЧЕГО. `--ids` называет
+    # случаи поимённо, `--slice` — правилом; прогон, получивший оба, измерил бы
+    # одно, а записал в реестр другое, и спор пришлось бы решать чтением кода.
+    if args.ids and args.slice:
+        print("--ids и --slice вместе не значат ничего: назовите случаи или правило",
+              file=sys.stderr)
+        return 2
+    if args.slice_size and not args.slice:
+        print("--slice-size без --slice: размер чего? (ярус называет свой размер сам)",
+              file=sys.stderr)
+        return 2
+    if args.slice:
+        try:
+            clauses = corpus_build.parse_slice(args.slice, everything)
+        except corpus_build.SliceError as refused:
+            print(str(refused), file=sys.stderr)
+            return 2
+        try:
+            held = corpus_build.held_of(ladder_path)
+        except corpus_build.HoldoutUnreadable as refused:
+            print(str(refused), file=sys.stderr)
+            return 2
+        cases = corpus_build.slice_cases(everything, held, clauses, args.slice_size,
+                                         corpus_build.SEED)
+        tier_name = corpus_build.slice_name(clauses)
+        # СРЕЗ — НЕ ЯРУС, И ЭТО ГОВОРИТСЯ ВСЛУХ ДО ТРАТ, а не только в реестре:
+        # человек, сравнивший число среза с числом яруса, сравнил два разных
+        # корпуса и узнает об этом из отчёта в лучшем случае.
+        print(f"срез, не ярус: {tier_name} · {len(cases)} случаев · холдаут исключён · "
+              f"состав {corpus_build.tier_sha256([case.base.id for case in cases])[:12]} — "
+              f"сравнивать с ярусом нельзя")
+    elif args.ids:
         wanted = [one.strip() for one in args.ids.split(",") if one.strip()]
         missing = [one for one in wanted if one not in by_id]
         if missing:
             print(f"нет таких случаев: {missing}", file=sys.stderr)
             return 2
+        # ХОЛДАУТ ЧИТАЕТСЯ ОДНИМ СПОСОБОМ, И ТЕПЕРЬ ЭТО ОТКАЗ, А НЕ ОБЕЩАНИЕ В
+        # README. `--ids single-023` проходил оценку без единого слова о том, что
+        # назван холдаутный случай, и настоящий прогон за $0.45 поставил бы
+        # `holdout_touched_at` навсегда: штамп срабатывает ПОСЛЕ выбора и только
+        # записывает. Отказ стоит ДО оценки — там же, где отказы по метке и по
+        # грязному дереву, — потому что отменить штамп нечем.
+        try:
+            named_holdout = sorted(corpus_build.held_of(ladder_path).intersection(wanted))
+        except corpus_build.HoldoutUnreadable as refused:
+            print(str(refused), file=sys.stderr)
+            return 2
+        if named_holdout:
+            print(f"--ids называет {len(named_holdout)} случаев холдаута "
+                  f"({named_holdout[:3]}): холдаут читается одним способом — --tier holdout, "
+                  f"и это касание ставит holdout_touched_at навсегда",
+                  file=sys.stderr)
+            return 2
         cases = [by_id[one] for one in wanted]
         tier_name = corpus_build.IDS_SELECTION
     else:
         picked = {one.id for one in tier([case.base for case in everything],
-                                         _ladder(Path(args.ladder)), args.tier)}
+                                         _ladder(ladder_path), args.tier)}
         cases = [case for case in everything if case.base.id in picked]
         tier_name = args.tier
     if not cases:
@@ -1740,8 +1801,8 @@ def main() -> int:
 
     # §6.1: ГРЯЗНОЕ ДЕРЕВО И ЧУЖОЙ КОРПУС — тоже до бандла и до модели. Числа,
     # которые не к чему привязать, стоят ровно столько же денег, сколько
-    # привязанные.
-    ladder_path = Path(args.ladder)
+    # привязанные. `ladder_path` посчитан один раз выше — выбор случаев и это
+    # место обязаны читать ОДНУ лестницу.
     # ВЕСЬ КОРПУС И ВЫБОРКА — ДВА РАЗНЫХ АРГУМЕНТА. Лестница нарисована по всему
     # корпусу и хранит его дайджест; прогон играет ярус. Пока сюда уезжала одна
     # выборка, дайджест ЯРУСА сравнивался с дайджестом КОРПУСА и отказывал

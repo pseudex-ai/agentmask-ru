@@ -1849,6 +1849,135 @@ def test_the_holdout_is_stamped_before_the_first_call() -> list[str]:
     return failures
 
 
+def test_a_slice_is_selected_by_rule_and_recorded_as_a_slice() -> list[str]:
+    """СРЕЗ ПРОГОНА (просьба владельца): «дай 120 случаев только чата» — одна
+    команда, а не список из ста двадцати имён.
+
+    ФЛАГ, А НЕ ФУНКЦИЯ ПОД НИМ. `build.slice_cases` проверен в `test_build`;
+    здесь проверяется, что `main` его ЗОВЁТ, что имя среза уезжает в запись
+    прогона как срез (сравнивать срез с ярусом нельзя, и читатель реестра
+    обязан это видеть без чтения кода), и что два способа выбрать случаи
+    одновременно отказаны. Всё через `--dry-run`: ни одного вызова модели.
+    """
+    failures: list[str] = []
+    chat = replace(_fixture_case(), base=replace(_fixture_case().base, id="c-chat",
+                                                 register="chat"))
+    voice = replace(_fixture_case(), base=replace(_fixture_case().base, id="c-voice",
+                                                 register="voice_raw"))
+    held = replace(_fixture_case(), base=replace(_fixture_case().base, id="c-held",
+                                                 register="chat"))
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        corpus = _corpus_file(root, (chat, voice, held))
+        ladder = root / "ladder.json"
+        # Дайджест лестницы считается по ЭТОМУ корпусу: иначе парный контроль
+        # (`--tier nano`) упирается в отказ «лестница снята с другого корпуса»,
+        # и проверка среза зеленела бы, ничего не сравнив.
+        ladder.write_text(json.dumps(
+            {"version": 2, "seed": 4,
+             "corpus_sha256": corpus_build.corpus_stamp((chat, voice, held))[0],
+             "tiers": {"nano": ["c-chat", "c-voice"], "holdout": ["c-held"]}}),
+            encoding="utf-8")
+        base = [str(corpus), "--ladder", str(ladder), "--out", str(root / "run"),
+                "--runs", str(root / "runs.json"), "--ceiling", "0", "--no-judge",
+                "--dry-run"]
+        code, printed = _main(base + ["--slice", "register=chat"])
+        if code != 0:
+            failures.append(f"срез не прошёл: {code} {printed[:300]}")
+        if "slice:register=chat" not in printed:
+            failures.append(f"прогон не назвал срез его каноническим именем: {printed[:200]}")
+        if "сравнивать с ярусом нельзя" not in printed:
+            failures.append("прогон не сказал, что срез — не ярус")
+        # ХОЛДАУТ НЕ ЧИТАЕТСЯ СРЕЗОМ: `c-held` — чат, и без исключения он
+        # попал бы в тот же срез.
+        if "1 случаев" not in printed:
+            failures.append(f"срез взял не один случай (холдаут?): {printed[:200]}")
+        # …и парный контроль: без среза тот же вызов играет ярус.
+        code, printed = _main(base + ["--tier", "nano"])
+        if code != 0 or "случаев 2" not in printed:
+            failures.append(f"ярус nano дал {code}: {printed[:200]}")
+        # Два способа выбора сразу, размер без среза, и неизвестная ось —
+        # отказы ДО оценки, каждый со своей причиной.
+        for extra, wanted in (
+                (["--slice", "register=chat", "--ids", "c-voice"], "не значат ничего"),
+                (["--slice-size", "5"], "--slice-size без --slice"),
+                (["--slice", "nope=1"], "нет оси"),
+                (["--slice", "register=Chat"], "не несёт")):
+            code, printed = _main(base + extra)
+            if code != 2 or wanted not in printed:
+                failures.append(f"{extra} дал {code}: {printed[:200]}")
+    return failures
+
+
+def test_the_holdout_is_reachable_only_by_its_own_name() -> list[str]:
+    """ХОЛДАУТ ЧИТАЕТСЯ ОДНИМ СПОСОБОМ — `--tier holdout`, — и обе другие двери
+    в него теперь ЗАКРЫТЫ ОТКАЗОМ, а не обещанием в README.
+
+    ДВЕРЬ ПЕРВАЯ: `--ids`. `--ids single-023` проходил оценку без единого слова
+    о том, что назван холдаутный случай; настоящий прогон стоил бы $0.45 и
+    поставил бы `holdout_touched_at` навсегда — штамп срабатывает ПОСЛЕ выбора
+    и только записывает, а отменить его нечем.
+
+    ДВЕРЬ ВТОРАЯ: лестница без яруса `holdout`. Срез исключал холдаут через
+    `.tiers.get("holdout", ())`, поэтому такая лестница — с ВЕРНЫМ
+    `corpus_sha256`, так что ни один отказ старта её не отличал, — давала срез,
+    в который холдаут ПОПАДАЛ, и над ним печаталась строка «холдаут исключён».
+    Фолбэк здесь не уменьшал ответ, а менял его на противоположный.
+
+    ОБЕ ПОЛОВИНЫ КАЖДОЙ ДВЕРИ. Отказ, который срабатывает всегда, — это
+    сломанный флаг: поэтому рядом с каждым отказом стоит вызов, который обязан
+    ПРОЙТИ (`--ids` на нехолдаутном случае, тот же срез на полной лестнице), и
+    он же показывает, что отказ различает, а не запрещает.
+    """
+    failures: list[str] = []
+    chat = replace(_fixture_case(), base=replace(_fixture_case().base, id="c-chat",
+                                                 register="chat"))
+    voice = replace(_fixture_case(), base=replace(_fixture_case().base, id="c-voice",
+                                                 register="voice_raw"))
+    held = replace(_fixture_case(), base=replace(_fixture_case().base, id="c-held",
+                                                 register="chat"))
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        corpus = _corpus_file(root, (chat, voice, held))
+        stamp = corpus_build.corpus_stamp((chat, voice, held))[0]
+        whole = root / "ladder.json"
+        whole.write_text(json.dumps(
+            {"version": 2, "seed": 4, "corpus_sha256": stamp,
+             "tiers": {"nano": ["c-chat", "c-voice"], "holdout": ["c-held"]}}),
+            encoding="utf-8")
+        headless = root / "ladder-no-holdout.json"
+        headless.write_text(json.dumps(
+            {"version": 2, "seed": 4, "corpus_sha256": stamp,
+             "tiers": {"nano": ["c-chat", "c-voice"]}}), encoding="utf-8")
+
+        def call(ladder: Path, extra: list[str]) -> tuple[int, str]:
+            return _main([str(corpus), "--ladder", str(ladder), "--out", str(root / "run"),
+                          "--runs", str(root / "runs.json"), "--ceiling", "0", "--no-judge",
+                          "--dry-run"] + extra)
+
+        code, printed = call(whole, ["--ids", "c-held"])
+        if code != 2 or "--tier holdout" not in printed:
+            failures.append(f"--ids по холдауту дал {code}: {printed[:250]}")
+        if "holdout_touched_at" not in printed:
+            failures.append("отказ не назвал цену касания — штамп навсегда")
+        code, printed = call(whole, ["--ids", "c-voice"])
+        if code != 0:
+            failures.append(f"--ids по обычному случаю отказан: {code} {printed[:250]}")
+
+        code, printed = call(headless, ["--slice", "register=chat"])
+        if code != 2 or "holdout" not in printed:
+            failures.append(f"срез по лестнице без холдаута дал {code}: {printed[:250]}")
+        if "холдаут исключён" in printed:
+            failures.append("прогон пообещал исключить холдаут, которого не прочитал")
+        code, printed = call(whole, ["--slice", "register=chat"])
+        if code != 0 or "1 случаев" not in printed:
+            failures.append(f"тот же срез по полной лестнице дал {code}: {printed[:250]}")
+        code, printed = call(headless, ["--ids", "c-voice"])
+        if code != 2 or "holdout" not in printed:
+            failures.append(f"--ids по лестнице без холдаута дал {code}: {printed[:250]}")
+    return failures
+
+
 def test_the_record_names_what_answered_and_what_masked() -> list[str]:
     """§4.1 и §4.2 (пункты 12 и 13): прогон записывает провайдера с ценами и то,
     чем был шлюз, — и ОТКАЗЫВАЕТСЯ записывать то, чего не было.
@@ -1939,6 +2068,10 @@ def main() -> int:
          test_the_holdout_is_stamped_before_the_first_call),
         ("the_record_names_what_answered_and_what_masked",
          test_the_record_names_what_answered_and_what_masked),
+        ("a_slice_is_selected_by_rule_and_recorded_as_a_slice",
+         test_a_slice_is_selected_by_rule_and_recorded_as_a_slice),
+        ("the_holdout_is_reachable_only_by_its_own_name",
+         test_the_holdout_is_reachable_only_by_its_own_name),
     )
     failures: list[str] = []
     for name, check in checks:

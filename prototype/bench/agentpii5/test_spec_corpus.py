@@ -38,6 +38,7 @@ number is pinned to.
 import json
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 
 from bench.agentpii4 import schema as v4
@@ -84,8 +85,11 @@ SPEC_V4_ITEM_COUNTS: dict[str, int] = {
 SPEC_MIN_MULTI_CLUSTERS: int = 8
 SPEC_MIN_MULTI_IDENTITIES: int = 8
 SPEC_CASES_PER_MULTI: int = 3
-# §8.1 «Итого ≈ 43 инструмента, 11 вертикалей».
-SPEC_TOOL_COUNT: int = 43
+# §8.1 «Итого 44 инструмента, 11 вертикалей» — 43 until 23.09.2026, when the
+# clinic's `patient_find` was added: §2 had ordered it from the first revision
+# («book, slots, patient_find») and §8.1's table had forgotten it, which left the
+# vertical with five WRITING tools and no IN/tool hop at all.
+SPEC_TOOL_COUNT: int = 44
 SPEC_VERTICAL_COUNT: int = 11
 # §8.1's table, «форма возврата» column, verbatim. A tool may declare MORE (R-17:
 # a state-decided form is declared as all of them); it may never declare fewer.
@@ -453,6 +457,41 @@ def test_the_holdout_of_the_committed_ladder() -> list[str]:
     return problems
 
 
+def _ladder() -> v4.Ladder:
+    """Файл лестницы как объект. ОДНО чтение на две проверки: два разбора того
+    же файла — это два способа назвать ярус, и однажды они разойдутся."""
+    tiers = LADDER["tiers"]
+    return v4.Ladder(version=int(LADDER.get("version", 2)), seed=int(LADDER.get("seed", 4)),
+                     corpus_sha256=str(LADDER.get("corpus_sha256", "")),
+                     tiers={str(name): tuple(str(one) for one in ids)
+                            for name, ids in dict(tiers).items()})
+
+
+def test_the_committed_ladder_is_a_miniature_of_the_corpus() -> list[str]:
+    """Каждый ярус ФАЙЛА, по которому пойдёт прогон, повторяет корпус по
+    регистру, поведению и семье.
+
+    `test_build` доказывает механизм во временном каталоге; решает состав
+    прогона ЭТОТ файл, и до 23.09 его не открывал никто: `nano` был 30/30
+    voice_raw, `medium` — 300/300, приёмка прибора на каждый push шла на
+    `medium`, и четырёх регистров из пяти не видела ни одна проверка. Ярус,
+    который перестанет быть миниатюрой (правкой руками, устаревшим штампом,
+    выросшим корпусом), обязан покраснеть здесь — там, где лежит файл.
+    """
+    problems = [f"лестница файла: {line}" for line in b.ladder_problems_v5(CASES, _ladder())]
+    # Отрицательная половина: ярус, из которого вынут целый регистр, обязан
+    # быть назван — иначе строка выше зеленела бы на любой лестнице.
+    ladder = _ladder()
+    by_id = {case.base.id: case for case in CASES}
+    thinned = [one for one in ladder.tiers["small"]
+               if by_id[one].base.register != "chat"]
+    broken = replace(ladder, tiers={**ladder.tiers, "small": tuple(thinned)})
+    if not any("small" in line and "chat" in line
+               for line in b.ladder_problems_v5(CASES, broken)):
+        problems.append("ярус без регистра chat принят — проверка не может покраснеть")
+    return problems
+
+
 def test_the_clusters_the_bootstrap_needs() -> list[str]:
     """§8.2 «кластеры ≥ 3 у ≥ 8 личностей (ICC меряется, не предполагается)».
 
@@ -489,6 +528,7 @@ CHECKS: tuple[Callable[[], list[str]], ...] = (
     test_the_v4_families_survive_with_their_loop,
     test_the_twelve_new_tools_match_the_spec_table,
     test_the_holdout_of_the_committed_ladder,
+    test_the_committed_ladder_is_a_miniature_of_the_corpus,
     test_the_clusters_the_bootstrap_needs,
 )
 

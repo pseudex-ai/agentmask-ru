@@ -53,8 +53,12 @@ def test_no_pseudex() -> list[str]:
 
 def test_counts() -> list[str]:
     problems: list[str] = []
-    if len(REGISTRY_V5) != 43:
-        problems.append(f"{len(REGISTRY_V5)} tools, expected 43")
+    # 44, NOT §8.1's «≈ 43». The clinic's `patient_find` is the forty-fourth and
+    # it is the ТЗ's own: §2 lists the vertical as «book, slots, patient_find»
+    # while §8.1's table forgot to order it, which is how the vertical came to
+    # hold five tools that all WRITE and to return no personal data at all.
+    if len(REGISTRY_V5) != 44:
+        problems.append(f"{len(REGISTRY_V5)} tools, expected 44")
     expected = set(V4_TOOL_NAMES) | set(NEW_TOOL_NAMES)
     if set(REGISTRY_V5) != expected:
         problems.append(f"missing {sorted(expected - set(REGISTRY_V5))}, "
@@ -186,6 +190,25 @@ def test_vertical_rules() -> list[str]:
     if not any(one.startswith("V05") and "file_read" in one
                for one in registry_problems(lax)):             # type: ignore[arg-type]
         problems.append("V05 stayed silent on a parser that accepts an empty call")
+    # V06 IS SHOWN FAILING ON THE EXACT SHAPE THAT LIVED IN THE REGISTRY: a leaf
+    # added to `result_pii` and named by no return form. Before 23.09 five of
+    # the 142 declared paths were that shape — `courier_status.recipient.
+    # {name,phone}` and `crm_upsert_contact.contact.{first_name,last_name,
+    # phone}` — and deleting any of them reddened nothing in the package.
+    unpromised = dict(REGISTRY_V5)
+    unpromised["snils_verify"] = replace(
+        REGISTRY_V5["snils_verify"],
+        base=replace(REGISTRY_V5["snils_verify"].base,
+                     result_pii=(*REGISTRY_V5["snils_verify"].base.result_pii,
+                                 "person.middle_name")))
+    if not any(one.startswith("V06") and "person.middle_name" in one
+               for one in registry_problems(unpromised)):       # type: ignore[arg-type]
+        problems.append("V06 stayed silent on a result_pii path no return form names")
+    # And the other direction, so V06 is not simply V04 spelled twice: a form
+    # that names a path `result_pii` does not hold is V04's, and V06 must not
+    # claim it.
+    if any(one.startswith("V06") for one in registry_problems(dict(REGISTRY_V5))):
+        problems.append("V06 is red on the registry as it stands")
     return problems
 
 
@@ -203,6 +226,8 @@ GOOD_CALLS: tuple[tuple[str, dict[str, object]], ...] = (
     ("email_send", {"to": "grom@mail.ru", "subject": "Заказ", "body": "Здравствуйте!"}),
     ("ticket_history", {"issue_id": "t-1"}),
     ("courier_status", {"claim_id": "clm-1"}),
+    ("patient_find", {"phone": PHONE}),
+    ("patient_find", {"snils": snils_spaced(SNILS_VALID)}),
 )
 BAD_CALLS: tuple[tuple[str, dict[str, object], str], ...] = (
     ("kb_search", {"query": "   ", "k": 3}, "empty_query"),
@@ -238,6 +263,10 @@ BAD_CALLS: tuple[tuple[str, dict[str, object], str], ...] = (
     ("email_send", {"to": "grom@mail.ru", "subject": "x" * 201, "body": "y"}, "too_long"),
     ("ticket_history", {"issue_id": "tt-1"}, "id_format"),
     ("courier_status", {"claim_id": "clm1"}, "id_format"),
+    ("patient_find", {"phone": PHONE, "snils": snils_spaced(SNILS_VALID)}, "exactly_one_key"),
+    ("patient_find", {}, "exactly_one_key"),
+    ("patient_find", {"phone": "89164021187"}, "phone_not_e164"),
+    ("patient_find", {"snils": "112233445 95"}, "snils_format"),
 )
 
 
@@ -315,6 +344,41 @@ def test_clinic_iso_snils() -> list[str]:
                         f"expected XXX-XXX-XXX YY")
     if not ISO_DATE.fullmatch(str(verified["person"]["birth_date"])):          # type: ignore[index]
         problems.append("the ПФР record's birth date is not ISO")
+    return problems
+
+
+def test_clinic_reads_a_card_back() -> list[str]:
+    """§2's clinic row, and the only tool of the vertical that can answer it.
+
+    THE VERTICAL HAD FIVE TOOLS AND ALL FIVE WROTE. `clinic_book`, `referral_
+    create`, `appointment_cancel`/`_reschedule` echo the values the dialogue
+    just handed them, and `clinic_slots` answers with a doctor — so «ДР ISO,
+    СНИЛС с разделителями» was a promise no call could keep, and the corpus
+    declared 584 clinic hops with not one IN/tool among them. This reads a
+    STORED card: every notation below is the МИС's own and none of them is one
+    a caller's register produces.
+    """
+    problems: list[str] = []
+    found = body("patient_find", {"phone": PHONE})
+    if found.get("found") is not True:
+        return [f"patient_find did not find the seeded card: {found}"]
+    card = found["patient"]                                                    # type: ignore[index]
+    if not ISO_DATE.fullmatch(str(card["birth_date"])):                        # type: ignore[index]
+        problems.append(f"the card's birth date is {card['birth_date']!r}, expected ISO")
+    if not SNILS_SHAPE.fullmatch(str(card["snils"])):                          # type: ignore[index]
+        problems.append(f"the card's СНИЛС is {card['snils']!r}, expected XXX-XXX-XXX YY")
+    if str(card["phone"]) != PHONE:                                            # type: ignore[index]
+        problems.append(f"the card's phone is {card['phone']!r}, expected E.164")
+    # THE SEARCH IS BY DIGIT SIGNATURE, WHICH IS WHY THE SECOND KEY MUST FIND
+    # THE SAME CARD: the parser hands over bare СНИЛС digits and the card holds
+    # the separated spelling, so a string comparison would answer `empty` here
+    # and the case would declare a result the backend never produced.
+    by_snils = body("patient_find", {"snils": snils_spaced(SNILS_VALID)})
+    if by_snils.get("found") is not True:
+        problems.append("the card is not findable by the СНИЛС it stores")
+    missing = body("patient_find", {"phone": "+79990000000"})
+    if missing.get("found") is not False or "patient" in missing:
+        problems.append(f"an unknown patient answered {missing!r}, expected an empty match")
     return problems
 
 
@@ -499,7 +563,8 @@ def test_empty_world_is_empty() -> list[str]:
 CHECKS = (test_no_pseudex, test_counts, test_v4_kept, test_v4_tools_revised,
           test_v4_registry_is_widened,
           test_every_tool_has_form, test_vertical_rules, test_parsers_good_bad,
-          test_examples_resolve, test_directory_canon, test_clinic_iso_snils, test_bank_forms,
+          test_examples_resolve, test_directory_canon, test_clinic_iso_snils,
+          test_clinic_reads_a_card_back, test_bank_forms,
           test_ticket_history_free_text, test_calendar_notations, test_government_forms,
           test_kb_search_chunks, test_file_forms, test_courier_status_forms,
           test_nested_address, test_file_read_scan_noise, test_empty_world_is_empty)

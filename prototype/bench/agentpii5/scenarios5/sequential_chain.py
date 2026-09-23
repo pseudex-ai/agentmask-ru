@@ -288,22 +288,30 @@ def _delivery(ctx: c.Ctx) -> Case:
                                 "contact.name", 3, ""))
     builder.declare_hop(arg_hop(card["address.street"], 7, turn, "courier_book", 0,
                                 "address.street", 4, ""))
-    # ONLY THE ADDRESS COMES BACK TAGGED FROM THE COURIER. The claim the booking
-    # minted is not a seeded row, so its `contact.phone` column carries no bound
-    # item and the status result cannot label the phone — the address survives
-    # because the service RE-RENDERS it and the by-value index finds the street.
-    # Declaring the phone here would be a hop nobody can observe, i.e. a
-    # permanent miss charged to the gateway.
+    # THE WHOLE BLOCK COMES BACK TAGGED FROM THE COURIER — address, name and
+    # phone. It used to be the address alone, on the reading that a claim the
+    # booking minted is not a seeded row and so nothing could label its
+    # `contact.*` columns; that was true of `mock._slot_of`, the EXACT map, and
+    # not of the datum. The values in the claim are the CRM card's own (the
+    # agent wrote them into `courier_book` three hops above), so the by-value
+    # index identifies them exactly as it identifies the street — and the mock
+    # now renders the recipient through it. These are real crossings: the
+    # gateway unmasked them into the booking and has to mask them coming back.
     builder.declare_hop(tool_hop(card["address.street"], 8, turn, "courier_status", 0, "address"))
-    builder.declare_hop(answer_hop(card["address.street"], 9, turn, 8, False))
-    builder.declare_hop(answer_hop(card["phone"], 10, turn, 2, True))
+    builder.declare_hop(tool_hop(card["last_name"], 9, turn, "courier_status", 0,
+                                 "recipient.name"))
+    builder.declare_hop(tool_hop(card["phone"], 10, turn, "courier_status", 0,
+                                 "recipient.phone"))
+    builder.declare_hop(answer_hop(card["address.street"], 11, turn, 8, False))
+    builder.declare_hop(answer_hop(card["phone"], 12, turn, 2, True))
     builder.expect_return(ReturnExpectation(
         "crm_find_contact", 0, "list",
         (card["last_name"], card["first_name"], card["phone"], card["address.street"])))
     builder.expect_return(ReturnExpectation("courier_book", 0, "nested",
                                             (card["address.street"],)))
-    builder.expect_return(ReturnExpectation("courier_status", 0, "nested",
-                                            (card["address.street"],)))
+    builder.expect_return(ReturnExpectation(
+        "courier_status", 0, "nested",
+        (card["address.street"], card["last_name"], card["phone"])))
     return builder.build(BEHAVIOUR)
 
 

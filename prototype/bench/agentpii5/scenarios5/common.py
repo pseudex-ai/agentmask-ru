@@ -771,6 +771,39 @@ def snils_seed(record_id: str, snils_digits: str, drawn: Drawn,
     })
 
 
+def patient_seed(record_id: str, snils_digits: str, drawn: Drawn,
+                 builder: CaseBuilderV5, identity: str) -> dict[str, str]:
+    """A row of `patients`, what `patient_find` returns: the clinic's card.
+
+    THREE NOTATIONS NO SPEECH REGISTER WRITES, in one result — the birth date in
+    ISO, the СНИЛС with the ПФР separators, the phone in E.164. That is the
+    whole reason the clinic needed a READING tool: its other five write, so
+    every value in their results is one the dialogue handed them a moment
+    earlier and the IN/tool hop measures nothing about the vertical's own form.
+    The ТЗ §2 promised «ДР ISO, СНИЛС с разделителями» as the clinic's return
+    format and 584 hops of the corpus checked none of it.
+
+    THE PHONE IS STORED AND ALSO SAID BY THE CALLER, on purpose: it is the key
+    the search is made on, so the same datum crosses as IN/user, as OUT/tool_arg
+    and back as IN/tool, and the card's notation can be compared with the one it
+    was dictated in.
+    """
+    separated = spaced_snils(snils_digits)
+    iso = iso_date(drawn.dob)
+    phone = f"+7{drawn.phone}"
+    fields: dict[str, object] = {**_person_fields(drawn.person), "birth_date": iso,
+                                 "snils": separated, "phone": phone,
+                                 "policy": f"ОМС {record_id}"}
+    return seeded(builder, record_id, "patients", fields, {
+        "last_name": _name_column(drawn.person, "surname", identity),
+        "first_name": _name_column(drawn.person, "given", identity),
+        "birth_date": ("DOB", identity, Rendered(iso, iso, False, {"iso": iso})),
+        "snils": ("SNILS", identity, Rendered(separated, separated, False,
+                                              {"digits": snils_digits})),
+        "phone": ("PHONE", identity, Rendered(phone, phone, False, {"digits": drawn.phone})),
+    })
+
+
 def calendar_seed(record_id: str, drawn: Drawn, builder: CaseBuilderV5,
                   identity: str) -> dict[str, str]:
     """A row of `calendar`, what `calendar_free` returns: whose calendar it is.

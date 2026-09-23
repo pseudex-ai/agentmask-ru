@@ -62,7 +62,7 @@ from bench.agentpii5.tools import (NEW_REGISTRY, csv_row_path, expected_leaf_val
 # The tables the twelve new tools read. v4's thirteen stay exactly as they are.
 NEW_TABLES: tuple[str, ...] = (
     "kb_chunks", "documents", "bank_clients", "vehicles", "snils_records",
-    "calendar", "ticket_events", "emails")
+    "calendar", "ticket_events", "emails", "patients")
 # A value shorter than this is not indexed for tagging by VALUE: «7», «12» and
 # «41» occur in half the records of a seeded world, and a tag put on the wrong
 # record is worse than no tag — the observer would score a hop on someone
@@ -356,6 +356,9 @@ class BackendV5(Backend):
 
     def seed_ticket_event(self, record_id: str, fields: dict[str, object]) -> None:
         self.seed_record("ticket_events", record_id, fields)
+
+    def seed_patient(self, record_id: str, fields: dict[str, object]) -> None:
+        self.seed_record("patients", record_id, fields)
 
     def seed_item(self, table: str, record_id: str, path: str, item_id: str) -> None:
         """Bind one seeded field to the case's `PiiItem` id. Two maps come out
@@ -1182,6 +1185,8 @@ class BackendV5(Backend):
             return self._ticket_history(str(parsed["issue_id"]))
         if tool == "courier_status":
             return self._courier_status(str(parsed["claim_id"]))
+        if tool == "patient_find":
+            return self._patient_find(parsed)
         raise KeyError(tool)
 
     def _retrieved(self, ranked: Sequence[tuple[float, Record]],
@@ -1405,6 +1410,34 @@ class BackendV5(Backend):
                  "person": {key: self._slot_of(record, key, value)
                             for key, value in person.items()}}, "single")
 
+    def _patient_find(self, parsed: dict[str, object]) -> tuple[dict[str, object], object, str]:
+        """The clinic's card, in the МИС's own notations.
+
+        MATCHED ON THE DIGIT SIGNATURE, NEVER ON THE STRING. The card stores the
+        СНИЛС as «112-233-445 95» and the parser hands over bare digits, the
+        phone is stored E.164 and arrives E.164 — one of the two comparisons
+        would work by luck and the other by accident if both were string
+        equality, and a lookup that misses answers `empty`, which would make the
+        case declare a result the backend never produced.
+
+        `found: false` IS A FORM, NOT A FAILURE. A МИС answers an unknown
+        insured person with an empty match set; rendering an error instead would
+        put a value into an error body the real service never writes and would
+        give `toolresult_masked` a slice of our own invention.
+        """
+        key = "snils" if "snils" in parsed else "phone"
+        wanted = digits_of(str(parsed[key]))
+        record = next((one for one in self._tables["patients"].values()
+                       if digits_of(str(one.fields.get(key, ""))) == wanted), None)
+        if record is None:
+            return ({"found": False}, {"found": False}, "empty")
+        block = {name: str(record.fields.get(name, ""))
+                 for name in ("last_name", "first_name", "birth_date", "snils", "phone")}
+        return ({"found": True, "patient": block},
+                {"found": True,
+                 "patient": {name: self._slot_of(record, name, value)
+                             for name, value in block.items()}}, "single")
+
     def _calendar_free(self, person: str, date: str) -> tuple[dict[str, object], object, str]:
         record = next((one for one in self._tables["calendar"].values()
                        if str(one.fields.get("person", "")).lower() == person.lower()), None)
@@ -1462,11 +1495,22 @@ class BackendV5(Backend):
         contact = dict(record.fields.get("contact") or {})                     # type: ignore[arg-type]
         name, phone = str(contact.get("name", "")), str(contact.get("phone", ""))
         status = str(record.fields.get("status", "") or "delivering")
+        # THE RECIPIENT IS TAGGED BY VALUE, LIKE THE ADDRESS BESIDE IT, AND THE
+        # EXACT MAP CANNOT REACH IT. A claim is almost never seeded — the
+        # dialogue books it one call earlier — so `(claims, clm-1, contact.name)`
+        # is bound to no item and `_slot_of` answered "" for every case in the
+        # corpus: `courier_status.recipient.{name,phone}` was declared in
+        # `result_pii`, promised by no return form, crossed by no hop, and its
+        # deletion reddened nothing. The values in the block are the CRM card's
+        # own — the agent wrote them into `courier_book` — so the by-value index
+        # identifies them exactly as it identifies the street in the line below,
+        # and `seed_item` drops a value two items share rather than tagging the
+        # wrong person. This is the SAME renderer `courier_book`'s enrichment
+        # uses for the same block, one call earlier.
         return ({"claim_id": claim_id, "status": status,
                  "recipient": {"name": name, "phone": phone}, "address": address.text},
                 {"claim_id": claim_id, "status": status,
-                 "recipient": {"name": self._slot_of(record, "contact.name", name),
-                               "phone": self._slot_of(record, "contact.phone", phone)},
+                 "recipient": {"name": self._slot(name), "phone": self._slot(phone)},
                  "address": address}, "nested")
 
 
@@ -1601,6 +1645,17 @@ def call_arguments(case: CaseV5, tool: str, ordinal: int,
         arguments["text"] = text if text else document_words(case)
     if tool == "courier_status":
         arguments["claim_id"] = state.get("claim_id", "")
+    if tool == "crm_upsert_contact":
+        # WHICH CARD THE UPDATE UPDATES. The id is not personal data, so no hop
+        # names it, and without it v4's `_store` opens a SECOND card — the very
+        # failure this family measures — so the result would carry an empty name
+        # and the stored card's leaves could never be read back. The agent under
+        # test reads the id off the probe it just made; the driver reads it off
+        # the row the case seeded, which is the same card.
+        contact = next((record for record in case.base.seed_records
+                        if record.table == "contacts"), None)
+        if contact is not None and not arguments.get("id"):
+            arguments["id"] = contact.id
     if tool == "crm_upsert_contact" and "address" in str(arguments.get("contact", {})):
         # `crm_upsert_contact` refuses an address without its city, and a bare
         # city is not personal data, so no hop declares it — it is business

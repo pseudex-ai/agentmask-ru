@@ -135,6 +135,14 @@ def seeded_world() -> BackendV5:
                                 "first_name": "Сергей", "birth_date": "1979-11-02",
                                 "status": "revoked"})
     backend.seed_calendar("cal-1", {"person": "Громова Марина", "birth_date": "1987-03-14"})
+    # The МИС card, in the three notations §2 asks the clinic for. The СНИЛС is
+    # stored SEPARATED because that is how a clinic prints it, and the lookup is
+    # by digit signature — a card stored in the bare digits the parser hands over
+    # would let a string comparison pass and say nothing about the notation.
+    backend.seed_patient("pat-1", {"last_name": "Громова", "first_name": "Марина",
+                                   "birth_date": "1987-03-14",
+                                   "snils": snils_spaced(SNILS_VALID), "phone": PHONE,
+                                   "policy": "ОМС pat-1"})
     backend.seed_ticket_event("ev-1", {
         "issue_id": "t-1", "order": 1, "name": "Громова Марина", "phone": PHONE,
         "template": "12.09 клиент {name} ({phone}) просил перенести доставку на пятницу."})
@@ -191,6 +199,35 @@ def bare_world() -> BackendV5:
     whatever the directory holds and never filter by score, so their `empty`
     form is reachable only where the directory itself is empty."""
     return BackendV5(NOW, (), {})
+
+
+# The scripted refusals `retry_same_tool` puts in front of the four tools it
+# retries, with the same codes and message templates that family uses. THIS IS A
+# RESULT AND NOT A PARSE ERROR: `mock._forced_call` answers a body the model
+# reads, with the offending value tagged inside `error.message`, and 126 IN/tool
+# hops of the corpus cross that leaf. Until it was rendered here, the four tools
+# declared `error.subject` — the DOMAIN error's body, a different shape — and
+# the column «ПД в результате» described the wrong one for every one of them.
+SCRIPTED: tuple[ForcedError, ...] = (
+    ForcedError("bank_client_find", 0, "invalid_request", "e-inn",
+                "invalid_request: параметр inn «{value}» не прошёл проверку."),
+    ForcedError("vehicle_check", 0, "plate_format", "e-plate",
+                "номер {value} не найден в формате ГОСТ Р 50577."),
+    ForcedError("snils_verify", 0, "snils_checksum", "e-snils",
+                "СНИЛС {value} не прошёл проверку контрольной суммы ПФР."),
+    ForcedError("calendar_free", 0, "employee_unknown", "e-person",
+                "сотрудник {value} не найден в расписании."),
+)
+
+
+def scripted_world() -> BackendV5:
+    """A world whose FIRST call of each of the four tools is refused the way
+    `retry_same_tool` scripts it. Nothing is seeded: `_forced_call` answers
+    before the arguments are parsed and before any table is read, so a seeded
+    row here would be a row this fixture proves nothing about."""
+    return BackendV5(NOW, SCRIPTED, {
+        "e-inn": INN_ACTIVE, "e-plate": "Х501УН36",
+        "e-snils": snils_spaced(SNILS_VALID), "e-person": "Громова Марина"})
 
 
 # (tool, declared form, arguments, world). The order matters: the world is a
@@ -279,6 +316,16 @@ RENDERS: tuple[tuple[str, str, dict[str, object], str], ...] = (
     ("vehicle_check", "error_with_value", {"plate": "Е777КХ99"}, "full"),
     ("snils_verify", "single", {"snils": snils_spaced(SNILS_VALID)}, "full"),
     ("snils_verify", "empty", {"snils": snils_spaced(SNILS_UNSEEDED)}, "full"),
+    # The four scripted refusals, in their own world so the retry's first
+    # attempt is a refusal and its second is not.
+    ("bank_client_find", "error_with_value", {"inn": INN_ACTIVE}, "scripted"),
+    ("vehicle_check", "error_with_value", {"plate": "Х501УН36"}, "scripted"),
+    ("snils_verify", "error_with_value", {"snils": snils_spaced(SNILS_VALID)}, "scripted"),
+    ("calendar_free", "error_with_value",
+     {"person": "Громова Марина", "date": "2026-09-10"}, "scripted"),
+    ("patient_find", "single", {"phone": PHONE}, "full"),
+    ("patient_find", "single", {"snils": snils_spaced(SNILS_VALID)}, "full"),
+    ("patient_find", "empty", {"phone": PHONE_UNKNOWN}, "full"),
     ("snils_verify", "error_with_value", {"snils": snils_spaced(SNILS_REVOKED)}, "full"),
     ("kb_search", "chunks", {"query": "Громова Марина", "k": 3}, "full"),
     ("kb_search", "list", {"query": "Лапина Вера", "k": 3}, "full"),
@@ -478,6 +525,7 @@ WORLDS: dict[str, BackendV5] = {}
 def test_each_form_renders() -> list[str]:
     problems: list[str] = []
     WORLDS["full"], WORLDS["bare"] = seeded_world(), bare_world()
+    WORLDS["scripted"] = scripted_world()
     seen: set[tuple[str, str]] = set()
     for tool, form, arguments, world in RENDERS:
         backend, log = render(world, tool, arguments)
@@ -488,18 +536,30 @@ def test_each_form_renders() -> list[str]:
         if actual != form:
             problems.append(f"{tool}: expected form {form!r}, got {actual!r}")
             continue
-        declared = {one.form: one for one in REGISTRY_V5[tool].return_forms}
-        if form not in declared:
+        # A FORM NAME MAY COVER SEVERAL BODIES, and `error_with_value` covers
+        # two: the DOMAIN refusal («not found», «blocked») answers under
+        # `error.subject` and the SCRIPTED one of `retry_same_tool` under
+        # `error.message`. Keying the declarations by name alone let the second
+        # silently replace the first, and then a rendered body was compared with
+        # a shape nothing renders. The rendered shape must match ONE declared
+        # example, and the example it matched is what counts as covered — so
+        # «declared but never rendered» still names every body one by one.
+        declared = [one for one in REGISTRY_V5[tool].return_forms if one.form == form]
+        if not declared:
             problems.append(f"{tool}: rendered {form!r}, which the registry does not declare")
             continue
         rendered = generic_paths(json.loads(log.result_text))
-        example = generic_paths(json.loads(declared[form].example))
-        if rendered != example:
-            problems.append(f"{tool}/{form}: shape differs from the declared example; "
+        matched = next((one for one in declared
+                        if generic_paths(json.loads(one.example)) == rendered), None)
+        if matched is None:
+            example = generic_paths(json.loads(declared[0].example))
+            problems.append(f"{tool}/{form}: shape matches none of the "
+                            f"{len(declared)} declared example(s); against the first, "
                             f"only rendered {sorted(rendered - example)}, "
                             f"only declared {sorted(example - rendered)}")
-        seen.add((tool, form))
-    declared_pairs = {(name, one.form) for name, spec in REGISTRY_V5.items()
+            continue
+        seen.add((tool, form, matched.example))
+    declared_pairs = {(name, one.form, one.example) for name, spec in REGISTRY_V5.items()
                       for one in spec.return_forms}
     missing = sorted(declared_pairs - seen)
     if missing:
