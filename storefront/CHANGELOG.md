@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.19](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.18...platform/v0.3.19) (2026-09-23)
+
+
+### Новое
+
+* **licensing:** слоты и поколения вместо счёта живых процессов ([#21](https://github.com/Isk4R1oT/Obscura/issues/21)) ([44f65fa](https://github.com/Isk4R1oT/Obscura/commit/44f65fa4928f72388bfa0370dfcc1950ae6a3235))
+* **storefront:** подарок и скидка без объяснений — «+30 дней в подарок — спасибо за доверие», подписи правятся в админке ([6b8b4a6](https://github.com/Isk4R1oT/Obscura/commit/6b8b4a60eea241355b625923094984cd5d34a6a7))
+
+
+### Исправления
+
+* **licensing:** два разных окна — слот контейнера по признаку жизни, места процессов по окну аренды; сервер называет причину освобождения; /admin/release помечает, а не удаляет ([9daaad1](https://github.com/Isk4R1oT/Obscura/commit/9daaad1963fe67eeca593cfea09e133931982fda))
+* **licensing:** занятость по признаку жизни, бюджет перевыдач, честные отказы и экраны — третий заход ([6f258fd](https://github.com/Isk4R1oT/Obscura/commit/6f258fdde234508c52617ac12baad7dd83747df3))
+* **licensing:** потолок стоит там, где процесс становится способен обслуживать — на ёмкости, а не только на аренде ([29f9801](https://github.com/Isk4R1oT/Obscura/commit/29f980137c1aaaeffb03b2e4f164de0f4cd05623))
+* **licensing:** честный релиз освобождает место сразу — клиент пробного тарифа больше не заперт (10/10 стартов против блокировки на 6-м у выпущенного 0.3.17) ([c74be8f](https://github.com/Isk4R1oT/Obscura/commit/c74be8f1da4e4da3d807326e1b739a6582932dc3))
+
 ## [0.3.18](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.17...platform/v0.3.18) (2026-09-21)
 
 
