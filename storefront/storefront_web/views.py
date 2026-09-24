@@ -884,21 +884,14 @@ def cabinet(request):
         reported, unreachable = {}, True
     if not isinstance(reported, dict):
         reported = {}
-    # КАКИЕ КОНТЕЙНЕРЫ ДЕРЖАТ СЛОТ — И СКОЛЬКО ИХ, ПО СЧЁТУ СЕРВЕРА.
-    #
-    # Тариф продаётся контейнерами, потолок принуждается по ним, а кабинет
-    # показывал только разрешённое. Клиенту, которому отказали в аренде,
-    # предлагали остановить контейнер, которого он уже удалил.
-    #
-    # ЗАНЯТО — ЭТО НЕ ДЛИНА СПИСКА. Список — это СЛОТЫ тарифа, включая
-    # свободные; складывать его длиной значило бы всегда показывать человеку
-    # число, равное его тарифу, — то самое враньё экрана, ради которого всё
-    # это чинится.
+    # ИНСТАНСЫ — ПРИБЛИЗИТЕЛЬНАЯ СПРАВКА, НЕ ЛИМИТ. Слот-счёт как принуждение
+    # убран (docs/tz-license-volume-quota.md §A); осталось число различных
+    # инстансов в окне, как его назвал сервер. Принуждение теперь объёмное.
     try:
         slot_view = slots.describe(licensing.instances(organization.id), time.time())
     except licensing.LicensingError:
-        # Сервер молчит — занятость НЕИЗВЕСТНА. Ноль здесь читался бы как
-        # «свободно», то есть как ответ, которого у нас нет.
+        # Сервер молчит — число НЕИЗВЕСТНО. Ноль здесь читался бы как ответ
+        # «ничего не работает», которого у нас нет.
         slot_view = slots.unknown()
     # What is billed: protected values, from the monotonic accumulator. Requests
     # are shown beside it because the operator recognises them, but the bar
@@ -1084,6 +1077,37 @@ def revoke_key(request, key_id: int):
     _log.warning("key revoked", extra={"org": organization.id, "key_prefix": key.prefix,
                                        "by": request.user.email})
     messages.success(request, f"Ключ {key.prefix}… отозван и больше не продлит аренду.")
+    return redirect("cabinet")
+
+
+@login_required
+@require_POST
+def toggle_overage(request):
+    """Клиент включает или выключает докуп объёма сверх включённого (овередж).
+
+    По умолчанию ВЫКЛ (решение владельца): пробитие включённого — остановка, а
+    не тихий счёт за перерасход. Включив, клиент соглашается платить за объём
+    сверх включённого по ставке тарифа — до потолка и буфера. Уже НАЧИСЛЕННЫЙ
+    период задним числом не меняется: счёт считается по флагу на момент
+    выставления. Новый абсолютный потолок сразу уезжает на лиц-сервер (не роняя
+    страницу при его недоступности) — иначе эффект ждал бы часового тика.
+    """
+    organization = _organization(request)
+    subscription = getattr(organization, "subscription", None)
+    if subscription is None:
+        messages.error(request, "Подписки нет — включать перерасход не на чем.")
+        return redirect("cabinet")
+    subscription.overage_enabled = request.POST.get("overage_enabled") == "on"
+    subscription.save(update_fields=["overage_enabled"])
+    services.push_ceiling(organization)
+    if subscription.overage_enabled:
+        messages.success(request, "Перерасход включён: сверх включённого объёма "
+                                  "докуп по ставке тарифа до потолка, затем буфер "
+                                  "и остановка.")
+    else:
+        messages.success(request, "Перерасход выключен: при пробитии включённого "
+                                  "объёма обслуживание останавливается, а не "
+                                  "начисляется сверх.")
     return redirect("cabinet")
 
 

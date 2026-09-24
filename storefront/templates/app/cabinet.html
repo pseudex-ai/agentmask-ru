@@ -54,36 +54,11 @@
     <div class="label" style="margin-bottom:14px">РАБОТАЕТ ЛИ</div>
     {% if subscription %}
       <div class="kv"><span class="k">план</span><span class="v">{{ plan.title }} · {{ plan.monthly_price|floatformat:0 }} ₽/мес</span></div>
-      {% comment %}ЗАНЯТО — ЧИСЛО С СЕРВЕРА, А НЕ ДЛИНА СПИСКА. В списке есть и молчащие, и
-      отпущенные контейнеры: слот они не держат, и складывать их длиной значило бы написать
-      «1 из 1 занято» ровно в ту минуту, когда слот свободен. Ни одна ветка здесь не пишет ноль
-      за сервер: не ответил — «неизвестно», ответил без числа — «не назвал». Ноль читается как
-      ответ, и «0 из 1 занято» при 128 живых арендах — это самая дорогая из возможных подписей
-      под чужим отказом.{% endcomment %}
-      <div class="kv"><span class="k">контейнеры</span><span class="v">{% if not slots.known %}сейчас неизвестно — лицензионный сервер не отвечает{% elif slots.occupied is None %}сейчас неизвестно — лицензионный сервер не назвал занятость{% else %}{{ slots.occupied }} из {% if slots.slot_count is not None %}{{ slots.slot_count }}{% else %}{{ plan.max_instances }}{% endif %} занято{% endif %}{% if slots.pending_note %} · {{ slots.pending_note }}{% endif %}</span></div>
-      {% if slots.rows %}
-      {% comment %}ПЛАШКА И ПОЯСНЕНИЕ ПРИХОДЯТ ГОТОВЫМИ (`billing/slots.py::_slot`), а не
-      собираются здесь: шаблон, который ветвится по состоянию, красит незнакомое состояние в
-      знакомое, а два шаблона, ветвящихся каждый сам, говорят про один слот разные слова. У
-      кабинета и консоли слова теперь одни, различается только объяснение вокруг них.{% endcomment %}
-      <ul class="slots">
-        {% for slot in slots.rows %}<li>
-          <code>слот {{ slot.slot_no }}</code>
-          <span class="pill {{ slot.pill_class }}">{{ slot.pill }}</span>
-          <span style="font-size:12.5px;color:var(--dim-2)">{{ slot.note }}{% if slot.installation_id %} · том <code>{{ slot.installation_id }}</code>{% endif %}</span>
-          {% comment %}ДОЦЕЖИВАЮЩЕЕ ПОКОЛЕНИЕ НАЗЫВАЕТСЯ ЧЕСТНО: мы знаем, что оно больше не
-          покупает ёмкость, и НЕ знаем, работает ли оно ещё. Поэтому «до N запросов» — оценка
-          сверху, а не обещание; написать «остановлен» значило бы выдать незнание за факт.{% endcomment %}
-          {% for gone in slot.draining %}<div style="font-size:12.5px;color:var(--dim-2);margin-left:14px">предыдущее поколение {{ gone.epoch }} отфенсено {{ gone.fenced_ago }} назад{% if gone.fenced_by %} ({{ gone.fenced_by }}){% endif %}. {% if gone.band_left %}Если оно ещё работает — доработает на уже купленном (до ~{{ gone.band_left }} запросов) и остановится само{% else %}Купленной ёмкости у него не осталось: если контейнер ещё запущен, он не маскирует — перезапустите его или остановите{% endif %}</div>{% endfor %}
-        </li>{% endfor %}
-      </ul>
-      {% comment%}ЧТО КЛИЕНТ МОЖЕТ СДЕЛАТЬ — И ГЛАВНОЕ, ЧЕГО ЕМУ ДЕЛАТЬ НЕ НУЖНО. Предыдущая
-      редакция этого абзаца обещала, что слот освободится «через N минут молчания»: это было
-      суждение о том, жив ли контейнер, а его сервер вынести не может. Теперь перезапуск не
-      ждёт ничего вовсе, и абзац говорит ровно это.{% endcomment %}
-      <p class="hint">Перезапуск контейнера ничего не стоит и ничего не ждёт: это новое поколение на том же слоте, а не второй контейнер. <code>docker compose up -d</code>, <code>pseudexctl upgrade</code>, OOM-килл и ребут узла идут одним путём — прощаться не нужно, и слот не «освобождается через сколько-то», он просто переходит к новому запуску.</p>
-      <p class="hint">Запусков за сутки {% if slots.generations_24h is None %}сервер не назвал{% else %}{{ slots.generations_24h }}{% endif %}{% if slots.processes_per_instance %} · тариф рассчитан на {{ slots.processes_per_instance }} рабочих процесса(ов) на контейнер{% endif %}. Число запусков ничего не ограничивает — оно здесь для того, чтобы падающий контейнер было видно раньше, чем он станет письмом в поддержку.</p>
-      {% endif %}
+      {% comment %}ИНСТАНСЫ — ПРИБЛИЗИТЕЛЬНАЯ СПРАВКА, А НЕ ПОТОЛОК. Слот-счёт как лимит
+      убран (объёмная модель его заменила): весь трафик через один прокси его обходил, а
+      детектор отказов нереализуем. Осталось число различных инстансов в окне — показ, не
+      принуждение. Число, которого сервер не назвал, — не ноль: молчание пишется словом.{% endcomment %}
+      <div class="kv"><span class="k">инстансов в окне</span><span class="v">{% if not slots.known %}сейчас неизвестно — лицензионный сервер не отвечает{% elif slots.instances is None %}сейчас неизвестно — лицензионный сервер не назвал{% else %}≈ {{ slots.instances }}{% endif %}</span></div>
       <div class="kv"><span class="k">период до</span><span class="v">{% if pending %}начнётся с оплаты{% else %}{{ subscription.current_period_end|date:"d.m.Y" }}{% endif %}</span></div>
       <div class="kv"><span class="k">ключей выпущено</span><span class="v">{{ keys|length }}</span></div>
     {% else %}
@@ -140,6 +115,27 @@
       {% endif %}
     {% else %}
       <div style="font-size:14px;color:var(--dim);line-height:1.6">Пока нечего показывать — расход появится, когда контейнер начнёт маскировать.</div>
+    {% endif %}
+
+    {% comment %}
+       ПЕРЕКЛЮЧАТЕЛЬ ПЕРЕРАСХОДА — по умолчанию ВЫКЛ: пробитие включённого
+       объёма останавливает сервис, а не начисляет молча сверх. Включив, клиент
+       соглашается докупать объём по ставке тарифа до потолка. Меняется в любой
+       момент; уже начисленный период задним числом не пересчитывается.
+{% endcomment %}
+    {% if subscription %}
+    <form method="post" action="{% url 'toggle_overage' %}" style="margin-top:18px;border-top:1px solid var(--line-2);padding-top:16px">
+      {% csrf_token %}
+      <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer">
+        <input type="checkbox" name="overage_enabled" onchange="this.form.submit()"
+               {% if subscription.overage_enabled %}checked{% endif %} style="margin-top:3px">
+        <span style="font-size:13.5px;line-height:1.6">
+          <b>Разрешить перерасход</b> сверх включённого объёма{% if pricing.rate %} — по {{ pricing.rate|floatformat:2 }} ₽ за 1000 запросов{% endif %}.
+          {% if subscription.overage_enabled %}Сейчас <b style="color:var(--text-3)">включён</b>: сверх включённого идёт докуп до потолка, затем буфер и остановка.{% else %}Сейчас <b style="color:var(--amber)">выключен</b>: при пробитии включённого объёма обслуживание останавливается, а не начисляется сверх.{% endif %}
+        </span>
+      </label>
+      <noscript><button type="submit" class="btn" style="margin-top:10px">Сохранить</button></noscript>
+    </form>
     {% endif %}
   </div>
 

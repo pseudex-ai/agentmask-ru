@@ -58,6 +58,10 @@ def main() -> int:
     sub = Subscription.objects.create(
         organization=org, plan=start, state=Subscription.TRIAL,
         trial_ends_at=now + timedelta(days=5),
+        # Овередж ВКЛ: ниже проверяется строка перерасхода в счёте, а она
+        # существует только при разрешённом перерасходе (дефолт — выкл: тогда
+        # пробитие включённого — остановка, а не начисление).
+        overage_enabled=True,
         current_period_start=now, current_period_end=now + timedelta(days=5),
         terms_monthly_price=start.monthly_price,
         terms_included_requests=start.included_requests,
@@ -245,6 +249,10 @@ def main() -> int:
     o6 = Organization.objects.create(id="ann6", display_name="Ann6")
     Subscription.objects.create(
         organization=o6, plan=start, state=Subscription.ACTIVE, trial_ends_at=now,
+        # Овередж ВКЛючён: этот случай про зону metered на снимке, а она
+        # существует только при разрешённом перерасходе (дефолт — выкл, и тогда
+        # пробитие включённого сразу даёт stopped).
+        overage_enabled=True,
         current_period_start=now, current_period_end=now + timedelta(days=30),
         terms_monthly_price=start.monthly_price,
         terms_included_requests=10_000,        # снимок = 10k

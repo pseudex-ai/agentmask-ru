@@ -123,46 +123,6 @@ _GRACE_WORTHY_STATUS = frozenset({408, 409, 429, 500, 502, 503, 504})
 # ответа менять не нужно, а значит и контракт не ломается.
 _ANSWER_CODES = frozenset({"instance_limit", "release_budget"})
 
-# ФЕНСИНГ: МЕСТО ЭТОГО ЗАПУСКА ЗАНЯЛ БОЛЕЕ НОВЫЙ ЗАПУСК ТОГО ЖЕ ТАРИФА.
-#
-# Приходит с `/v1/meter` как 409 с этим кодом, и намеренно НЕ добавлен в
-# `_ANSWER_CODES`: весь выпущенный флот читает 409 вне этого множества как наш
-# временный сбой и доцеживает купленную полосу. Новый движок обязан вести себя
-# не хуже — отказ в НОВОЙ ёмкости не гасит процесс, гасит его обычная
-# `has_capacity()`.
-FENCED = "fenced"
-
-# ОТКАЗ В ЁМКОСТИ ПО ПОТОЛКУ — НЕ ОТВЕТ О ПОДПИСКЕ, И ЭТО РАЗНЫЕ ДЕЙСТВИЯ (Б30).
-#
-# Сервер обещал в комментарии, что упёршийся в потолок процесс доживает на уже
-# купленном кванте, а клиент на том же ответе звал `_expire()`: бандл
-# выгружался, `/mask` отдавал 503 в ту же секунду, и оплаченный остаток сгорал.
-# Обещание и поведение разошлись ровно потому, что обе причины отказа —
-# «мест больше нет» и «не оплачено» — приземлялись в одну ветку.
-#
-# Здесь они разведены по СМЫСЛУ, а не по коду ответа: потолок означает «больше
-# не покупаю», неоплата означает «больше не обслуживаю». `instance_limit`
-# остаётся в списке ради СТАРОГО сервера — новый его на ёмкости не выдаёт.
-_CEILING_CODES = frozenset({FENCED, "instance_limit"})
-
-# ПЕРЕЗАЯВКА ОТФЕНСЕННОГО ПОКОЛЕНИЯ. Джиттер — чтобы N воркеров одного старта
-# не пришли за арендой в одну миллисекунду; час — пол, ниже которого два живых
-# контейнера на одном слоте перезаявляли бы друг друга вечно (шторм аренд по
-# два мегабайта). Час — ВЫБОР ТЗ, не замер.
-_RECLAIM_JITTER_SECONDS = 10.0
-_RECLAIM_MIN_INTERVAL_SECONDS = 3600.0
-# ПОЛ ДЛЯ ТЁМНОГО ПРОЦЕССА — ДРУГОЙ, И РАЗНИЦА НЕ КОСМЕТИЧЕСКАЯ. Часовой пол
-# заведён против ДВУХ ОБСЛУЖИВАЮЩИХ контейнеров, перезаявляющих друг друга;
-# процесс, у которого полоса кончилась, не обслуживает вовсе — он уже отдаёт
-# 503, и час такой темноты и есть та самая «остановка второго контейнера»,
-# которую вариант А §6.1 обещает не делать («перезаявляет СРАЗУ при исчерпании
-# полосы»). Минута — выбор, не замер: она ограничивает шторм двумя арендами в
-# минуту на тёмный контейнер и держит темноту в пределах минуты.
-_RECLAIM_DARK_SECONDS = 60.0
-# Попытка, не дошедшая до сервера, перезаявку НЕ тратит (иначе секунда без сети
-# в момент перезаявки стоит часа темноты), но и повторять её каждый тик нельзя.
-_RECLAIM_RETRY_SECONDS = 60.0
-
 _STARTUP_ATTEMPTS = 3
 _STARTUP_BACKOFF_SECONDS = 2.0
 
@@ -244,23 +204,9 @@ REMEDIES: dict[str, str] = {
         "недоступен, поэтому взять следующую невозможно. Проверьте исходящий "
         "доступ к нему по HTTPS — как только связь вернётся, обслуживание "
         "продолжится само, без перезапуска контейнера.",
-    # ОСТАЁТСЯ РАДИ СТАРЫХ СЕРВЕРОВ, И БЕЗ СЛОВА «ЛИШНИЕ». Совет остановить
-    # лишний контейнер стоил шести заходов подряд: сервер называл лишним тот,
-    # чьё молчание он не сумел отличить от смерти, и оператор шёл останавливать
-    # то, чего нет. Новый сервер этот код на ёмкости не выдаёт вовсе.
     "instance_limit":
-        "Сервер лицензий считает, что по тарифу работает больше контейнеров, "
-        "чем оплачено. Если это переразвёртывание — ничего делать не нужно, "
-        f"оно доработает само. Иначе смените тариф: {SITE_URL}/app/",
-    # ФЕНСИНГ. Текст без «поколения N с HH:MM» — их подставляет
-    # `explain_fenced`, когда сервер их назвал; фраза, которой нет, лучше
-    # фразы «поколение None».
-    FENCED:
-        "Место этого запуска занял более новый запуск того же тарифа. Этот "
-        "контейнер доработает на уже купленной ёмкости и остановится сам. Если "
-        "это переразвёртывание — ничего делать не нужно. Если контейнеров "
-        "действительно больше, чем по тарифу, — остановите один или смените "
-        f"тариф: {SITE_URL}/app/",
+        "Тариф не позволяет столько одновременно работающих контейнеров. "
+        "Остановите лишние или смените тариф в личном кабинете.",
     # ВЕРДИКТ ПО ВЕРСИИ, НЕ СБОЙ (D-055, D-056). Сервер отвечает 426 только
     # циклу, закрытие которого объявлено за 90 дней; до этого он предупреждал
     # на каждом продлении. Grace здесь не применяется, как и к 402/403.
@@ -282,121 +228,6 @@ def explain(code: str) -> str:
     return REMEDIES.get(code, "Напишите нам, приложив вывод контейнера.")
 
 
-def explain_fenced(fenced: dict[str, object] | None) -> str:
-    """Тот же текст, но с поколением и временем, когда сервер их назвал.
-
-    ОДНА ФРАЗА, А НЕ ДВЕ. Соблазн — второй статический текст «без подробностей»;
-    цена — два места, где одна и та же ситуация описана по-разному, и оператор,
-    сверяющий экран с логом, читает их как две разные беды.
-    """
-    text = REMEDIES[FENCED]
-    if not fenced:
-        return text
-    epoch = fenced.get("current_epoch")
-    since = fenced.get("holder_since")
-    if not isinstance(epoch, int):
-        return text
-    when = (f", с {time.strftime('%H:%M', time.localtime(since))}"
-            if isinstance(since, (int, float)) and since else "")
-    return text.replace("того же тарифа.",
-                        f"того же тарифа (поколение {epoch}{when}).", 1)
-
-
-def should_reclaim(scheduled_at: float | None, last_reclaim_at: float | None,
-                   last_attempt_at: float | None, band_left: int,
-                   now: float) -> bool:
-    """ПРАВИЛО ДОПУСКА ПЕРЕЗАЯВКИ — ОДНА ФУНКЦИЯ, ПОТОМУ ЧТО ЭТО РАЗВИЛКА.
-
-    Развилка §6.1 ТЗ решается владельцем, и её цена уже посчитана; код обязан
-    дать сменить ответ заменой ОДНОЙ функции, а не правкой петли.
-
-      * ВАРИАНТ А (здесь, по умолчанию): «N это упаковка, параллелизм
-        бесплатен, объём оплачен». Отфенсенное поколение перезаявляет слот
-        по расписанию (одна немедленная попытка с джиттером) И при исчерпании
-        купленной полосы — второе условие и есть режим «по исчерпанию»;
-      * ВАРИАНТ Б: то же, но без второго условия — тогда отфенсенный после
-        исчерпания темнеет до обычного продления (до восьми часов). Включается
-        удалением `band_left <= 0` и больше ничем;
-      * ВАРИАНТ В (порог против ЧУЖОЙ установки) — решение СЕРВЕРА, здесь его
-        нет по построению: клиент не знает, чья установка держит слот.
-
-    ПОЛ ЗАВИСИТ ОТ ТОГО, ОБСЛУЖИВАЕТ ЛИ ПРОЦЕСС. Час заведён против двух
-    ЖИВЫХ контейнеров, перезаявляющих друг друга непрерывно, — это шторм аренд
-    по два мегабайта. Процесс с исчерпанной полосой не обслуживает ничего: он
-    уже отдаёт 503, и держать его в темноте час — это поведение варианта Б,
-    выданное за вариант А. Поэтому тёмный ждёт минуту, а не час. Сервер ни того
-    ни другого не принуждает — он СЧИТАЕТ возвраты (аномалия на поколении,
-    вернувшемся дважды), и в этом вся разница между наблюдением и таймером.
-
-    ПОПЫТКА, НЕ ДОШЕДШАЯ ДО СЕРВЕРА, ПЕРЕЗАЯВКУ НЕ ТРАТИТ. `_reclaim_step`
-    ставил отметку ДО запроса, а `_renew` глотает сетевой сбой как временный:
-    секунда без связи ровно в момент перезаявки стоила часа темноты — в том
-    числе живому соседу, ошибочно вытесненному ранжированием, ради которого
-    перезаявка и заведена. Поэтому отметок две: попытка и удавшийся возврат.
-    """
-    due = (scheduled_at is not None and now >= scheduled_at) or band_left <= 0
-    if not due:
-        return False
-    if (last_attempt_at is not None
-            and now - last_attempt_at < _RECLAIM_RETRY_SECONDS):
-        return False
-    if last_reclaim_at is None:
-        return True
-    floor = (_RECLAIM_DARK_SECONDS if band_left <= 0
-             else _RECLAIM_MIN_INTERVAL_SECONDS)
-    return now - last_reclaim_at >= floor
-
-
-def _process_start_ticks(pid: int) -> str:
-    """Момент старта процесса в тиках (поле 22 `/proc/<pid>/stat`).
-
-    Нужен, потому что PID переиспользуются: без него два разных запуска, которым
-    ядро выдало один номер, дали бы один `start_id` — то есть одно поколение на
-    два контейнера. Поля считаются ПОСЛЕ последней закрывающей скобки: `comm`
-    лежит в скобках и может содержать и пробелы, и сами скобки, поэтому
-    `split()[21]` промахивается на любом процессе с нестандартным именем.
-    """
-    stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8", errors="replace")
-    return stat[stat.rindex(")") + 2:].split()[19]
-
-
-def start_id(instance_id: str) -> str:
-    """КАКОЙ СТАРТ КОНТЕЙНЕРА ЭТО. Один старт — одно поколение — один эпох.
-
-    `entrypoint.sh` чеканит `PSEUDEX_START_ID` ОДИН РАЗ до фан-аута, ровно там
-    же и по той же причине, что `PSEUDEX_ADMIN_TOKEN` и `PSEUDEX_GATEWAY_TOKEN`:
-    N воркеров с N значениями на один порт — это N истин.
-
-    СЛУЧАЙНОЕ ЗНАЧЕНИЕ НА ПРОЦЕСС ЗДЕСЬ ЗАПРЕЩЕНО, и это не стилистика. На
-    тарифе в один слот N воркеров стали бы N поколениями на этом слоте и
-    отфенсили бы друг друга на покупке ёмкости: контейнер сломан по построению,
-    причём тем сильнее, чем больше воркеров у клиента. Поэтому форма поставки Б
-    (`uvicorn pseudex.service:app` без entrypoint, она через скрипт не проходит)
-    выводит значение ДЕТЕРМИНИРОВАННО для всех воркеров одного запуска:
-    установка плюс загрузка ядра плюс родитель плюс момент его старта — у
-    `uvicorn --workers N` родитель один.
-
-    На macOS `/proc` нет, поэтому там значение случайное и с предупреждением:
-    это машина разработчика, а в образе всегда Linux.
-    """
-    declared = os.environ.get("PSEUDEX_START_ID", "").strip()
-    if declared:
-        return declared[:128]
-    try:
-        boot_id = Path("/proc/sys/kernel/random/boot_id").read_text(
-            encoding="utf-8").strip()
-        parent = os.getppid()
-        material = f"{instance_id}\x1f{boot_id}\x1f{parent}\x1f" \
-                   f"{_process_start_ticks(parent)}"
-    except OSError:
-        _log.warning(
-            "PSEUDEX_START_ID is unset and this is not Linux: falling back to a "
-            "random per-process value. In a container entrypoint.sh mints one "
-            "for every worker; here each worker is its own generation")
-        return "dev:" + secrets.token_hex(8)
-    return "derived:" + hashlib.sha256(material.encode("utf-8")).hexdigest()[:32]
-
-
 class BundleFormatError(BundleError):
     """The lease is genuine and ours, and its bundle is in a format this build
     cannot read. A `BundleError` for the renewal loop — the leased assets stay
@@ -412,30 +243,6 @@ class LicenseError(RuntimeError):
         super().__init__(f"{code}: {detail}")
         self.code = code
         self.detail = detail
-
-
-@dataclass(frozen=True)
-class Fenced:
-    """Кто занял место этого запуска — со слов сервера, дословно.
-
-    Отдельной записью, а не тремя полями на клиенте: «отфенсен» — это ОДНО
-    событие с одним временем, и половина его полей на экране без остальных
-    означала бы, что оператор видит номер поколения, но не видит, чей он.
-    """
-    slot_no: int | None
-    epoch: int | None
-    current_epoch: int | None
-    holder_start_id: str | None
-    holder_since: float | None
-    detail: str
-    since: float
-
-    def as_dict(self) -> dict[str, object]:
-        return {"slot_no": self.slot_no, "epoch": self.epoch,
-                "current_epoch": self.current_epoch,
-                "holder_start_id": self.holder_start_id,
-                "holder_since": self.holder_since,
-                "detail": self.detail, "since": self.since}
 
 
 @dataclass(frozen=True)
@@ -478,43 +285,6 @@ class LicenseStatus:
     # Every cycle the registry lists — cycle, state by the dates, latest,
     # release_date, eol — for the «Версии» screen. None when the server said nothing.
     cycles: list[dict[str, str | None]] | None
-    # МЕСТО И ПОКОЛЕНИЕ ИЗ ПОСЛЕДНЕЙ АРЕНДЫ. `None` — сервер их не назвал
-    # (старше этого движка), и экран обязан сказать «неизвестно», а не «слот 1»:
-    # требовать поля значило бы вставать из-за порядка выкатки, а это ровно тот
-    # дефект, который однажды уже стоил нам простоя (`recipient`).
-    start_id: str
-    slot_no: int | None
-    epoch: int | None
-    slot_count: int | None
-    # Кто занял место — пока занял. `None` — не отфенсен.
-    fenced: dict[str, object] | None
-
-
-def block_code(status: LicenseStatus) -> str:
-    """ЧТО ИМЕННО ОТВЕЧАЕТ 503 — ОДНО РЕШЕНИЕ НА ОБА ПЛЕЧА.
-
-    Сайдкар и прокси печатают этот код и лечение по нему; две копии одного
-    условия разъехались бы на первой же правке, и оператор получил бы два
-    разных диагноза одной беды в зависимости от формы поставки.
-
-    `fenced` — НЕ `capacity_exhausted`, хотя кончилось в обоих случаях одно и то
-    же. Диагноз разный: во втором связи с нами нет и надо чинить сеть, в первом
-    связь есть, и это переразвёртывание либо лишний контейнер. Значит и действие
-    разное, а одинаковое слово отправило бы оператора чинить работающее.
-    """
-    if status.code is not None:
-        return status.code
-    # ПОРЯДОК — ЭТО И ЕСТЬ ДИАГНОЗ. Сюда попадают только те, кто НЕ обслуживает:
-    # сначала мёртвая аренда (её чинит оплата или связь), потом кончившаяся
-    # ёмкость, и лишь у неё бывает вкус «место занял более новый запуск».
-    # `capacity_left` здесь не годится первым: у процесса, отфенсенного до
-    # первой покупки, `granted` равен нулю, и он читался бы как «лицензия
-    # истекла» — диагноз, к которому происходящее не имеет отношения.
-    if status.state == STATE_EXPIRED:
-        return "license_expired"
-    if status.fenced is not None:
-        return FENCED
-    return "capacity_exhausted"
 
 
 def _public_key_material() -> str:
@@ -580,6 +350,11 @@ def _parse_verdict(block: object) -> dict[str, object] | None:
     notice = block.get("notice")
     parsed["notice"] = ({str(k): str(v) for k, v in notice.items()}
                         if isinstance(notice, dict) else None)
+    # Уведомление о ПОТОЛКЕ ЗАПРОСОВ (§D) — отдельным ключом, чтобы не спорить с
+    # версионным `notice`; логируется той же лестницей раз на порог.
+    quota = block.get("quota_notice")
+    parsed["quota_notice"] = ({str(k): str(v) for k, v in quota.items()}
+                              if isinstance(quota, dict) else None)
     cycles = block.get("cycles")
     parsed["cycles"] = ([{str(k): (None if v is None else str(v)) for k, v in c.items()}
                          for c in cycles if isinstance(c, dict)]
@@ -603,12 +378,6 @@ def _unix_from_http_date(value: object) -> float | None:
         return parsedate_to_datetime(value).timestamp()
     except (ValueError, TypeError):
         return None
-
-
-def _int_field(value: object) -> int | None:
-    """Целое с провода, или None. `bool` исключён явно: в Python он подкласс
-    `int`, и `True` тихо прошёл бы как слот номер один."""
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
 def _verdict_field(verdict: dict[str, object] | None, name: str, kind: type):
@@ -635,27 +404,6 @@ class LicenseClient:
         self._key = key
         self._instance_id = instance_id
         self._process_id = f"{instance_id}-{os.getpid()}"
-        # СТАРТ КОНТЕЙНЕРА, ОДИН НА ВСЕХ ВОРКЕРОВ (см. `start_id`). Считается
-        # один раз здесь, а не на каждой аренде: значение обязано быть
-        # одинаковым у всех продлений этого процесса, иначе каждое продление
-        # заводило бы новое поколение на слоте и фенсило само себя.
-        self._start_id = start_id(instance_id)
-        # СЛОТ И ПОКОЛЕНИЕ — ИЗ ПОСЛЕДНЕЙ УСПЕШНОЙ АРЕНДЫ, В ПАМЯТИ.
-        #
-        # Не на томе, и это не экономия. Эпох чеканит сервер и помнит durable
-        # (иначе фенсинг небезопасен); у клиента это ТОКЕН, который он предъявляет
-        # обратно. Сохранённый на томе, он пережил бы перезапуск и был бы предъявлен
-        # ПОСЛЕ того, как новая аренда выдала следующий номер, — то есть контейнер
-        # фенсил бы сам себя своим же прошлым запуском. Переживать перезапуск обязана
-        # УСТАНОВКА (`installation_id` в томе), а не поколение.
-        self._slot_no: int | None = None
-        self._epoch: int | None = None
-        self._slot_count: int | None = None
-        # Состояние FENCED и его перезаявка (§3.6 ТЗ).
-        self._fenced: Fenced | None = None
-        self._reclaim_at: float | None = None
-        self._last_reclaim_monotonic: float | None = None
-        self._last_reclaim_attempt_monotonic: float | None = None
         self._usage_provider = usage_provider
         self._process_key: ProcessKey = generate_process_key()
         self._pending_nonce = ""
@@ -819,11 +567,6 @@ class LicenseClient:
             sunset_at=_verdict_field(self._verdict, "sunset_at", float),
             notice=_verdict_field(self._verdict, "notice", dict),
             cycles=_verdict_field(self._verdict, "cycles", list),
-            start_id=self._start_id,
-            slot_no=self._slot_no,
-            epoch=self._epoch,
-            slot_count=self._slot_count,
-            fenced=None if self._fenced is None else self._fenced.as_dict(),
         )
 
     def is_serving(self) -> bool:
@@ -937,20 +680,15 @@ class LicenseClient:
             self._last_report = usage
             self._last_report_at = time.time()
         self._last_usage_monotonic = time.monotonic()
-        # СЛОТ И ЭПОХ ЗДЕСЬ ВЕРХНЕУРОВНЕВЫЕ, а не внутри `usage`: отчёт и так
-        # подписан целиком, а `usage` — тело, чью форму сервер разбирает как
-        # счётчики. Сервер принимает отчёт от ЛЮБОГО эпоха (это счёт), но метку
-        # слота двигает только текущим.
-        body: dict[str, object] = {
-            "key": self._key,
-            "instance_id": self._instance_id,
-            "pubkey": self._process_key.public,
-            "usage": usage,
-        }
-        if self._slot_no is not None and self._epoch is not None:
-            body["slot_no"] = self._slot_no
-            body["epoch"] = self._epoch
-        self._http.post(f"{self._base_url}/v1/usage", json=body)
+        self._http.post(
+            f"{self._base_url}/v1/usage",
+            json={
+                "key": self._key,
+                "instance_id": self._instance_id,
+                "pubkey": self._process_key.public,
+                "usage": usage,
+            },
+        )
 
     def _usage_due(self) -> bool:
         last = self._last_usage_monotonic
@@ -979,10 +717,6 @@ class LicenseClient:
                 "lease_contract": LEASE_CONTRACT,
                 "lease_id": self._lease_id,
                 "nonce": nonce,
-                # КАКОЙ ЭТО СТАРТ. Поле аддитивно: старый сервер его не читает,
-                # новый без него ведёт контейнер под синтетическим поколением.
-                # Поэтому `lease_contract` остаётся 3 — форма ответа не меняется.
-                "start_id": self._start_id,
                 "usage": usage,
             },
         )
@@ -1023,14 +757,6 @@ class LicenseClient:
         ack: dict[str, object] | None = None
         if self._report_secret is not None:
             ack = {"consumed": consumed, "quantum_seq": self._quantum_seq}
-            # ФЕНСИНГ-ТОКЕН ВНУТРИ `ack`, ТО ЕСТЬ ПОД MAC ОТЧЁТА. Снаружи
-            # аутентифицированной нагрузки он был бы украшением: перехватчик
-            # переписал бы номер, не тронув подписи, и покупал бы ёмкость за
-            # чужое поколение. `report_payload` сортирует ключи, поэтому
-            # добавление полей MAC не ломает.
-            if self._slot_no is not None and self._epoch is not None:
-                ack["slot_no"] = self._slot_no
-                ack["epoch"] = self._epoch
             ack["signature"] = mac_report(ack, self._report_secret)
         nonce = secrets.token_urlsafe(24)
         endpoint = self._capacity_endpoint or "/v1/meter"
@@ -1045,22 +771,6 @@ class LicenseClient:
                 detail = str(body.get("detail", ""))
             except ValueError:
                 code, detail = "license_invalid", response.text[:200]
-                body = {}
-            # ФЕНСИНГ РАЗБИРАЕТСЯ ПО КОДУ, А НЕ ПО СТАТУСУ. Статус здесь 409 и
-            # уже попадает в «временный сбой» — но тогда отказ стал бы неотличим
-            # от таймаута, а это разные вещи на экране оператора и разные
-            # действия: временный сбой проходит сам, вытеснение не проходит.
-            if code == FENCED:
-                raise _FencedError(Fenced(
-                    slot_no=_int_field(body.get("slot_no")),
-                    epoch=_int_field(body.get("epoch")),
-                    current_epoch=_int_field(body.get("current_epoch")),
-                    holder_start_id=(str(body["holder_start_id"])
-                                     if body.get("holder_start_id") else None),
-                    holder_since=(float(body["holder_since"])
-                                  if isinstance(body.get("holder_since"), (int, float))
-                                  else None),
-                    detail=detail, since=time.time()))
             if (response.status_code in _GRACE_WORTHY_STATUS
                     and code not in _ANSWER_CODES):
                 raise _TransientLeaseError(
@@ -1221,21 +931,6 @@ class LicenseClient:
             self._plan = str(lease.get("plan") or "") or None
             self._last_error = None
             self._verdict = _parse_verdict(lease.get("version"))
-            # МЕСТО И ПОКОЛЕНИЕ — ЕСЛИ СЕРВЕР ИХ НАЗВАЛ, И НИКОГДА ОБЯЗАТЕЛЬНО.
-            # Требовать их значило бы завести второй `recipient`-дефект: движок,
-            # вставший из-за порядка выкатки. Сервер старше этого движка их не
-            # шлёт, и тогда экран говорит «неизвестно», а не «слот 1».
-            slot_no = _int_field(lease.get("slot_no"))
-            epoch = _int_field(lease.get("epoch"))
-            if slot_no is not None and epoch is not None:
-                self._slot_no, self._epoch = slot_no, epoch
-            count = _int_field(lease.get("slot_count"))
-            if count is not None:
-                self._slot_count = count
-        # УСПЕШНАЯ АРЕНДА — ЭТО И ЕСТЬ ОТВЕТ «СЛОТ ТВОЙ» (§3.2 ТЗ: «отказа в
-        # п. 2 НЕТ, заявка всегда получает слот»). Отдельного признака здесь
-        # быть не может: сервер отвечает на аренду либо слотом, либо ошибкой.
-        self._clear_fencing("аренда")
         self._report_verdict()
 
     def acquire(self) -> None:
@@ -1258,21 +953,7 @@ class LicenseClient:
                 # `_granted` равен нулю; а холодный старт и так не имеет grace —
                 # процесс без ёмкости не может деградировать, ему нечем.
                 if self._capacity_endpoint:
-                    # ОТКАЗ ПО ПОТОЛКУ НА ХОЛОДНОМ СТАРТЕ — НЕ ПРИЧИНА НЕ
-                    # ПОДНЯТЬСЯ. Аренда уже получена, бандл загружен; отказали
-                    # только в первом кванте, потому что между арендой и покупкой
-                    # слот успел занять более новый запуск (или сервер ещё
-                    # старый и принуждает места). Выйти здесь значило бы отдать
-                    # оператору `bundle_unavailable` — диагноз, к которому
-                    # происходящее не имеет отношения, — и погасить контейнер,
-                    # который перезаявит слот сам через считаные секунды.
-                    # Классификация — ТА ЖЕ, что в петле: см.
-                    # `absorb_ceiling_refusal`, две копии уже разошлись однажды.
-                    try:
-                        self._meter_once()
-                    except (_FencedError, LicenseError) as error:
-                        if not self.absorb_ceiling_refusal(error):
-                            raise
+                    self._meter_once()
                 _log.info("lease acquired: %s bundle=%s ttl=%ss grace=%ss "
                           "capacity=%d",
                           self._lease_id, self._bundle_version,
@@ -1359,6 +1040,19 @@ class LicenseClient:
                                                         logging.WARNING)
                 _log.log(level, "notice %s for engine %s: %s %s", notice_id,
                          ENGINE_VERSION, notice.get("text", ""), notice.get("url", ""))
+        # ПОТОЛОК ЗАПРОСОВ (§D): та же лестница, раз на порог. Порог зашит в id
+        # (`quota-near:<n>`, `quota-ceiling:<n>`), поэтому каждый порог логируется
+        # один раз, а смена потолка (новый период) — снова.
+        quota = verdict.get("quota_notice")
+        if isinstance(quota, dict):
+            quota_id = str(quota.get("id", ""))
+            if quota_id and quota_id not in self._announced_notices:
+                self._announced_notices.add(quota_id)
+                level = {"info": logging.INFO, "warning": logging.WARNING,
+                         "danger": logging.ERROR}.get(str(quota.get("severity", "")),
+                                                       logging.WARNING)
+                _log.log(level, "quota %s for engine %s: %s %s", quota_id,
+                         ENGINE_VERSION, quota.get("text", ""), quota.get("url", ""))
 
     def _expire(self) -> None:
         """Give up the assets. Not a flag — the data goes away."""
@@ -1374,159 +1068,19 @@ class LicenseClient:
 
     def _quantum_due(self) -> bool:
         with self._lock:
-            # ОТФЕНСЕННЫЙ БОЛЬШЕ НЕ ПОКУПАЕТ. Это и есть «больше не покупаю» из
-            # §3.6: место занято более новым запуском, следующая покупка
-            # получила бы тот же отказ, а полосу, которая уже оплачена, процесс
-            # доцеживает — её отзывать не за что.
-            if self._fenced is not None:
-                return False
             if not self._quantum_seq:
                 return True
             return self._consumed >= self._prefetch_at
 
-    def _enter_fenced(self, fenced: Fenced) -> None:
-        """Перейти в «больше не покупаю» — и НЕ гасить процесс (Б30).
-
-        Гасит его обычная `has_capacity()`, когда купленная полоса кончится.
-        Именно этим отказ в НОВОЙ ёмкости отличается от ответа о подписке:
-        отозвать уже выданное значило бы сжечь оплаченный клиентом остаток за
-        то, что он переразвернул контейнер.
-        """
-        already = self._fenced is not None
-        with self._lock:
-            self._fenced = fenced
-            if not already:
-                # Одна немедленная перезаявка с джиттером. Повторный отказ
-                # расписание НЕ переставляет — иначе «одна попытка» стала бы
-                # одной попыткой на каждый отказ.
-                self._reclaim_at = (time.monotonic()
-                                    + random.random() * _RECLAIM_JITTER_SECONDS)
-        self._record_error(fenced.detail)
-        if not already:
-            consumed, granted = self.capacity()
-            _log.error(
-                "FENCED: slot %s generation %s superseded by generation %s "
-                "(start %s). Serving the %d requests already paid for, buying "
-                "no more. %s",
-                fenced.slot_no, fenced.epoch, fenced.current_epoch,
-                fenced.holder_start_id or "?", max(0, granted - consumed),
-                explain_fenced(fenced.as_dict()))
-
-    def absorb_ceiling_refusal(self, error: Exception) -> bool:
-        """ЭТО ОТКАЗ ПО ПОТОЛКУ? Тогда «больше не покупаю» — и процесс живёт.
-
-        ОДНА ФУНКЦИЯ НА ОБА МЕСТА, И ЭТО ПОЧИНКА, А НЕ ПРИБОРКА. Классификация
-        стояла в двух: `_meter_step` знала про оба кода потолка, а `acquire`
-        ловила только `_FencedError`. Первый же квант, отказанный СТАРЫМ
-        сервером (`instance_limit`, §7.2 — новый движок против ещё не
-        обновлённого сервера), поднимался из `acquire` как терминальная ошибка
-        лицензии, и контейнер не вставал вовсе: аренда взята, бандл загружен,
-        а движок отказывается стартовать из-за отказа в ПЕРВОМ кванте, который
-        он купил бы через десять секунд перезаявкой. Разойтись эти две ветки
-        могли только потому, что их было две.
-
-        Возвращает True, когда отказ поглощён; False — когда это ответ о
-        подписке, и решать его обязан вызывающий (на старте — не подниматься,
-        в петле — погасить).
-        """
-        if isinstance(error, _FencedError):
-            self._enter_fenced(error.fenced)
-            return True
-        # СТАРЫЙ СЕРВЕР, `instance_limit`. Слота он не называет, поэтому
-        # известен только текст — и это всё равно «больше не покупаю», а не
-        # «умри»: причина отказа та же.
-        if isinstance(error, LicenseError) and error.code in _CEILING_CODES:
-            self._enter_fenced(Fenced(
-                slot_no=self._slot_no, epoch=self._epoch, current_epoch=None,
-                holder_start_id=None, holder_since=None,
-                detail=error.detail, since=time.time()))
-            return True
-        return False
-
-    def _clear_fencing(self, answered_by: str) -> None:
-        """Снять FENCED, потому что СЕРВЕР ответил «да» — арендой или квантом.
-
-        СРАВНЕНИЕ НОМЕРОВ ПОКОЛЕНИЙ ЗДЕСЬ СТОЯЛО И БЫЛО НЕВЕРНЫМ. Правило было
-        «снимать только когда эпох СМЕНИЛСЯ», а его посылка — «аренда, вернувшая
-        тот же эпох, значит слот всё ещё держит кто-то другой» — противоречит
-        тому, как сервер решает: `lease_generation` возвращает ТОТ ЖЕ эпох
-        ровно в одном случае — когда поколение этого старта УЖЕ держит свой слот
-        на текущем эпохе (`fresh_claim = False`). То есть единственный ответ,
-        который прежнее правило читало как «держит чужой», означает
-        «держишь ты». Отфенсенный воркер, чей слот вернул брат по старту (или он
-        сам), оставался в FENCED навсегда: `_quantum_due()` при `_fenced`
-        возвращает False, покупок нет, полоса дотекает, и контейнер темнеет,
-        держа слот.
-
-        ВТОРАЯ ПОСЫЛКА ТОЖЕ УСТАРЕЛА. Она считала, что судьба воркера решается
-        эпохом ЕГО СТРОКИ АРЕНДЫ; сервер теперь судит ПОКОЛЕНИЕ
-        (`_generation_standing`), поэтому перезаявка ОДНОГО воркера снимает
-        фенсинг со всех братьев — и узнают они об этом не по своему номеру, а по
-        первому же «да» сервера. Ответ сервера и есть единственное свидетельство,
-        которое здесь бывает; собственный номер — догадка о нём.
-
-        Выданный квант — такое же «да»: сервер выдаёт его только поколению,
-        которое держит слот (`meter_if_allowed`), и молча выдать квант мимо
-        этого правила он не может.
-        """
-        if self._fenced is None:
-            return
-        with self._lock:
-            self._fenced = None
-            self._reclaim_at = None
-        _log.info("fencing cleared by %s: this start holds slot %s at generation %s",
-                  answered_by, self._slot_no, self._epoch)
-
-    def _reclaim_step(self) -> None:
-        """Перезаявить слот. Ровно одна попытка на фенсинг и не чаще раза в час.
-
-        Зачем вообще: ранжирование слотов на сервере ошибается в окне разрешения
-        отметок — контейнер, умерший тридцать секунд назад, «слышали позже», чем
-        простаивающего живого соседа с отчётом стосекундной давности, и пришедшее
-        в это окно поколение фенсит ЖИВОГО. Одна перезаявка ранжирует заново,
-        когда мёртвый уже молчит дольше всех. Цена ошибки — одна аренда вместо
-        простоя до восьми часов.
-        """
-        before = self._last_ok_monotonic
-        self._last_reclaim_attempt_monotonic = time.monotonic()
-        self._last_attempt_monotonic = time.monotonic()
-        _log.info("fenced: one re-claim of the slot (generation %s held it)",
-                  None if self._fenced is None else self._fenced.current_epoch)
-        self._renew()
-        # ПОТРАЧЕНА ТОЛЬКО ТА, КОТОРАЯ ДОШЛА. `_renew` глотает сетевой сбой как
-        # временный и ничего об этом не возвращает, поэтому успех читается по
-        # отметке последней удавшейся аренды — она двигается только в `_apply`.
-        if self._last_ok_monotonic != before:
-            self._last_reclaim_monotonic = time.monotonic()
-            self._reclaim_at = None
-
     def _meter_step(self) -> None:
         """Обёртка вокруг покупки кванта с той же классификацией отказов, что и
-        у продления: ответ — терминальный, сбой — в долг из резерва.
-
-        ТРИ ИСХОДА, А НЕ ДВА (Б30). Отказ по ПОТОЛКУ («место занято», «мест по
-        тарифу нет») раньше приземлялся в ту же ветку, что отказ по ПОДПИСКЕ, и
-        звал `_expire()` — бандл выгружался, `/mask` отдавал 503 в ту же секунду,
-        а оплаченный остаток сгорал. Сервер при этом в комментарии обещал
-        обратное. Теперь потолок переводит процесс в «больше не покупаю», и
-        гасит его обычная проверка ёмкости.
-        """
+        у продления: ответ — терминальный, сбой — в долг из резерва."""
         try:
             self._meter_once()
-            # ВЫДАННЫЙ КВАНТ — ОТВЕТ СЕРВЕРА «ТЫ ДЕРЖИШЬ СЛОТ»: мимо текущего
-            # эпоха он ёмкость не выдаёт. Значит своего номера поколения для
-            # выхода из FENCED не нужно (см. `_clear_fencing`).
-            self._clear_fencing("квант")
             if self._terminal_code is not None:
                 _log.info("capacity restored (was %s)", self._terminal_code)
                 self._terminal_code = None
-        except _FencedError as error:
-            # Поглощается всегда; разбор общий с `acquire`, чтобы ветка
-            # классификации оставалась ОДНА — две уже разъехались однажды.
-            self.absorb_ceiling_refusal(error)
         except LicenseError as error:
-            if self.absorb_ceiling_refusal(error):
-                return
             self._terminal_code = error.code
             self._record_error(error.detail)
             _log.error("capacity refused (%s): %s", error.code, error.detail)
@@ -1584,24 +1138,6 @@ class LicenseClient:
                 renew_threshold = due
             last_attempt = self._last_attempt_monotonic
             try:
-                # ПЕРЕЗАЯВКА ОТФЕНСЕННОГО — ПЕРЕД ПОКУПКОЙ, А НЕ ПОСЛЕ НЕЁ.
-                # Правило допуска живёт в `should_reclaim` (развилка §6.1),
-                # петля только исполняет его вердикт; но порядок внутри прохода
-                # — цена ОДНОГО прохода для того, у кого полосы нет вовсе.
-                # Покупка первой означала: перезаявка сняла фенсинг — и квант
-                # покупается лишь на СЛЕДУЮЩЕМ проходе, до пяти секунд спустя
-                # (`self._wake.wait`). Для холодного старта, отфенсенного на
-                # первом кванте, эти пять секунд — весь его запас: `granted`
-                # ноль, `/mask` отдаёт 503, доцеживать нечего. Обратный порядок
-                # ничего не стоит: при `_fenced` покупка всё равно запрещена
-                # (`_quantum_due`), так что на отфенсенном проходе она no-op.
-                if self._fenced is not None:
-                    consumed, granted = self.capacity()
-                    if should_reclaim(self._reclaim_at,
-                                      self._last_reclaim_monotonic,
-                                      self._last_reclaim_attempt_monotonic,
-                                      granted - consumed, time.monotonic()):
-                        self._reclaim_step()
                 # ЁМКОСТЬ И АРЕНДА ПОКУПАЮТСЯ ОТДЕЛЬНО. Аренда тяжёлая (бандл
                 # пересобирается и заново шифруется, около двух мегабайт) и
                 # редкая; квант лёгкий и частый. Пересобирать бандл на каждый
@@ -1680,17 +1216,3 @@ class LicenseClient:
 
 class _TransientLeaseError(RuntimeError):
     """A failure plausibly on our side — grace applies."""
-
-
-class _FencedError(_TransientLeaseError):
-    """Место этого запуска занял более новый запуск — отказ в НОВОЙ ёмкости.
-
-    ПОДКЛАСС ВРЕМЕННОГО СБОЯ НАМЕРЕННО. Любая ветка, которая про фенсинг не
-    знает, обработает его как «доцеживай» — то есть промах в разборе ошибок
-    стоит нам наблюдаемости и НИКОГДА не стоит клиенту оплаченного остатка.
-    Обратный порядок наследования дал бы ровно Б30 при первой же забытой ветке.
-    """
-
-    def __init__(self, fenced: Fenced) -> None:
-        super().__init__(f"{FENCED}: {fenced.detail}")
-        self.fenced = fenced

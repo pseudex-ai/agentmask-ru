@@ -54,7 +54,7 @@ _HERE = Path(__file__).resolve().parent
 # The files whose `gate(...)` verdicts this audits. Both roster files, and the
 # metering attack suite, which makes the same kind of claim about the same kind
 # of evidence.
-TARGETS = ("e2e/gates.py", "e2e/pack_gates.py", "e2e/slot_gates.py")
+TARGETS = ("e2e/gates.py", "e2e/pack_gates.py")
 
 # `x == 0` is the count of nothing — but `proc.returncode == 0` is a command
 # that RAN AND SUCCEEDED, which an empty world cannot produce. Same literal,

@@ -42,8 +42,7 @@
       {% if subscription %}
         <div class="kv"><span class="k">тариф</span><span class="v">{{ subscription.plan.title }}</span></div>
         <div class="kv"><span class="k">в месяц</span><span class="v">{{ subscription.plan.monthly_price|floatformat:0 }} ₽</span></div>
-        <div class="kv"><span class="k">контейнеров по тарифу</span><span class="v">{{ subscription.plan.max_instances }}</span></div>
-        <div class="kv"><span class="k">занято сейчас</span><span class="v">{% if not slots.known %}неизвестно — сервер не ответил{% elif slots.occupied is None %}неизвестно — сервер не назвал занятость{% else %}{{ slots.occupied }}{% endif %}{% if slots.pending_note %} · {{ slots.pending_note }}{% endif %}</span></div>
+        <div class="kv"><span class="k">инстансов в окне</span><span class="v">{% if not slots.known %}неизвестно — сервер не ответил{% elif slots.instances is None %}неизвестно — сервер не назвал{% else %}≈ {{ slots.instances }}{% endif %}</span></div>
         <div class="kv"><span class="k">период до</span><span class="v">{{ subscription.current_period_end|date:"d.m.Y" }}</span></div>
         <div class="kv"><span class="k">живых ключей</span><span class="v">{{ keys|length }}</span></div>
       {% else %}
@@ -93,38 +92,10 @@
   <p style="color:var(--dim-2);font-size:14px">Отчётов ещё не было — график появится после первого продления аренды.</p>
   {% endif %}
 
-  {% comment %}СЛОТЫ, А НЕ КОНТЕЙНЕРЫ, И ЭТО НЕ ПЕРЕИМЕНОВАНИЕ. Таблица показывала контейнеры
-  с состояниями active/silent/reclaimed/released — то есть суждение о том, жив ли контейнер,
-  которого сервер вынести не может. Теперь строка — СЛОТ тарифа: кто его держит, когда покупал
-  ёмкость и что на нём доцеживает. Плашку и пояснение собирает `billing/slots.py::_slot` — одни
-  и те же для консоли и для кабинета, чтобы поддержка и клиент видели про один слот одно слово.
-  «Занято» — число с сервера, а не длина таблицы; пустая клетка значит «сервер не назвал», а не
-  ноль.{% endcomment %}
-  <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Слоты тарифа</h3>
-  <p style="font-size:13px;color:var(--dim-2);margin:0 0 12px">
-    {% if not slots.known %}лицензионный сервер не ответил — занятость неизвестна
-    {% else %}{% if slots.occupied is None %}<b style="color:var(--amber)">лицензионный сервер не назвал занятость</b>{% if subscription %} — по тарифу положено {{ subscription.plan.max_instances }}{% endif %}{% else %}занято <b style="color:var(--text-3)">{{ slots.occupied }}</b>{% if slots.slot_count is not None %} из {{ slots.slot_count }}{% elif subscription %} из {{ subscription.plan.max_instances }}{% endif %}{% endif %} · запусков за сутки {% if slots.generations_24h is None %}сервер не назвал{% else %}{{ slots.generations_24h }}{% endif %} · поколений без подтверждённого расхода {% if slots.epochs_unacked is None %}сервер не назвал{% else %}{{ slots.epochs_unacked }}{% endif %} · перезаявок слота {% if slots.contention is None %}сервер не назвал{% else %}{{ slots.contention }}{% endif %}{% endif %}</p>
-  <table class="list">
-    <tr><th>СЛОТ</th><th>ПОКОЛЕНИЕ</th><th>ТОМ</th><th>ВОРКЕРОВ</th><th>ПОКУПАЛ</th><th>ВЕРСИЯ</th><th>СОСТОЯНИЕ</th></tr>
-    {% for slot in slots.rows %}
-    <tr>
-      <td class="mono">{{ slot.slot_no }}</td>
-      <td class="mono">{{ slot.epoch }}</td>
-      <td class="mono">{{ slot.installation_id|default:"—" }}</td>
-      {% comment %}«—» ЗНАЧИТ «НЕ СООБЩЕНО». Ноль здесь читался как «воркеров нет» — так в
-      консоли и стояло «vol-one · процессов 0» у контейнера с тридцатью двумя.{% endcomment %}
-      <td class="mono">{% if slot.workers_heard is None %}—{% else %}{{ slot.workers_heard }}{% endif %}</td>
-      <td class="mono">{% if slot.purchase_ago %}{{ slot.purchase_ago }} назад{% else %}—{% endif %}</td>
-      <td class="mono">{{ slot.engine_version|default:"—" }}</td>
-      <td>
-        <span class="pill {{ slot.pill_class }}">{{ slot.pill }}</span>
-        <span style="color:var(--dim-2);font-size:12px"> {{ slot.note }}</span>
-        {% for gone in slot.draining %}<div style="color:var(--amber);font-size:12px">поколение {{ gone.epoch }} <span class="mono">{{ gone.start_id }}</span> отфенсено {{ gone.fenced_ago }} назад{% if gone.fenced_by %} ({{ gone.fenced_by }}){% endif %} · {% if gone.band_left %}доцеживает до ~{{ gone.band_left }} запросов и встанет само{% else %}купленной ёмкости у него нет — оно не обслуживает{% endif %}</div>{% endfor %}
-      </td>
-    </tr>
-    {% empty %}<tr><td colspan="7" style="color:var(--dim-2)">Слотов нет — ключ этой организации ещё не выпущен.</td></tr>{% endfor %}
-  </table>
-  <p class="hint" style="font-size:12.5px;color:var(--dim-2);line-height:1.6;margin-top:12px">Перезапуск контейнера поднимает НОМЕР поколения на том же слоте и не требует ни прощания, ни ожидания: OOM-килл и <code>docker stop</code> идут одним путём. Отфенсенное поколение не гасится — оно доцеживает уже купленную ёмкость и останавливается само, поэтому «отфенсен» здесь не значит «остановлен».</p>
+  {% comment %}СЛОТ/ПОКОЛЕНИЕ/ФЕНСИНГ УДАЛЕНЫ (docs/tz-license-volume-quota.md §A). Инстанс-счёт
+  как лимит убран — весь трафик через один прокси его обходил, а детектор отказов нереализуем.
+  Осталась приблизительная справка «инстансов в окне» в блоке ПОДПИСКА выше; принуждение теперь
+  объёмное. Число, которого сервер не назвал, по-прежнему пишется словом, а не нулём.{% endcomment %}
 
   <h3 style="margin:40px 0 16px;font-size:22px;font-weight:700;letter-spacing:-.02em">Процессы и цепь отчётов</h3>
   <table class="list">

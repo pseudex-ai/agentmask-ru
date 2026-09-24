@@ -615,6 +615,11 @@ def mark_paid(invoice: Invoice, payment_ref: str = "") -> None:
             "org": organization_id, "invoice": invoice.number, "error": str(error)})
         raise ServiceNotResumed(str(error)) from error
 
+    # НОВЫЙ ПЕРИОД — НОВАЯ ВАТЕРМАРКА — НОВЫЙ АБСОЛЮТНЫЙ ПОТОЛОК. Оплата двигает
+    # период, значит и потолок объёма на лиц-сервере надо обновить, иначе клиент
+    # остался бы с потолком прошлого периода. Не роняет оплату при отказе.
+    push_ceiling(invoice.organization)
+
     with transaction.atomic():
         Invoice.objects.filter(pk=invoice_pk).update(
             service_resumed_at=timezone.now())
@@ -730,6 +735,60 @@ def derive_cap_and_buffer(included: int) -> tuple[int, int]:
     """Потолок и буфер из включённого объёма. Возврат (cap, buffer)."""
     cap = max(0, int(included)) * CAP_MULTIPLIER
     return cap, cap // BUFFER_FRACTION
+
+
+def effective_cap_buffer(subscription: Subscription, plan: Plan) -> tuple[int, int]:
+    """Границы зоны С УЧЁТОМ переключателя овереджа — для `classify_zone`.
+
+    Овередж ВКЛ — потолок и буфер живого тарифа (enforcement, как и раньше).
+    Овередж ВЫКЛ — потолок равен ВКЛЮЧЁННОМУ из снимка, буфер пуст: пробитие
+    включённого сразу означает стоп, зоны `metered`/`buffer` пусты, начисления
+    нет. Одна точка правды для цикла, кабинета и потолка на лиц-сервере.
+    """
+    if subscription.overage_enabled:
+        return int(plan.overage_cap_requests or 0), int(plan.buffer_requests or 0)
+    included = _int_or_zero(subscription.terms["included_requests"])
+    return included, 0
+
+
+def absolute_ceiling(organization: Organization) -> int:
+    """Абсолютный потолок запросов периода для лиц-сервера, или 0 = без потолка.
+
+    То же число, по которому ВИТРИНА сама останавливает клиента (`classify_zone`),
+    только в терминах монотонного счётчика сервера: ватермарка последнего
+    месячного счёта плюс граница зоны периода. `0` — потолка нет (Enterprise/по
+    договору: овередж ВКЛ и `overage_cap_requests == 0`).
+    """
+    subscription = organization.subscription
+    included = _int_or_zero(subscription.terms["included_requests"])
+    if not subscription.overage_enabled:
+        boundary = included
+    else:
+        cap = int(subscription.plan.overage_cap_requests or 0)
+        if cap <= 0:
+            return 0
+        # Потолок не ниже включённого — как страховка в `classify_zone`.
+        boundary = max(cap, included) + int(subscription.plan.buffer_requests or 0)
+    previous = _last_metered_invoice(organization)
+    watermark = max(0, previous.requests_billable_at_period_end if previous else 0)
+    return watermark + boundary
+
+
+def push_ceiling(organization: Organization) -> bool:
+    """Отправить абсолютный потолок периода на лиц-сервер. Возврат True при успехе.
+
+    Отказ НЕ роняет вызывающего и не поднимается наружу: потолок — это УСКОРЕНИЕ
+    стопа (движок упирается в него за минуты), а не единственный механизм —
+    часовой стоп цикла остаётся. Поэтому недоступность сервера здесь логируется
+    и проглатывается, в отличие от рубильника оплаты, где она обязана всплыть.
+    """
+    try:
+        licensing.set_ceiling(organization.id, absolute_ceiling(organization))
+        return True
+    except licensing.LicensingError as error:
+        _log.warning("не удалось передать потолок объёма на лиц-сервер",
+                     extra={"org": organization.id, "error": str(error)})
+        return False
 
 
 MONTHS_IN_YEAR = 12
@@ -996,6 +1055,9 @@ def settle_zero_invoice(invoice: Invoice) -> None:
         # тарифе) НИКОГДА не получал бы новую цену/включённое: adopt был только
         # в `mark_paid`, а сюда путь шёл мимо него.
         adopt_current_terms(subscription)
+    # Нулевой счёт — тоже продление: период сдвинулся, значит и абсолютный потолок
+    # на лиц-сервере пере-выставляется от новой ватермарки. Вне транзакции (сеть).
+    push_ceiling(invoice.organization)
     _log.info("zero invoice settled", extra={
         "invoice": invoice.number, "org": invoice.organization_id})
 
@@ -1015,10 +1077,16 @@ def period_pricing(organization: Organization, plan, reported: dict) -> dict:
     # Зона — на ВКЛЮЧЁННОМ ИЗ СНИМКА (тот же, что биллит счёт), потолок/буфер —
     # с живого тарифа (это enforcement, меняется сразу для всех, как RPM/лимит
     # инстансов). Так число «включено», зона и начисление в кабинете сходятся.
-    zone = classify_zone(used, included, int(plan.overage_cap_requests or 0),
-                         int(plan.buffer_requests or 0))
-    over = max(0, used - included)
-    billed_over = max(0, over - floor) if rate > 0 else 0
+    # Границы — С УЧЁТОМ ПЕРЕКЛЮЧАТЕЛЯ: при выключенном овередже потолок = included,
+    # буфер пуст, начисления нет; пробитие включённого сразу даёт `stopped`.
+    subscription = organization.subscription
+    cap, buffer = effective_cap_buffer(subscription, plan)
+    zone = classify_zone(used, included, cap, buffer)
+    if subscription.overage_enabled:
+        over = max(0, used - included)
+        billed_over = max(0, over - floor) if rate > 0 else 0
+    else:
+        billed_over = 0
     overage_amount = _round(Decimal(billed_over) / Decimal(1000) * Decimal(rate))
     # Оффер апгрейда показываем только когда он к месту — в буфере за потолком.
     upgrade_offer = None
@@ -1174,6 +1242,11 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     # Respect an EXPLICIT 0 (the policy: no free band, bill from the first over-request).
     # `or` would rewrite 0 back to the default — 0 is a valid floor, not "unset".
     floor = _int_or_zero(terms.get("metered_floor")) if terms.get("metered_floor") is not None else DEFAULT_METERED_FLOOR
+    # ПЕРЕРАСХОД НАЧИСЛЯЕТСЯ, ТОЛЬКО КОГДА КЛИЕНТ ЕГО ВКЛЮЧИЛ. Флаг читается на
+    # момент выставления (задним числом уже начисленный период не трогаем): при
+    # выключенном овередже пробитие включённого — это остановка, а не строка в
+    # счёте, поэтому здесь начисление ровно ноль.
+    #
     # Bill only the part ABOVE the floor, never the floor itself. The floor is the
     # measurement-noise band — a fixed count of requests (the quantum granularity)
     # we cannot bill accurately — so it stays ALWAYS free, and the charge ramps from
@@ -1181,7 +1254,10 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     # `billed_over = over` created a CLIFF: crossing the floor by one request billed
     # the entire excess at once (e.g. Старт 29 999→30 000 req = 0→+1 580 ₽), a
     # billing shock and a dispute magnet.
-    billed_over = max(0, over - floor) if terms["metered_per_1k"] > 0 else 0
+    if subscription.overage_enabled and terms["metered_per_1k"] > 0:
+        billed_over = max(0, over - floor)
+    else:
+        billed_over = 0
     metered_amount = _round(Decimal(billed_over) / Decimal(1000)
                             * terms["metered_per_1k"])
 

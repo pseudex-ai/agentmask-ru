@@ -944,24 +944,16 @@ def _check_ops_console(client, admin_url: str, public_url: str,
           org.id in fleet_body and org.subscription.plan.title in fleet_body,
           f"org={org.id in fleet_body} plan={org.subscription.plan.title in fleet_body}")
 
-    # ДВА СПИСКА С ПОХОЖИМ СМЫСЛОМ, И ЭТО ЛОВУШКА.
+    # ИНСТАНСЫ — ПРИБЛИЗИТЕЛЬНАЯ СПРАВКА, НЕ ЛИМИТ (слот-машина удалена, §A).
     #
-    # У `/admin/usage` в поле `instances` лежат СЫРЫЕ СТРОКИ АРЕНД — по строке
-    # на каждую выдачу, вместе с освобождёнными, с потолком в сотню. Их
-    # количество не считает контейнеры: у клиента с одним контейнером колонка
-    # «занято по тарифу» показала бы «100 / 1» через сутки работы. У
-    # `/admin/fleet` и `/admin/instances` теперь лежат СЛОТЫ (`slots`), и
-    # занятость — ЧИСЛО СЕРВЕРА (`occupied`), а не длина списка: в списке есть
-    # и свободные слоты, поэтому его длина всегда равна тарифу.
+    # Инстанс-счёт как принуждение убран: весь трафик через один прокси его
+    # обходил, а детектор отказов нереализуем. Осталось число РАЗЛИЧНЫХ инстансов
+    # в окне — показ, не потолок. У `/admin/usage` в поле `instances` по-прежнему
+    # СЫРЫЕ СТРОКИ АРЕНД; у `/admin/fleet` — счётчик, который витрина показывает.
     #
-    # ИМЯ ПОЛЯ СМЕНИЛОСЬ ВМЕСТЕ С КОНСТРУКЦИЕЙ, и это не косметика: место
-    # занимает больше не процесс, а СЛОТ, который выдаёт сервер. Экран,
-    # продолжавший читать `instances`, описывал бы мир, которого нет.
-    #
-    # НАСТОЯЩАЯ АРЕНДА, иначе оба списка пусты и обе проверки ниже проходят
-    # впустую: `all(...)` по пустому списку истинно, то есть проверка,
-    # неспособная упасть. Ключ процесса генерируется в venv движка — витрина
-    # такой зависимости не имеет и иметь не должна.
+    # НАСТОЯЩАЯ АРЕНДА, иначе списки пусты и проверки проходят впустую: `all(...)`
+    # по пустому списку истинно. Ключ процесса генерируется в venv движка —
+    # витрина такой зависимости не имеет и иметь не должна.
     process_key = subprocess.run(
         [str(_PROTOTYPE / ".venv/bin/python"), "-c",
          "from pseudex.bundle import generate_process_key; "
@@ -977,22 +969,19 @@ def _check_ops_console(client, admin_url: str, public_url: str,
     fleet_rows = httpx.get(f"{admin_url}/admin/fleet",
                            params={"org_ids": org.id}, timeout=5,
                            headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}).json()["orgs"]
-    fleet_slots = fleet_rows[0]["slots"]
     raw_leases = httpx.get(f"{admin_url}/admin/usage", params={"org_id": org.id},
                            timeout=5,
                            headers={"Authorization": f"Bearer {_ADMIN_TOKEN}"}
                            ).json()["instances"]
-    check("флот отдаёт слоты, и у каждого есть номер и держатель",
-          bool(fleet_slots)
-          and all("slot_no" in slot and "holder" in slot for slot in fleet_slots),
-          f"поля={sorted(fleet_slots[0]) if fleet_slots else 'СЛОТОВ НЕТ — проверка пуста'}")
-    # ЗАНЯТОСТЬ — ЧИСЛО СЕРВЕРА, И ОНО НЕ ДЛИНА СПИСКА. Аренда выше взята одна,
-    # значит занят ровно один слот; проверка падает и когда сервер вернул длину
-    # списка (было бы равно тарифу), и когда он вернул ноль при живой аренде.
-    check("занятость считает держателей, а не длину списка",
-          fleet_rows[0]["occupied"] == 1
-          and fleet_rows[0]["slot_count"] >= fleet_rows[0]["occupied"],
-          f"занято={fleet_rows[0]['occupied']} слотов={fleet_rows[0]['slot_count']}")
+    # ЧИСЛО ИНСТАНСОВ, А НЕ ЗАНЯТОСТЬ ПРОТИВ ПОТОЛКА. Аренда выше взята одна,
+    # значит инстанс ровно один. После удаления слотов счётчик переехал в
+    # `instance_count` (а `instances` стало СПИСКОМ строк-инстансов); имя поля
+    # читаем мягко: новое `instance_count`, затем прежнее `occupied` — витрина
+    # и сервер могут ехать не одномоментно.
+    count = fleet_rows[0].get("instance_count", fleet_rows[0].get("occupied"))
+    check("флот называет число инстансов в окне, и живая аренда его подняла",
+          isinstance(count, int) and not isinstance(count, bool) and count >= 1,
+          f"инстансов={count!r}")
     check("а сырые строки аренд остались там, где и были",
           bool(raw_leases) and all("state" not in row for row in raw_leases),
           f"поля={sorted(raw_leases[0]) if raw_leases else 'АРЕНД НЕТ — проверка пуста'}")

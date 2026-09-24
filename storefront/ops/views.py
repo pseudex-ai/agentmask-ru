@@ -163,36 +163,23 @@ def fleet(request):
     page = Paginator(organizations, PAGE_SIZE).get_page(request.GET.get("page"))
     state, error = _fleet_rows(page.object_list)
     unpaid = _unpaid_by_org([org.id for org in page.object_list])
-    # ПОТОЛОК БЕРЁТСЯ ОТТУДА, ГДЕ ОН ПРИНУЖДАЕТСЯ, а не из витринного `Plan`.
-    # Эти два числа обязаны сходиться, но теперь тариф правится на сервере без
-    # выката — и первая же правка сделала бы КАЖДОГО клиента «сверх лимита» на
-    # экране, оставаясь совершенно правильной на деле. Экран тарифов существует
-    # ровно чтобы такое расхождение показать; флот показывать его не должен.
-    try:
-        limits = {row["code"]: row["max_instances"] for row in licensing.plans()}
-    except licensing.LicensingError:
-        limits = {}
 
     rows = []
     for organization in page.object_list:
         licence = state.get(organization.id, {})
         usage = licence.get("usage", {}) if isinstance(licence, dict) else {}
         subscription = getattr(organization, "subscription", None)
-        occupied = licence.get("occupied") if isinstance(licence, dict) else None
+        # ИНСТАНСЫ — ПРИБЛИЗИТЕЛЬНАЯ СПРАВКА, НЕ ЛИМИТ. Слот-счёт как принуждение
+        # убран (объёмная модель его заменила). Осталось число различных инстансов
+        # в окне, как его назвал сервер; «не сказал» — это `None`, а не ноль,
+        # который читался бы как «никто не работает».
+        count = licence.get("instances", licence.get("occupied")) \
+            if isinstance(licence, dict) else None
         rows.append({
             "organization": organization,
             "subscription": subscription,
             "plan": subscription.plan if subscription else None,
-            # ЗАНЯТО — ЧИСЛО С СЕРВЕРА, И «НЕ СКАЗАЛ» — НЕ НОЛЬ. Длина списка
-            # перестала быть ответом: в нём теперь СЛОТЫ тарифа, включая
-            # свободные, и колонка «контейнеры» показывала бы оператору число,
-            # равное тарифу всегда. А ноль на месте неотвеченного вопроса
-            # читается как «никто не работает» — тот же экран, который врёт,
-            # только в другую сторону.
-            "instances": occupied if isinstance(occupied, int) else None,
-            "allowed": (limits.get(subscription.plan.code,
-                                   subscription.plan.max_instances)
-                        if subscription else 0),
+            "instances": int(count) if isinstance(count, int) and not isinstance(count, bool) else None,
             "requests": int(usage.get("requests", 0) or 0),
             "billable": int(usage.get("capacity_billable", 0) or 0),
             # Красный флаг. Он и есть причина, по которой экран существует:

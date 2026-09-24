@@ -28,7 +28,6 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from pseudex import metrics as metrics_format
 from pseudex import preflight, schema, sqlite_setup
 from pseudex.audit import SELFCHECK_ORG
-from pseudex.license import explain_fenced
 from pseudex.profiling import snapshot as profiling_snapshot
 
 # Config worth showing an operator, and nothing else. An allowlist rather than a
@@ -210,40 +209,6 @@ def release_verdict(state) -> dict[str, object]:
     }
 
 
-def slot_state(state) -> dict[str, object]:
-    """Какое место тарифа занимает ЭТОТ запуск и не вытеснен ли он.
-
-    ОДИН БЛОК НА ОБА ЭКРАНА И НА CLI. Состояние здесь — СЛОВО, а не набор
-    признаков, которые каждый экран складывает по-своему: двумя мнениями об
-    одном контейнере этот продукт уже обжигался (Б26bis), и стоило это двух
-    экранов, показывавших разное про один и тот же слот.
-
-    `None` в полях — «сервер не назвал»: он старше этого движка. Экран обязан
-    сказать «неизвестно», а не «слот 1» — тишина не значит единицу.
-    """
-    fenced = state.fenced
-    if fenced is not None:
-        verdict = "fenced"
-    elif state.slot_no is None:
-        verdict = "unknown"
-    else:
-        verdict = "holding"
-    return {
-        "state": verdict,
-        "start_id": state.start_id,
-        "slot_no": state.slot_no,
-        "epoch": state.epoch,
-        "slot_count": state.slot_count,
-        "fenced": fenced,
-        # ЧТО ДЕЛАТЬ — РЯДОМ С ДИАГНОЗОМ, а не в документации. Оператор,
-        # увидевший FENCED, обязан понять причину без нас.
-        "remedy": None if fenced is None else explain_fenced(fenced),
-        # СКОЛЬКО ОСТАЛОСЬ КУПЛЕННОГО. Для отфенсенного это и есть ответ на
-        # «сколько он ещё проработает»: гасит его не отказ, а исчерпание.
-        "band_left": state.capacity_left,
-    }
-
-
 def _period_start(period: str) -> float:
     """Start of a named period. Unknown values collapse to 14 days rather than
     raising: this comes off a query string, and a typo should narrow nothing."""
@@ -317,13 +282,6 @@ def build_router(audit, license_client, assets, detector_version: str,
                 "seconds_since_lease": (None if state.seconds_since_lease is None
                                         else round(state.seconds_since_lease)),
                 "last_error": state.last_error,
-                # ОБСЛУЖИВАЕТ ЛИ — ОТДЕЛЬНО ОТ СОСТОЯНИЯ АРЕНДЫ, потому что это
-                # разные вопросы. Аренда бывает свежей (`active`) у процесса,
-                # который уже не маскирует: купленная ёмкость кончилась. Экран,
-                # читавший только `state`, рисовал в этом случае «РАБОТАЕТ» над
-                # шлюзом, отдающим 503.
-                "serving": license_client.is_serving(),
-                "slot": slot_state(state),
             },
             # Where the key comes from, never the key — plus what is ON DISK,
             # file by file. The operator's questions are whether the volume they
@@ -567,7 +525,6 @@ def build_router(audit, license_client, assets, detector_version: str,
             "lease_id": state.lease_id,
             "bundle_version": state.bundle_version,
             "release": release_verdict(state),
-            "slot": slot_state(state),
             "seconds_since_lease": (None if state.seconds_since_lease is None
                                     else round(state.seconds_since_lease)),
             "grace_left_s": (None if state.grace_left_seconds is None

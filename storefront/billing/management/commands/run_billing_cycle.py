@@ -223,6 +223,14 @@ class Command(BaseCommand):
             # руками.
             self._snapshot_usage(organization.id, reported)
 
+            # АБСОЛЮТНЫЙ ПОТОЛОК ПЕРИОДА — НА ЛИЦ-СЕРВЕР КАЖДЫЙ ТИК. Движок
+            # упирается в него за минуты (отказ на `/v1/meter`), а не ждёт
+            # следующего часового прохода плюс продления лизы. Совпадает с
+            # границей, по которой цикл сам останавливает ниже; при выключенном
+            # овередже это включённый объём. Не роняет тик при отказе сервера.
+            if not self.dry:
+                services.push_ceiling(organization)
+
             terms = subscription.terms
             rate = terms["metered_per_1k"] or 0
             if not rate:
@@ -231,21 +239,18 @@ class Command(BaseCommand):
             included = int(terms["included_requests"] or 0)
             floor = int(terms["metered_floor"] or 0)
 
-            # ГЛОБАЛЬНЫЙ ПОТОЛОК (решение владельца): докуп только до потолка, дальше
-            # буфер с оффером апгрейда, за буфером — ЖЁСТКИЙ СТОП (как неоплата, но
-            # обратимо апгрейдом/новым периодом). Обслуживание при перерасходе БОЛЬШЕ
-            # НЕ безгранично: клиент не получает бесконечный сюрприз-счёт.
-            # Зона на ВКЛЮЧЁННОМ ИЗ СНИМКА (как биллит счёт и как считает
-            # порог письма выше), потолок/буфер — с живого тарифа (enforcement).
-            zone = services.classify_zone(
-                used, included,
-                int(subscription.plan.overage_cap_requests or 0),
-                int(subscription.plan.buffer_requests or 0))
+            # ГРАНИЦЫ ЗОНЫ — С УЧЁТОМ ПЕРЕКЛЮЧАТЕЛЯ ОВЕРЕДЖА. Овередж ВКЛ: докуп до
+            # потолка, буфер с оффером апгрейда, за буфером — ЖЁСТКИЙ СТОП. Овередж
+            # ВЫКЛ (дефолт): потолок = включённый объём, буфер пуст — пробитие
+            # включённого сразу даёт `stopped`, зоны metered/buffer пусты. Зона на
+            # ВКЛЮЧЁННОМ ИЗ СНИМКА (как биллит счёт).
+            cap, buffer = services.effective_cap_buffer(subscription, subscription.plan)
+            zone = services.classify_zone(used, included, cap, buffer)
             if zone["zone"] == "stopped":
                 if not subscription.volume_capped:
                     self.done.append(
                         f"{organization.id}: ЛИМИТ ИСЧЕРПАН — стоп "
-                        f"({used} при потолке {zone['cap']} + буфер)")
+                        f"({used}, потолок периода {zone['buffer_end']})")
                     # РУБИЛЬНИК В TRY, КАК В `_stop_overdue`. Отказ лицензионного
                     # сервера по ОДНОЙ организации не имеет права уронить весь
                     # часовой цикл: иначе не выставятся счета, не остановятся
@@ -270,6 +275,14 @@ class Command(BaseCommand):
                     subscription.volume_capped = False
                     subscription.volume_notified = Subscription.NOTIFIED_NONE
                     subscription.save(update_fields=["volume_capped", "volume_notified"])
+                continue
+
+            # ПИСЬМА О ПЕРЕРАСХОДЕ — ТОЛЬКО КОГДА ОВЕРЕДЖ ВКЛЮЧЁН. При выключенном
+            # ничего не тарифицируется: пробитие включённого — это стоп (ветка
+            # выше), а «дальше каждая тысяча стоит N ₽» было бы ложью. Ступени
+            # metered/buffer при выключенном овередже вообще не наступают (потолок
+            # равен включённому), но гейт явный, а не полагается на арифметику зон.
+            if not subscription.overage_enabled:
                 continue
 
             stage = subscription.volume_notified

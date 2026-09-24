@@ -76,8 +76,7 @@ from pseudex.envelope import (
     unmask_response,
 )
 from pseudex.license import (
-    ENGINE_VERSION, FENCED, STATE_LEASED, LicenseClient, LicenseError, block_code,
-    explain, explain_fenced)
+    ENGINE_VERSION, STATE_LEASED, LicenseClient, LicenseError, explain)
 from pseudex import metering
 from pseudex.maskcache import MaskCache
 from pseudex.operator import build_router
@@ -521,9 +520,11 @@ def _license_block() -> JSONResponse | None:
     # ИСЧЕРПАНИЕ ЁМКОСТИ — НЕ ИСТЁКШАЯ ЛИЦЕНЗИЯ, и называть его так значило
     # отправлять оператора проверять оплату вместо исходящего доступа. Подписка
     # цела, ключ валиден, аренда свежая — кончилась предоплаченная ёмкость, а
-    # взять следующую не у кого. А исчерпание ОТФЕНСЕННОГО поколения — третий
-    # диагноз с третьим действием; решение одно на оба плеча, в `block_code`.
-    code = block_code(status)
+    # взять следующую не у кого.
+    code = status.code
+    if code is None:
+        code = ("capacity_exhausted"
+                if status.capacity_left == 0 else "license_expired")
     return JSONResponse(
         {
             "error": code,
@@ -543,15 +544,8 @@ def _license_block() -> JSONResponse | None:
                 "bundle_version": status.bundle_version,
                 "consumed": status.consumed,
                 "granted": status.granted,
-                # ЧТО ИМЕННО ЗАНЯЛО МЕСТО — В ТЕЛЕ ОТКАЗА, а не только в логе
-                # контейнера: шлюз клиента видит 503, и его дежурный читает
-                # ответ, а не наш stdout.
-                "slot_no": status.slot_no,
-                "epoch": status.epoch,
-                "fenced": status.fenced,
             },
-            "remedy": (explain_fenced(status.fenced) if code == FENCED
-                       else explain(code)),
+            "remedy": explain(code),
         },
         status_code=503,
     )
@@ -627,14 +621,6 @@ async def license_status() -> JSONResponse:
             None if status.grace_left_seconds is None else round(status.grace_left_seconds)
         ),
         "last_error": status.last_error,
-        # МЕСТО И ПОКОЛЕНИЕ — ТУДА ЖЕ, КУДА СМОТРИТ МОНИТОРИНГ. `None` значит
-        # «сервер не сказал», а не «слот один»: экран и алерт обязаны различать
-        # неизвестное и нулевое, иначе первая же выкатка старого сервера
-        # покажет ложную уверенность.
-        "slot_no": status.slot_no,
-        "epoch": status.epoch,
-        "slot_count": status.slot_count,
-        "fenced": status.fenced,
     })
 
 

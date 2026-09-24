@@ -61,6 +61,7 @@ urlpatterns = [
     path("app/", views.cabinet, name="cabinet"),
     path("app/keys/new", views.new_key, name="new_key"),
     path("app/keys/<int:key_id>/revoke", views.revoke_key, name="revoke_key"),
+    path("app/overage", views.toggle_overage, name="toggle_overage"),
     path("app/payer", views.update_payer, name="update_payer"),
     path("app/subscribe", views.subscribe, name="subscribe"),
     path("app/pay-annual", views.pay_annual, name="pay_annual"),
