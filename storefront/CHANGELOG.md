@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.20](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.19...platform/v0.3.20) (2026-09-24)
+
+
+### Новое
+
+* **licensing:** объёмный лимит и PAYG-овередж вместо слот-счёта инстансов ([#24](https://github.com/Isk4R1oT/Obscura/issues/24)) ([69f1de1](https://github.com/Isk4R1oT/Obscura/commit/69f1de191c22b0f51f535b38c1fb2e40e384e10a))
+
 ## [0.3.19](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.18...platform/v0.3.19) (2026-09-23)
 
 
