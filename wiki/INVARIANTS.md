@@ -722,69 +722,37 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   server records it beside the version, so «when can the contract-2 bridge
   go» is a query, not a guess (D-063). Pins: `licensing/test_admin_api.py`,
   `licensing/test_store_upgrade.py`.
-- **TWO OCCUPANCIES, TWO WINDOWS, AND ONE COUNTER FOR BOTH IS THE DEFECT**
-  (Б26quater). The CONTAINER slot is held by the liveness mark
-  (`ALIVE_SECONDS` = 600 s, all four marks written by the SERVER) — that was
-  Б26: a dead container held the slot for 16–24 h and the refusal named a
-  container that did not exist. The PROCESS PLACE is held by the LEASE window —
-  SILENCE never frees it early, because a stopped engine and a patched one are
-  silent in exactly the same way. Three passes moved the place onto the silence
-  window and each one multiplied the plan by `T_offline / T_alive`: measured, one
-  admission bought 32 serving processes against the baseline's one. Pins:
-  `licensing/test_metering_attacks.py`, `licensing/test_admin_api.py`.
-- **A place freed by an HONEST release is free at once: to its own instance for
-  nothing and without limit, to another instance as a displacement that costs a
-  budget unit** (Б26quinquies). `/v1/release` is the one thing the customer can
-  SAY, and `docker stop` says it per worker; holding the place after it locked a
-  trial customer (2 places) out for ~23 h after two honest stops — a state the
-  released 0.3.17 does not have, i.e. a fix worse than the defect. The ring
-  «lease → release → lease» under one `instance_id` is therefore unbounded, and
-  it must be: the server cannot tell it from `docker compose up -d`. What bounds
-  it is the CAPACITY boundary, not the lease (see the next rule). The other
-  early release of a place is OURS, `POST /admin/release`
-  (`released_by='admin'`), which frees even a silent one and is NOT revoked by
-  the echo — a lever the customer could cancel is not a lever. Pins:
-  `licensing/test_metering_attacks.py`, `licensing/test_admin_api.py`.
-- **THE UNIT OF THE CEILING IS A PROCESS THAT CAN MASK TRAFFIC: a sealed bundle
-  AND an issued capacity quantum** (Б26sexies). A bundle with no capacity serves
-  nobody, so the silent ring is a rate-limit question, not a licence hole —
-  measured: 200 bundles, 0 armed. What arms them is `/v1/meter`, so the ceiling
-  is enforced THERE as well as on the lease — `capacity_admission` and
-  `meter_if_allowed` of `licensing/store.py`. While the lease alone refused, the ring ground 500 free
-  bundles and bought them capacity afterwards — 500 serving processes against 32
-  allowed, zero budget units, not one refusal. Buying capacity with a key whose
-  row was closed by its OWN `/v1/release` returns the place to OCCUPIED AT ONCE
-  (`_bought_after_release`, no `RELEASE_ECHO_SECONDS` grace — the report may be
-  a stop's tail, a purchase of the right to serve NEXT requests cannot be) and
-  raises an anomaly counted BY PROCESS KEY (`meter.release_echoes`): the ring
-  runs under one `instance_id`, so instance-level bookkeeping counts one event
-  instead of hundreds and walks past. Residual, stated because a ceiling is only
-  claimed after the measurement that confirms it: a quantum bought BEFORE the
-  release is indistinguishable from an honest worker's, so each turn carries off
-  ONE quantum (billed); CONTINUING to serve needs a second one, and that is where
-  the ceiling stands — measured 200 armed once, 32 able to continue. Pins:
-  `licensing/test_metering_attacks.py`, `licensing/test_admin_api.py`.
-- **A unit of the turnover budget is spent by an ADMISSION that displaced
-  another container's slot, and by nothing else** (Б26bis, Б26ter). Not by a
-  release (a `docker stop` of a 4-worker container that had renewed three times
-  spent the whole hourly budget and then blocked its own redeploy), not by
-  returning to your OWN slot (the documented upgrade command cannot cost
-  budget), and places of processes are not purchasable at all. Pins:
-  `licensing/test_metering_attacks.py`.
-- **The server names the REASON a place was freed, because one word covers
-  three different pieces of news.** `released_by` is `process` (the customer
-  stopped it), `silence` (we took it from a container we stopped hearing — its
-  engine is still running and will stop at its next renewal) or `admin`
-  (support freed it); `live_processes` is what we HEAR, `held_places` is what
-  the ceiling counts, and a screen showing one while the refusal counts the
-  other is the «two opinions about one container» this layer has already paid
-  for twice. The REFUSAL names the same reason the screen does: a container
-  whose rows WE closed is not «released it itself» — the «no open rows left»
-  signal is identical in all three cases, so the text asks for the reason. A
-  storefront check assembled from fields the server does not send cannot fail —
-  so the pin rides on the REAL `/admin/instances` response. Pins:
-  `licensing/test_admin_api.py`, `licensing/test_metering_attacks.py`,
-  `storefront/test_slots.py`.
+- **THE LIMIT IS VOLUME, NOT INSTANCES — slots/generations/epochs/fencing are
+  GONE** (D-068, replaced Б20/Б26*/Б30/Б34/Б35). Counting live processes is
+  FLP-impossible and does not measure what is sold — one proxy carries any
+  fleet's traffic — so the ceiling is the org's paid REQUEST volume, pushed by
+  the storefront (`services.absolute_ceiling`) and enforced by the licensing
+  server. Instances survive only as an approximate DISPLAY (`instances_view`,
+  distinct `instance_id` in the window); nothing hangs on the number. Pins:
+  `licensing/test_ceiling.py`, `licensing/test_store_upgrade.py` (the removed
+  machinery is read by no line), `storefront/test_slots.py`.
+- **CAPACITY IS REFUSED AT `/v1/meter` BEYOND THE PUSHED CEILING — softly, for
+  ANY process of the org** (D-068). `meter_if_allowed` returns `ceiling_reached`:
+  409, OUTSIDE `_ANSWER_CODES` and INSIDE `_GRACE_WORTHY_STATUS`, so the released
+  fleet drains its bought band and stops on `has_capacity()`, never a sudden kill
+  (the Б30 lesson). It applies to a process that presents no slot binding too —
+  the Б35 hole (`binding_of` → None → free capacity) is closed by construction.
+  Pins: `licensing/test_ceiling.py`, `licensing/test_metering_attacks.py`.
+- **«OCCUPIED BY OTHERS» IS COUNTED RECENCY-AWARE: `granted` for a LIVE peer,
+  `billable` for a DEAD one** (D-068). A peer that bought a quantum within
+  `_CEILING_LIVE_WINDOW` (3×`METER_TARGET_SECONDS`) contributes its `granted` —
+  bounding a concurrent cold start, so no over-serve; a stale/dead peer
+  contributes only its `billable` (real consumption), so a restarted container's
+  frozen reserve never eats the paying customer's quota (no drift → no 503 at the
+  start of a paid period). `last_seen_at` is stamped on every quantum; both money
+  directions hold at once. Pins: `licensing/test_ceiling.py` (drift + concurrent).
+- **OVERAGE IS OFF BY DEFAULT: crossing the included volume STOPS the service,
+  it does not silently bill above it** (D-068). `Subscription.overage_enabled`
+  off → the effective ceiling is `included` (zone `stopped` past it, no overage
+  line); on → served to `overage_cap + buffer` at the tier rate, then a hard
+  stop, with the buffer offering an upgrade. An already-billed period is never
+  recomputed when the flag flips. Pins: `storefront/test_overage_toggle.py`,
+  `storefront/test_hardcap.py`.
 
 ## Billing
 
