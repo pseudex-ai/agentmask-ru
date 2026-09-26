@@ -1,0 +1,7 @@
+# Optional benchmark runtime. Never install into the production image.
+openai==3.19.2
+openai-agents==0.22.3
+openai-codex==0.157.1
+# openai-agents allows mcp 2.x, but claude-agent-sdk 0.2.82 still uses the
+# 1.x Server decorators. This pin keeps the preserved Claude connector alive.
+mcp==1.30.0

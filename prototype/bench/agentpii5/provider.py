@@ -191,6 +191,8 @@ _ANTHROPIC_LIST: str = "прайс-лист Anthropic (skill claude-api, таб�
 # answered. Listed, not computed — see `PRICE_ALIASES` for why that is not a
 # `startswith`.
 PRICES: tuple[PriceRow, ...] = (
+    PriceRow('deepseek', 'deepseek-flash', Price(0.30, 1.20), '2026-09-26',
+             'https://api-docs.deepseek.com/quick_start/pricing/ (peak-rate estimate)'),
     PriceRow("anthropic", "claude-haiku-4-5", Price(1.0, 5.0), "2026-06-24", _ANTHROPIC_LIST),
     PriceRow("anthropic", "claude-haiku-4-5-20251001", Price(1.0, 5.0), "2026-06-24",
              _ANTHROPIC_LIST),
@@ -205,6 +207,7 @@ PRICES: tuple[PriceRow, ...] = (
 # Every id is spelled.
 PRICE_BY_KEY: dict[tuple[str, str], PriceRow] = {
     (row.provider, row.model_id): row for row in PRICES}
+DEEPSEEK_CACHED_USD_PER_MTOK: float = 0.006
 
 MODEL_ROLES: tuple[str, ...] = ("agent", "judge")
 

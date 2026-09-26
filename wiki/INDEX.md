@@ -23,6 +23,7 @@ Status: `spec` (describes shipped behaviour) · `ТЗ` (a specification;
 
 | file | answers | status |
 |---|---|---|
+| `docs/tz-v5-model-connectors.md` | interchangeable v5 agent/judge connectors, preserved Claude path, direct DeepSeek agent, Agents SDK + subscription-Codex judge, clean-envelope and quota limits, remaining calibration/resume boundaries (D-069) | ТЗ-partial |
 | `docs/articles/2026-09-habr-01-agentmask-ru.md` | article #1 for Habr: the public benchmark and seven systems — a DRAFT the owner rewrites in his own prose (Habr bans AI-written text); Pseudex numbers marked ⚠ must be re-measured after the release that carries Б19 | design (draft, not published) |
 | `docs/tz-release-and-versions.md` | the release and version lifecycle: two streams (engine `vX.Y.Z` / platform «platform/vX.Y.Z») via release-please, «version.txt», the registry «deploy/releases.json», the version verdict in the lease, `user_version` + refuse-from-the-future + snapshot, `pseudexctl upgrade`, «release/X.Y» security backports; four worked scenarios | ТЗ-partial (stages 1–7 in progress) |
 | `docs/idea.md` | the product concept: what Pseudex is, who it is for, the 152-ФЗ framing | spec (note: `docs/idea.md:69` cites ст. 13.1 wrongly — it is about upload to a Mincifry GIS; see STATE D-018) |

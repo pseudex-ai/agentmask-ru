@@ -137,6 +137,17 @@ def _model_notes(meta: Mapping[str, object], record: RunRecord,
     is the Anthropic path otherwise — which is what every run before the
     provider layer used, and saying so is not a guess about the future."""
     block = meta.get("provider")
+    if isinstance(block, dict) and isinstance(block.get('connectors'), dict):
+        connectors = block['connectors']
+        names: list[str] = []
+        notes: list[str] = []
+        if connectors.get('agent') == 'deepseek':
+            names.append('DEEPSEEK_API_KEY')
+        if connectors.get('judge') == 'codex' and record.judge_model:
+            names.append('AGENTPII5_CODEX_HOME')
+            notes.append('Codex judge uses ChatGPT sign-in and subscription quota; '
+                         'not API billing.')
+        return tuple(names), tuple(notes)
     name = str(block.get("provider")) if isinstance(block, dict) else ""
     try:
         provider = resolve_provider(name, env)
@@ -234,6 +245,26 @@ def plan(record: RunRecord, corpus: Path, ladder: Path, version_file: Path,
              "--model", record.model,
              "--judge-model", record.judge_model,
              "--label", f"повтор {record.run_id[:8]}"]
+    provider_block = meta.get('provider')
+    if isinstance(provider_block, dict) and isinstance(provider_block.get('connectors'), dict):
+        connectors = provider_block['connectors']
+        for key in ('agent', 'judge'):
+            parts += [f'--{key}-connector', str(connectors[key]),
+                      f'--{key}-effort', str(connectors[f'{key}_effort'])]
+        parts += ['--connector-max-tokens', str(connectors['max_tokens']),
+                  '--agent-turn-limit', str(connectors['agent_turn_limit']),
+                  '--judge-request-limit', str(connectors['judge_request_limit'])]
+        if connectors.get('agent') == 'deepseek':
+            parts += ['--provider', 'deepseek']
+        if not record.judge_model:
+            parts += ['--no-judge']
+        if record.tier not in ('nano', 'small', 'medium', 'large', 'holdout', 'max'):
+            if not snapshot.exists():
+                raise ReproError('connector selection requires the recorded corpus snapshot')
+            saved = json.loads(snapshot.read_text(encoding='utf-8'))
+            ids = [str(row['base']['id']) for row in saved['corpus']]
+            at = parts.index('--tier')
+            parts[at:at + 2] = ['--ids', ','.join(ids)]
     gateway = meta.get("gateway")
     if isinstance(gateway, dict) and gateway.get("mode") == "http" and gateway.get("base_url"):
         parts += ["--gateway", str(gateway["base_url"])]

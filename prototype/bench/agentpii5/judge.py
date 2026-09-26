@@ -73,6 +73,7 @@ from claude_agent_sdk import (
 )
 
 from bench.agentpii4.parts import parts_of
+from bench.agentpii5.connectors import ConnectorError, JudgeConnector, json_object
 from bench.agentpii4.schema import message_text
 from bench.agentpii5.contracts import (
     ECHO_TAG_PREFIX, JUDGE_LABELS, ArmRunV5, CaseV5, DialogueTurn, JudgeInput, JudgeVerdict,
@@ -301,6 +302,30 @@ class JudgeConfig:
     # `repeat_disagreement` measures two instruments. See `JUDGE_TEMPERATURE`
     # for why the value is declared rather than set.
     temperature: float
+
+
+@dataclass(frozen=True)
+class ConnectedJudgeConfig(JudgeConfig):
+    """Inject external I/O without replacing the rubric or quote validation."""
+
+    connector: JudgeConnector
+
+
+async def _ask_connector(prompt: str, label: str,
+                         config: ConnectedJudgeConfig) -> tuple[dict[str, object] | None, float, str]:
+    await config.ledger.reserve(config.query_cap_usd)
+    spent = 0.0
+    try:
+        schema = json_object({**_SCHEMA, 'additionalProperties': False})
+        result = await config.connector.evaluate(RUBRIC, prompt, schema, 120.0)
+        spent = result.usage.cost_usd
+        if len(result.replies) != 1:
+            raise ConnectorError('judge connector returned more than one answer')
+        return dict(json_object(json.loads(result.replies[0]))), spent, ''
+    except (ConnectorError, TimeoutError, json.JSONDecodeError) as error:
+        return None, spent, f'{type(error).__name__}: {error}'
+    finally:
+        await config.ledger.settle(label, config.query_cap_usd, spent)
 
 
 # --- the blind guard ------------------------------------------------------------------
@@ -863,6 +888,8 @@ async def _ask(prompt: str, label: str, config: JudgeConfig) -> tuple[dict[str, 
     # config the transport cannot serve at all (a temperature it has no knob
     # for) would otherwise be swallowed into a `judged_by="none"` verdict the
     # run had already paid the reservation for.
+    if isinstance(config, ConnectedJudgeConfig):
+        return await _ask_connector(prompt, label, config)
     options = _options(config.model, config.query_cap_usd, config.temperature)
     await config.ledger.reserve(config.query_cap_usd)
     spent = 0.0

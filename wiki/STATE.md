@@ -515,6 +515,14 @@ any claim.
 **Price:** a third view of one value (canon for the index, shown for the content, agent's for the form) — it is `shown_forms`, already recorded per conversation for Б23/Б24, not a new store. Measured gain of steps 1–4 is 71.1 % → 83.2 %; step 5's arithmetic adds ≈10 pp on top (≈93–94 %), to be measured, not assumed.
 **Related:** `research/2026-09-22-compound-street-address.md` · INVARIANTS.md#swap (Б24, «дословно — значит дословно») · `docs/known-issues.md` (Б16, Б23) · D-062
 
+### D-069 · 2026-09-26 · v5 model connectors, before the v6 expansion
+**Status:** implemented and point-tested in a separate worktree; no nano authorization.
+**Context:** v5 needs real runs; replacing its metrics or corpus during a provider migration would make failures ambiguous. The owner wants DeepSeek Flash agents and an OpenAI judge through the Codex subscription, retaining Claude.
+**Decision:** use small agent/judge protocols and external-connector classes. Keep Claude as the default. Call DeepSeek Flash directly through its stateless Responses API. Run the judge through OpenAI Agents SDK with a custom `Model` backed by the pinned Codex SDK and a dedicated clean `CODEX_HOME`. Keep C/I/C2, the gateway, observer and quote checks unchanged. Use Terra medium as a candidate judge, not a proven quality equivalent.
+**Rejected:** deleting Claude, rewriting the benchmark around the new SDK, starting nano before point checks, treating subscription usage as unlimited free API calls.
+**Price:** two external adapters and a separate one-time ChatGPT device login; tokens recorded separately from USD estimates. New-connector resume and calibration repeats remain unavailable. Old Claude calibration cannot certify the new judge. The engine and v4 remain unchanged.
+**Related:** `docs/tz-v5-model-connectors.md`.
+
 ### D-068 · 2026-09-24 · Лимит по ОБЪЁМУ, а не по инстансам: слоты удалены, потолок запросов + PAYG-овередж
 **Status:** active (реализовано, выкачено platform/v0.3.20, движок v0.3.19; E2E проверено на живом проде)
 **Context:** шесть заходов на подсчёт «сколько инстансов живо» (слоты/поколения/эпохи/фенсинг, D-051-эпохи Б26*) упирались в нереализуемый вопрос (Chandra–Toueg/FLP) и вдобавок мерили не то, что продаётся: клиент гонит весь трафик через ОДИН прокси и обходит любой поштучный потолок. На проде выяснилось (Б35), что слот-принуждение к тому же инертно — выпущенный движок слотами не разговаривает, а сервер выдаёт ёмкость «unbound» без фенсинга. Модель «объём (запросы) + включённая квота + PAYG-овередж + потолок» УЖЕ построена и зрела в биллинге витрины (`Plan.included_requests`, `metered_per_1k`, `overage_cap_requests`, `buffer_requests`, `Subscription.current_period_*`).

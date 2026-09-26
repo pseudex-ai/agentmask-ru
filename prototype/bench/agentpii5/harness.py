@@ -74,13 +74,17 @@ from bench.agentpii5 import records as r
 from bench.agentpii5 import report as v5_report
 from bench.agentpii5 import reportjson
 from bench.agentpii5 import runinfo
+from bench.agentpii5.codex_connector import CodexJudgeConnector, CodexSettings
+from bench.agentpii5.connectors import (
+    AgentConnector, ConnectorError, Json, ToolResult, ToolSpec, json_object)
+from bench.agentpii5.deepseek_connector import DeepSeekConnector, DeepSeekSettings
 from bench.agentpii5.calibration import write_stamp
 from bench.agentpii5.contracts import (
     AGENT_MODEL, BENCHMARK, ECHO_TAG_PREFIX, JUDGE_MODEL, QUERY_CAP_USD, RETRIES, ArmRunV5,
     CalibrationStamp, CaseV5, HopObservation, JudgeRow, JudgeVerdict,
     MentionRecord, ToolResultRecord)
 from bench.agentpii5.judge import (
-    JUDGE_TEMPERATURE, JudgeConfig, LeakedPrompt, OracleLeak, build_prompt, judge_input,
+    JUDGE_TEMPERATURE, ConnectedJudgeConfig, JudgeConfig, LeakedPrompt, OracleLeak, build_prompt, judge_input,
     judge_prompt, masked_dialogue, prompt_sha256, residual_pregate_of)
 from bench.agentpii5.mock import BackendV5, seed_backend_v5
 from bench.agentpii5.observe import observe
@@ -453,6 +457,151 @@ class ArmOutcomeV5:
     run: ArmRunV5
 
 
+class ArmConnector(Protocol):
+    async def control(self, case: CaseV5, arm: str, repeat: int, backend: BackendV5,
+                      model: str, cap: float, run_id: str) -> v4_harness.ArmOutcome: ...
+
+    async def intervention(self, case: CaseV5, repeat: int, gateway: GatewayV5,
+                           backend: BackendV5, model: str, cap: float,
+                           run_id: str) -> ArmOutcomeV5: ...
+
+
+class ClaudeArms:
+    """Keep the existing Claude execution path available through the same interface."""
+
+    async def control(self, case: CaseV5, arm: str, repeat: int, backend: BackendV5,
+                      model: str, cap: float, run_id: str) -> v4_harness.ArmOutcome:
+        return await _guarded_control(case, arm, repeat, backend, model, cap, run_id)
+
+    async def intervention(self, case: CaseV5, repeat: int, gateway: GatewayV5,
+                           backend: BackendV5, model: str, cap: float,
+                           run_id: str) -> ArmOutcomeV5:
+        return await _guarded_arm_v5(case, repeat, gateway, backend, model, cap, run_id)
+
+
+class GatewayHooks:
+    """Connect model events to the existing gateway and benchmark tool backend."""
+
+    def __init__(self, case: CaseV5, gateway: GatewayV5 | PassThrough,
+                 backend: BackendV5) -> None:
+        self.case = case
+        self.gateway = gateway
+        self.backend = backend
+        self.calls: list[ObservedCall] = []
+        self.turns: list[int] = []
+        self.turn = -1
+
+    def user(self, index: int) -> str:
+        self.turn = index
+        return self.gateway.push_user(index)
+
+    def assistant(self, text: str) -> None:
+        if text:
+            self.gateway.note(text)
+
+    def tool(self, name: str, arguments: dict[str, Json]) -> ToolResult:
+        written: dict[str, object] = dict(arguments)
+        self.gateway.note_tool_call(name, written)
+        restored, residual = self.gateway.restore_arguments(written)
+        log = self.backend.call(name, restored)
+        ordinal = sum(call.name == name and turn == self.turn
+                      for call, turn in zip(self.calls, self.turns, strict=True))
+        self.calls.append(ObservedCall(
+            name=name, written=written, restored=restored, residual=residual,
+            refusal_path=log.refusal.path if log.refusal else '',
+            refusal_rule=log.refusal.rule if log.refusal else '', parsed=log.parsed,
+            seq=len(self.calls) + 1))
+        self.turns.append(self.turn)
+        if isinstance(self.gateway, GatewayV5):
+            served = self.gateway.push_call(name, log, self.backend.form_of(log.seq),
+                                           self.turn, ordinal)
+        else:
+            served = self.gateway.push_tool(name, log.result_text)
+        return ToolResult(served, log.refusal is None)
+
+
+def connector_tools(schemas: list[dict[str, object]]) -> tuple[ToolSpec, ...]:
+    tools: list[ToolSpec] = []
+    for schema in schemas:
+        function = json_object(schema['function'])
+        tools.append(ToolSpec(str(function['name']), str(function['description']),
+                              json_object(function['parameters'])))
+    return tuple(tools)
+
+
+class ConnectedArms:
+    """Run all three arms through one injected model connector."""
+
+    def __init__(self, connector: AgentConnector) -> None:
+        self.connector = connector
+
+    async def _run(self, case: CaseV5, arm: str, repeat: int,
+                   gateway: GatewayV5 | PassThrough, backend: BackendV5,
+                   model: str, cap: float) -> tuple[v4_harness.ArmOutcome, ArmRunV5 | None]:
+        hooks = GatewayHooks(case, gateway, backend)
+        system = gateway.push_system(case.base.messages[0].content)
+        tools = connector_tools(gateway.tools())
+        indices = tuple(i for i, message in enumerate(case.base.messages)
+                        if message.role == 'user')
+        result = await self.connector.converse(system, tools, indices, hooks,
+                                               v4_harness._timeout(case.base),
+                                               3 * len(indices) + 10)
+        if gateway.faults:
+            raise HarnessError(f'{case.base.id}/{arm}: {gateway.faults[0]}')
+        raw = next((reply for reply in reversed(result.replies) if reply.strip()), '')
+        leg = (answer_leg(raw, case.streaming, gateway.vault, gateway.restore_text)
+               if isinstance(gateway, GatewayV5) else None)
+        reply = leg.reply if leg else gateway.restore_text(raw)
+        base = ArmRun(case_id=case.base.id, arm=arm, repeat=repeat, calls=tuple(hooks.calls),
+                      state=backend.snapshot(), reply=reply, termination='done',
+                      cost_usd=result.usage.cost_usd,
+                      substitutes=substitutes_for(case.base, gateway.substitutes_seen())
+                      if isinstance(gateway, GatewayV5) else {},
+                      masked_spans=gateway.masked_spans() if isinstance(gateway, GatewayV5) else {})
+        meta = ArmMeta(model=model, turns=result.turns, duration_ms=result.duration_ms,
+                       session_id=result.session_id, subtype='success', is_error=False,
+                       api_error_status=None, errors=(), reason='', cap_usd=cap)
+        outcome = v4_harness.ArmOutcome(base, meta)
+        if not isinstance(gateway, GatewayV5) or leg is None:
+            return outcome, None
+        run = ArmRunV5(base=base, reply_raw=raw, control_reply='',
+                      tool_results=gateway.tool_records(), mentions=gateway.mentions(),
+                      turn_replies=restored_turn_replies(result.replies, turn_restorer(case, gateway)),
+                      call_turns=tuple(hooks.turns), request_count=gateway.request_index,
+                      stream_mismatch=leg.mismatch, reply_whole=leg.reply_whole, turn_residual=0)
+        return outcome, run
+
+    async def control(self, case: CaseV5, arm: str, repeat: int, backend: BackendV5,
+                      model: str, cap: float, run_id: str) -> v4_harness.ArmOutcome:
+        try:
+            outcome, _ = await self._run(case, arm, repeat, PassThrough(case.base),
+                                          backend, model, cap)
+            return outcome
+        except (ConnectorError, asyncio.TimeoutError) as error:
+            kind = 'timeout' if isinstance(error, asyncio.TimeoutError) else 'harness_error'
+            return v4_harness._failed_arm(case.base, arm, repeat, kind,
+                                         type(error).__name__ + ': ' + str(error), cap, cap, run_id)
+        except (HarnessError, OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
+            return arm_verdict(case.base, arm, repeat, error, cap, run_id)
+
+    async def intervention(self, case: CaseV5, repeat: int, gateway: GatewayV5,
+                           backend: BackendV5, model: str, cap: float,
+                           run_id: str) -> ArmOutcomeV5:
+        try:
+            outcome, run = await self._run(case, 'I', repeat, gateway, backend, model, cap)
+            if run is None:
+                raise HarnessError('intervention did not record observations')
+            return ArmOutcomeV5(outcome, run)
+        except (ConnectorError, asyncio.TimeoutError) as error:
+            kind = 'timeout' if isinstance(error, asyncio.TimeoutError) else 'harness_error'
+            outcome = v4_harness._failed_arm(case.base, 'I', repeat, kind,
+                                           type(error).__name__ + ': ' + str(error), cap, cap, run_id)
+            return ArmOutcomeV5(outcome, _empty_run(case, repeat))
+        except (HarnessError, OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
+            return ArmOutcomeV5(arm_verdict(case.base, 'I', repeat, error, cap, run_id),
+                                _empty_run(case, repeat))
+
+
 async def run_arm_v5(case: CaseV5, arm: str, repeat: int, gateway: GatewayV5,
                      backend: BackendV5, model: str, cap: float, run_id: str) -> ArmOutcomeV5:
     """The GATEWAY arm of one case against the real model.
@@ -818,7 +967,7 @@ def with_turn_residual(run: ArmRunV5, turn_residual: int) -> ArmRunV5:
 
 async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
                         ledger: v3_judge.SpendLedger, config: JudgeConfig | None,
-                        model: str, run_id: str) -> TripleResult:
+                        model: str, run_id: str, arms: ArmConnector) -> TripleResult:
     """C first and alone, then I ∥ C′ — v4's order, v4's ledger discipline."""
     cap = v4_harness.cap_usd(case.base)
     triple: dict[str, object] = {
@@ -847,7 +996,7 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
     spent = 0.0
     turn_residual = 0
     try:
-        control = await _guarded_control(case, "C", repeat, seed_backend_v5(case),
+        control = await arms.control(case, "C", repeat, seed_backend_v5(case),
                                          model, cap, run_id)
         outcomes.append(control)
         spent += control.run.cost_usd
@@ -858,8 +1007,8 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
         gateway = GatewayV5(case, detector, Vault(":memory:", _ORG), AuditLog(":memory:"),
                             MaskCache(256))
         intervention, second = await asyncio.gather(
-            _guarded_arm_v5(case, repeat, gateway, seed_backend_v5(case), model, cap, run_id),
-            _guarded_control(case, "C2", repeat, seed_backend_v5(case), model, cap, run_id))
+            arms.intervention(case, repeat, gateway, seed_backend_v5(case), model, cap, run_id),
+            arms.control(case, "C2", repeat, seed_backend_v5(case), model, cap, run_id))
         outcomes.extend((intervention.base, second))
         spent += intervention.base.run.cost_usd + second.run.cost_usd
         excluded = [one.run.arm for one in outcomes if one.run.termination in EXCLUDED_TERMINATIONS]
@@ -960,11 +1109,11 @@ def charged(arms_usd: float, judge_usd: float) -> float:
 
 
 def triple_runner(detector: Detector, ledger: v3_judge.SpendLedger, config: JudgeConfig | None,
-                  model: str, run_id: str) -> TripleRunner:
+                  model: str, run_id: str, arms: ArmConnector) -> TripleRunner:
     """`run_triple_v5` with the run's constants bound — the `TripleRunner`
     `drive_v5` takes."""
     async def run(case: CaseV5, repeat: int) -> TripleResult:
-        return await run_triple_v5(case, repeat, detector, ledger, config, model, run_id)
+        return await run_triple_v5(case, repeat, detector, ledger, config, model, run_id, arms)
     return run
 
 
@@ -1087,6 +1236,12 @@ async def drive_v5(cases: Sequence[CaseV5], repeats: int, run_one: TripleRunner,
     spent = 0.0
     transport = 0
     stopped = ""
+
+    # An empty hops file is a valid measurement when every selected case is
+    # excluded before the intervention arm.  A missing file means corruption
+    # and report.py deliberately refuses it, so establish the distinction
+    # before the first network call rather than only on the first hop.
+    hops_sink.touch(exist_ok=True)
 
     async def worker(case: CaseV5, repeat: int) -> None:
         nonlocal done, spent, transport, stopped
@@ -1604,6 +1759,17 @@ def main() -> int:
     parser.add_argument("--ceiling", type=float, default=12.0, help="потолок на прогон, USD")
     parser.add_argument("--model", default=AGENT_MODEL)
     parser.add_argument("--judge-model", default=JUDGE_MODEL)
+    parser.add_argument('--agent-connector', choices=('claude', 'deepseek'), default='claude')
+    parser.add_argument('--judge-connector', choices=('claude', 'codex'), default='claude')
+    parser.add_argument('--agent-effort', choices=('low', 'medium', 'high'), default='low')
+    parser.add_argument('--judge-effort', choices=('low', 'medium', 'high'), default='medium')
+    parser.add_argument('--connector-max-tokens', type=int, default=60000,
+                        help='observed cumulative tokens per session; one in-flight response may overshoot')
+    parser.add_argument('--agent-turn-limit', type=int, default=12,
+                        help='historical name: total DeepSeek Responses requests across agent sessions')
+    parser.add_argument('--judge-request-limit', type=int, default=2)
+    parser.add_argument('--codex-home', default=os.environ.get('AGENTPII5_CODEX_HOME', ''),
+                        help='dedicated clean CODEX_HOME for the subscription judge')
     parser.add_argument("--no-judge", action="store_true")
     parser.add_argument("--concurrency", type=int, default=2)
     parser.add_argument("--out", default="")
@@ -1633,6 +1799,18 @@ def main() -> int:
     parser.add_argument("--image-digest", default="",
                         help="дайджест образа за --gateway, для сравнения версий")
     args = parser.parse_args()
+    if args.agent_connector == 'deepseek' and args.model == AGENT_MODEL:
+        parser.error('--agent-connector deepseek requires an explicit --model')
+    if args.judge_connector == 'codex' and args.judge_model == JUDGE_MODEL:
+        parser.error('--judge-connector codex requires an explicit --judge-model')
+    if args.agent_connector == 'deepseek' and args.provider != 'deepseek':
+        parser.error('--agent-connector deepseek requires --provider deepseek')
+    if args.judge_connector == 'codex' and not args.no_judge and not args.codex_home:
+        parser.error('--judge-connector codex requires --codex-home or AGENTPII5_CODEX_HOME')
+    if min(args.connector_max_tokens, args.agent_turn_limit, args.judge_request_limit) <= 0:
+        parser.error('connector limits must be positive')
+    if args.resume and (args.agent_connector == 'deepseek' or args.judge_connector == 'codex'):
+        parser.error('new connector resume is not yet validated; use a fresh output directory')
 
     # ОБА БЕСПЛАТНЫХ ПУТИ — ДО ВСЕГО ОСТАЛЬНОГО, и оба возвращаются отсюда: ни
     # бандла, ни модели, ни каталога прогона, ни строки в реестре. `--replay`
@@ -1729,10 +1907,35 @@ def main() -> int:
                            args.model, judge_name),
         sum(v4_harness.cap_usd(case.base) * 3 for case in cases) * args.repeats,
         args.concurrency)
+    # judge_prompt may ask once more when the first quote does not stand.
+    # Reserve the worst case before spending anything on the agent; otherwise
+    # a valid nano can exhaust this connector halfway through its verdicts.
+    required_judge_requests = len(cases) * args.repeats * 2
     if args.dry_run:
+        if args.agent_connector == 'deepseek' or args.judge_connector == 'codex':
+            print(f'connectors: agent={args.agent_connector}, judge={args.judge_connector}; '
+                  f'agent request limit={args.agent_turn_limit}, '
+                  f'judge request limit={args.judge_request_limit} '
+                  f'(worst case {required_judge_requests}); '
+                  'subscription quota is separate from USD; token limits are checked after responses')
         for line in runinfo.estimate_lines(plan):
             print(line)
         return 0
+
+    if args.agent_connector == 'deepseek':
+        required_turns = sum(sum(message.role == 'user' for message in case.base.messages)
+                             for case in cases) * 3 * args.repeats
+        if required_turns > args.agent_turn_limit:
+            print(f'выборка требует минимум {required_turns} Responses-запросов агента; '
+                  f'--agent-turn-limit={args.agent_turn_limit}. Увеличьте лимит явно '
+                  'после согласования размера прогона; модели ещё не вызваны.', file=sys.stderr)
+            return 2
+    if (not args.no_judge and args.judge_connector == 'codex'
+            and required_judge_requests > args.judge_request_limit):
+        print(f'выборка может потребовать {required_judge_requests} запросов судьи; '
+              f'--judge-request-limit={args.judge_request_limit}. Увеличьте лимит явно; '
+              'агент и судья ещё не вызваны.', file=sys.stderr)
+        return 2
 
     # §1.3: метка обязательна выше nano — и проверяется ДО трат, потому что
     # «допишу потом» после прогона на $50 не случается.
@@ -1765,10 +1968,18 @@ def main() -> int:
     # портятся по ходу. Ни одного сетевого запроса здесь нет: `parse_gateway`
     # разбирает строку, `run_block` читает ИМЕНА переменных окружения.
     try:
-        chosen = provider.resolve_provider(args.provider, os.environ)
+        chosen = (provider.Provider('deepseek', 'https://api.deepseek.com',
+                                   'AGENTPII5_DEEPSEEK_BASE_URL', ('DEEPSEEK_API_KEY',),
+                                   'responses', 'direct Responses API; peak-rate cost estimate')
+                  if args.agent_connector == 'deepseek' and args.provider == 'deepseek'
+                  else provider.resolve_provider(args.provider, os.environ))
         choices = [provider.resolve_model(chosen, "agent", args.model)]
         if not args.no_judge:
-            choices.append(provider.resolve_model(chosen, "judge", args.judge_model))
+            judge_provider = (provider.Provider('openai', '', '', (), 'codex',
+                                                'ChatGPT subscription, not API billing')
+                              if args.judge_connector == 'codex' else
+                              provider.resolve_provider('anthropic', os.environ))
+            choices.append(provider.resolve_model(judge_provider, "judge", args.judge_model))
         target = provider.parse_gateway(
             args.gateway or os.environ.get(provider.GATEWAY_ENV, ""), args.image_digest)
     except provider.ProviderError as refused:
@@ -1781,11 +1992,14 @@ def main() -> int:
     # Отказ, а не молчаливое «как раньше»: `provider.HttpGateway` и
     # `probe_gateway` уже написаны и ждут ровно одной правки — плеча,
     # которое их позовёт.
-    if chosen.name != SDK_PROVIDER:
+    if chosen.name != SDK_PROVIDER and args.agent_connector == 'claude':
         print(f"провайдер {chosen.name!r} объявлен, а плечи зовут модель через "
               f"claude_agent_sdk ({SDK_PROVIDER}): запись назвала бы модель, которая не "
               f"отвечала. Уберите --provider/{provider.PROVIDER_ENV} или дождитесь плеча "
               f"через provider.call_model (ТЗ §4.1)", file=sys.stderr)
+        return 2
+    if args.agent_connector == 'deepseek' and chosen.name != 'deepseek':
+        print('DeepSeek agent requires --provider deepseek', file=sys.stderr)
         return 2
     if target.mode != "inprocess":
         for line in gateway_refusal(target):
@@ -1854,8 +2068,25 @@ def main() -> int:
     config = None if args.no_judge else JudgeConfig(
         model=args.judge_model, ledger=ledger, query_cap_usd=QUERY_CAP_USD, retries=RETRIES,
         trace_path=out / f"{run_id}.judge.trace.jsonl", temperature=JUDGE_TEMPERATURE)
+    arms: ArmConnector = ClaudeArms()
+    if args.agent_connector == 'deepseek':
+        arms = ConnectedArms(DeepSeekConnector(DeepSeekSettings(
+            args.model, args.agent_effort, args.connector_max_tokens,
+            args.agent_turn_limit, min(16000, args.connector_max_tokens),
+            out / f'{run_id}.agent.usage.jsonl',
+            os.environ.get('AGENTPII5_DEEPSEEK_BASE_URL', 'https://api.deepseek.com'))))
+    if config is not None and args.judge_connector == 'codex':
+        config = ConnectedJudgeConfig(
+            model=args.judge_model, ledger=ledger, query_cap_usd=QUERY_CAP_USD,
+            retries=RETRIES, trace_path=config.trace_path, temperature=JUDGE_TEMPERATURE,
+            connector=CodexJudgeConnector(CodexSettings(
+                args.judge_model, args.judge_effort, args.connector_max_tokens,
+                args.judge_request_limit, out / f'{run_id}.judge.usage.jsonl',
+                Path(args.codex_home))))
+    sampling = (f'effort={args.judge_effort}; temperature не задаётся' if args.judge_connector == 'codex'
+                else f't={JUDGE_TEMPERATURE}')
     print(f"прогон {run_id} · агент {args.model} · судья "
-          f"{'—' if args.no_judge else args.judge_model} (t={JUDGE_TEMPERATURE}) · "
+          f"{'—' if args.no_judge else args.judge_model} ({sampling}) · "
           f"промпт {prompt_sha256()[:12]} · "
           f"{len(cases)} случаев × K={args.repeats} × 3 плеча · потолок ${args.ceiling:.2f}"
           + (f" · метка «{args.label}»" if args.label else ""), flush=True)
@@ -1870,6 +2101,18 @@ def main() -> int:
                   f"${expected * runinfo.COST_BRAKE_FACTOR:.4f} на случай в среднем")
     print(f"стоп-кран по цене: {brake_line}", flush=True)
     recorded = provider.run_block(chosen, choices, target, os.environ)
+    if args.agent_connector == 'deepseek' or args.judge_connector == 'codex':
+        recorded['provider']['connectors'] = {  # type: ignore[index]
+            'agent': args.agent_connector, 'judge': args.judge_connector,
+            'sdk': 'openai==3.19.2; openai-agents==0.22.3; openai-codex==0.157.1',
+            'agent_effort': args.agent_effort,
+            'judge_effort': args.judge_effort, 'max_tokens': args.connector_max_tokens,
+            'agent_turn_limit': args.agent_turn_limit, 'judge_request_limit': args.judge_request_limit,
+            'agent_cost_basis': ('deepseek_peak_estimate_2026-09-26' if args.agent_connector == 'deepseek'
+                                 else 'claude_sdk_reported_usd'),
+            'judge_cost_basis': ('chatgpt_subscription_quota_not_api_usd' if args.judge_connector == 'codex'
+                                 else 'claude_sdk_reported_usd'),
+            'temperature': 'not configurable by Codex; legacy temperature field is not measured'}
     context = RunContext(
         run_id=run_id, run_dir=out, runs_path=Path(args.runs), started_at=runinfo.utc_now(),
         tier=tier_name, cases=len(cases), repeats=args.repeats, model=args.model,
@@ -1905,7 +2148,7 @@ def main() -> int:
     registered = False
     try:
         outcome = asyncio.run(drive_v5(cases, args.repeats,
-                                       triple_runner(detector, ledger, config, args.model, run_id),
+                                       triple_runner(detector, ledger, config, args.model, run_id, arms),
                                        out, run_id, args.concurrency, already, policy))
         triples = outcome.triples
         spent = sum(float(one["cost_usd"]) for one in triples)

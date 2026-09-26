@@ -661,6 +661,21 @@ live**; v1–v3 stay for the numbers cited from them and are not developed.
 
 ---
 
+### Optional v5 model connectors
+
+`prototype/bench/agentpii5/connectors.py` defines agent/judge I/O contracts;
+`prototype/bench/agentpii5/deepseek_connector.py` implements the direct stateless
+Responses API loop for DeepSeek Flash; `prototype/bench/agentpii5/codex_connector.py`
+implements an OpenAI Agents SDK `Model` backed by the pinned Codex SDK and a clean,
+dedicated ChatGPT-subscription home for the judge.
+`prototype/bench/agentpii5/requirements-codex.txt` is optional, benchmark-only.
+`prototype/bench/agentpii5/test_connectors.py` checks gateway hooks, JSON boundaries,
+usage accounting and the existing judge quote gate without a model.
+The existing Claude path remains the default; the same harness, corpus and
+observer serve both paths. Spec and point-test limits:
+`docs/tz-v5-model-connectors.md`. New-connector resume/calibration are not yet supported;
+nano requires owner GO.
+
 ## 5. `prototype/e2e/` — the gates
 
 Definition of done for the licensing layer and packaging. They run against REAL

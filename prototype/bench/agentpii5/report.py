@@ -475,7 +475,8 @@ def judge_half(run_dir: Path) -> JudgeHalf:
     uncalibrated judge is not circulated."""
     run_id = run_id_of(run_dir)
     path = records.run_file(run_dir, run_id, "<run>.judge.jsonl")
-    prompt = str(meta_of(run_dir, run_id).get("prompt_sha256", ""))
+    meta = meta_of(run_dir, run_id)
+    prompt = str(meta.get("prompt_sha256", ""))
     if not path.exists():
         return JudgeHalf(None, {}, 0, calibration_problems(None, prompt))
     rows = records.read_rows(path)
@@ -488,8 +489,15 @@ def judge_half(run_dir: Path) -> JudgeHalf:
             pregate += 1
             continue
         labels[verdict.label] += 1
-    return JudgeHalf(stamp=stamp, labels=dict(labels), pregate=pregate,
-                     problems=calibration_problems(stamp, prompt))
+    problems = calibration_problems(stamp, prompt)
+    provider_meta = meta.get('provider')
+    if isinstance(provider_meta, dict):
+        connector_meta = provider_meta.get('connectors')
+        if (isinstance(connector_meta, dict) and connector_meta.get('judge') == 'codex'
+                and meta.get('judge_model')):
+            problems += ('Codex runtime/effort требует отдельной калибровки; '
+                         'старый штамп Claude не переносится',)
+    return JudgeHalf(stamp=stamp, labels=dict(labels), pregate=pregate, problems=problems)
 
 
 # --- what the run cost ---------------------------------------------------------------
@@ -560,6 +568,13 @@ def cost_lines(run_dir: Path) -> tuple[str, ...]:
         return (head, f"   н/д: нет {triples_path.name} — цена прогона неизвестна")
     triples = records.read_rows(triples_path)
     meta = meta_of(run_dir, run_id)
+    provider_meta = meta.get('provider')
+    if isinstance(provider_meta, dict) and isinstance(provider_meta.get('connectors'), dict):
+        sources = provider_meta['connectors']
+        judge_basis = (sources.get('judge_cost_basis') if meta.get('judge_model')
+                       else 'отключён')
+        head = (f"0. ЦЕНА — агент: {sources.get('agent_cost_basis')}; "
+                f"судья: {judge_basis} (токены: usage.jsonl)")
     complete = [one for one in triples if one.get("status") == "complete"]
     refused = [one for one in triples if one.get("status") == "refused"]
     excluded = [one for one in triples if one.get("status") == "excluded"]

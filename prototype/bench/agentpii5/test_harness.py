@@ -283,7 +283,7 @@ def test_ledger_shared() -> list[str]:
         # ledger the judge holds.
         case = _fixture_case()
         result = asyncio.run(h.run_triple_v5(case, 0, None, ledger, config,  # type: ignore[arg-type]
-                                             "claude-haiku-4-5-20251001", RUN_ID))
+                                             "claude-haiku-4-5-20251001", RUN_ID, h.ClaudeArms()))
         if result.triple["status"] != "refused":
             failures.append(f"при нулевом потолке тройка получила статус {result.triple['status']}")
         if result.outcomes or result.gateway_run is not None:
@@ -602,7 +602,7 @@ def test_the_judge_spend_is_charged_to_the_run() -> list[str]:
     with tempfile.TemporaryDirectory() as tmp:
         ledger = v3_judge.SpendLedger(Path(tmp) / "spend.tsv", 0.0)
         refused = asyncio.run(h.run_triple_v5(_fixture_case(), 0, None, ledger, None,  # type: ignore[arg-type]
-                                              "claude-haiku-4-5-20251001", RUN_ID))
+                                              "claude-haiku-4-5-20251001", RUN_ID, h.ClaudeArms()))
         if "cost_usd" not in refused.triple:
             failures.append("в строке тройки нет поля cost_usd")
         # Through records' READER, which refuses a missing or non-numeric
@@ -987,6 +987,22 @@ def test_a_transport_break_does_not_kill_the_run() -> list[str]:
         if len(r.read_rows(r.run_file(run_dir, RUN_ID, "<run>.arms.jsonl"))) != 3:
             failures.append("плечи живого случая не записаны — обрыв соседа стоил ему прогона")
 
+    # If EVERY case is removed by transport, the hops measurement is empty,
+    # not missing.  report.py intentionally treats a missing file as a broken
+    # instrument, so the driver must create the empty file before any call.
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = Path(tmp) / "v5"
+        run_dir.mkdir()
+
+        async def all_gone(one: CaseV5, repeat: int) -> h.TripleResult:
+            raise ConnectionError("соединение сброшено провайдером")
+
+        asyncio.run(h.drive_v5([bad], 1, all_gone, run_dir, RUN_ID, 1,
+                               frozenset(), _policy(1, 0.0)))
+        hops_path = r.run_file(run_dir, RUN_ID, "<run>.hops.jsonl")
+        if not hops_path.exists() or r.read_rows(hops_path):
+            failures.append("полностью снятый транспортом прогон не оставил пустой реестр хопов")
+
     # НЕГАТИВ: НЕ обрыв транспорта прогон РОНЯЕТ. Повторять свой дефект три
     # раза с отступом значит трижды подождать перед тем же отказом.
     async def broken_runner(one: CaseV5, repeat: int) -> h.TripleResult:
@@ -1321,6 +1337,30 @@ def test_the_dry_run_spends_nothing_and_writes_nothing() -> list[str]:
         code, printed = _main(argv)
         if code != 2 or "--label" not in printed:
             failures.append(f"без --dry-run тот же вызов дал {code}: {printed[:200]}")
+    return failures
+
+
+def test_codex_judge_limit_refuses_before_the_agent_runs() -> list[str]:
+    """A nano must not spend agent money and discover on case three that the
+    run-wide subscription-judge allowance was configured for two calls."""
+    failures: list[str] = []
+    second = dataclasses.replace(
+        _fixture_case(), base=dataclasses.replace(_fixture_case().base, id="c-0002"))
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        corpus = _corpus_file(root, (_fixture_case(), second))
+        argv = [str(corpus), "--ids", "c-0001,c-0002",
+                "--agent-connector", "deepseek", "--model", "deepseek-flash",
+                "--provider", "deepseek", "--agent-turn-limit", "100",
+                "--judge-connector", "codex", "--judge-model", "gpt-5.6-terra",
+                "--judge-request-limit", "1", "--codex-home", str(root),
+                "--out", str(root / "run"), "--runs", str(root / "runs.json"),
+                "--ceiling", "0", "--dirty-ok"]
+        code, printed = _main(argv)
+        if code != 2 or "может потребовать 4 запросов судьи" not in printed:
+            failures.append(f"лимит судьи не отказал до прогона: {code} {printed[:300]}")
+        if (root / "run").exists():
+            failures.append("отказ по лимиту судьи создал каталог живого прогона")
     return failures
 
 
@@ -2050,6 +2090,8 @@ def main() -> int:
         ("the_cost_brake_stops_the_run", test_the_cost_brake_stops_the_run),
         ("the_dry_run_spends_nothing_and_writes_nothing",
          test_the_dry_run_spends_nothing_and_writes_nothing),
+        ("codex_judge_limit_refuses_before_the_agent_runs",
+         test_codex_judge_limit_refuses_before_the_agent_runs),
         ("the_label_is_demanded_before_a_dollar", test_the_label_is_demanded_before_a_dollar),
         ("a_value_of_a_case_outside_the_selection_is_refused",
          test_a_value_of_a_case_outside_the_selection_is_refused),
