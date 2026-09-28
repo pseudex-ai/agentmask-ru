@@ -1785,7 +1785,7 @@ UNCROSSED_RESULT_PII: frozenset[str] = frozenset({
     "crm_upsert_card.card.contact.last_name"})
 
 
-def result_pii_residue(cases: Sequence[CaseV5]) -> list[str]:
+def result_pii_residue(cases: Sequence[CaseV5], names: tuple[str, ...]) -> list[str]:
     """Насколько колонка «ПД в результате» измерена, а насколько объявлена — и
     отказ, когда остаток разошёлся с замороженным списком.
 
@@ -1794,6 +1794,10 @@ def result_pii_residue(cases: Sequence[CaseV5]) -> list[str]:
     какой-нибудь формы возврата. Оба сверяют объявление с объявлением или хоп с
     объявлением; ни один не спрашивает, какая ДОЛЯ колонки — объявление и
     только. Ответ был 106 из 151, пока ТЗ писало «закрыто».
+
+    `names` — имена инструментов, ЧЬЮ колонку считаем. Старый корпус передаёт
+    закреплённые 55 (`V5_TOOL_NAMES`); инструмент v6 не должен «ОТКАЗЫВАТЬ»
+    старый прогон, а его собственная колонка меряется отдельным вызовом (F17).
     """
     crossed: dict[str, set[str]] = {}
     for case in cases:
@@ -1802,7 +1806,7 @@ def result_pii_residue(cases: Sequence[CaseV5]) -> list[str]:
                 continue
             crossed.setdefault(hop.tool_name, set()).add(_ARRAY_INDEX_V5.sub("[]", hop.path))
     declared = {f"{name}.{leaf}"
-                for name, spec in REGISTRY_V5.items() for leaf in spec.base.result_pii}
+                for name in names for leaf in REGISTRY_V5[name].base.result_pii}
     now = {one for one in declared
            if one.split(".", 1)[1] not in crossed.get(one.split(".", 1)[0], set())}
     lines = [f"ПД в результате: {len(declared)} объявлений, "
@@ -2148,7 +2152,7 @@ def main() -> int:
         print(line)
     for line in ladder_mix_lines(cases, Path(args.out) / "ladder.json"):
         print(line)
-    residue = result_pii_residue(cases)
+    residue = result_pii_residue(cases, c.V5_TOOL_NAMES)
     for line in residue:
         print(line)
     problems.extend(line.strip() for line in residue if "ОТКАЗ" in line)

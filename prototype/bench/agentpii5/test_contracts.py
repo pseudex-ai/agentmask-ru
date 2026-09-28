@@ -102,13 +102,17 @@ def main() -> int:
     if loaded:
         failures.append(f"importing contracts loaded {sorted(loaded)}")
 
-    # 1. features, per type, exactly
+    # 1. features, per type, exactly — but ONLY the v5 records: a v6 type adds a
+    # form row the v5 spec never knew, and this literal comparison is about the
+    # v5 baseline (F15).
     spec = _spec_features()
-    if set(c.FORM_FEATURES) != set(spec):
-        failures.append(f"form types {sorted(c.FORM_FEATURES)} != spec {sorted(spec)}")
+    v5_features = {t.id: t.form_features for t in c.pii_types.TYPE_REGISTRY
+                   if t.origin == c.pii_types.ORIGIN_V5}
+    if set(v5_features) != set(spec):
+        failures.append(f"v5 form types {sorted(v5_features)} != spec {sorted(spec)}")
     for kind, features in spec.items():
-        if tuple(c.FORM_FEATURES.get(kind, ())) != features:
-            failures.append(f"{kind}: contracts {c.FORM_FEATURES.get(kind)} != spec {features}")
+        if tuple(v5_features.get(kind, ())) != features:
+            failures.append(f"{kind}: contracts {v5_features.get(kind)} != spec {features}")
     pairs = c.feature_pairs()
     if set(c.FEATURE_LABELS) != set(pairs):
         failures.append(f"FEATURE_LABELS keys differ from feature pairs: "

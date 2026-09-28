@@ -634,6 +634,10 @@ NEW_TOOL_NAMES: tuple[str, ...] = (
     "mail_read", "mail_search", "mail_send", "calendar_invite",
     "tracker_find_user", "tracker_issue_create", "crm_upsert_card",
     "sheet_append_row", "doc_append", "memory_save", "reminder_set")
+# The 55 tool names v5 shipped, PINNED so the old-corpus checks keep reading
+# them after v6 tools land (F17/F13). `REGISTRY_V5` grows to 55 + v6; this tuple
+# never does, and `test_tools` pins the count at 55.
+V5_TOOL_NAMES: tuple[str, ...] = (*V4_TOOL_NAMES, *NEW_TOOL_NAMES)
 # The suite a tool belongs to. Lookup, not a column: 44 of the 55 belong to none.
 TOOL_SUITE: dict[str, str] = {
     "mail_read": "office", "mail_search": "office", "mail_send": "office",
