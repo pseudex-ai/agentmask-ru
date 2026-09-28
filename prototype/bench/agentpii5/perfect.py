@@ -43,9 +43,12 @@ it was wrong, and each has a test that falls when it is reverted
 places where a plausible simulation charges the gateway for the probe's own
 bookkeeping.
 
-THE OTHER HALF lives in `test_perfect.py`: SIX wrong gateways must FAIL the
+THE OTHER HALF lives in `test_perfect.py`: EIGHT wrong gateways must FAIL the
 same bounds this one clears. An acceptance test a wrong gateway can also pass
-is not an acceptance test.
+is not an acceptance test. Two are M04's: a right-form/wrong-identity gateway
+(`round_trip`) and one that leaves the substitute standing (`residual`).
+`reverse_action_order` below is the third M04 control: the same actions in
+another order, held to the two halves `ORDER_SENSITIVE` declares.
 
 AND THE MINT IS PART OF THE SPECIFICATION TOO (§1bis). A substitute the model
 reads has to be a WORD, not a string of the right length: a letter-mangled fake
@@ -65,7 +68,7 @@ import json
 import pathlib
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from pymorphy3.analyzer import Parse
 
@@ -1053,7 +1056,30 @@ def simulate(case: CaseV5) -> ArmRunV5:
         # Correction 3 again, at the level of the whole run: one request per
         # push, messages and results alike.
         request_count=max(len(case.base.messages) + len(results), 1),
-        stream_mismatch=False, reply_whole=reply if case.streaming else "", turn_residual=0)
+        stream_mismatch=False, reply_whole=reply if case.streaming else "", turn_residual=0,
+        # A perfect SIMULATION observed no provider; None is the honest answer.
+        model_trace=None)
+
+
+def reverse_action_order(run: ArmRunV5) -> ArmRunV5:
+    """The same actions in the OPPOSITE order, as records that stay COHERENT.
+
+    `seq` and `call_turns` are renumbered WITH the list, because they are the
+    record of the order: reversing the tuple while leaving `seq` at 0, 1, 2
+    produces an artifact no run could have written, and a metric that reads the
+    order would then be blamed for the surgeon's inconsistency rather than for
+    its own assumption.
+
+    M04 asks that the action order be VARIED without a scheduled-turn
+    assumption. Which lines can follow a permutation and which cannot is a
+    measured fact, declared in `test_perfect.ORDER_SENSITIVE` — a line that
+    moves without being on that list is the defect this helper exists to find.
+    """
+    count = len(run.base.calls)
+    calls = tuple(replace(call, seq=count - 1 - index)
+                  for index, call in enumerate(reversed(run.base.calls)))
+    return replace(run, base=replace(run.base, calls=calls),
+                   call_turns=tuple(reversed(run.call_turns)))
 
 
 # --- §4 running it ------------------------------------------------------------------

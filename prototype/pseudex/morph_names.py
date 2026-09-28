@@ -613,9 +613,19 @@ _DATIVE_VERBS = ("позвон", "перезвон", "напиш", "напис",
 _GOVERNOR_RE = re.compile(r"([а-яё-]+)([\s:,—–-]*)$")
 
 
-def governing_cases(text: str, start: int) -> tuple[str, ...]:
+def governing_cases(text: str, start: int, surface: str = "") -> tuple[str, ...]:
     """The cases the word standing before `start` allows the name to be in,
-    or () when nothing there governs it."""
+    or () when nothing there governs it.
+
+    `surface` is the name span itself: a third-person finite verb can precede its
+    SUBJECT («посылку примет Громова Марина») as well as its object, and the
+    pre-verbal context cannot tell them apart — «система», «оператор» and
+    «сервис» are all ordinary subjects while «заказ»/«посылку» are objects, and
+    no surface-agnostic rule distinguishes them. The NAME's own form decides: a
+    name with a reading in the governed OBLIQUE case is the object («Иванова
+    Петра» is the man, accusative), a name with none is the subject («Громова
+    Марина» is the woman, nominative).
+    """
     match = _GOVERNOR_RE.search(text[:start].lower())
     if match is None:
         return ()
@@ -632,11 +642,39 @@ def governing_cases(text: str, start: int) -> tuple[str, ...]:
     cases = _GOVERNOR_CASES.get(word)
     if cases is not None:
         return cases
+    # A third-person finite verb can precede its SUBJECT as well as an object:
+    # "посылку примет Громова Марина". Its stem alone cannot license accusative
+    # or dative ALONE; doing so changed this woman's canonical identity to a man.
+    # Explicit prepositions above and imperative/infinitive requests below
+    # retain their case evidence. Read all known parses, never parse(word)[0].
+    if word.startswith(_ACCUSATIVE_VERBS + _DATIVE_VERBS) and any(
+        parse.is_known and parse.tag.POS == "VERB" and parse.tag.person == "3per"
+        for parse in _MORPH.parse(word)
+    ):
+        governed = "accs" if word.startswith(_ACCUSATIVE_VERBS) else "datv"
+        if surface and _oblique_object_case(surface, governed):
+            return (governed,)
+        return ("nomn", governed)
     if word.startswith(_ACCUSATIVE_VERBS):
         return ("accs",)
     if word.startswith(_DATIVE_VERBS):
         return ("datv",)
     return ()
+
+
+def _oblique_object_case(surface: str, governed: str) -> bool:
+    """Whether `surface` after a transitive 3rd-person verb is its OBJECT.
+
+    The pre-verbal context cannot tell subject from object (see the
+    `governing_cases` docstring), but `detect_gender` can: a FEMININE name is the
+    nominative SUBJECT («Громова Марина» — the woman), and when it is declined
+    («Громову Марину») `read_person` reads the oblique case out of it whether or
+    not the nominative is also admitted. A masculine or undetermined name after
+    such a verb is the object («Иванова Петра» — the man). This is the SAME
+    given-name-outvotes-surname weighting `detect_gender` already applies, so the
+    two cannot disagree about who the person is.
+    """
+    return detect_gender(surface) != "femn"
 
 
 def _patronymic_gender_any_case(parts: list[str]) -> str | None:

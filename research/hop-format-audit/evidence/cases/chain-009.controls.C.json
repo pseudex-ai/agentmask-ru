@@ -1,0 +1,175 @@
+{
+  "arm": "C",
+  "calls": [
+    {
+      "name": "crm_find_contact",
+      "parsed": {
+        "query": {
+          "phone": "+79607464897"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "query": {
+          "phone": "+79607464897"
+        }
+      },
+      "seq": 1,
+      "written": {
+        "query": {
+          "phone": "+79607464897"
+        }
+      }
+    },
+    {
+      "name": "crm_upsert_contact",
+      "parsed": {
+        "contact": {
+          "address": {
+            "city": "казань",
+            "flat": "176",
+            "house": "8",
+            "street": "вишнёвая"
+          },
+          "birth_date": "1984-05-22",
+          "email": "zaharov70@list.ru",
+          "first_name": "владислав",
+          "gender": "M",
+          "initials": "ВЮ",
+          "last_name": "захаров",
+          "middle_name": "юрьевич",
+          "name_latin": "ZAKHAROV VLADISLAV",
+          "phone": "+79607464897"
+        },
+        "id": "c-1"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "contact": {
+          "address": {
+            "city": "Казань",
+            "flat": "176",
+            "house": "8",
+            "street": "Вишнёвая"
+          },
+          "birth_date": "1984-05-22",
+          "email": "zaharov70@list.ru",
+          "first_name": "Владислав",
+          "gender": "M",
+          "initials": "В.Ю.",
+          "last_name": "Захаров",
+          "middle_name": "Юрьевич",
+          "name_latin": "Zakharov Vladislav",
+          "phone": "+79607464897"
+        },
+        "id": "c-1"
+      },
+      "seq": 2,
+      "written": {
+        "contact": {
+          "address": {
+            "city": "Казань",
+            "flat": "176",
+            "house": "8",
+            "street": "Вишнёвая"
+          },
+          "birth_date": "1984-05-22",
+          "email": "zaharov70@list.ru",
+          "first_name": "Владислав",
+          "gender": "M",
+          "initials": "В.Ю.",
+          "last_name": "Захаров",
+          "middle_name": "Юрьевич",
+          "name_latin": "Zakharov Vladislav",
+          "phone": "+79607464897"
+        },
+        "id": "c-1"
+      }
+    },
+    {
+      "name": "notify_sms",
+      "parsed": {
+        "number": "+79607464897",
+        "sign": "Dostavka",
+        "text": "Захаров Владислав Юрьевич, адрес доставки обновлён: г. Казань, ул. Вишнёвая, д. 8, кв. 176. Спасибо!"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "number": "+79607464897",
+        "sign": "Dostavka",
+        "text": "Захаров Владислав Юрьевич, адрес доставки обновлён: г. Казань, ул. Вишнёвая, д. 8, кв. 176. Спасибо!"
+      },
+      "seq": 3,
+      "written": {
+        "number": "+79607464897",
+        "sign": "Dostavka",
+        "text": "Захаров Владислав Юрьевич, адрес доставки обновлён: г. Казань, ул. Вишнёвая, д. 8, кв. 176. Спасибо!"
+      }
+    }
+  ],
+  "case_id": "chain-009",
+  "cluster": "PHONE:9607464897",
+  "cost_usd": 0.001963,
+  "key": "chain-009|C|0",
+  "kind": "chain",
+  "masked_spans": {},
+  "meta": {
+    "api_error_status": null,
+    "cap_usd": 0.24,
+    "duration_ms": 9271,
+    "errors": [],
+    "is_error": false,
+    "model": "deepseek-flash",
+    "reason": "",
+    "session_id": "deepseek-1790441117406254000",
+    "subtype": "success",
+    "turns": 21
+  },
+  "register": "sloppy",
+  "repeat": 0,
+  "reply": "Отправляю СМС с подтверждением.\nСМС с подтверждением отправлена на номер +7 960 746-48-97 — новый адрес: г. Казань, ул. Вишнёвая, д. 8, кв. 176.\n\nЧто-то ещё нужно?",
+  "state": [
+    {
+      "fields": {
+        "address": {
+          "city": "казань",
+          "flat": "176",
+          "house": "8",
+          "street": "вишнёвая"
+        },
+        "birth_date": "1984-05-22",
+        "email": "zaharov70@list.ru",
+        "first_name": "владислав",
+        "gender": "M",
+        "initials": "ВЮ",
+        "last_name": "захаров",
+        "middle_name": "юрьевич",
+        "name_latin": "ZAKHAROV VLADISLAV",
+        "phone": "+79607464897"
+      },
+      "id": "c-1",
+      "seq": 2,
+      "table": "contacts",
+      "tool": "crm_upsert_contact"
+    },
+    {
+      "fields": {
+        "number": "+79607464897",
+        "sign": "Dostavka",
+        "text": "Захаров Владислав Юрьевич, адрес доставки обновлён: г. Казань, ул. Вишнёвая, д. 8, кв. 176. Спасибо!"
+      },
+      "id": "sms-1",
+      "seq": 3,
+      "table": "sms",
+      "tool": "notify_sms"
+    }
+  ],
+  "substitutes": {},
+  "termination": "done"
+}

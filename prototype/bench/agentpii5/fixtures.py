@@ -135,7 +135,7 @@ def _run(case_id: str) -> ArmRunV5:
                   termination="done", cost_usd=0.0, substitutes={}, masked_spans={})
     return ArmRunV5(base=base, reply_raw="", control_reply="", tool_results=(), mentions=(),
                     turn_replies=(), call_turns=(), request_count=1, stream_mismatch=False,
-                    reply_whole="", turn_residual=0)
+                    reply_whole="", turn_residual=0, model_trace=None)
 
 
 def _with_subs(run: ArmRunV5, subs: dict[str, str]) -> ArmRunV5:

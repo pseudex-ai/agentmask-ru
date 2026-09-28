@@ -39,9 +39,17 @@ must not agree with the engine by construction.
 """
 from __future__ import annotations
 
+import itertools
 import re
 
 from pseudex.assets import ASSETS
+
+# `declared_keys` enumerates a CARTESIAN product of a word's declared unit
+# renderings, so it carries a hard cap: one pathological name must not turn a
+# mint into unbounded work. The cap is far above any real name — the widest
+# word in the 309-word leased fake pool needs 256 spellings — and the fallback
+# is the single default key, i.e. the behaviour before closure existed.
+_MAX_DECLARED_SPELLINGS = 100_000
 
 # The measured tables (UNITS/DEFAULT/ENDINGS/TABLES/FOLD) are LEASED, not compiled
 # — read from ASSETS.get().translit at call time. Only the align/render/fold
@@ -177,6 +185,43 @@ def folded(cyrillic: str) -> str:
     return fold(render(cyrillic, {}))
 
 
+def declared_keys(word: str) -> frozenset[str]:
+    """EVERY fold key the model can produce for `word` under the renderings
+    `UNITS` declares — the vault's index entry for one fake word.
+
+    `folded` is one key, for the DEFAULT rendering, and the two are not the same
+    set. A unit declares several spellings («х»: kh, h, x; «ё»: e, yo, io, jo),
+    and a string-level fold cannot unify some of them at all: «j» is both
+    ГОСТ's «й» and the everyday «ж», so no fold entry separates them. Indexing
+    one key meant a model that picked a declared spelling the fold did not
+    coincide with missed the index and the FAKE reached the customer: the
+    substitute «Михаил» was indexed as `mIXaIl`, the model's declared «MIHAIL»
+    folds to `mIhaIl`, and the cardholder field came back as «MIHAIL PETROV» —
+    a fake given name beside a real surname. Indexing every key here closes the
+    lookup by construction: whatever rendering the model chose, one of these is
+    its key, and `align` — not `fold` — decides which fake word it was.
+    """
+    options: list[tuple[str, ...]] = []
+    for unit in units_of(word):
+        declared = ASSETS.get().translit.units.get(unit)
+        if declared is None:
+            declared = (unit,) if unit.isalpha() else ("",)
+        options.append(tuple(dict.fromkeys(declared)))
+    total = 1
+    for option in options:
+        total *= len(option)
+        if total > _MAX_DECLARED_SPELLINGS:
+            return frozenset((folded(word),))
+    keys = {fold("".join(combo)) for combo in itertools.product(*options)}
+    keys.add(folded(word))
+    # AN EMPTY KEY IS NOT A KEY. A word of nothing but silent units («ь») can
+    # fold to "", and the lookup would then match it against any candidate that
+    # folds the same way. No name in the leased pool produces one; the guard is
+    # here because the index is a security boundary, not a cache.
+    keys.discard("")
+    return frozenset(keys)
+
+
 def match_case(pattern: str, produced: str) -> str:
     """`produced` in the letter case `pattern` uses: all caps, capitalised, or lower."""
     letters = [ch for ch in pattern if ch.isalpha()]
@@ -212,7 +257,7 @@ def main() -> int:
              "Сергей", "Наталия", "Ерохин", "Кузнецов", "Фёдорова", "Евгений",
              "Андрей", "Яков", "Илья", "Игорь", "Ксения", "Цветков", "Щербаков",
              "Михайлович", "Алексей", "Семёнович", "Битюкова", "Шилова", "Ольга",
-             "Юрий", "Зоя", "Эдуард", "Всеволод")
+             "Юрий", "Зоя", "Эдуард", "Всеволод", "Майя")
     # ъ is the one letter the fold does not unify: ICAO writes it «ie», every
     # other convention drops it, and «ie» must stay a rendering of е. A surname
     # with ъ («Подъячев») under ICAO alone misses — none of the 1 812 control
@@ -222,6 +267,47 @@ def main() -> int:
         check(f"fold invariant {word}: {sorted(keys)}", len(keys) == 1)
         for table in tables:
             check(f"align {word} under a standard", align(word, apply(table, word)) is not None)
+    fake_words = tuple(dict.fromkeys((
+        *ASSETS.get().fakes.first, *ASSETS.get().fakes.last,
+        *ASSETS.get().fakes.last_invariant,
+        *ASSETS.get().names.patronymics_masc,
+        *ASSETS.get().names.patronymics_femn,
+    )))
+    for word in fake_words:
+        keys = {fold(apply(table, word)) for table in tables} | {folded(word)}
+        check(f"fake pool fold invariant {word}: {sorted(keys)}", len(keys) == 1)
+        for table in tables:
+            check(f"fake pool align {word} under a standard",
+                  align(word, apply(table, word)) is not None)
+    # THE INDEX MUST BE CLOSED OVER THE RENDERINGS `UNITS` DECLARES, and it was
+    # not: «Михаил» was indexed as `mIXaIl` alone, a model that wrote the
+    # declared «MIHAIL» folded to `mIhaIl`, the lookup missed and the FAKE
+    # given name reached the customer's cardholder field beside the real
+    # surname. The property is stated over the RENDERINGS THEMSELVES — every
+    # spelling `UNITS` allows must align back AND its folded form must be in
+    # the word's index — never over `declared_keys` alone, which would let a
+    # narrower implementation pass by agreeing with itself.
+    index: dict[str, set[str]] = {}
+    for word in fake_words:
+        keys = set(declared_keys(word))
+        index[word] = keys
+        check(f"declared closure {word}: {sorted(keys)}", folded(word) in keys)
+        options = []
+        for unit in units_of(word):
+            declared = ASSETS.get().translit.units.get(unit)
+            if declared is None:
+                declared = (unit,) if unit.isalpha() else ("",)
+            options.append(tuple(dict.fromkeys(declared)))
+        for combo in itertools.product(*options):
+            spelling = "".join(combo)
+            check(f"align accepts declared {word} ~ {spelling}", align(word, spelling) is not None)
+            check(f"declared key indexed {word} ~ {spelling}", fold(spelling) in keys)
+    shared: dict[str, list[str]] = {}
+    for word, keys in index.items():
+        for key in keys:
+            shared.setdefault(key, []).append(word)
+    for key, owners in shared.items():
+        check(f"one owner per declared key {key}: {owners}", len(owners) == 1)
     for cyrillic, spellings in (
         ("Дмитрий", ("Dmitry", "Dmitriy", "Dmitrii", "Dmitrij")),
         ("Юлия", ("Yulia", "Yuliya", "Iuliia", "Julia")),

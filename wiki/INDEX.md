@@ -154,6 +154,33 @@ Not in root `docs/`: `storefront/docs/tz-site.md` and `storefront/docs/tz-site-s
 | `research/2026-09-23-instance-counting-sota.md` | Counting instances of a self-hosted product on hostile hardware: why it is not a hard problem but a FORBIDDEN one (FLP; Chandra-Toueg footnote 6 — even the weakest useful detector is unimplementable without a timing assumption), and what the field does instead — a monotonic epoch on the RIGHT TO ACT, checked by the resource (Chubby sequencer, Kleppmann fencing, Kafka KIP-98/345, van Renesse's «at most one round is operational»). Excavation of ~21 self-hosted products (only 6 technically enforce a count; NGINX Plus enforces the REPORT, not the count) and 11 floating-licence managers (nine document «the same machine retakes its own seat»; RLM `min_checkout` is minimum billed occupancy — prior art for the recommendation). Shows the owner's «restart must be free» is COMPELLED by platform defaults (a 1-replica k8s Deployment doubles on every rollout; an OOM kill is SIGKILL, so no design that needs a goodbye survives it), locates the leak in `RESERVE_SECONDS`/`billable` rather than in the instance count, and recommends ONE construction: server-minted slots, an epoch per container start fenced at `/v1/meter`, and a capacity ledger keyed by SLOT that a new generation INHERITS | — |
 | `research/2026-09-22-instance-liveness-and-slots.md` | Б26 to the line: why a dead container holds its plan slot 16–24 h and why the 300 s release cooldown is tied to nothing — both are proxies for ONE unnamed quantity, «how long a lease keeps working after we stop hearing from it» (`ttl+grace` = 72 h). Ten measured reproductions against a local devserver (the cooldown never binds: 12/h against the 3/h release budget; an idle instance DOES heartbeat every 120 s; 32 containers fit under one `instance_id`; a 16-worker start plan is refused on its THIRD restart in a day). Three clocks named and numbered (T_alive 600 s, T_turnover 3/h, T_offline 72 h), the threat table trick-by-trick, an eight-step plan marked server-only / engine-needed, and the four refusal texts | — |
 
+### Hop-format audit and proposed architecture
+
+| file | answers | status |
+|---|---|---|
+| `docs/tz-hop-form-adaptation.md` | Per-hop form ownership, causal measurement, PHONE/NAME/LOC tracks and acceptance gates | M0 partial + F1 candidate in worktree; S0 open; D-070 |
+| `docs/plan-hop-form-before-450.md` | Before implementing the next hop-form track: case-to-cause matrix, ten-type/full-loop scope, metric targets, owner decisions and pre-450 gates | plan for approval; no new build/live-run authorization; D-071 |
+| `docs/plan-hop-form-execution.md` | Mandatory execution contract for the 19-item, five-stage sprint: DeepSeek authorship, timeboxes, anti-loop pauses, stage gates and budget | active sprint runbook; no live-run authorization |
+| `research/hop-format-audit/README.md` | Verified 450-case cohort, metric caveats, adjudicated evidence and audit scope | evidence; primary audit conclusion |
+| `research/hop-format-audit/names.md` | Six NAME/projection case investigations; reviewer caveats in the audit conclusion | investigator evidence, not all claims accepted |
+| `research/hop-format-audit/numbers.md` | Six numeric-form investigations | investigator evidence |
+| `research/hop-format-audit/chains.md` | Six chain/address/error investigations; reviewer caveats in the audit conclusion | investigator evidence, not all claims accepted |
+| `research/hop-format-audit/skeptic.md` | Six metric/observer investigations; reviewer caveats in the audit conclusion | investigator evidence, not all claims accepted |
+| `research/hop-format-audit/PROGRESS.md` | M0/S0/F1 targets versus measurements, remaining red tests and next gate | current acceptance status |
+| `research/hop-format-audit/s0-reproduction.md` | Exact truncated error echo and scope-safe negative controls | confirmed open defect |
+| `research/hop-format-audit/f1-review.md` | Independent PHONE review plus architect adjudication | scoped review; not production approval |
+| `research/hop-format-audit/m03-provenance-review.md` | Response ordering versus tool execution and limitations of archived traces | investigator evidence; initial causal claim withdrawn |
+| `research/hop-format-audit/c01-baseline.md` | Literal non-PHONE form fixtures and initial red outcomes | local evidence, not live benchmark gains |
+| `research/hop-format-audit/name-subject-review.md` | Finite-verb subject fix and object regressions in its first version | first patch rejected; current state in PROGRESS |
+| `research/hop-format-audit/atomic-form-review.md` | Independent form/glyph attacks | investigator evidence, requires architect adjudication |
+| `research/hop-format-audit/location-hop-review.md` | Structured-address hybrid and prose/form divergence | reproduced defects; not blanket LOC acceptance |
+| `research/hop-format-audit/response-trace-implementation.md` | ModelResponse/ModelTrace hooks, serialization and local verification | additive harness contract; no live generation |
+| `research/hop-format-audit/name-case-regression-review.md` | NAME random-mint false red and separate gender-blind OUT failure | verified against pristine HEAD and literal controls |
+| `research/hop-format-audit/location-form-adversarial.md` | Independent LOC negative controls, regressions and open semantic boundaries | red findings remain open until individually verified |
+| `research/hop-format-audit/address-pattern-evidence.md` | Literal saved dialogue evidence for address projections, sender edits and generated inconsistency | investigation; not a new live run |
+| `research/hop-format-audit/regression-checkpoint.md` | Quick regression commands, exit codes and engine hashes | intermediate snapshot; drifted runs are not acceptance |
+| `research/hop-format-audit/evidence/m0/summary.md` | Completed-only old lines beside versioned actual OUT diagnostic; immutable saved generations | offline evidence, not new-engine gain |
+
 ### DevOps and legal launch
 
 | file | answers | STATE |

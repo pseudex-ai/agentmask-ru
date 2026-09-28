@@ -1089,14 +1089,15 @@ ORG_CUE: tuple[str, ...] = (
 # the FOLD sequence are load-bearing (see pseudex.translit for why).
 TRANSLIT_UNITS: dict[str, tuple[str, ...]] = {
     # endings: «-ий» iy 77:y 51, «-ый» y 24:yy 2, «-ия» ia 36:0, «ья» ia 22:ya 2,
-    # «кс» ks 25:x 10, «ей» ei 22:ey 12, «йя» one ya (Майя→Maya, not Mayya).
+    # «кс» ks 25:x 10, «ей» ei 22:ey 12, «йя» defaults to ya; table spellings
+    # iia/jya/yya are also recognised so a model's standard spelling resolves.
     "ий": ("iy", "y", "ii", "ij", "yi"),
     "ый": ("y", "yy", "yi", "yj", "iy"),
     "ия": ("ia", "iya", "iia", "ija"),
     "ья": ("ia", "ya", "ja"),
     "кс": ("ks", "x"),
     "ей": ("ei", "ey", "ej"),
-    "йя": ("ya", "iya", "ja"),
+    "йя": ("ya", "iya", "ja", "iia", "jya", "yya"),
     "а": ("a",), "б": ("b",), "в": ("v",), "г": ("g",), "д": ("d",),
     "е": ("e", "ye", "ie", "je"), "ё": ("e", "yo", "io", "jo"),
     "ж": ("zh", "j"), "з": ("z",), "и": ("i",), "й": ("y", "i", "j"),
@@ -1145,6 +1146,7 @@ TRANSLIT_FOLD: tuple[tuple[str, str], ...] = (
     ("kh", "X"), ("ks", "X"), ("x", "X"),
     ("ts", "T"), ("tc", "T"), ("cz", "T"), ("c", "T"),
     ("yu", "U"), ("iu", "U"), ("ju", "U"),
+    ("jya", "A"), ("yya", "A"),
     ("iya", "A"), ("iia", "A"), ("ija", "A"), ("ya", "A"), ("ia", "A"), ("ja", "A"),
     ("yo", "E"), ("jo", "E"), ("ye", "E"), ("ie", "E"), ("e", "E"),
     ("y", "I"), ("j", "I"), ("i", "I"),

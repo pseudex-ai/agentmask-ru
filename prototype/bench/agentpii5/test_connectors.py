@@ -61,12 +61,18 @@ class RecordingHooks:
     def __init__(self) -> None:
         self.assistant_texts: list[str] = []
         self.tool_calls: list[tuple[str, dict[str, Json]]] = []
+        # The provider-response hook is part of `DialogueHooks`; a double that
+        # omits it would make the connector's new call an AttributeError.
+        self.responses: list[str] = []
 
     def user(self, index: int) -> str:
         return f'user-{index}'
 
     def assistant(self, text: str) -> None:
         self.assistant_texts.append(text)
+
+    def response(self, text: str) -> None:
+        self.responses.append(text)
 
     def tool(self, name: str, arguments: dict[str, Json]) -> h.ToolResult:
         self.tool_calls.append((name, arguments))

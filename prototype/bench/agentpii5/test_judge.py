@@ -71,7 +71,7 @@ def _run_with_turns(turn_replies: tuple[str, ...]) -> ArmRunV5:
     return ArmRunV5(base=base, reply_raw=f"Курьер приедет к {SUBSTITUTE}.",
                     control_reply="", tool_results=(result,), mentions=(),
                     turn_replies=turn_replies, call_turns=(1,), request_count=2,
-                    stream_mismatch=False, reply_whole="", turn_residual=0)
+                    stream_mismatch=False, reply_whole="", turn_residual=0, model_trace=None)
 
 
 def test_dialogue_carries_the_agents_turns() -> list[str]:

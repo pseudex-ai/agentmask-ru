@@ -61,7 +61,7 @@ from bench.agentpii4 import stats
 from bench.agentpii4.autopsy import _load_run
 from bench.agentpii4.report import Scored
 from bench.agentpii4.schema import EXCLUDED_TERMINATIONS, Case
-from bench.agentpii5 import build, contracts, records, runinfo
+from bench.agentpii5 import build, contracts, frozen_oracle, payload_canaries, records, runinfo
 from bench.agentpii5.contracts import (
     CalibrationStamp,
     CaseV5,
@@ -646,20 +646,101 @@ class ReportParts:
     # themselves (`assemble`, `render`, `reportjson.build`) are why one report
     # could name two different agents for one run.
     meta: dict[str, object]
+    # THE FROZEN SCORE (M04). The v5 lines the report prints are produced HERE,
+    # from the saved rows, behind `frozen_oracle.forbid_engine()`, with the
+    # run's captured `RepairTable` passed as DATA. `assemble` reads
+    # `frozen.lines` instead of calling the metric functions again: a second
+    # route to the same number is a second oracle, and the one that reached the
+    # engine is the one that can be moved by an engine edit.
+    frozen: frozen_oracle.FrozenScore
+    # THE PAYLOAD CANARIES (S02), scanned against the SAVED bytes of this run.
+    # Recomputed in this process rather than trusted from the run's writer: the
+    # question «did the real value reach the model» is asked of the bytes on
+    # disk, by an instrument the run cannot fill in.
+    canaries: payload_canaries.CanaryReport
+
+
+@dataclass(frozen=True)
+class FrozenParts:
+    """The engine-free half of a report: the frozen score and the observations
+    it was computed from, plus the corpus and rows the digest was taken over.
+
+    It is its own object because it must be producible WITHOUT touching v4's
+    blocks, the canaries or the judge — that is what lets
+    `poisoned_register_spelling_leaves_the_score_bytes_identical` (and the
+    M04 acceptance sentence) ask for it in a process where the engine raises on
+    any attribute read."""
+
+    corpus: tuple[CaseV5, ...]
+    rows: tuple[dict[str, object], ...]
+    frozen: frozen_oracle.FrozenScore
+    half: V5Half
+
+
+def frozen_score_and_observations(v5_run_dir: Path) -> FrozenParts:
+    """The v5 score of a saved run, from its rows, with the engine never asked.
+
+    THREE RULES, AND ALL THREE ARE STRUCTURAL.
+
+      1. The repair verdicts are DATA read off the run (`repairs.json`), never a
+         live `register_spelling` call: a saved number must not move when the
+         engine is edited, or «the gateway improved» and «the scorer changed its
+         mind» are one number.
+      2. `scored=()`, so no `ic`/`cc` comes from v4's taxonomy. Passing v4's
+         engine-scored triples here (the shape this used to have) made the axis
+         slices depend on the mutable engine even though the top-level lines did
+         not: the report would then certify one number from frozen data and slice
+         it with another from the engine. No v5 metric reads `ic`/`cc`, so this
+         drops a dependency and moves no value.
+      3. THE PUBLISHED LINES AND THEIR SLICES SCORE THE SAME SAVED POPULATION
+         (OBS). The lines are produced by `frozen_oracle.score_observations`
+         over THIS half's observations — the hops read back off the run — and
+         not by `score_artifacts`, which RE-DERIVES every hop with
+         `observe.observe`. Re-deriving was a second population: `assemble`
+         slices `half.observations`, so on a saved run with one case's hops
+         missing the totals counted a case the slices could not, and the
+         versioned digest (then over corpus ids and rows alone) did not even
+         name the hops it had scored. A hole still marks the report НЕПОЛНЫЙ
+         (`V5Half.hopless` → `assemble.incomplete`): scoring the saved half
+         must never read as scoring the whole corpus. On a COMPLETE run the
+         two paths produce the same observations and the same numbers.
+
+    NOTHING IS UNLOADED. An earlier draft ran this behind
+    `forbid_engine(remove_loaded=True)`, which popped the caller's `pseudex`
+    modules out of `sys.modules` and never put them back — at the end of a live
+    harness process that already holds the engine, a report that does that leaves
+    its caller with stale module objects and builds a second copy on the next
+    lazy import. Engine-free means the score NEEDS no engine, never that the
+    process may not have one; the firewall stays a test instrument
+    (`frozen_oracle.forbid_engine`), where it belongs."""
+    corpus = v5_corpus(v5_run_dir)
+    cases = {case.base.id: case for case in corpus}
+    rows = records.merged_v5_records(v5_run_dir)
+    repairs = frozen_oracle.read_repairs(v5_run_dir)
+    half = observations_of(v5_run_dir, (), cases)
+    frozen = frozen_oracle.score_observations(half.observations, corpus, rows, repairs)
+    return FrozenParts(corpus=corpus, rows=rows, frozen=frozen, half=half)
 
 
 def read_parts(v5_run_dir: Path, v4_run_dir: Path) -> ReportParts:
-    """Both run directories, read once, in the order a reader would."""
+    """Both run directories, read once, in the order a reader would.
+
+    THE FROZEN SCORE COMES FIRST, before any v4 reader runs. `v4_half` walks
+    v4's taxonomy, which reaches `pseudex.address.register_spelling` LAZILY the
+    first time a LOC breaks; the v5 score is therefore produced by
+    `frozen_score_and_observations` BEFORE that, from rows that cannot reach the
+    engine. The v4 half is v4's own instrument — its block, its levels and its
+    taxonomy are the baseline and are not part of the frozen claim."""
+    scored = frozen_score_and_observations(v5_run_dir)
+    canaries = payload_canaries.check_run(v5_run_dir)
     v5 = v4_half(v5_run_dir, f"v5 run {run_id_of(v5_run_dir)}")
     v4 = v4_half(v4_run_dir, f"v4 baseline {run_id_of(v4_run_dir)}")
-    corpus = v5_corpus(v5_run_dir)
-    cases = {case.base.id: case for case in corpus}
-    half = observations_of(v5_run_dir, v5.scored, cases)
-    return ReportParts(v5_dir=v5_run_dir, v4_dir=v4_run_dir, v5=v5, v4=v4, half=half,
-                       corpus=corpus, meta=meta_of(v5_run_dir, run_id_of(v5_run_dir)),
+    return ReportParts(v5_dir=v5_run_dir, v4_dir=v4_run_dir, v5=v5, v4=v4, half=scored.half,
+                       corpus=scored.corpus,
+                       meta=meta_of(v5_run_dir, run_id_of(v5_run_dir)),
                        judge=judge_half(v5_run_dir),
-                       behaviour_of={case_id: case.behaviour for case_id, case in cases.items()},
-                       cost=cost_lines(v5_run_dir))
+                       behaviour_of={case.base.id: case.behaviour for case in scored.corpus},
+                       cost=cost_lines(v5_run_dir), frozen=scored.frozen, canaries=canaries)
 
 
 def _holes(excluded: Sequence[str]) -> tuple[str, ...]:
@@ -681,6 +762,22 @@ def _stopped(excluded: Sequence[str]) -> tuple[str, ...]:
     return tuple(row for row in excluded if not row.endswith(mark))
 
 
+def axis_cells(observations: Sequence[RunObservation], functions: dict[str, Metric],
+               names: Iterable[str]) -> dict[str, dict[str, dict[str, Line]]]:
+    """Every metric's slices, restricted to the axes `prints_on_axis` allows.
+
+    Its own function because the produced report slices the SAME observations it
+    scores: `assemble` calls it over `parts.half` for the PRINTED lines, and
+    `test_report_frozen.poisoned_register_spelling_leaves_the_score_bytes_identical`
+    calls it over the engine-free half to show the slices cannot move with the
+    engine either. A second copy of this comprehension inside that test would be
+    a second definition of the slices it is trying to protect."""
+    return {name: {axis: {bucket: functions[name](rows)
+                          for bucket, rows in sorted(by_axis(observations, axis).items())}
+                   for axis in contracts.AXES if prints_on_axis(name, axis)}
+            for name in sorted(names)}
+
+
 def assemble(parts: ReportParts, functions: dict[str, Metric]) -> SideBySide:
     """The `SideBySide` of parts already read.
 
@@ -694,10 +791,20 @@ def assemble(parts: ReportParts, functions: dict[str, Metric]) -> SideBySide:
     lines: dict[str, Line] = {}
     refused: dict[str, str] = {}
     for name, verdict in verdicts.items():
-        if verdict.printable:
-            lines[name] = functions[name](observations)
-        else:
+        if not verdict.printable:
             refused[name] = verdict.why
+            continue
+        # THE PRODUCED PATH IS THE FROZEN ONE. When the caller passes the real
+        # registry, the line is the one `frozen_oracle` already computed behind
+        # the engine firewall; recomputing it here would leave two producers of
+        # one number, and only one of them is protected. A caller that passes a
+        # REPLACEMENT for a name (the gate's own test) gets its replacement, so
+        # the refusal path stays observable.
+        frozen_line = parts.frozen.lines.get(name)
+        if frozen_line is not None and functions.get(name) is METRIC_FUNCTIONS.get(name):
+            lines[name] = frozen_line
+        else:
+            lines[name] = functions[name](observations)
     # ONLY the axes a line may be printed on (F2.10). An observation-level line
     # sliced by a HOP axis counts the same answer once per bucket, so the
     # buckets add up to more units than the corpus holds; `metrics.
@@ -705,11 +812,7 @@ def assemble(parts: ReportParts, functions: dict[str, Metric]) -> SideBySide:
     # of restating it. Computing the cells anyway and hiding them at render
     # time would leave a number in the `SideBySide` that nobody may print —
     # and a number that exists gets printed eventually.
-    axes: dict[str, dict[str, dict[str, Line]]] = {}
-    for name in sorted(lines):
-        axes[name] = {axis: {bucket: functions[name](rows)
-                             for bucket, rows in sorted(by_axis(observations, axis).items())}
-                      for axis in contracts.AXES if prints_on_axis(name, axis)}
+    axes = axis_cells(observations, functions, lines)
     blocked = [name for name in refused if name not in contracts.DIAGNOSTIC_METRIC_NAMES]
     stamp = parts.judge.stamp
     empty_stamp = CalibrationStamp(judge_model="—", prompt_sha256="", n=0, raw_agreement=0.0,
@@ -801,6 +904,15 @@ def render(side: SideBySide, parts: ReportParts, dump: int) -> list[str]:
         f"метка: {meta.get('label') or '—'} · заметка: {meta.get('note') or '—'}",
         f"дерево: {meta.get('worktree') or 'неизвестно'}",
         f"корпус v5 {side.corpus_digest_v5[:12] or '—'} · корпус v4 {side.corpus_digest_v4[:12] or '—'}",
+        # WHICH ORACLE PRODUCED THESE LINES, AND FROM WHICH BYTES (M04). A rate
+        # with no oracle version cannot be re-checked after the scorer moves, and
+        # a digest is what tells two runs apart when the file names are the same.
+        # The repair half is a COUNT and never a silence: a run with no captured
+        # witnesses prints «не измерено», because «no witness» is not «not
+        # repaired».
+        f"оракул {parts.frozen.oracle_version} · артефакт "
+        f"{parts.frozen.digest[:12] or '—'} · пар LOC {parts.frozen.repairs_measured} измерено/"
+        f"{parts.frozen.repairs_unmeasured} не измерено",
         ""]
     out += list(parts.cost)
     # §3.3: МУСОР КОРПУСА — В ОТЧЁТЕ, А НЕ ТОЛЬКО В СБОРКЕ. `build --check`
@@ -824,6 +936,42 @@ def render(side: SideBySide, parts: ReportParts, dump: int) -> list[str]:
                       f"{other.tost_verdict}" if other is not None else " | базы нет"))
     out += behaviour_blocks(parts.v5, parts.behaviour_of)
     out += ["", V4_BLOCK_END, ""]
+
+    # §1bis: THE REAL BYTES, BY BOUNDARY (S02). Printed HERE rather than only in
+    # the run's own log because this is the one section a reader of the finished
+    # report can check without trusting the harness's writer. A leak on one
+    # boundary is named with its class; the neighbours are not printed because
+    # this scan reads the corpus's own declared values, and an ordinary word is
+    # not among them.
+    #
+    # THE STATUS IS PRINTED FIRST AND IS NEVER OMITTED. `CanaryReport` with no
+    # manifest has `boundaries=()`, so `by_boundary()` is `{}` and the loop below
+    # printed NOTHING — the section rendered as a heading with no rows, which is
+    # indistinguishable from «measured, zero leaks». A run without a
+    # construction-time manifest therefore says NOT_MEASURED, says why, and says
+    # in words that absence is not a clean measurement.
+    out += ["1bis. КАНАРЕЙКИ ПЕЙЛОАДА — байты этого прогона, по границам (S02)"]
+    out.append(f"   СТАТУС: {parts.canaries.status}")
+    if parts.canaries.coverage_known:
+        out.append(f"   ЗАХВАТЫ: {parts.canaries.capture_rows}/"
+                   f"{parts.canaries.intervention_rows} выполненных плеч I; "
+                   f"выбранных троек {parts.canaries.selected_rows}")
+    if parts.canaries.status != payload_canaries.STATUS_MEASURED:
+        out.append("   НЕ ИЗМЕРЕНО — это НЕ означает «утечек нет»: "
+                   "манифест, байты или полный знаменатель недоступны")
+        if parts.canaries.reason:
+            out.append(f"   ПРИЧИНА: {parts.canaries.reason}")
+    for _name, _counts in sorted(parts.canaries.by_boundary().items()):
+        out.append(f"   {_name:14} скрыто {_counts['hidden']:4}  утечек {_counts['leaked']:4}")
+    for leak in parts.canaries.leaks[:8]:
+        out.append(f"      {leak.boundary}: {leak.canary_id} [{leak.miss_class}] {leak.why}")
+    if parts.canaries.unclassified:
+        out.append(f"   БЕЗ КЛАССА: {list(parts.canaries.unclassified)}")
+    if parts.canaries.neighbour_damage:
+        out.append(f"   СОСЕДИ ЗАТРОНУТЫ: {list(parts.canaries.neighbour_damage)}")
+    if parts.canaries.unreached:
+        out.append(f"   ГРАНИЦЫ НЕ ДОСТИГНУТЫ: {list(parts.canaries.unreached)}")
+    out += [""]
 
     out += ["2. ЛИНИИ v5 — абсолютные доли, интервал Клоппера–Пирсона, «сертифицирует ≥» вместо 100%"]
     # A diagnostic named in `BESIDE` is printed under the line it qualifies and
@@ -964,6 +1112,29 @@ def report_lines(v5_run_dir: Path, v4_run_dir: Path,
     records.run_file(v5_run_dir, run_id, "<run>.gate.json").write_text(json.dumps(
         {name: {"printable": verdict.printable, "why": verdict.why}
          for name, verdict in sorted(gate_all(functions).items())},
+        ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    # WHICH ORACLE PRODUCED THIS RUN'S LINES, AND FROM WHICH BYTES (M04), written
+    # BESIDE the report and not into it: a sidecar is ADDITIVE, so every report
+    # version already on disk keeps reading, and a reader that does not know this
+    # file is not made to. The report's own header prints the same two facts, so
+    # the paper and the file cannot disagree about the oracle.
+    (v5_run_dir / f"{run_id}.oracle.json").write_text(json.dumps(
+        {"frozen_oracle_version": parts.frozen.oracle_version,
+         "artifact_digest": parts.frozen.digest,
+         "cases": parts.frozen.cases, "rows": parts.frozen.rows,
+         "repairs_measured": parts.frozen.repairs_measured,
+         "repairs_unmeasured": parts.frozen.repairs_unmeasured,
+         # S02: THE STATUS RIDES BESIDE THE COUNTS AND IS NEVER OMITTED. An
+         # empty `canaries` object with no status read as «measured, zero leaks»
+         # for every saved run, because no saved run carries a manifest. A
+         # machine reader must be able to tell «не измерено» from «измерено,
+         # утечек нет» without reading the prose report.
+         "canary_status": parts.canaries.status,
+         "canary_reason": parts.canaries.reason,
+         "canary_neighbour_damage": list(parts.canaries.neighbour_damage),
+         "canary_unreached": list(parts.canaries.unreached),
+         "canaries": {name: counts
+                      for name, counts in sorted(parts.canaries.by_boundary().items())}},
         ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return lines
 

@@ -37,9 +37,10 @@ from pathlib import Path
 from bench.agentpii4.records import ArmMeta, arm_from_record, arm_record, shippable
 from bench.agentpii4.schema import Case
 from bench.agentpii5.contracts import (
-    HOP_KINDS, HOP_OWNERS, HOP_STATUSES, JUDGE_LABELS, JUDGED_BY, RUN_FILES,
-    AnswerSpan, ArmRunV5, CalibrationRecord, CalibrationStamp, FormVerdict, Hop,
-    HopObservation, JudgeVerdict, MentionRecord, ToolResultRecord, JudgeRow)
+    HOP_KINDS, HOP_OWNERS, HOP_STATUSES, JUDGE_LABELS, JUDGED_BY, MODEL_TRACE_FORMAT,
+    RUN_FILES, AnswerSpan, ArmRunV5, CalibrationRecord, CalibrationStamp, FormVerdict, Hop,
+    HopObservation, JudgeVerdict, MentionRecord, ModelResponse, ModelTrace, ToolResultRecord,
+    JudgeRow)
 
 # The one key a v4 reader must ignore. Named here so the harness, the readers
 # and the test that pins rule 1 above cannot drift apart by a string literal.
@@ -230,6 +231,110 @@ def answer_span_from_json(row: dict[str, object]) -> AnswerSpan:
         restored_end=_whole(row, "restored_end", kind))
 
 
+def model_response_to_json(response: ModelResponse) -> dict[str, object]:
+    return {"request": response.request, "turn": response.turn,
+            "available_results": response.available_results,
+            "raw": response.raw, "restored": response.restored}
+
+
+def model_trace_to_json(trace: ModelTrace) -> dict[str, object]:
+    return {"format": MODEL_TRACE_FORMAT,
+            "responses": [model_response_to_json(one) for one in trace.responses],
+            "call_requests": list(trace.call_requests)}
+
+
+def model_response_from_json(row: dict[str, object], index: int) -> ModelResponse:
+    label = f"ArmRunV5.model_trace.responses[{index}]"
+    return ModelResponse(request=_whole(row, "request", label),
+                         turn=_whole(row, "turn", label),
+                         available_results=_whole(row, "available_results", label),
+                         raw=_text(row, "raw", label), restored=_text(row, "restored", label))
+
+
+def model_trace_from_json(value: object, calls_count: int) -> ModelTrace:
+    """Read a PRESENT trace, validating the chronology it claims.
+
+    The absent/None case is the caller's (`arm_v5_from_record`): a legacy row
+    has no key and reads None. Once the key is there, every promise the writer
+    made is checked here — a replay has nothing but the file, and a trace that
+    says a response saw a result produced after it would send an observer
+    three turns deep without a reason to look at the record.
+    """
+    kind = "ArmRunV5"
+    row = _as_object(value, kind, "model_trace")
+    version = _whole(row, "format", f"{kind}.model_trace")
+    if version != MODEL_TRACE_FORMAT:
+        raise RecordError(f"{kind}.model_trace.format: {version!r} is not the known "
+                          f"format {MODEL_TRACE_FORMAT}")
+    responses = tuple(
+        model_response_from_json(_as_object(one, kind, "model_trace.responses"), index)
+        for index, one in enumerate(_rows(row, "responses", f"{kind}.model_trace")))
+    if not responses:
+        raise RecordError(f"{kind}.model_trace.responses: a present trace needs at least one")
+    previous_request: int | None = None
+    previous_turn = -1
+    for response in responses:
+        if response.request <= 0:
+            raise RecordError(f"{kind}.model_trace.responses: request ids are positive, "
+                              f"found {response.request}")
+        if previous_request is not None and response.request <= previous_request:
+            raise RecordError(f"{kind}.model_trace.responses: requests must increase, "
+                              f"{response.request} follows {previous_request}")
+        if response.turn < 0:
+            raise RecordError(f"{kind}.model_trace.responses: turns are nonnegative, "
+                              f"found {response.turn}")
+        if response.turn < previous_turn:
+            raise RecordError(f"{kind}.model_trace.responses: turns must not go backwards, "
+                              f"{response.turn} follows {previous_turn}")
+        if response.available_results < 0:
+            raise RecordError(f"{kind}.model_trace.responses: available_results must be "
+                              f"nonnegative, found {response.available_results}")
+        previous_request = response.request
+        previous_turn = response.turn
+    call_requests = _rows(row, "call_requests", f"{kind}.model_trace")
+    for one in call_requests:
+        if not isinstance(one, int) or isinstance(one, bool):
+            raise RecordError(f"{kind}.model_trace.call_requests: expected integers, found {one!r}")
+    mapped = tuple(int(one) for one in call_requests)
+    if len(mapped) != calls_count:
+        raise RecordError(f"{kind}.model_trace.call_requests: {len(mapped)} mapped calls for "
+                          f"{calls_count} recorded calls")
+    # CALLS EXECUTE IN ORDER, so the response that emitted each one never goes
+    # backwards: a map like (2, 1) would say a later call ran before an earlier
+    # one, which no real loop produces.
+    if any(later < earlier for earlier, later in zip(mapped, mapped[1:])):
+        raise RecordError(f"{kind}.model_trace.call_requests: the map must not go backwards, "
+                          f"found {mapped}")
+    known = {response.request for response in responses}
+    for request in mapped:
+        if request not in known:
+            raise RecordError(f"{kind}.model_trace.call_requests: {request} names no recorded "
+                              f"response ({sorted(known)})")
+    # THE NONFUTURE BOUNDARY. A response can only see results produced by
+    # STRICTLY EARLIER responses; its own calls produce results for the next
+    # one. A count above that prefix is a chronology referring to the future.
+    for response in responses:
+        earlier = sum(1 for request in mapped if request < response.request)
+        if response.available_results > earlier:
+            raise RecordError(f"{kind}.model_trace.responses: request {response.request} claims "
+                              f"{response.available_results} available results, but only "
+                              f"{earlier} were produced by earlier responses")
+    return ModelTrace(responses=responses, call_requests=mapped)
+
+
+def _scrubbed_model_trace(trace: object) -> object:
+    """A licensed trace keeps its chronology and loses the two texts."""
+    if not isinstance(trace, dict):
+        return trace
+    out = dict(trace)
+    rows = trace.get("responses")
+    if isinstance(rows, list):
+        out["responses"] = [
+            {**one, "raw": SCRUB_MARKER, "restored": SCRUB_MARKER}
+            if isinstance(one, dict) else one for one in rows]
+    return out
+
+
 def _v5_block(run: ArmRunV5) -> dict[str, object]:
     return {"reply_raw": run.reply_raw, "control_reply": run.control_reply,
             "tool_results": [tool_result_to_json(one) for one in run.tool_results],
@@ -237,7 +342,9 @@ def _v5_block(run: ArmRunV5) -> dict[str, object]:
             "turn_replies": list(run.turn_replies),
             "call_turns": list(run.call_turns), "request_count": run.request_count,
             "stream_mismatch": run.stream_mismatch, "reply_whole": run.reply_whole,
-            "turn_residual": run.turn_residual}
+            "turn_residual": run.turn_residual,
+            "model_trace": None if run.model_trace is None
+            else model_trace_to_json(run.model_trace)}
 
 
 def _scrubbed_v5_block(block: dict[str, object]) -> dict[str, object]:
@@ -261,6 +368,12 @@ def _scrubbed_v5_block(block: dict[str, object]) -> dict[str, object]:
     # a scrubbed run still answers «did a fake stand in an earlier turn» — the
     # question `residual` asks of it, and one that needs no corpus value.
     out["reply_whole"] = SCRUB_MARKER
+    # The trace's chronology (ordinals, turns, counts, the call→request map)
+    # carries no corpus value and STAYS; `raw`/`restored` are the provider's and
+    # the gateway's text and go the way `reply_raw` does, one marker per
+    # response, so a scrubbed run still answers «which request saw which result».
+    if "model_trace" in out:
+        out["model_trace"] = _scrubbed_model_trace(out["model_trace"])
     return out
 
 
@@ -288,6 +401,28 @@ def arm_v5_from_record(record: dict[str, object]) -> ArmRunV5:
     for reply in replies:
         if not isinstance(reply, str):
             raise RecordError(f"{kind}.turn_replies: expected strings, found {reply!r}")
+    # MISSING KEY ON A LEGACY ROW READS None, and only that: an old JSON has no
+    # chronology to offer and inventing one would be the defect. A key that IS
+    # present must be a trace or an explicit null; anything else is malformed.
+    raw_trace = block.get("model_trace")
+    model_trace = (None if raw_trace is None
+                   else model_trace_from_json(raw_trace, len(base.calls)))
+    if len(turns) != len(base.calls):
+        raise RecordError(f"{kind}.call_turns: {len(turns)} turns for {len(base.calls)} calls")
+    # The call's turn and the turn of the response that emitted it are two
+    # records of one fact. They are written from two places (`hooks.turns` and
+    # the trace), so a disagreement is a broken chronology, not a preference.
+    if model_trace is not None:
+        answered = {response.request: response for response in model_trace.responses}
+        for index, request in enumerate(model_trace.call_requests):
+            response = answered.get(request)
+            if response is None:
+                raise RecordError(f"{kind}.model_trace.call_requests: {request} names no "
+                                  f"recorded response")
+            if int(turns[index]) != response.turn:
+                raise RecordError(f"{kind}.model_trace: call {index} is recorded in turn "
+                                  f"{turns[index]}, but request {request} was answered in "
+                                  f"turn {response.turn}")
     return ArmRunV5(
         base=base, reply_raw=_text(block, "reply_raw", kind),
         control_reply=_text(block, "control_reply", kind),
@@ -297,7 +432,8 @@ def arm_v5_from_record(record: dict[str, object]) -> ArmRunV5:
         request_count=_whole(block, "request_count", kind),
         stream_mismatch=_flag(block, "stream_mismatch", kind),
         reply_whole=_text(block, "reply_whole", kind),
-        turn_residual=_whole(block, "turn_residual", kind))
+        turn_residual=_whole(block, "turn_residual", kind),
+        model_trace=model_trace)
 
 
 def _as_object(value: object, kind: str, key: str) -> dict[str, object]:

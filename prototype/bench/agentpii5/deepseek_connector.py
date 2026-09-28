@@ -133,6 +133,14 @@ class DeepSeekConnector:
                         raise ConnectorLimit("DeepSeek session token limit reached")
                     function_calls = [item for item in response.output
                                       if isinstance(item, ResponseFunctionToolCall)]
+                    # THE RESPONSE HOOK, ONCE PER COMPLETED PROVIDER RESPONSE
+                    # AND BEFORE ITS FUNCTION CALLS. `""` on a pure tool-call
+                    # turn is recorded too: the chronology asks what the MODEL
+                    # returned, and a turn that returned no prose answers it.
+                    # The connector reports the boundary; the gateway owns what
+                    # is restored and what was already available.
+                    hooks.response("".join(response_message_text(item)
+                                           for item in response.output))
                     for item in response.output:
                         history.append(json_object(item.model_dump(mode="json", exclude_none=True)))
                         text = response_message_text(item)

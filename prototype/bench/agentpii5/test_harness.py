@@ -21,6 +21,7 @@ import asyncio
 import contextlib
 import inspect
 import dataclasses
+import importlib
 import io
 import json
 import sys
@@ -36,6 +37,7 @@ from bench.agentpii4.gateway import HarnessError
 from bench.agentpii4.records import ArmMeta
 from bench.agentpii5 import build as corpus_build
 from bench.agentpii5 import harness as h
+from bench.agentpii5 import payload_canaries as pc
 from bench.agentpii5 import provider
 from bench.agentpii5 import records as r
 from bench.agentpii5 import runinfo
@@ -91,7 +93,7 @@ def _gateway_run(case: CaseV5) -> ArmRunV5:
                                             substitute=SUBSTITUTE, request_index=1),),
                     turn_replies=(f"Нашёл {REAL_NAME}.",),
                     call_turns=(0,), request_count=2, stream_mismatch=False,
-                    reply_whole="", turn_residual=0)
+                    reply_whole="", turn_residual=0, model_trace=None)
 
 
 def _canned(case: CaseV5) -> h.TripleResult:
@@ -139,7 +141,7 @@ def _policy(attempts: int, expected_per_case_usd: float) -> h.DrivePolicy:
                          expected_per_case_usd=expected_per_case_usd)
 
 
-def _finished_run(root: Path) -> Path:
+def _finished_run(root: Path, canned: Callable[[CaseV5], h.TripleResult] = _canned) -> Path:
     """Готовый каталог прогона, написанный СОБСТВЕННЫМИ писателями харнесса.
 
     Тот же путь, что у `test_run_files_written`: каталог, собранный руками из
@@ -149,7 +151,7 @@ def _finished_run(root: Path) -> Path:
     case = _fixture_case()
 
     async def runner(one: CaseV5, repeat: int) -> h.TripleResult:
-        return _canned(one)
+        return canned(one)
 
     run_dir = root / "v5-live-nano"
     run_dir.mkdir()
@@ -166,8 +168,83 @@ def _finished_run(root: Path) -> Path:
                  ceiling_usd=12.0, spent_usd=0.03, label="готовый прогон", note="",
                  started="2026-09-23T10:00:00+00:00", wall_s=42.0,
                  extra={"worktree": "чисто abc123456789 (main)"})
+    # БАНДЛ ЗДЕСЬ, А НЕ В ПРОВЕРКЕ. `capture_run_repairs` отказывает без
+    # арендованного бандла СОЗНАТЕЛЬНО (`not ASSETS.is_loaded` — иначе он
+    # выдумал бы свидетеля, которого движок не подтверждал). В живом прогоне
+    # бандл грузит `main` перед `Detector()`; эта батарея `main` не зовёт, и
+    # каталог собирается собственными писателями харнесса, поэтому нехватку
+    # аренды чинит setup, а не продакшн-код: `load_dev_bundle()` идемпотентен.
+    h.load_dev_bundle()
     h.finish_run(run_dir, run_dir)
     return run_dir
+
+
+def _canned_with_loc(case: CaseV5) -> h.TripleResult:
+    """`_canned`, plus ONE observed LOC crossing — the pair M04 exists for.
+
+    A canned run with no LOC hop has no repair pair, and `repairs.json` would be
+    written empty for a reason that is not the wiring: the capture would look
+    wired and measure nothing."""
+    base = _canned(case)
+    loc = HopObservation(case_id=case.base.id, repeat=0, hop=case.hops[0], declared=True,
+                         pii_type="LOC", produced="Канареечная", reference="канареечная",
+                         status="observed",
+                         verdict=form_match("LOC", "Канареечная", "канареечная"))
+    return replace(base, hops=base.hops + (loc,))
+
+
+def test_the_run_freezes_its_loc_repairs_before_the_report() -> list[str]:
+    """M04: THE PRODUCER CAPTURES, THE SCORER READS.
+
+    A finished run must carry a versioned `repairs.json` for the LOC pairs it
+    actually produced, written by `finish_run` BEFORE it prints a line — and once
+    it is on disk the report must not ask the engine again. The poisoning is the
+    test: `register_spelling` starts raising AFTER the capture, and the report
+    lines must stay byte-identical, which is the only evidence that the saved
+    number is frozen data and not a live reading."""
+    from bench.agentpii5 import frozen_oracle
+    # REACHED THROUGH importlib ON PURPOSE. `test_only_harness_imports_pseudex`
+    # walks this package's `ast` and allows the engine in `harness.py` and
+    # `test_harness_stream.py` only; a poison test must not turn this file into a
+    # third importer. It mutates the ALREADY-LOADED module, after the capture —
+    # a dependency on the engine is exactly what it is testing for absence."""
+    address = importlib.import_module("pseudex.address")
+
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        run_dir = _finished_run(Path(tmp), canned=_canned_with_loc)
+        path = frozen_oracle.repairs_path(run_dir)
+        if not path.exists():
+            return [f"finish_run printed a report without freezing {path.name}: every LOC "
+                    f"pair would read «не измерено» for ever"]
+        table = frozen_oracle.read_repairs(run_dir)
+        if not table.witnesses:
+            problems.append("repairs.json holds no witness for a run that crossed a LOC")
+        else:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if raw.get("version") != frozen_oracle.FROZEN_ORACLE_VERSION:
+                problems.append(f"the table is unversioned: {raw.get('version')!r}")
+        first = r.run_file(run_dir, RUN_ID, "<run>.report.txt").read_text(encoding="utf-8")
+
+        original = address.register_spelling
+
+        def poisoned(word: str) -> str:
+            raise RuntimeError("engine poisoned after the capture")
+
+        address.register_spelling = poisoned
+        try:
+            h.finish_run(run_dir, run_dir)
+            second = r.run_file(run_dir, RUN_ID, "<run>.report.txt").read_text(encoding="utf-8")
+        except Exception as error:  # noqa: BLE001 — an engine call after the capture IS the red
+            problems.append(f"the report asked the engine after the capture: "
+                            f"{type(error).__name__}: {error}")
+            second = first
+        finally:
+            address.register_spelling = original
+        if first != second:
+            problems.append("poisoning register_spelling moved the report lines — the saved "
+                            "number is a live reading, not frozen data")
+    return problems
 
 
 class _NeverCalled:
@@ -300,6 +377,44 @@ def test_ledger_shared() -> list[str]:
         if roomy.reserved() != 1.0:
             failures.append("потолок с местом не принял резерв — проверка отказа ни о чём")
     return failures
+
+
+def test_the_live_runner_persists_canary_capture() -> list[str]:
+    """S02 CAPTURE — THE REAL RUNNER TURNS THE CAPTURE ON AND PUTS IT ON DISK.
+
+    Read off the SOURCE of `run_triple_v5` and `drive_v5`, because the claim is
+    about the live path: the gateway the paid run builds must be created with
+    `capture=True` (the reviewer found it defaulting to `False`, so a real run
+    measured nothing), `TripleResult` must carry the captures, and `drive_v5`
+    must write them through the payload-canary writer. A canned runner cannot
+    observe any of the three — the seam only exists on the live path — so this
+    check reads the two functions that ARE the live path, and the artifact itself
+    is exercised end-to-end by
+    `test_payload_canary_integration.test_the_real_runner_writes_the_capture_through_the_writer`.
+    """
+    source = Path(h.__file__).read_text(encoding="utf-8")
+    problems: list[str] = []
+    if "MaskCache(256), capture=True)" not in source:
+        problems.append("run_triple_v5 does not build its gateway with capture=True — the real "
+                        "runner would persist no delivered bytes")
+    for wanted, what in (
+            ("captures: tuple[canaries.RunCapture, ...] = ()",
+             "TripleResult does not carry the captures to the writer"),
+            ("canaries.append_capture(run_dir, run_id, captured)",
+             "drive_v5 does not write the capture artifact"),
+            ("gateway.capture(repeat)", "run_triple_v5 never builds the capture row")):
+        if wanted not in source:
+            problems.append(what)
+    if "capture_name(run_id)" not in inspect.getsource(pc.append_capture):
+        problems.append("the canary writer does not resolve the capture path "
+                        "through its versioned name function")
+    # THE OUTWARD FILES MUST NOT CARRY IT. The capture is not a `RUN_FILES` name,
+    # which is what keeps it out of `<run>.public.json`; a name added there would
+    # publish the run's own corpus bytes.
+    if any(pc.CAPTURE_SUFFIX in name for name in RUN_FILES):
+        problems.append("the capture artifact is a RUN_FILES entry — a consumer that iterates "
+                        "the contract would read corpus bytes into the outward documents")
+    return problems
 
 
 def test_run_files_written() -> list[str]:
@@ -448,7 +563,7 @@ def _run_with_turns(case: CaseV5, turns: tuple[str, ...], answer: str) -> ArmRun
     return ArmRunV5(base=base, reply_raw=answer, control_reply=run.control_reply,
                     tool_results=(), mentions=run.mentions, turn_replies=turns,
                     call_turns=run.call_turns, request_count=run.request_count,
-                    stream_mismatch=False, reply_whole="", turn_residual=0)
+                    stream_mismatch=False, reply_whole="", turn_residual=0, model_trace=None)
 
 
 def test_residual_in_an_earlier_turn_is_measured() -> list[str]:
@@ -2068,6 +2183,10 @@ def main() -> int:
         ("only_harness_imports_pseudex", test_only_harness_imports_pseudex),
         ("ledger_shared", test_ledger_shared),
         ("run_files_written", test_run_files_written),
+        ("the_live_runner_persists_canary_capture",
+         test_the_live_runner_persists_canary_capture),
+        ("the_run_freezes_its_loc_repairs_before_the_report",
+         test_the_run_freezes_its_loc_repairs_before_the_report),
         ("control_reply_is_copied", test_control_reply_is_copied),
         ("turn_replies_are_restored", test_turn_replies_are_restored),
         ("baseline_flag_reads_v4_dir", test_baseline_flag_reads_v4_dir),

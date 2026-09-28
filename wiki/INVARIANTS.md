@@ -420,6 +420,8 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 
 ## Spoken
 
+- **A recognized whole dictated substitute resolves through the same indexed digit identity on both OUT legs; residual diagnostics must also recognize it.** Supporting a new spoken surface without its residual signal would hide a fake reaching the consumer. Exact copied spoken forms retain their recorded literal: leading zeroes can split a numeral group irreversibly. Renderer readback must preserve all target digits; unsupported layouts are not certified form support. Pins: `test_spoken_identifier_form`.
+
 - **An identifier dictated aloud has NO digit, and every recognizer waited for
   one** — 281 phones, cards, СНИЛС, ИНН and passports spoken as words, none
   found. `pseudex/spoken.py` only turns words into digits; whether the string is an
@@ -491,6 +493,13 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   fixed in tests and dead in production. Pins: `test_argument_form`,
   `test_collisions`; UNPINNED at the HTTP surface — `test_perf_masking` should
   send `conversation_id` on `/unmask_arguments` and expect the literal.
+- **A shown form with conflicting owners must not pick a last writer or a
+  minted owner through reformatting.** Within the retained conversation evidence,
+  conflict is sticky across replay and reopening. Select replacement ranges
+  before vetoing a conflicting identity, so a refused whole cannot fall through
+  to smaller restored parts. Self-mappings are conflict markers, not real spelling
+  evidence; residual diagnostics must remain visible. Same-value case/yo NAME
+  variants are not different owners. Pins: `test_shown_form_ambiguity`.
 - **DETECTION WITHOUT A MATCHING SUBSTITUTE IS A NET LOSS on the tool axis.**
   Hearing spoken identifiers raised detection and LOWERED the tool axis five
   points, because values that used to pass through went through a lossy restore.
@@ -552,11 +561,26 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 
 ## Agent form
 
+- **Conflicting address roles do not authorize a hybrid.** When a changed
+  composite mention names parts of different known addresses, retain that
+  unresolved mention and expose residuals; do not combine their real parts to
+  improve a restoration score. Exact whole-token evidence remains stronger
+  than independently matched leaves. Pins: `test_location_form_adversarial`.
+- **A numeric address projection keeps its declared role.** A known fake
+  house under a flat cue cannot borrow the real flat, and a lone flat cannot
+  expand into the whole real address. Bare `д` additionally needs grammatical
+  or field-boundary evidence; an initial/category label is not a house.
+  Pins: `test_location_form_adversarial`.
+
 - **THE FORM BELONGS TO THE AGENT, THE CONTENT TO THE VAULT.** The vault stores
   lower case and `_pick_value` handed it straight into the argument: «ким
   виктор» in the CRM — 262 field divergences, the largest class. `cased_like`
-  carries the case word by word and the rule is SYMMETRIC. PROSE is untouched.
+  carries the case word by word and the rule is SYMMETRIC. This name rule does
+  not change prose grammar. PHONE notation belongs to the current sender on
+  BOTH tool and answer legs (D-070); a dictated original must not override a
+  numeric argument, and an earlier user prefix must not override the answer.
   Pins: `test_argument_form`, `test_hard_cases` (`test_the_form_belongs_to_the_agent`).
+  PHONE pins: `test_phone_hop_form.py`, `test_product.py`.
 - **The agent's GENERIC word survives even when ours is absent.** `_street_like`
   had «we have no street type — return our name» and the agent's «ул.» fell on
   the floor. The type word is a marker of the same class as «д.» and «кв.»,
@@ -565,11 +589,15 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 ## Vault
 
 - **Canonicalization collapses spellings to one key → one token**: `+7 999…` /
-  `8 999…` / `89991234567`; detokenization returns the canonical form. Pins:
-  `vault_test`.
-- **Substitutes are format-preserving and checksum-INVALID.** A fake СНИЛС / ИНН /
-  card deliberately fails its own checksum, so a token can never collide with a
-  real person's ID. Pins: `test_loop`, `test_product`.
+  `8 999…` / `89991234567`. Canonical identity is not a universal output
+  notation: PHONE restoration renders the real digits in the current sender's
+  supported form on both legs. Pins: `vault_test`, `test_phone_hop_form.py`.
+- **Substitutes are format-preserving and checksum-VALID from impossible ranges.** A fake
+  СНИЛС / ИНН / card deliberately passes its own checksum (so a checksum-checking
+  agent still calls the tool) but is minted from ranges that cannot belong to a
+  person (ИНН region «00», card MII 0, СНИЛС never ≤ 001-001-998), and
+  `_unique_token` refuses a mint equal to a value the customer already holds.
+  Pins: `test_loop`, `test_product`, `test_other_hop_forms`.
 - **`unmask_text` reindexes by digit signature**, so a numeric token the model
   reformatted (`+7…` → `8…`, separators stripped) still detokenizes. Pins:
   `test_product`.

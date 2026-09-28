@@ -1,0 +1,228 @@
+{
+  "IN/user": {
+    "statuses": {
+      "observed": 1505,
+      "leaked": 1
+    },
+    "strict_form_with_residual": {
+      "hits": 1176,
+      "total": 1505
+    }
+  },
+  "IN/tool": {
+    "statuses": {
+      "observed": 1741,
+      "absent": 823
+    },
+    "strict_form_with_residual": {
+      "hits": 1579,
+      "total": 1741
+    }
+  },
+  "OUT/tool_arg": {
+    "statuses": {
+      "absent": 1348,
+      "observed": 4501,
+      "unmasked": 804,
+      "residual": 415
+    },
+    "strict_form_with_residual": {
+      "hits": 3923,
+      "total": 5720
+    }
+  },
+  "OUT/answer": {
+    "statuses": {
+      "observed": 2022,
+      "residual": 11,
+      "unmasked": 2
+    },
+    "strict_form_with_residual": {
+      "hits": 1129,
+      "total": 2035
+    }
+  },
+  "IN/memory": {
+    "statuses": {
+      "observed": 504
+    },
+    "strict_form_with_residual": {
+      "hits": 429,
+      "total": 504
+    }
+  },
+  "OUT/summary": {
+    "statuses": {
+      "absent": 134,
+      "observed": 102,
+      "unmasked": 13,
+      "residual": 3
+    },
+    "strict_form_with_residual": {
+      "hits": 92,
+      "total": 118
+    }
+  },
+  "OUT/template": {
+    "statuses": {
+      "absent": 16,
+      "unmasked": 17,
+      "observed": 9
+    },
+    "strict_form_with_residual": {
+      "hits": 9,
+      "total": 26
+    }
+  },
+  "conditional_value": {
+    "hits": 301,
+    "present_total": 388,
+    "declared_total": 1736,
+    "warning": "Diagnostic only; original end_to_end unchanged"
+  },
+  "chain_present_total": 31,
+  "absent_calls_with_tool_elsewhere": 744,
+  "actual_calls": 3978,
+  "declared_absent_example": [
+    {
+      "case": "long_order-005",
+      "hop": {
+        "case_id": "long_order-005",
+        "repeat": 0,
+        "hop": {
+          "kind": "OUT",
+          "owner": "tool_arg",
+          "item_id": "i8",
+          "hop_index": 14,
+          "turn": 7,
+          "tool_name": "delivery_create_order",
+          "call_ordinal": 0,
+          "parallel_group": "",
+          "source_hop": 0,
+          "path": "recipient.name",
+          "optional": false
+        },
+        "declared": true,
+        "pii_type": "NAME",
+        "produced": "",
+        "reference": "",
+        "status": "absent",
+        "verdict": null
+      },
+      "actual_calls": [
+        [
+          1,
+          "crm_find_contact"
+        ],
+        [
+          2,
+          "delivery_quote"
+        ],
+        [
+          3,
+          "delivery_create_order"
+        ],
+        [
+          4,
+          "pickup_points_near"
+        ],
+        [
+          5,
+          "pickup_points_near"
+        ],
+        [
+          6,
+          "pickup_points_near"
+        ],
+        [
+          7,
+          "notify_sms"
+        ],
+        [
+          8,
+          "crm_add_note"
+        ]
+      ],
+      "call_turns": [
+        1,
+        3,
+        5,
+        6,
+        6,
+        6,
+        7,
+        7
+      ]
+    },
+    {
+      "case": "long_order-005",
+      "hop": {
+        "case_id": "long_order-005",
+        "repeat": 0,
+        "hop": {
+          "kind": "OUT",
+          "owner": "tool_arg",
+          "item_id": "i9",
+          "hop_index": 15,
+          "turn": 7,
+          "tool_name": "delivery_create_order",
+          "call_ordinal": 0,
+          "parallel_group": "",
+          "source_hop": 1,
+          "path": "recipient.phones[].number",
+          "optional": false
+        },
+        "declared": true,
+        "pii_type": "PHONE",
+        "produced": "",
+        "reference": "",
+        "status": "absent",
+        "verdict": null
+      },
+      "actual_calls": [
+        [
+          1,
+          "crm_find_contact"
+        ],
+        [
+          2,
+          "delivery_quote"
+        ],
+        [
+          3,
+          "delivery_create_order"
+        ],
+        [
+          4,
+          "pickup_points_near"
+        ],
+        [
+          5,
+          "pickup_points_near"
+        ],
+        [
+          6,
+          "pickup_points_near"
+        ],
+        [
+          7,
+          "notify_sms"
+        ],
+        [
+          8,
+          "crm_add_note"
+        ]
+      ],
+      "call_turns": [
+        1,
+        3,
+        5,
+        6,
+        6,
+        6,
+        7,
+        7
+      ]
+    }
+  ]
+}

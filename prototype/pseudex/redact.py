@@ -10,11 +10,11 @@ import re
 from typing import NamedTuple
 
 from pseudex.detect import NameSpan, PartSpan, Span
-from pseudex import agent_form, date_form, morph_names, morph_places, translit
+from pseudex import agent_form, date_form, morph_names, morph_places, spoken, translit
 from pseudex.assets import ASSETS
 from pseudex.normalize import normalize
 from pseudex.profiling import stage
-from pseudex.vault import LOC_TOKEN_PATTERN, token_re, Vault, name_key, place_key, _date_canonical
+from pseudex.vault import LOC_TOKEN_PATTERN, token_re, Vault, name_key, place_key, _date_canonical, canonicalize, fold_key
 
 # A number-like run (digits + phone separators), >=7 digits — a candidate for
 # digit-core detokenization when the model reformatted a numeric token.
@@ -29,6 +29,15 @@ _WHOLE_NUMBER = re.compile(r"[+(]?\d[\d\s().\-]*\d(?:\D*)?")
 # куске, о котором восстановление не спрашивало, значит докладывать об отказе,
 # которого не было (`_still_a_whole_value`).
 _FRAGMENT_DIGIT_FLOOR = 3
+
+
+class _ResolvedSpan(NamedTuple):
+    """A resolved owner keeps its type until replacement priority is chosen."""
+
+    start: int
+    end: int
+    value: str
+    entity_type: str
 
 
 class _Whole:
@@ -132,6 +141,12 @@ def is_own_substitute(span: Span, vault: Vault) -> bool:
         return True
     if vault.is_minted_token(span.value):
         return True
+    if span.entity_type in {"PHONE", "SNILS", "INN", "CARD", "PASSPORT"} and not any(
+            char.isdigit() for char in span.value):
+        digits: str = re.sub(r"\D", "", canonicalize(span.entity_type, span.value))
+        hit = vault.resolve_digit_signatures_typed({digits}, False).get(digits)
+        if hit is not None and hit[0] == span.entity_type:
+            return True
     # THE MODEL'S OWN DERIVATION OF OUR SUBSTITUTE IS OURS TOO. It wrote
     # «LEBEDEVA ALINA» into `name_latin` from the token it was given; that call
     # rides in the transcript, the Latin name detector found a person in it,
@@ -269,6 +284,10 @@ def _token_for_text(span: Span, vault: Vault) -> str:
             return part.upper()
         return part
     token = tokenize_span(span, vault)
+    if span.entity_type in {"PHONE", "SNILS", "INN", "CARD", "PASSPORT", "DOB", "DATE", "EMAIL", "PLATE"}:
+        # The vault reuses content, not the presentation of its first mention.
+        # A tool result may write +7 after the user wrote 8 (or vice versa).
+        return _atomic_in_form_of(span.value, token, span.entity_type)
     if span.entity_type == "LOC":
         # Same reason as NAME: a nominative phrase dropped into an oblique slot
         # reads as broken Russian, and broken Russian is what makes a model
@@ -380,6 +399,54 @@ def _significant_words(text: str) -> frozenset[str]:
         and not morph_places.is_generic_word(word))
 
 
+def _conflict_key(entity_type: str, value: str) -> str:
+    """The TYPED identity the vault itself keys this value under.
+
+    `fold_key` after `canonicalize` for a NAME, the same pair `remember_shown`
+    compares two owners with: a person is neither a capitalisation nor a
+    diaeresis, so a dialogue that could not decide between two people cannot
+    decide between two spellings of one of their surfaces either. Every other
+    type keeps its own canonical form — the digits of a СНИЛС, the `+7…` of a
+    phone, the upper-cased ГОСТ alphabet of a plate, the address key of a place
+    — because those ARE the identity, and inventing a second one here would let
+    this test and the vault disagree about what "the same value" means.
+    """
+    canonical: str = canonicalize(entity_type, value)
+    return fold_key(canonical) if entity_type == "NAME" else canonical
+
+
+def _conflict_keys(shown_forms: list[tuple[str, str, str]]) -> dict[str, frozenset[str]]:
+    """The identities THIS dialogue recorded as unresolved, grouped by type.
+
+    `Vault.remember_shown` writes a self-mapping (`shown == original`) when two
+    owners claim one surface, so the marker is read exactly as it is written
+    there. Grouped by type because `canonicalize` is typed: one call per type
+    that actually conflicted, and NOTHING AT ALL in the ordinary dialogue that
+    has none — the cost is proportional to the doubt, not to the answer.
+    """
+    keys: dict[str, set[str]] = {}
+    for shown, original, kind in shown_forms:
+        if not shown or shown != original:
+            continue
+        key: str = _conflict_key(kind, shown)
+        if key:
+            keys.setdefault(kind, set()).add(key)
+    return {kind: frozenset(values) for kind, values in keys.items()}
+
+
+def _conflicts_with(surface: str, conflicts: dict[str, frozenset[str]]) -> bool:
+    """This surface IS an identity the dialogue could not resolve.
+
+    Asked of a whole surface, never of a piece of one: a larger projection
+    whose own identity is unambiguous — a full address containing a contested
+    house — still names one owner and is left to the restoring leg.
+    """
+    if not conflicts:
+        return False
+    return any(_conflict_key(kind, surface) in keys
+               for kind, keys in conflicts.items())
+
+
 def _as_written_rows(shown_forms: list[tuple[str, str, str]]) -> tuple[_AsWritten, ...]:
     """The spelling THIS DIALOGUE used, kept PER VALUE it was written in.
 
@@ -478,6 +545,14 @@ def _as_written_rows(shown_forms: list[tuple[str, str, str]]) -> tuple[_AsWritte
         return ()
     rows: list[_AsWritten] = []
     for _shown, literal, kind in shown_forms:
+        # A CONFLICT MARKER IS NOT A WRITING. `remember_shown` records «we could
+        # not decide between two owners» by writing the SHOWN string into
+        # `original`; read as a spelling that row would teach the restorer that
+        # the customer wrote the real value with the SUBSTITUTE's letters — a
+        # rebuilt name or street would come back wearing a look-alike the
+        # customer never typed. The marker is evidence about identity only.
+        if _shown == literal:
+            continue
         folded = normalize(literal)
         if len(folded) != len(literal):
             continue
@@ -551,19 +626,21 @@ def _as_written(text: str, table: dict[str, str]) -> str:
 
 
 class _Literals(NamedTuple):
-    """What this dialogue was shown, and the customer's own spelling of every
-    word the fold rewrote, VALUE BY VALUE. READ ONCE PER DETOKENISATION, not
+    """What this dialogue was shown, the customer's own spelling of every
+    word the fold rewrote, VALUE BY VALUE, and the identities the dialogue
+    could not resolve. READ ONCE PER DETOKENISATION, not
     per JSON leaf: `unmask_arguments` calls the restorer for every string in
     the object, and rebuilding the rows there made a fifteen-field tool call
     pay for it fifteen times (+16% measured, 65 → 75 ms)."""
 
     forms: list[tuple[str, str, str]]
     as_written: tuple[_AsWritten, ...]
+    conflicts: dict[str, frozenset[str]]
 
 
 def _literals_of(vault: Vault) -> _Literals:
     forms = vault.shown_forms()
-    return _Literals(forms, _as_written_rows(forms))
+    return _Literals(forms, _as_written_rows(forms), _conflict_keys(forms))
 
 
 def _call_texts(raw: str) -> tuple[str, ...]:
@@ -670,6 +747,30 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True,
                    inflect, for_tool)
 
 
+def _conflicting_place_spans(text: str, vault: Vault,
+                             exact: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
+    """Keep contradictory address mentions unresolved, not partly real.
+
+    Schema fields already require their known parts to name one owner. A
+    prose or JSON-string address carries the same evidence in its markers.
+    Exact whole mentions have stronger evidence than independently found
+    numeric fragments and retain their existing restoration path.
+    """
+    windows: set[tuple[int, int]] = {
+        framing
+        for match in _PLACE_RUN_ANY_CASE.finditer(text)
+        for framing in _place_windows(text, match.start(), match.end())}
+    blocked: list[tuple[int, int, str]] = []
+    for start, end in sorted(windows, key=lambda pair: pair[1] - pair[0], reverse=True):
+        if any(low <= start and end <= high for low, high, _ in exact + blocked):
+            continue
+        surface: str = text[start:end]
+        roles: dict[str, str] = morph_places.split_roles(surface)
+        if len(_address_owners(roles, vault)) > 1:
+            blocked.append((start, end, surface))
+    return blocked
+
+
 def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
             for_tool: bool) -> str:
     with stage("unmask.total"):
@@ -689,14 +790,42 @@ def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
         # ONE READ OF THE DIALOGUE'S LITERAL SLICES, TWO USES: the verbatim
         # pass puts a COPIED substitute back as the customer's whole string,
         # and the table re-spells what the other passes REBUILD.
-        taken: list[tuple[int, int, str]] = _restore_verbatim_spans(text, literals.forms)
-        for span in sorted(_restore_tokens_spans(text, vault, for_tool), key=lambda item: (item[0], -item[1])):
+        resolved_spans = _restore_inflected_candidates(text, vault, inflect, for_tool)
+        inflected_spans: list[tuple[int, int, str]] = [
+            (span.start, span.end, span.value) for span in resolved_spans]
+        verbatim_spans = _restore_verbatim_spans(text, literals.forms)
+        token_spans = _restore_tokens_spans(text, vault, for_tool)
+        # A resolved composite address owns its entire range. Restoring a
+        # copied house/flat first would prevent the overlapping street+house
+        # projection from being applied, creating a real/fake hybrid.
+        taken: list[tuple[int, int, str]] = _conflicting_place_spans(
+            text, vault, verbatim_spans + token_spans)
+        for candidate in sorted(resolved_spans, key=lambda item: item.end - item.start, reverse=True):
+            start, end, value, entity_type = candidate
+            if entity_type not in {"LOC", "ADDR"}:
+                continue
+            surface: str = text[start:end]
+            roles: dict[str, tuple[int, int]] = morph_places.role_spans(surface)
+            if "street" not in roles or "house" not in roles:
+                continue
+            # A copied whole has exact spelling evidence, including typos.
+            # Only smaller copied leaves must yield to their resolved whole.
+            if any(low <= start and end <= high for low, high, _ in verbatim_spans + token_spans):
+                continue
+            if not any(start < high and low < end for low, high, _ in taken):
+                taken.append((start, end, value))
+        for span in verbatim_spans:
             if not any(span[0] < end and start < span[1] for start, end, _ in taken):
                 taken.append(span)
-        passes = [_restore_reformatted_spans(text, vault, for_tool)]
-        if not for_tool:
-            passes.append(_restore_cued_numbers_spans(text, vault))
-        passes.append(_restore_inflected_spans(text, vault, inflect, for_tool))
+        for span in sorted(token_spans, key=lambda item: (item[0], -item[1])):
+            if not any(span[0] < end and start < span[1] for start, end, _ in taken):
+                taken.append(span)
+        passes = [_restore_reformatted_spans(text, vault, for_tool),
+                  _restore_spoken_identifier_spans(text, vault, for_tool)]
+        # A cue inside a JSON string carries the same role as one in prose.
+        # Field-level numeric values remain governed by the schema path.
+        passes.append(_restore_cued_numbers_spans(text, vault))
+        passes.append(inflected_spans)
         for spans in passes:
             for span in sorted(spans, key=lambda item: (item[0], -item[1])):
                 if not any(span[0] < end and start < span[1] for start, end, _ in taken):
@@ -708,8 +837,13 @@ def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
         # one value, and the span is the only place we still know which.
         # A verbatim span is already literal and its words carry the slip, so
         # it recognises no row and nothing changes — the pass is idempotent.
+        # Refuse a conflicting identity only AFTER ranges have been selected:
+        # skipping it earlier would let smaller parts restore another owner.
+        # A larger unambiguous whole retains its normal precedence. Both OUT
+        # consumers share this boundary, and no pass reads the restored output.
         return _splice(text, [(start, end,
-                               _as_written(value, _spellings_for(value, literals.as_written)))
+                               text[start:end] if _conflicts_with(text[start:end], literals.conflicts)
+                               else _as_written(value, _spellings_for(value, literals.as_written)))
                               for start, end, value in taken])
 
 
@@ -751,11 +885,22 @@ _CUE_DOCUMENT_RE = tuple(
     for kind, pattern in _CUE_DOCUMENTS)
 _CUE_DOCUMENT_ALT = "|".join(pattern for _kind, pattern in _CUE_DOCUMENTS)
 _CUE_NUMBER = re.compile(
-    r"(?i)(?<![\wа-яё])(?P<cue>(?:\*{4}\s?){2,3}|дом\w*|д\.|кв\.|кв(?=\s)|квартир\w*|подъезд\w*|корпус\w*|"
+    r"(?i)(?<![\wа-яё])(?P<cue>(?:\*{4}\s?){2,3}|дом\w*|д\.|д(?=\s)|кв\.|кв(?=\s)|квартир\w*|подъезд\w*|корпус\w*|"
     r"(?:серия|серии|номер\w*)(?:\s+(?:" + _CUE_DOCUMENT_ALT + r"))?|"
     r"последн\w+\s+(?:[а-яё]+\s+){0,2}?цифр\w*(?:\s+[а-яё]+){0,2}|"
     r"контрольн\w+\s+числ\w*|заканчива\w+\s+на)\s*[:—–|-]?\s*(?:\*\*|`|«|\")?(?P<num>\d(?:[\d\s]{0,10}\d)?)(?![\d:])")
-_HOUSE_CUES = ("дом", "д.", "кв", "квартир", "подъезд", "корпус")
+_HOUSE_CUES = ("дом", "д", "кв", "квартир", "подъезд", "корпус")
+_SHORT_HOUSE_PREFIX = re.compile(r"(?i)(?:^|[,;:\n]|\b(?:к|у|в|из|до|от|около)\s+)\s*$")
+
+
+def _licensed_number_cue(text: str, match: re.Match[str]) -> bool:
+    """A bare house abbreviation needs a field boundary or address grammar.
+
+    A letter followed by a number is also an initial or a category label.
+    Finding that number in our vault does not turn the letter into a house.
+    """
+    return (match.group("cue").lower() != "д"
+            or _SHORT_HOUSE_PREFIX.search(text[:match.start()]) is not None)
 
 
 def _cue_document(cue: str) -> str | None:
@@ -809,6 +954,8 @@ def _restore_cued_numbers_spans(text: str, vault: Vault) -> list[tuple[int, int,
     protected += [m.span() for m in token_re().finditer(text)]
     spans: list[tuple[int, int, str]] = []
     for match in _CUE_NUMBER.finditer(text):
+        if not _licensed_number_cue(text, match):
+            continue
         number = match.group("num")
         digits = re.sub(r"\D", "", number)
         if not digits:
@@ -825,14 +972,12 @@ def _restore_cued_numbers_spans(text: str, vault: Vault) -> list[tuple[int, int,
             # которой 26 стоит в номере дома, и заказчик получал чужой дом
             # под видом своей квартиры. Спрашивается то же слово, которым
             # спрашивает сигнал (`_CUE_ROLES`), чтобы два ответа не разошлись.
-            token = vault.place_owner(number, _CUE_ROLES.get(cue[:2], "house"))
+            role = _CUE_ROLES.get(cue[:2], "house")
+            token = vault.place_owner(number, role)
             if token is not None:
                 value, entity_type = vault.reveal(token)
                 if value and entity_type == "LOC":
-                    fake_roles = morph_places.split_roles(token)
                     real_roles = morph_places.split_roles(value)
-                    role = next((name for name, part in fake_roles.items()
-                                 if re.sub(r"\D", "", part) == digits and name != "street"), "")
                     if role and real_roles.get(role):
                         replacement = morph_places.part_in_form_of(number, real_roles[role], role)
         else:
@@ -918,23 +1063,37 @@ def _restore_verbatim_spans(text: str, shown_forms: list[tuple[str, str, str]],
     customer's literal string. Longest shown form first, non-overlapping,
     whole-word: «Ольховая 10» must not match inside «Ольховая 105»."""
     spans: list[tuple[int, int, str]] = []
-    for shown, original, _kind in shown_forms:
+    for shown, original, kind in shown_forms:
         if not shown or shown not in text:
             continue
         for match in re.finditer(re.escape(shown), text):
             start, end = match.start(), match.end()
+            # A malformed country-code sign is not a form to restore under: the
+            # shown «+79795553322» inside «++79795553322» would put the real
+            # digits under the doubled sign (C02). Leave the agent's string.
+            if _malformed_phone_sign(shown, text[:start]):
+                continue
             if start > 0 and text[start - 1].isalnum() and shown[0].isalnum():
                 continue
             if end < len(text) and text[end].isalnum() and shown[-1].isalnum():
                 continue
             if any(start < b and a < end for a, b, _ in spans):
                 continue
-            spans.append((start, end, original))
+            # A copied dictated rendering has stronger evidence than a new
+            # parse: leading zeroes can split one original group into several
+            # spoken groups. Reconstructing it loses the sender's original
+            # grouping. Numeric output from a spoken original still renders
+            # numerically; that is a changed form, not this literal-copy case.
+            copied_words: bool = kind in {"PHONE", "SNILS", "INN", "CARD", "PASSPORT"} and not any(
+                character.isdigit() for character in shown + original)
+            restored: str = original if copied_words or shown == original else _atomic_in_form_of(shown, original, kind)
+            spans.append((start, end, restored))
     return spans
 
 
 def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> list[tuple[int, int, str]]:
     matches: list[re.Match[str]] = list(token_re().finditer(text))
+    spoken_dates: set[str] = set()
     # A DATE SAID IN WORDS is a token too, since a spoken date of birth is
     # replaced by a spoken substitute; `TOKEN_RE` knows the digit shapes only,
     # so the spoken-date arm of the detector supplies the candidates. A miss
@@ -944,6 +1103,7 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> li
         for spoken_date in ASSETS.get().quasi.text_date.finditer(text):
             if not any(a < spoken_date.end() and spoken_date.start() < b for a, b in taken):
                 matches.append(spoken_date)
+                spoken_dates.add(spoken_date.group())
         matches.sort(key=lambda m: m.start())
     if not matches:
         return []
@@ -964,7 +1124,7 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> li
         # substitute was minted as «15 апреля 1990 года», the agent dropped
         # «года», and the exact token no longer matched — the canonical is
         # what `date_owner` is keyed by.
-        if _DATE_SHAPE.match(value) and not _DATE_ANY.match(value.strip()):
+        if value in spoken_dates or (_DATE_SHAPE.match(value) and not _DATE_ANY.match(value.strip())):
             canonical = _date_canonical(value)
             if len(canonical) == 10:
                 alternates.append(canonical)
@@ -996,10 +1156,15 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> li
 
     spans: list[tuple[int, int, str]] = []
     for match in matches:
-        hit = resolved(match.group())
+        surface = match.group()
+        # A malformed country-code sign is not a phone we may restore under: a
+        # token matching from the SECOND plus of «++79795553322» put the real
+        # digits under the doubled sign (C02). Leave it untouched.
+        if _malformed_phone_sign(surface, text[:match.start()]):
+            continue
+        hit = resolved(surface)
         if hit is not None:
             value, kind = hit
-            surface = match.group()
             # A DATE COMES BACK IN THE AGENT'S NOTATION — «2 июня 1975» where
             # the agent wrote «19 июля 1975», «1975-06-02» where it wrote ISO,
             # «2.6.75» where it kept the customer's short form — and in the
@@ -1008,10 +1173,11 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> li
             # whoever wrote the substitute, on both legs. Decided BEFORE the
             # digit splice: a date is not an identifier, and laying its digits
             # into the surface's slots padded «10.4.82» to «10.04.82».
-            canonical = _date_canonical(value) if _DATE_SHAPE.search(value) or not any(ch.isdigit() for ch in value) else ""
+            canonical = _date_canonical(value) if kind in {"DOB", "DATE"} else ""
             if len(canonical) == 10 and _date_canonical(surface):
-                if not date_form.same_notation(value, surface):
-                    value = date_form.render_like(canonical, surface)
+                value = _atomic_in_form_of(surface, value, kind)
+            elif kind in {"PHONE", "SNILS", "INN", "CARD", "PASSPORT", "EMAIL", "PLATE"}:
+                value = _atomic_in_form_of(surface, value, kind)
             elif for_tool and kind == "NAME":
                 # THE EXACT TOKEN, RE-CASED OR NOT: the agent wrote the
                 # nominative it was shown («Николай Сорокин» for a substitute
@@ -1038,7 +1204,8 @@ def _restore_reformatted_spans(text: str, vault: Vault,
                          for_tool: bool = False) -> list[tuple[int, int, str]]:
     """Numeric tokens the model rewrote (+7… -> 8…, separators stripped) no longer
     match their minted shape, so they are resolved by digit signature instead."""
-    runs = [(match, re.sub(r"\D", "", match.group())) for match in _NUM_RUN.finditer(text)]
+    normalized_text: str = normalize(text)
+    runs = [(match, re.sub(r"\D", "", match.group())) for match in _NUM_RUN.finditer(normalized_text)]
     # ПОЛЕ, СОСТОЯЩЕЕ ТОЛЬКО ИЗ ЧИСЛА, — ЭТО ЧАСТЬ ЗНАЧЕНИЯ, А НЕ ЧИСЛО В ТЕКСТЕ.
     # `_NUM_RUN` намеренно требует длинного прогона: короткое число в прозе — это
     # обычно количество, и подменять его настоящими цифрами значило бы называть
@@ -1058,17 +1225,32 @@ def _restore_reformatted_spans(text: str, vault: Vault,
         candidates.add(digits)
         if len(digits) >= 10:
             candidates.add(digits[-10:])
-    resolved = vault.resolve_digit_signatures(candidates, for_tool)
+    resolved = vault.resolve_digit_signatures_typed(candidates, for_tool)
     # БЕЗ РАННЕГО ВОЗВРАТА. Пустая выборка по сигнатурам — это ровно тот случай,
     # ради которого заведён разбор куска ниже: агент положил в поле часть
     # подмены, и целой сигнатуры у неё нет по построению.
     spans: list[tuple[int, int, str]] = []
     for match, digits in runs:
-        # Full signature wins over the phone last-10 fallback.
-        value = resolved.get(digits) or (resolved.get(digits[-10:]) if len(digits) >= 10 else None)
-        if value is not None:
-            if for_tool:
-                value = _digits_in_form_of(match.group(), value)
+        # A MALFORMED COUNTRY-CODE SIGN is not a phone form we may splice under.
+        # «+8…» and «++…» came back with the REAL digits laid under the agent's
+        # broken sign («+89162148803», «++79162148803») — a hybrid a dialer
+        # refuses (C02). Leave the run untouched; it is the agent's own string
+        # and the residual detector names it.
+        surface = text[match.start():match.end()]
+        if _malformed_phone_sign(surface, text[:match.start()]):
+            continue
+        # Full signature wins over the phone last-10 fallback. The fallback is
+        # PHONE-shaped only: ten digits is the domestic tail, eleven is the
+        # country-coded form, and a twelve-digit run is NEVER a phone — a phone
+        # the model extended with one digit is twelve, and running its trailing
+        # ten through the fallback laid the REAL value under the agent's
+        # spurious digit (E02: «979795553322» came back «979162148803»).
+        hit = resolved.get(digits)
+        if hit is None and 10 <= len(digits) <= 11:
+            hit = resolved.get(digits[-10:])
+        if hit is not None:
+            kind, value = hit
+            value = _atomic_in_form_of(text[match.start():match.end()], value, kind)
             spans.append((match.start(), match.end(), value))
             continue
         # КУСОК ПОДМЕНЫ — ТОЖЕ НАША ПОДМЕНА. Схема просит серию паспорта без
@@ -1091,13 +1273,50 @@ def _restore_reformatted_spans(text: str, vault: Vault,
         owner = vault.digit_fragment_owner(digits)
         if owner is not None:
             spans.append((match.start(), match.end(),
-                          _same_shape(match.group(), owner[0])))
+                          _numeric_glyphs_like(text[match.start():match.end()],
+                                               _same_shape(match.group(), owner[0]))))
     return spans
 
 
 def _restore_reformatted(text: str, vault: Vault,
                          for_tool: bool = False) -> str:
     return _splice(text, _restore_reformatted_spans(text, vault, for_tool))
+
+
+def _spoken_identifier_hits(text: str, vault: Vault,
+                            for_tool: bool) -> list[_ResolvedSpan]:
+    """Resolve whole dictated substitutes by indexed identity, never by a fragment."""
+    if not ASSETS.is_loaded:
+        return []
+    runs: list[tuple[int, int, str]] = [
+        (start, end, spoken.run_to_digits(words))
+        for start, end, words in spoken.numeral_runs(text)]
+    candidates: set[str] = {digits for _, _, digits in runs if len(digits) >= 10}
+    candidates |= {"7" + digits[1:] for digits in candidates
+                   if len(digits) == 11 and digits.startswith("8")}
+    if not candidates:
+        return []
+    resolved = vault.resolve_digit_signatures_typed(candidates, for_tool)
+    spans: list[_ResolvedSpan] = []
+    for start, end, digits in runs:
+        key: str = "7" + digits[1:] if len(digits) == 11 and digits.startswith("8") else digits
+        hit = resolved.get(digits)
+        if hit is None and key != digits:
+            phone_hit = resolved.get(key)
+            hit = phone_hit if phone_hit is not None and phone_hit[0] == "PHONE" else None
+        if hit is None:
+            continue
+        kind, value = hit
+        spans.append(_ResolvedSpan(start, end, value, kind))
+    return spans
+
+
+def _restore_spoken_identifier_spans(text: str, vault: Vault,
+                                    for_tool: bool) -> list[tuple[int, int, str]]:
+    """Apply the current spoken form after whole-identity resolution."""
+    return [(hit.start, hit.end, _atomic_in_form_of(
+        text[hit.start:hit.end], hit.value, hit.entity_type))
+        for hit in _spoken_identifier_hits(text, vault, for_tool)]
 
 
 def _same_shape(model: str, digits: str) -> str:
@@ -1121,6 +1340,121 @@ def _same_shape(model: str, digits: str) -> str:
 # matches, and that is the guard — splicing real digits into a FAKE street's
 # text would hand the tool an address that exists nowhere.
 _NUMERIC_FORM = re.compile(r"[+(]?\d[\d\s().\-/]*\d")
+
+
+def _plate_in_form_of(written: str, value: str) -> str:
+    """Mirror each plate letter's alphabet and case without changing its role."""
+    latin: str = "ABEKMHOPCTYX"
+    cyrillic: str = "АВЕКМНОРСТУХ"
+    to_latin: dict[int, str] = str.maketrans(cyrillic, latin)
+    samples: list[str] = [char for char in written if char.isalpha()]
+    letters: list[str] = [char for char in value if char.isalpha()]
+    if len(samples) != len(letters):
+        return value
+    rendered: list[str] = []
+    index: int = 0
+    for char in value:
+        if not char.isalpha():
+            rendered.append(char)
+            continue
+        sample: str = samples[index]
+        normalized: str = char.upper().translate(_PLATE_FOLD)
+        if sample.upper() in latin:
+            normalized = normalized.translate(to_latin)
+        rendered.append(normalized.lower() if sample.islower() else normalized)
+        index += 1
+    return "".join(rendered)
+
+
+def _atomic_in_form_of(written: str, value: str, kind: str) -> str:
+    """Render resolved content in a mention's form, independent of its consumer.
+
+    Identity resolution supplies the type. Numeric identifiers never borrow a
+    PHONE prefix or DATE interpretation merely because their digits resemble it.
+    NAME and LOC keep their role-aware renderers; this function does not infer
+    identity, expand a partial value, or select an owner.
+    """
+    if kind == "PHONE":
+        return _phone_in_form_of(written, value)
+    if kind in {"SNILS", "INN", "CARD", "PASSPORT"}:
+        model: str = normalize(written)
+        digits: str = re.sub(r"\D", "", canonicalize(kind, normalize(value)))
+        dictated: str | None = spoken.digits_in_words_like(digits, written)
+        if dictated is not None:
+            return dictated
+        if _NUMERIC_FORM.fullmatch(model.strip()) and len(re.sub(r"\D", "", model)) == len(digits):
+            rendered: str = _numeric_glyphs_like(written, _same_shape(model, digits))
+            return value if normalize(value) == rendered else rendered
+        return value
+    if kind in {"DOB", "DATE"}:
+        canonical: str = _date_canonical(value)
+        if len(canonical) == 10 and date_form.notation_of(written) is not None:
+            return date_form.render_like(canonical, written)
+        return value
+    if kind == "EMAIL":
+        local, separator, domain = value.partition("@")
+        model_local, model_separator, model_domain = written.partition("@")
+        if separator and model_separator:
+            return (agent_form.cased_like(local, model_local) + "@"
+                    + agent_form.cased_like(domain, model_domain))
+        return value
+    if kind == "PLATE":
+        return _plate_in_form_of(written, value)
+    return value
+
+
+def _numeric_glyphs_like(written: str, rendered: str) -> str:
+    """Keep an offset-safe spelling only where it still denotes the real digit.
+
+    An O that denotes zero cannot be retained over a nonzero real digit: that
+    would change identity. Normalization's leased mapping is the only authority
+    on look-alikes; no separate typo dictionary is introduced here.
+    """
+    normalized: str = normalize(written)
+    if len(normalized) != len(rendered):
+        return rendered
+    return "".join(source if source != folded and folded == target else target
+                   for source, folded, target in zip(written, normalized, rendered, strict=True))
+
+
+def _malformed_phone_sign(surface: str, before: str) -> bool:
+    """Whether `surface` carries a broken country-code sign we must not splice.
+
+    «+8…» puts the domestic 8 under a plus; «++…» (a second plus standing right
+    before this run) doubles the sign. Both came back with the REAL digits laid
+    under the agent's malformed sign — «+89162148803», «++79162148803» — a number
+    a dialer refuses and the customer's validator rejects. They are the agent's
+    own malformed string, not a form the vault may rewrite.
+    """
+    stripped = surface.strip()
+    if stripped.startswith("+8"):
+        return True
+    return stripped.startswith("+") and before.endswith("+")
+
+
+def _phone_in_form_of(written: str, real: str) -> str:
+    """Render a known PHONE in the current sender's numeric form on either leg.
+
+    Lookup supplies the type; canonicalization supplies content, including a
+    spoken original. The literal is retained only when its normalized spelling
+    already matches this render, preserving a copied homoglyph without forcing
+    yesterday's grouping or spoken notation onto today's numeric argument.
+    """
+    normalized: str = normalize(real)
+    canonical: str = canonicalize("PHONE", normalized)
+    runs = spoken.numeral_runs(written)
+    if len(runs) == 1 and written.strip() == written[runs[0][0]:runs[0][1]]:
+        source_digits: str = spoken.run_to_digits(runs[0][2])
+        target_digits: str = canonical.lstrip("+")
+        if len(source_digits) == 11 and source_digits[0] in "78":
+            target_digits = source_digits[0] + target_digits[-10:]
+        elif len(source_digits) == 10:
+            target_digits = target_digits[-10:]
+        dictated: str | None = spoken.digits_in_words_like(target_digits, written)
+        if dictated is not None:
+            return dictated
+    rendered: str = _numeric_glyphs_like(written, _digits_in_form_of(normalize(written), canonical))
+    return real if normalized == rendered else rendered
 
 
 def _digits_in_form_of(written: str, real: str) -> str:
@@ -1471,8 +1805,8 @@ def _tool_windows(text: str) -> list[tuple[int, int, str]]:
     return windows
 
 
-def _restore_inflected_spans(text: str, vault: Vault, inflect: bool = True,
-                       for_tool: bool = False) -> list[tuple[int, int, str]]:
+def _restore_inflected_candidates(text: str, vault: Vault, inflect: bool,
+                                  for_tool: bool) -> list[_ResolvedSpan]:
     """NAME tokens the model put into another case no longer match their minted
     shape, so they are resolved by case-invariant key instead.
 
@@ -1552,7 +1886,7 @@ def _restore_inflected_spans(text: str, vault: Vault, inflect: bool = True,
     # only thing that resolves «Филипп Алексеевич», and a fragment never has a
     # key hit by construction — returning here meant the fallback could only ever
     # run for text that had already resolved by some other window.
-    spans: list[tuple[int, int, str]] = []
+    spans: list[_ResolvedSpan] = []
     taken: list[tuple[int, int]] = []
     # AN EXACT ADDRESS HIT OUTRANKS A WIDER FRAMING RESOLVED BY INFERENCE. The
     # settlement in a token is real now, so «Самара, улица Барбарисовая 170»
@@ -1624,12 +1958,18 @@ def _restore_inflected_spans(text: str, vault: Vault, inflect: bool = True,
                 continue
         taken.append((start, end))
         if derived is not None:
-            spans.append((start, end, derived))
+            spans.append(_ResolvedSpan(start, end, derived, "NAME"))
             continue
         entity_type, value = found
-        spans.append((start, end,
-                      _in_case_of(value, surface, entity_type, inflect, vault)))
+        spans.append(_ResolvedSpan(start, end,
+                      _in_case_of(value, surface, entity_type, inflect, vault), entity_type))
     return spans
+
+
+def _restore_inflected_spans(text: str, vault: Vault, inflect: bool = True,
+                            for_tool: bool = False) -> list[tuple[int, int, str]]:
+    return [(span.start, span.end, span.value)
+            for span in _restore_inflected_candidates(text, vault, inflect, for_tool)]
 
 
 def _restore_inflected(text: str, vault: Vault, inflect: bool = True,
@@ -1741,7 +2081,18 @@ def _place_fragment(surface: str, vault: Vault,
     # — улица с домом сразу, — и назвать ОДНУ роль такому куску нечем. Основа
     # улицы сама отличает адрес от адреса, поэтому голого числа здесь не
     # бывает и отсеивать по роли нечего.
-    token = vault.place_owner(surface, "")
+    stems, numbers = morph_places.signature_parts(surface)
+    if numbers and not stems:
+        roles: dict[str, str] = morph_places.split_roles(surface)
+        # Numeric evidence names a role, not just an owner. A house number
+        # under a flat marker must never borrow the owner's real flat.
+        owners: set[str | None] = {
+            vault.place_owner(part, role) for role, part in roles.items()}
+        if not roles or None in owners or len(owners) != 1:
+            return None
+        token = next(iter(owners))
+    else:
+        token = vault.place_owner(surface, "")
     if token is None:
         return None
     value, entity_type = vault.reveal(token, for_tool)
@@ -1870,6 +2221,8 @@ def _in_case_of(value: str, surface: str, entity_type: str, inflect: bool,
     # the speech corpus are this.
     #
     # Prose still agrees; only the argument path asks for the value itself.
+    if entity_type in ("LOC", "ADDR"):
+        return morph_places.in_form_of(value, surface)
     if not inflect:
         # ФОРМА АДРЕСА ПРИНАДЛЕЖИТ АГЕНТУ. `inflect=False` — это плечо аргумента,
         # и здесь возвращалось наше значение целиком: продиктованный адрес
@@ -1929,10 +2282,10 @@ def _person_in_case_of(value: str, surface: str, vault: Vault) -> str:
     # is evidence, not a prior.
     if vault.as_minted(surface):
         return value
-    case = morph_names.detect_case(surface)
+    gender = morph_names.detect_gender(value)
+    case = morph_names.detect_case(surface, gender)
     if case is None:
         return value
-    gender = morph_names.detect_gender(value)
     # THE CASE THE CUSTOMER WROTE IN WINS A TIE. «Виктории Мещеряковой» is
     # genitive, dative and prepositional in one spelling; pymorphy3's prior
     # says genitive and «к Анне Черных» came back «к Анны Черных» — the right
@@ -2427,6 +2780,54 @@ def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
     return out
 
 
+def _shown_surfaces(text: str, forms: list[tuple[str, str, str]]) -> set[str]:
+    """Shown views are evidence even when they are not whole minted tokens."""
+    found: set[str] = set()
+    for shown, _, _kind in forms:
+        if not shown:
+            continue
+        for match in re.finditer(re.escape(shown), text):
+            low, high = match.span()
+            if low and text[low - 1].isalnum() and shown[0].isalnum():
+                continue
+            if high < len(text) and text[high].isalnum() and shown[-1].isalnum():
+                continue
+            found.add(shown)
+            break
+    return found
+
+
+def _extended_phone_runs(text: str, vault: Vault) -> set[str]:
+    """A known PHONE signature plus one adjacent digit, without a real-value splice."""
+    candidates: list[tuple[str, set[str]]] = []
+    for match in _NUM_RUN.finditer(text):
+        surface = match.group().strip()
+        digits = re.sub(r"\D", "", surface)
+        # A phone minted here carries eleven digits, so a run of twelve is that
+        # phone plus ONE agent-added digit — and the added digit may sit BEFORE,
+        # AFTER or INSIDE it. The old suffix-only probe `digits[1:11]` saw only
+        # the tail, so a prefix or interior insertion was read as an unknown
+        # number and the restore path spliced a real value under the spurious
+        # digit while this detector stayed silent. Deleting each position once
+        # yields every eleven-digit remainder the model could have written; each
+        # remainder's ten-digit tail is the same number in its domestic shape
+        # («8 (979) 555-33-221» minus its suffix is «89795553322», whose tail is
+        # the minted last-ten).
+        if len(digits) != 12:
+            continue
+        signatures: set[str] = set()
+        for i in range(len(digits)):
+            window = digits[:i] + digits[i + 1:]
+            signatures.add(window)
+            signatures.add(window[-10:])
+        candidates.append((surface, signatures))
+    owners = vault.resolve_digit_signatures_typed(
+        {signature for _surface, signatures in candidates for signature in signatures}, True)
+    return {surface for surface, signatures in candidates
+            if any(signature in owners and owners[signature][0] == "PHONE"
+                   for signature in signatures)}
+
+
 def residual_tokens(text: str, vault: Vault) -> list[str]:
     """Minted tokens still standing in text that has already been detokenized.
 
@@ -2450,7 +2851,12 @@ def residual_tokens(text: str, vault: Vault) -> list[str]:
     HITS for a substitute we minted. A hit here means one thing only — this
     string is ours, and it should not have survived.
     """
-    candidates = {match.group() for match in token_re().finditer(text)}
+    forms: list[tuple[str, str, str]] = vault.shown_forms()
+    spoken_residual: set[str] = {text[hit.start:hit.end]
+                                for hit in _spoken_identifier_hits(text, vault, False)}
+    shown_residual: set[str] = _shown_surfaces(text, forms)
+    extended_phone: set[str] = _extended_phone_runs(text, vault)
+    candidates = {match.group() for match in token_re().finditer(text)} | spoken_residual | shown_residual
     # A PHONE TOKEN IS WRITTEN THE CUSTOMER'S WAY (vault `_digits_in_customer_
     # form`), so `TOKEN_RE`'s «+79…» shape no longer names it; every digit run
     # is offered and the vault answers by signature.
@@ -2461,8 +2867,16 @@ def residual_tokens(text: str, vault: Vault) -> list[str]:
     candidates |= {surface for _start, _end, surface in _name_windows(text)}
     if not candidates:
         return []
+    # THE SURFACE THE VETO KEPT, NAMED. `_shown_surfaces` finds only the EXACT
+    # copy of a shown form; a rewritten surface is a different string, so
+    # `unmask_text` refuses it by IDENTITY and the caller has to be told the
+    # same way — a refusal nobody can see is the silence this function ends.
+    conflicts: dict[str, frozenset[str]] = _conflict_keys(forms)
+    unresolved: set[str] = {value for value in candidates
+                            if _conflicts_with(value, conflicts)}
     known = vault.detokenize_many(candidates)
-    residual = {value for value in candidates if value in known}
+    residual = ({value for value in candidates if value in known}
+                | spoken_residual | shown_residual | unresolved | extended_phone)
     residual |= {value for value in candidates
                  if value not in known and vault.residual_of(value) is not None}
     return _maximal(residual)
@@ -2525,19 +2939,37 @@ def surviving_substitutes(written: str, restored: str, vault: Vault,
     windows would put a paragraph of words in front of the vault, which is why
     the restoring leg bounds them the same way (`_tool_windows`).
     """
+    forms: list[tuple[str, str, str]] = vault.shown_forms()
+    shown_residual: set[str] = {
+        shown for shown in _shown_surfaces(written, forms)
+        if _still_standing(shown, restored)}
+    extended_phone: set[str] = {
+        surface for surface in _extended_phone_runs(written, vault)
+        if _still_standing(surface, restored)}
     asked = _written_candidates(written, for_tool).standing_in(restored)
+    # THE REWRITTEN SURFACE THE VETO REFUSED IS A RESIDUAL TOO. It is not a
+    # substring of any shown form, so `_shown_surfaces` cannot see it, and the
+    # vault has no minted row to answer for it (`detokenize_many` misses) — the
+    # one question that names it is the identity question the restorer asked.
+    conflicts: dict[str, frozenset[str]] = _conflict_keys(forms)
+    unresolved: set[str] = {value for value in asked.named | asked.words
+                            if _conflicts_with(value, conflicts)}
     if not asked.any():
-        return []
+        return _maximal(shown_residual | unresolved | extended_phone)
     # ТОТ ЖЕ ВЫЗОВ И ТО ЖЕ ПЛЕЧО, ЧТО ВИДЕЛО ВОССТАНОВЛЕНИЕ (Б29). Вид выбирается
     # по плечу, а не берётся один на оба: вето читает только аргумент
     # (`_argument_view`), и сигнал, спросивший о прозе с вето, доложил бы об
     # отказе, которого на этом плече не было.
     call = (_argument_view if for_tool else _call_view)(_call_texts(written), vault)
     known = call.detokenize_many(asked.named)
-    residual = {value for value in asked.named if value in known}
+    residual = ({value for value in asked.named if value in known}
+                | shown_residual | unresolved | extended_phone)
     residual |= {value for value in asked.named
                  if value not in known and call.residual_of(value) is not None}
     residual |= _pieces_of_ours(asked, residual, call)
+    residual |= {written[hit.start:hit.end]
+                 for hit in _spoken_identifier_hits(written, call, for_tool)
+                 if written[hit.start:hit.end] in asked.named}
     return _maximal(residual)
 
 
@@ -2599,6 +3031,9 @@ def _written_candidates(text: str, for_tool: bool) -> _Candidates:
     """Every string the restoring leg offered the vault about this text, with
     the question it was offered to — see `_Candidates`."""
     general = {match.group() for match in token_re().finditer(text)}
+    if ASSETS.is_loaded:
+        general |= {text[start:end] for start, end, words in spoken.numeral_runs(text)
+                    if len(spoken.run_to_digits(words)) >= 10}
     # A PHONE TOKEN IS WRITTEN THE CUSTOMER'S WAY (vault `_digits_in_customer_
     # form`), so `TOKEN_RE`'s «+79…» shape no longer names it; every digit run
     # is offered and the vault answers by signature.
@@ -2648,6 +3083,8 @@ def _cued_candidates(text: str) -> tuple[set[tuple[str, str | None, str | None]]
     cued: set[tuple[str, str | None, str | None]] = set()
     addressed: set[tuple[str, str]] = set()
     for match in _CUE_NUMBER.finditer(text):
+        if not _licensed_number_cue(text, match):
+            continue
         number = match.group("num").strip()
         if not number:
             continue

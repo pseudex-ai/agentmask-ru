@@ -1530,6 +1530,55 @@ class AnswerSpan:
     restored_end: int
 
 
+# THE MODEL'S OWN CHRONOLOGY (Codex contract, 2026-09-27). `request_count` is
+# «how many pushes the connector made» and it stays exactly that — a historical
+# number is never reinterpreted by a later reader. `ModelTrace` is the ADDITIVE
+# record of what the PROVIDER actually returned: one `ModelResponse` per
+# completed provider response, in order, each carrying the request ordinal the
+# arm saw, the user turn it answered, how many tool results were ALREADY
+# available to it, the raw text it wrote and that text restored through the
+# gateway's current state. `call_requests` maps each ACCEPTED tool call, in call
+# order, to the `request` of the response that emitted it — the fact
+# `request_index` cannot express, because two tool calls of ONE response execute
+# sequentially while the second's result was NOT visible to the response that
+# asked for both.
+#
+# None means «this connector never called the `response` hook» (Claude, the
+# legacy paths, a perfect simulation), NEVER «no model was asked». A connector
+# that does not call `response` gets None rather than a manufactured per-call
+# model request: a guess would put a chronology in the record that nobody
+# observed, which is the defect class this instrument exists to avoid.
+MODEL_TRACE_FORMAT: int = 1
+
+
+@dataclass(frozen=True)
+class ModelResponse:
+    """One COMPLETED provider response of the model loop.
+
+    `available_results` is the count of accepted tool calls BEFORE this
+    response's OWN function calls are processed, so two calls of one response
+    both read 0 and the NEXT response reads 2. `raw`/`restored` are the
+    response's text as the provider wrote it and as the gateway's CURRENT state
+    restores it; an empty `raw` is a real observation (a pure tool-call turn),
+    which is why the hook fires even when the text is empty.
+    """
+
+    request: int
+    turn: int
+    available_results: int
+    raw: str
+    restored: str
+
+
+@dataclass(frozen=True)
+class ModelTrace:
+    """The provider chronology of one arm. `len(call_requests) == len(calls)`:
+    every accepted call is mapped to the response that emitted it, in order."""
+
+    responses: tuple[ModelResponse, ...]
+    call_requests: tuple[int, ...]
+
+
 @dataclass(frozen=True)
 class ArmRunV5:
     """v4 `ArmRun` + what the IN/tool, OUT/answer, memory and RAG questions
@@ -1581,6 +1630,11 @@ class ArmRunV5:
     # customer saw in turn 2 and not in the final answer was counted nowhere;
     # `residual` now takes `> 0` as a miss of the observation.
     turn_residual: int
+    # THE MODEL'S CHRONOLOGY, additive and explicit (see `ModelTrace`). It has
+    # NO default: every constructor states whether it observed the provider, so
+    # a path that forgot the field fails at construction instead of silently
+    # writing `None` and looking like «the connector has no chronology».
+    model_trace: ModelTrace | None
 
 
 @dataclass(frozen=True)

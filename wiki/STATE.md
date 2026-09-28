@@ -30,6 +30,22 @@ a fork was actually chosen between named alternatives.
 
 # Part 1 — from docs/decisions.md
 
+### D-071 · 2026-09-27 · Full-loop, current-v5 coverage before the next 450 run
+**Status:** active scope decision; implementation explicitly authorized on 2026-09-27 in the isolated hop-audit worktree, acceptance incomplete.
+**Context:** the owner rejected treating a narrow PHONE gain as enough preparation for the next 450-case run. Confirmed defects and unverified classes span input mentions, names, addresses, answers, summaries, templates, memory and chains.
+**Options:** proceed from PHONE to live rerun and fix other types later; rewrite the engine universally; complete a bounded evidence-led matrix across the existing ten v5 types and four boundaries using current mechanisms.
+**Decision:** the third option. The pre-450 matrix is authoritative for order, scope and completion gates; the hop-form specification retains architectural contracts and PROGRESS retains measurements. Every class ends in a proven fix, proven no-change result or explicit unresolved decision. The subsequent implementation GO covers this offline sprint and up to $10 of bounded DeepSeek assistance, not paid eval runs or deployment.
+**Price:** broader offline coverage before live feedback; ambiguity, error-result provenance and irreproducible NAME failures remain visible rather than being traded for a better average. Owner decisions precede new external failure behaviour and live spending.
+**Related:** `docs/plan-hop-form-before-450.md` · `docs/tz-hop-form-adaptation.md` · `research/hop-format-audit/PROGRESS.md` · D-070
+
+### D-070 · 2026-09-27 · Current-hop PHONE form; measurement changes stay separate
+**Status:** active contract; PHONE candidate implemented in audit worktree, not released; S0 and complete M0 acceptance remain open.
+**Context:** scheduled hops mislabelled real calls as absent, while PHONE restoration could return dictated words or the original user's prefix instead of the agent's numeric notation. Correct value, correct form and unchanged agent behaviour are different questions.
+**Options:** force canonical output; preserve the first user spelling forever; reuse the existing renderer with current-sender notation and typed identity; replace the whole vault.
+**Decision:** retain vault/schema/detector and existing renderers. PHONE gets typed digit lookup and current-sender rendering on both tool and answer legs, preserving supported copied typos. Add a versioned complete-cohort/actual-OUT diagnostic; historical metrics remain reproducible. No scheduled turn is required for an actual crossing, and uncertainty stays visible. No paid live run or rollout under this GO.
+**Price:** two PHONE expectation updates; old and new estimators must be labelled separately. Broad NAME tests showed intermittent failures not closed by this change. Error-echo protection needs a separately agreed call-provenance scope; the red reproducer is not a security fix.
+**Related:** `docs/tz-hop-form-adaptation.md` · `research/hop-format-audit/PROGRESS.md` · INVARIANTS.md#swap · INVARIANTS.md#vault
+
 ## Code protection and licensing
 
 ### D-001 · 2026-08-20 · Nuitka, не PyArmor Pro
@@ -522,6 +538,17 @@ any claim.
 **Rejected:** deleting Claude, rewriting the benchmark around the new SDK, starting nano before point checks, treating subscription usage as unlimited free API calls.
 **Price:** two external adapters and a separate one-time ChatGPT device login; tokens recorded separately from USD estimates. New-connector resume and calibration repeats remain unavailable. Old Claude calibration cannot certify the new judge. The engine and v4 remain unchanged.
 **Related:** `docs/tz-v5-model-connectors.md`.
+
+### D-072 · 2026-09-27 · Vault identity, mention form and provenance: investigation, not an approved redesign
+
+**Status:** hypothesis retained at the owner's request; no schema migration or database replacement approved.
+**Context:** stable pseudonyms do not prove correct restoration of every mention. The current vault already stores canonical mappings, name/address parts, conversation usage and literal shown forms. However, `shown_forms` is keyed by customer, conversation and shown string; `Vault.remember_shown` replaces that row, rather than preserving per-event/version provenance. This is a candidate information-loss seam, not proof that it causes the measured failures. SQLite throughput has not been established as this sprint's bottleneck.
+**Options:** (1) keep the schema and correct resolution/rendering; (2) add narrowly justified mention/projection/provenance records if a reproducer proves needed information is lost; (3) replace the database or construct a tree of substitute-to-substitute rewrites. Option 3 is not justified by current evidence.
+**Working direction:** separate a datum's stable identity and pseudonym from the selected roles and form of each mention. Resolve a mention to real content and render that content in the current sender's form. Do not infer a person's identity from a shared name, or restore through an unbounded chain of string aliases. A composed address has to resolve coherently before its individual parts are spliced.
+**Evidence and limits:** the LOC hybrid reproducer in `research/hop-format-audit/location-hop-review.md` demonstrates an ordering/resolution failure even when the vault can identify the whole address. It does not establish a storage failure. Investigate repeated shown strings, corrections, ambiguous projections and event ordering separately; high consistency scores cannot exonerate these paths.
+**Acceptance before any redesign:** distinguish information present but misused from information genuinely absent; pin each with a public mask/unmask reproducer and negative controls. Measure lookup/lock cost, retained rows and latency separately. Any schema change requires a migration, isolation/persistence tests and the release/schema contract; it is not silently included in a renderer fix.
+**Price:** preserving event history increases private-data retention and write volume; retain only demonstrated needs with an explicit lifetime. A relational schema can represent these links without adopting a graph database or full event sourcing.
+**References:** [W3C PROV-DM](https://www.w3.org/TR/prov-dm/) provides vocabulary for entities, derivations and provenance, not a required runtime dependency. [SQLite deployment guidance](https://www.sqlite.org/whentouse.html) distinguishes storage placement/concurrent-write constraints from application semantics. See `docs/tz-hop-form-adaptation.md` and `docs/plan-hop-form-before-450.md` for the active sprint; this note does not replace their scope.
 
 ### D-068 · 2026-09-24 · Лимит по ОБЪЁМУ, а не по инстансам: слоты удалены, потолок запросов + PAYG-овередж
 **Status:** active (реализовано, выкачено platform/v0.3.20, движок v0.3.19; E2E проверено на живом проде)

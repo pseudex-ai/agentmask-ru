@@ -1,0 +1,73 @@
+{
+  "arm": "C",
+  "calls": [
+    {
+      "name": "crm_find_contact",
+      "parsed": {
+        "query": {
+          "phone": "+79506302117"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "query": {
+          "phone": "+79506302117"
+        }
+      },
+      "seq": 1,
+      "written": {
+        "query": {
+          "phone": "+79506302117"
+        }
+      }
+    },
+    {
+      "name": "crm_find_contact",
+      "parsed": {
+        "query": {
+          "last_name": "морозов"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "query": {
+          "last_name": "морозов"
+        }
+      },
+      "seq": 2,
+      "written": {
+        "query": {
+          "last_name": "морозов"
+        }
+      }
+    }
+  ],
+  "case_id": "memory_anaphora-119",
+  "cluster": "PHONE:9506302117",
+  "cost_usd": 0.004649,
+  "key": "memory_anaphora-119|C|0",
+  "kind": "long_support",
+  "masked_spans": {},
+  "meta": {
+    "api_error_status": null,
+    "cap_usd": 0.32,
+    "duration_ms": 20238,
+    "errors": [],
+    "is_error": false,
+    "model": "deepseek-flash",
+    "reason": "",
+    "session_id": "deepseek-1790430123304198000",
+    "subtype": "success",
+    "turns": 42
+  },
+  "register": "chat",
+  "repeat": 0,
+  "reply": "Прошу прощения, не совсем поняла, что значит «отдайте карточку первого». Уточните, пожалуйста.\n\nЧтобы оформить вызов курьера к Морозову Леониду (Сарапул, ул. Новая, 119, кв. 176), мне всё ещё нужны:\n\n1. **Интервал времени** — дата и часы.\n2. **Телефон для связи** — Морозова Леонида у меня нет; можно указать ваш +7 950 630-21-17?",
+  "state": [],
+  "substitutes": {},
+  "termination": "done"
+}

@@ -67,7 +67,7 @@ from bench.agentpii4.compare import ArmRun, ObservedCall, substitutes_for
 from bench.agentpii4.gateway import HarnessError, PassThrough, RealGateway
 from bench.agentpii4.mock import CallLog
 from bench.agentpii4.records import ArmMeta, arm_record
-from bench.agentpii4.schema import ARMS, EXCLUDED_TERMINATIONS, Case, Ladder, tier
+from bench.agentpii4.schema import ARMS, EXCLUDED_TERMINATIONS, Case, Ladder, PiiItem, tier
 from bench.agentpii5 import build as corpus_build
 from bench.agentpii5 import provider
 from bench.agentpii5 import records as r
@@ -82,11 +82,12 @@ from bench.agentpii5.calibration import write_stamp
 from bench.agentpii5.contracts import (
     AGENT_MODEL, BENCHMARK, ECHO_TAG_PREFIX, JUDGE_MODEL, QUERY_CAP_USD, RETRIES, ArmRunV5,
     CalibrationStamp, CaseV5, HopObservation, JudgeRow, JudgeVerdict,
-    MentionRecord, ToolResultRecord)
+    MentionRecord, ModelResponse, ModelTrace, ToolResultRecord)
 from bench.agentpii5.judge import (
     JUDGE_TEMPERATURE, ConnectedJudgeConfig, JudgeConfig, LeakedPrompt, OracleLeak, build_prompt, judge_input,
     judge_prompt, masked_dialogue, prompt_sha256, residual_pregate_of)
 from bench.agentpii5.mock import BackendV5, seed_backend_v5
+from bench.agentpii5 import payload_canaries as canaries
 from bench.agentpii5.observe import observe
 from bench.agentpii5.schema import case_v5_from_json, case_v5_to_json, corpus_digest_v5
 from pseudex.audit import AuditLog
@@ -129,6 +130,12 @@ class TripleResult:
     hops: tuple[HopObservation, ...]
     judge: JudgeRow | None
     triple: dict[str, object]
+    # S02 CAPTURE: what the gateway handed each boundary, per (case, repeat), so
+    # `drive_v5` can persist it. Empty for a triple that never reached the
+    # intervention arm (a budget refusal, an excluded C), and empty for a caller
+    # that built a `TripleResult` by hand — a canned row honestly measures
+    # nothing, which is what NOT_MEASURED says.
+    captures: tuple[canaries.RunCapture, ...] = ()
 
 
 class TripleRunner(Protocol):
@@ -144,6 +151,55 @@ class TripleRunner(Protocol):
 
 # --- the gateway that also remembers ----------------------------------------------------
 
+def _declared_surfaces(case: CaseV5, item: PiiItem) -> tuple[str, ...]:
+    """Original literals the case declared before the gateway processed it."""
+    out: list[str] = [item.value, item.canonical]
+    where = item.where
+    if where.kind == "message" and 0 <= where.msg < len(case.base.messages):
+        content = case.base.messages[where.msg].content
+        out.append(content[where.start:where.end])
+    return tuple(dict.fromkeys(value for value in out if value))
+
+
+def _manifest_at_delivery(case: CaseV5, manifest: canaries.CanaryManifest,
+                          boundary: str, original: str) -> canaries.CanaryManifest:
+    """Place case-declared literals using the raw payload before masking output.
+
+    The detector, replacement spans and delivered bytes never select a canary.
+    A declared ordinary value selects a neighbour on the same boundary.
+    """
+    if not original:
+        return manifest
+    specs = list(manifest.canaries)
+    positions = {one.id: index for index, one in enumerate(specs)}
+    context = {"tool_result": "result", "tool_error": "error",
+               "tool_args": "argument", "final_answer": "answer",
+               "model_request": "request"}.get(boundary, "message")
+    for item in case.base.pii:
+        planted = tuple(canaries.PlantedSurface(value, canaries.SURFACE_FULL)
+                        for value in _declared_surfaces(case, item)
+                        if canaries.surface_in(original, value))
+        if not planted:
+            continue
+        canary_id = f"{item.id}@{boundary}"
+        if canary_id in positions:
+            index = positions[canary_id]
+            specs[index] = replace(specs[index], surfaces=tuple(dict.fromkeys(
+                specs[index].surfaces + planted)))
+        else:
+            positions[canary_id] = len(specs)
+            specs.append(canaries.CanarySpec(canary_id, item.type, boundary,
+                                             planted, "", context))
+    neighbours = list(manifest.neighbours)
+    present = {(one.boundary, one.text) for one in neighbours}
+    for ordinary in (*case.base.plain, *case.base.negatives):
+        value = ordinary.value
+        key = (boundary, value)
+        if value and key not in present and canaries.surface_in(original, value):
+            neighbours.append(canaries.Neighbour(boundary, value))
+            present.add(key)
+    return replace(manifest, canaries=tuple(specs), neighbours=tuple(neighbours))
+
 class GatewayV5(RealGateway):
     """v4's production-path gateway, plus the record `observe.py` reads.
 
@@ -157,7 +213,8 @@ class GatewayV5(RealGateway):
     """
 
     def __init__(self, case: CaseV5, detector: Detector, vault: Vault, audit: AuditLog,
-                 cache: MaskCache) -> None:
+                 cache: MaskCache, capture: bool = False,
+                 manifest: canaries.CanaryManifest | None = None) -> None:
         super().__init__(case.base, detector, vault, audit, cache)
         # ВОССТАНАВЛИВАЕМ ТЕМ ЖЕ VIEW, КОТОРЫМ МАСКИРОВАЛИ (G3.1). v4 masks
         # through `_view` (`MaskContext(vault=self._view)`) and restores through
@@ -183,6 +240,99 @@ class GatewayV5(RealGateway):
         self._requests = 0
         self._mentions: list[MentionRecord] = []
         self._results: list[ToolResultRecord] = []
+        # PAYLOAD CANARIES (S02). Off by default: a run that does not ask for
+        # the capture pays nothing. The composed request is taken from the
+        # production mask call itself; no second mask pass is needed.
+        # Candidate literals and ordinary neighbours come from the case. Their
+        # boundary placement is recorded from each raw payload at delivery.
+        self._capture = capture
+        self._auto_manifest = capture and manifest is None
+        self._manifest = (manifest if manifest is not None else
+                          canaries.CanaryManifest(canaries=(), source="case-construction")
+                          if capture else None)
+        self._payloads: list[canaries.CapturedPayload] = []
+
+    # --- the exact bytes this gateway delivered, at the moment it delivered them ------
+    #
+    # Five surfaces, and the S01 finding is why they are five: the user message
+    # was clean and the real value rode an ERROR payload nobody had a row for.
+    # The capture is taken from the SAME call that does the delivery, so it
+    # cannot describe a payload the model never saw.
+
+    def _capture_payload(self, name: str, text: str, real_text: str) -> None:
+        if self._capture:
+            if self._auto_manifest and self._manifest is not None:
+                self._manifest = _manifest_at_delivery(
+                    self._case5, self._manifest, name, real_text)
+            self._payloads.append(canaries.CapturedPayload(
+                name=name, text=text, real_text=real_text))
+
+    def note_final(self, raw_reply: str, restored: str) -> None:
+        """The two ends of the answer leg, both taken from the harness.
+
+        `text` is the model's OWN bytes — what the gateway hands the restorer;
+        `real_text` is what the customer receives. A real value in the first is
+        the leak (the model held it); its presence in the second and absence
+        from the first is the restore working, and the count says so."""
+        self._capture_payload("final_answer", raw_reply, restored or raw_reply)
+
+    def captured_payloads(self) -> tuple[canaries.CapturedPayload, ...]:
+        """Every payload the run delivered, plus the composed model-bound one.
+
+        THE COMPOSED REQUEST IS A BOUNDARY OF ITS OWN. Per-message capture proves
+        each message was masked; it cannot prove the transcript the provider is
+        actually sent is masked. `_on_masked_request` records the result of the
+        existing production mask call at every push, before later notes can
+        change the transcript or vault state.
+        """
+        return tuple(self._payloads)
+
+    def _on_masked_request(self, masked: list[dict[str, object]]) -> None:
+        self._capture_payload("model_request", json.dumps(masked, ensure_ascii=False),
+                              json.dumps(self._transcript, ensure_ascii=False))
+
+    def evidence(self) -> canaries.ProvenanceEvidence:
+        """Provenance from the OBSERVER RECORD, used ONLY to classify a leak.
+
+        `span_missed` compares the item's DECLARED range (construction) with the
+        spans the masking record holds — the record answers «what was replaced»,
+        the case answers «what should have been». This NEVER decides whether a
+        leak exists: `payload_canaries.scan` decides that from the manifest and
+        the delivered bytes, and the evidence only labels the result."""
+        return canaries.evidence_from_spans(
+            self._case5.base.pii, self.masked_spans(), self.substitutes_seen())
+
+    def canary_report(self) -> canaries.CanaryReport:
+        """The report for THIS run's delivered bytes — the real harness caller.
+
+        NO MANIFEST, NO MEASUREMENT: a gateway that was handed no construction-
+        time manifest reports NOT_MEASURED rather than reading a clean run off a
+        scan it cannot ground."""
+        if self._manifest is None:
+            return canaries.not_measured(
+                "the gateway carried no construction-time canary manifest")
+        return canaries.scan(self._manifest, self.captured_payloads(), self.evidence())
+
+    def capture(self, repeat: int) -> canaries.RunCapture:
+        """THIS triple's manifest and the exact bytes it delivered, packaged for
+        the run directory.
+
+        S02 CAPTURE. `captured_payloads()` is the gateway's own memory and dies
+        with the process; before `drive_v5` writes it to disk, a battery's bytes
+        existed only in the worker that produced them, and `check_run` could only
+        reconstruct them from `mentions` — the reconstruction the reviewer
+        refused. This method is the ONE place that pairs the manifest with the
+        delivered bytes, and both come from the run itself: the manifest was
+        handed in at case construction, the bytes were appended as they were
+        handed to the model. `repeat` is the arm's index and travels with the row
+        because ONE case is run K times and the K rows must not be merged into
+        one."""
+        if not self._capture or self._manifest is None:
+            raise canaries.CaptureError(
+                f"{self._case5.base.id}|{repeat}: payload capture was not enabled")
+        return canaries.RunCapture(case_id=self._case5.base.id, repeat=int(repeat),
+                                   arm="I", manifest=self._manifest,
+                                   delivered=self.captured_payloads())
 
     @property
     def request_index(self) -> int:
@@ -203,7 +353,31 @@ class GatewayV5(RealGateway):
         served = super()._push(wire, text, index)
         if index is not None:
             self._note_message_mentions(index)
+            # The model's own bytes in place of THIS message: `served` is what
+            # the provider is handed, `text` is what the customer wrote.
+            self._capture_payload("model_input", served, text)
         return served
+
+    def note_tool_call(self, name: str, arguments: dict[str, object]) -> None:
+        """PLUS the canary capture: the arguments AS THE AGENT WROTE THEM.
+
+        This is the leak surface — a real value here means the model held it.
+        The restore that follows is the product working (the TOOL is supposed to
+        get real values), so `restore_arguments` fills in the pre-mask text and
+        the count of hidden canaries comes from the difference."""
+        super().note_tool_call(name, arguments)
+        self._capture_payload("tool_args", json.dumps(arguments, ensure_ascii=False), "")
+
+    def restore_arguments(self, arguments: dict[str, object]):
+        restored, residual = super().restore_arguments(arguments)
+        if self._capture and self._payloads and self._payloads[-1].name == "tool_args":
+            self._payloads[-1] = replace(
+                self._payloads[-1], real_text=json.dumps(restored, ensure_ascii=False))
+            if self._auto_manifest and self._manifest is not None:
+                self._manifest = _manifest_at_delivery(
+                    self._case5, self._manifest, "tool_args",
+                    self._payloads[-1].real_text)
+        return restored, residual
 
     def _note_message_mentions(self, index: int) -> None:
         """What the model read in place of each item of THIS message.
@@ -234,6 +408,11 @@ class GatewayV5(RealGateway):
         """
         served = self.push_tool(name, log.result_text)
         masked = self._tool_results[-1]
+        # The text the MODEL read back, on the shape it read it: an error payload
+        # is its own boundary (S01), even though both cross the same leg.
+        forced = log.parsed is None and log.refusal is None
+        self._capture_payload("tool_error" if forced else "tool_result",
+                              masked.masked, masked.text)
         spans = {str(tag): (int(span[0]), int(span[1]))
                  for tag, span in log.result_spans.items()}
         self._results.append(ToolResultRecord(
@@ -246,7 +425,7 @@ class GatewayV5(RealGateway):
             # answered before the parser ran. A documented parse refusal is also
             # `error_with_value` (ruling R-18) but carries its `Refusal`, so the
             # two are told apart by the refusal and not by the form.
-            forced=log.parsed is None and log.refusal is None))
+            forced=forced))
         for tag, (start, end) in spans.items():
             item_id = tag[len(ECHO_TAG_PREFIX):] if tag.startswith(ECHO_TAG_PREFIX) else tag
             covering = next((piece for piece in masked.pieces
@@ -490,14 +669,65 @@ class GatewayHooks:
         self.calls: list[ObservedCall] = []
         self.turns: list[int] = []
         self.turn = -1
+        # THE PROVIDER CHRONOLOGY (Codex contract, 2026-09-27). `responses` is
+        # one entry per completed provider response the connector reported
+        # through `response`; `call_requests` maps each accepted call to the
+        # `request` of the response that emitted it. `_pending_request` is the
+        # response whose function calls are being processed RIGHT NOW, and
+        # `_unmapped` records a call that arrived with no reported response —
+        # such an arm yields `None`, never a manufactured request.
+        self.responses: list[ModelResponse] = []
+        self.call_requests: list[int] = []
+        self._pending_request: int | None = None
+        self._unmapped_call = False
 
     def user(self, index: int) -> str:
         self.turn = index
+        # A call that arrives before THIS turn's first reported response has no
+        # response to belong to. Clearing here makes such a call an UNMAPPED one
+        # instead of letting it silently inherit the previous turn's ordinal.
+        self._pending_request = None
         return self.gateway.push_user(index)
 
     def assistant(self, text: str) -> None:
         if text:
             self.gateway.note(text)
+
+    def response(self, text: str) -> None:
+        """One COMPLETED provider response, BEFORE its function calls run.
+
+        Called even when `text` is empty: a pure tool-call turn returned no
+        prose and that is an observation, not an absence. `available_results`
+        is the number of accepted results already in hand — the count the two
+        calls of ONE response both see, and which the NEXT response sees raised
+        by them. `restored` goes through the gateway's CURRENT state, the same
+        object `answer_leg` will use for the final reply.
+        """
+        request = len(self.responses) + 1
+        self.responses.append(ModelResponse(
+            request=request, turn=self.turn, available_results=len(self.calls),
+            raw=text, restored=self.gateway.restore_text(text)))
+        self._pending_request = request
+
+    def model_trace(self) -> ModelTrace | None:
+        """The chronology, or None only when the connector never reported one.
+
+        NO RESPONSE AT ALL is the legacy connector (Claude, a double): there is
+        no chronology to report and `None` is the honest answer, even if it made
+        calls. But ANY response means this connector speaks the hook, so a call
+        it could not place, or a count that does not line up, is BROKEN
+        chronology rather than silence — `None` there would erase the evidence.
+        """
+        if not self.responses:
+            return None
+        if self._unmapped_call:
+            raise HarnessError(
+                "model_trace: a tool call arrived with no reported provider response")
+        if len(self.call_requests) != len(self.calls):
+            raise HarnessError(f"model_trace: {len(self.call_requests)} mapped calls for "
+                               f"{len(self.calls)} recorded calls")
+        return ModelTrace(responses=tuple(self.responses),
+                          call_requests=tuple(self.call_requests))
 
     def tool(self, name: str, arguments: dict[str, Json]) -> ToolResult:
         written: dict[str, object] = dict(arguments)
@@ -512,6 +742,13 @@ class GatewayHooks:
             refusal_rule=log.refusal.rule if log.refusal else '', parsed=log.parsed,
             seq=len(self.calls) + 1))
         self.turns.append(self.turn)
+        # EACH ACCEPTED CALL MAPS TO THE RESPONSE THAT EMITTED IT. Two calls of
+        # one response share its `request`; the second one did NOT see the
+        # first's result (`available_results` was fixed before either ran).
+        if self._pending_request is None:
+            self._unmapped_call = True
+        else:
+            self.call_requests.append(self._pending_request)
         if isinstance(self.gateway, GatewayV5):
             served = self.gateway.push_call(name, log, self.backend.form_of(log.seq),
                                            self.turn, ordinal)
@@ -552,6 +789,11 @@ class ConnectedArms:
         leg = (answer_leg(raw, case.streaming, gateway.vault, gateway.restore_text)
                if isinstance(gateway, GatewayV5) else None)
         reply = leg.reply if leg else gateway.restore_text(raw)
+        # THE CANARY BOUNDARY THE HARNESS ALONE CAN NAME: the model's own bytes
+        # and the customer's restored answer, both taken here — in the real
+        # caller — so the capture cannot be driven by a test-only path.
+        if isinstance(gateway, GatewayV5):
+            gateway.note_final(raw, reply)
         base = ArmRun(case_id=case.base.id, arm=arm, repeat=repeat, calls=tuple(hooks.calls),
                       state=backend.snapshot(), reply=reply, termination='done',
                       cost_usd=result.usage.cost_usd,
@@ -568,7 +810,11 @@ class ConnectedArms:
                       tool_results=gateway.tool_records(), mentions=gateway.mentions(),
                       turn_replies=restored_turn_replies(result.replies, turn_restorer(case, gateway)),
                       call_turns=tuple(hooks.turns), request_count=gateway.request_index,
-                      stream_mismatch=leg.mismatch, reply_whole=leg.reply_whole, turn_residual=0)
+                      stream_mismatch=leg.mismatch, reply_whole=leg.reply_whole, turn_residual=0,
+                      # The provider chronology, if this connector reported it.
+                      # None (not a guess) for a connector that never called
+                      # `response`.
+                      model_trace=hooks.model_trace())
         return outcome, run
 
     async def control(self, case: CaseV5, arm: str, repeat: int, backend: BackendV5,
@@ -705,7 +951,12 @@ async def run_arm_v5(case: CaseV5, arm: str, repeat: int, gateway: GatewayV5,
                    # `with_turn_residual`. Guessing it here would mean masking
                    # the dialogue twice, once for a number and once for the
                    # judge, and two spellings of one scan is how they drift.
-                   turn_residual=0)
+                   turn_residual=0,
+                   # THE CLAUDE LEG HAS NO PROVIDER CHRONOLOGY. It runs through
+                   # the Agent SDK, which reports no per-response boundary, so
+                   # the field is an explicit None rather than a manufactured
+                   # request per call.
+                   model_trace=None)
     return ArmOutcomeV5(v4_harness.ArmOutcome(base, meta), run)
 
 
@@ -803,7 +1054,7 @@ def _empty_run(case: CaseV5, repeat: int) -> ArmRunV5:
                   termination="harness_error", cost_usd=0.0, substitutes={}, masked_spans={})
     return ArmRunV5(base=base, reply_raw="", control_reply="", tool_results=(), mentions=(),
                     turn_replies=(), call_turns=(), request_count=0, stream_mismatch=False,
-                    reply_whole="", turn_residual=0)
+                    reply_whole="", turn_residual=0, model_trace=None)
 
 
 # --- one triple ---------------------------------------------------------------------------
@@ -995,6 +1246,10 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
     judged: JudgeRow | None = None
     spent = 0.0
     turn_residual = 0
+    # S02 CAPTURE. The gateway constructs canaries from case-declared literals
+    # and records placement from each raw payload at delivery. The real runner
+    # persists both manifest and delivered bytes after intervention.
+    captures: tuple[canaries.RunCapture, ...] = ()
     try:
         control = await arms.control(case, "C", repeat, seed_backend_v5(case),
                                          model, cap, run_id)
@@ -1005,12 +1260,17 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
             triple["reason"] = f"C: {control.run.termination} {control.meta.reason}".strip()
             return TripleResult(outcomes, None, (), None, triple)
         gateway = GatewayV5(case, detector, Vault(":memory:", _ORG), AuditLog(":memory:"),
-                            MaskCache(256))
+                            MaskCache(256), capture=True)
         intervention, second = await asyncio.gather(
             arms.intervention(case, repeat, gateway, seed_backend_v5(case), model, cap, run_id),
             arms.control(case, "C2", repeat, seed_backend_v5(case), model, cap, run_id))
         outcomes.extend((intervention.base, second))
         spent += intervention.base.run.cost_usd + second.run.cost_usd
+        # THE CAPTURE IS TAKEN FROM THE ARM THAT ACTUALLY RAN THE GATEWAY, after
+        # it returned, and it is taken whether the judge spoke or not: a triple
+        # the judge refused still delivered bytes, and «the judge was skipped» is
+        # not «the model was sent nothing».
+        captures = (gateway.capture(repeat),)
         excluded = [one.run.arm for one in outcomes if one.run.termination in EXCLUDED_TERMINATIONS]
         triple["status"] = "excluded" if excluded else "complete"
         triple["reason"] = " · ".join(
@@ -1059,7 +1319,7 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
                                         "cost_usd": round(one.run.cost_usd, 6),
                                         "calls": len(one.run.calls), "reason": one.meta.reason}
                           for one in outcomes}
-    return TripleResult(outcomes, gateway_run, hops, judged, triple)
+    return TripleResult(outcomes, gateway_run, hops, judged, triple, captures)
 
 
 def judge_summary(verdict: JudgeVerdict) -> dict[str, object]:
@@ -1230,6 +1490,12 @@ async def drive_v5(cases: Sequence[CaseV5], repeats: int, run_one: TripleRunner,
     hops_sink = r.run_file(run_dir, run_id, "<run>.hops.jsonl")
     judge_sink = r.run_file(run_dir, run_id, "<run>.judge.jsonl")
     triples_sink = r.run_file(run_dir, run_id, "<run>.triples.jsonl")
+    # S02 CAPTURE. NOT a `RUN_FILES` entry, and that is deliberate: the artifact
+    # holds the corpus's own delivered bytes, and `RUN_FILES` is the list a
+    # consumer iterates to build the run's outward documents. `records.run_file`
+    # refuses a name the contract does not know, which is the guard that keeps
+    # this file out of `<run>.meta.json`, `<run>.report.json` and
+    # `<run>.public.json` — a run's public JSON must never carry a corpus value.
     triples: list[dict[str, object]] = []
     total = len(jobs)
     done = 0
@@ -1276,6 +1542,13 @@ async def drive_v5(cases: Sequence[CaseV5], repeats: int, run_one: TripleRunner,
                 r.append_row(hops_sink, r.hop_observation_to_json(hop))
             if result.judge is not None:
                 r.append_row(judge_sink, r.judge_row_to_json(result.judge))
+            # BEFORE the triple row, for the reason every other per-triple sink is:
+            # the bytes are on disk before the next triple starts, so an outage
+            # costs one capture and not the run. A triple with no capture (a
+            # budget refusal, an excluded C) writes no row at all — an empty row
+            # would claim the boundaries were reached and delivered nothing.
+            for captured in result.captures:
+                canaries.append_capture(run_dir, run_id, captured)
             r.append_row(triples_sink, result.triple)
             triples.append(result.triple)
             done += 1
@@ -1375,6 +1648,39 @@ def stamp_judge_file(run_dir: Path, run_id: str, stamp: CalibrationStamp) -> Non
     write_stamp(run_dir, run_id, stamp)
 
 
+def capture_run_repairs(run_dir: Path) -> Path | None:
+    """M04: freeze THIS run's LOC repair witnesses while the engine is live.
+
+    THE PRODUCER ASKS, THE SCORER READS. `report.frozen_score_and_observations`
+    must print a saved number that cannot move when `register_spelling` is
+    edited, so the engine is consulted exactly once — here, by the process that
+    owns it at run time — and the answer is persisted as a versioned
+    `repairs.json` beside the run's artifacts. Without this call every real run's
+    LOC pairs stay UNMEASURED, which the report prints honestly and which is why
+    a missing capture is a gap rather than a wrong number.
+
+    THE OBSERVATIONS COME FROM THE SCORER'S OWN ENGINE-FREE READER
+    (`report.v5_observations`, the same one `report.frozen_score_and_observations`
+    uses), so the pair list is the artifact's own and not a second derivation of
+    it: the table answers for exactly the pairs the report will score.
+
+    FROZEN ONCE. A table already on disk is never rewritten — a `--report`
+    replay of a finished directory must read the witnesses, not re-ask the
+    engine, or the defect M04 removes comes back through the report path. And
+    with no bundle leased nothing is frozen at all: an invented witness would be
+    worse than the honest «не измерено»."""
+    from bench.agentpii5 import frozen_oracle
+    from pseudex.address import register_spelling
+    from pseudex.assets import ASSETS
+
+    path = frozen_oracle.repairs_path(run_dir)
+    if path.exists() or not ASSETS.is_loaded:
+        return None
+    half = v5_report.v5_observations(run_dir, ())
+    return frozen_oracle.capture_run_repairs(
+        run_dir, frozen_oracle.repair_pairs(half.observations), register_spelling)
+
+
 def finish_run(run_dir: Path, baseline: Path) -> list[str]:
     """The side-by-side and the two machine-readable halves beside it:
     `<run>.report.txt`, `<run>.gate.json`, `<run>.report.json`, `<run>.public.json`.
@@ -1392,6 +1698,12 @@ def finish_run(run_dir: Path, baseline: Path) -> list[str]:
     where `<run>.report.txt` lives out of `report.py` and into this module,
     which is the drift the file names exist to prevent.
     """
+    # THE WITNESSES ARE FROZEN BEFORE ANY LINE IS PRINTED. `render_side_by_side`
+    # scores through `report.frozen_score_and_observations`, which reads
+    # `repairs.json`; capturing after it would print a run in which every LOC
+    # pair was unmeasured and then freeze them, so the replay and the live
+    # report would disagree about the same bytes on disk.
+    capture_run_repairs(run_dir)
     lines = v5_report.render_side_by_side(run_dir, baseline)
     written = reportjson.write_side_by_side(run_dir, baseline)
     return lines + ["", f"машинный отчёт: {written.report.name} (ТЗ §5.1)",

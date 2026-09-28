@@ -1,0 +1,34 @@
+{
+  "names": [
+    "memory_anaphora-045",
+    "memory_anaphora-003",
+    "long_order-011",
+    "tool_chain-038",
+    "search_rank-000",
+    "chain-009"
+  ],
+  "numbers": [
+    "tool_chain-043",
+    "long_order-014",
+    "long_order-057",
+    "memory_anaphora-066",
+    "prompt_rule-007",
+    "tool_chain-041"
+  ],
+  "chains": [
+    "long_support-014",
+    "long_order-002",
+    "tool_chain-017",
+    "long_support-013",
+    "long_order-015",
+    "tool_chain-035"
+  ],
+  "skeptic": [
+    "memory_anaphora-119",
+    "memory_anaphora-028",
+    "tool_chain-004",
+    "prompt_rule-026",
+    "long_order-058",
+    "long_support-027"
+  ]
+}

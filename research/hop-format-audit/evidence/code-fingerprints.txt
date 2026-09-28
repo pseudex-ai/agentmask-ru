@@ -1,0 +1,12 @@
+Read-only source checkout: /Users/igor/Projects/Obscura-v5-codex
+HEAD: 9c5acbb13e02ae3b230a31411bef2877ecc23ef3
+The checkout also contains pre-existing uncommitted harness work. HEAD alone is insufficient provenance.
+SHA256 of principal files read on 2026-09-27:
+34e2d9d10167109e53250f0933cae1280929a8d313c67a398af05174d2c1f053  prototype/bench/agentpii5/metrics.py
+ce43b85caec20751806f4c0e8927e671dd5f8981e81f5b5242ad991a26e240d7  prototype/bench/agentpii5/observe.py
+074e9c7716dabe60e09b9225b2d67ba878aa5d435ee1eb8220041a4606e7ed85  prototype/bench/agentpii5/form.py
+0e08a40dd7921d0489e0cd9ae0fff78fd0969cacef6f918da9e3ec0dccf07693  prototype/bench/agentpii5/report.py
+eae31e0e39e5b0ba3ce855f640c6e75ca818f4b41333927ae0879b8d890258ec  prototype/bench/agentpii5/harness.py
+161c0171c110636999472648582f3387afa68a167b0fbce84c9414d5349b2abc  prototype/bench/agentpii3/schema.py
+016361c40bd67251af173623aa7e1737d454000f60056a5be1528d4ac75f2629  prototype/pseudex/redact.py
+5bd524c2e948e3f4b84bd0adb775e8319cc6fc6d4b94260fe40b82218a013724  prototype/pseudex/vault.py

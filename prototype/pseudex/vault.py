@@ -330,8 +330,20 @@ def _inn_check_digit(digits: str, weights: tuple[int, ...]) -> str:
 
 
 def _fake_inn(original: str = "") -> str:
-    """Region «00», valid check digits, the ORIGINAL's length (10 or 12)."""
-    twelve = len("".join(ch for ch in original if ch.isdigit())) == 12
+    """Region «00», valid check digits, the parsed IDENTITY's length (10 or 12).
+
+    THE SURFACE IS NOT THE IDENTITY. `original` is what the customer wrote —
+    and for a number DICTATED ALOUD that text carries no digit at all, so
+    counting its characters minted a ten-digit ИНН for a twelve-digit one. The
+    substitute then had the wrong number of digits and the spoken form could not
+    be rendered at all (the renderer aligns the fake to the mention's own
+    grouping and refuses when the digit counts disagree), so the model read a
+    ten-digit fake where the customer had said twelve digits. `_digits_of` is
+    the same reading `canonicalize` keys the row by, so nothing about the stored
+    key changes — only the length of what is minted stops depending on how the
+    number happened to be written.
+    """
+    twelve = len(_digits_of(original)) == 12
     for _ in range(50):
         if twelve:
             body = "00" + _rand_digits(8)
@@ -357,13 +369,36 @@ def _luhn_check_digit(body: str) -> str:
     return str((10 - total % 10) % 10)
 
 
-def _fake_card() -> str:
-    """MII «0», Luhn-valid — no issuer exists under that first digit."""
+# THE LENGTHS A CARD ARRIVES IN, and the identity is what decides. `validate_luhn`
+# accepts any run of thirteen or more, the spoken classifier reads 13..19 as a
+# card, and the digit path types only the sixteen-digit one — so a card read
+# aloud in eighteen or nineteen digits was answered with a sixteen-digit
+# substitute: a different shape, and one the customer's own validator refuses.
+# Sixteen stays the default for a caller with no mention at all (the shape
+# invariant test), so nothing already minted changes its string.
+_CARD_DEFAULT_LENGTH = 16
+_CARD_LENGTHS = range(13, 20)
+
+
+def _card_length(original: str) -> int:
+    """The card identity's length — never the surface's digit count, which is
+    zero for anything dictated aloud."""
+    digits = _digits_of(original)
+    return len(digits) if len(digits) in _CARD_LENGTHS else _CARD_DEFAULT_LENGTH
+
+
+def _fake_card(length: int = _CARD_DEFAULT_LENGTH) -> str:
+    """MII «0», Luhn-valid, exactly `length` digits — no issuer exists under that
+    first digit, whatever the length. Grouped in fours with the remainder last
+    («0123 4567 8901 2347», «0123 4567 8901 2345 02»): the sixteen-digit string
+    is character for character what this generator has always returned, so every
+    stored row keeps resolving, and the 18/19 grouping is the one the shape
+    recognizer below accepts."""
     for _ in range(50):
-        body = "0" + _rand_digits(14)
+        body = "0" + _rand_digits(length - 2)
         body += _luhn_check_digit(body)
         if validate_luhn(body):
-            return f"{body[:4]} {body[4:8]} {body[8:12]} {body[12:]}"
+            return " ".join(body[at:at + 4] for at in range(0, len(body), 4))
     # Returning `body` here used to emit an UNFORMATTED 16-digit string, which
     # TOKEN_RE does not match — an unreversible token, silently.
     raise RuntimeError("could not generate a Luhn-valid card number under MII 0")
@@ -1596,7 +1631,9 @@ def _render_token(entity_type: str, gender: str | None = None,
     if entity_type == "INN":
         return _fake_inn(original)
     if entity_type == "CARD":
-        return _fake_card()
+        # THE IDENTITY'S LENGTH, read from the parsed value: a card dictated
+        # aloud has no digit in its text at all. Same rule as the ИНН above.
+        return _fake_card(_card_length(original))
     if entity_type == "PASSPORT":
         # Series «00YY»: no ОКАТО region is 00, the year digits stay plausible
         # (blanks of 1997–2026), the format check passes, and no person can
@@ -1789,7 +1826,12 @@ def _token_re(version: str) -> re.Pattern[str]:
         # became candidates, so the fold that resolves them never ran.
         # …AND A PLATE IN LOWER CASE, for the same reason («е940ае613»).
         r"(?i:[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]\d{3}[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]{2}\d{2,3})",  # PLATE
-        r"\d{4} \d{4} \d{4} \d{4}",                   # CARD
+        # FOURS WITH THE REMAINDER LAST, 13..19 digits: the shape must cover
+        # every length the generator above can mint, because a token that
+        # escapes it stops being reversible and a FAKE reaches the tool. `{2,4}`
+        # of the fours plus a 1..3 tail is exactly 13-19, and the sixteen-digit
+        # form keeps its original spelling.
+        r"\d{4}(?: \d{4}){2,4}(?: \d{1,3})?",        # CARD — 13..19, fours with the remainder last
         # Bare digit runs, LONGEST FIRST: leftmost-first alternation would otherwise
         # let \d{10} consume the head of a 20-digit account.
         r"\b\d{20}\b",                                # ACCOUNT
@@ -1813,7 +1855,7 @@ def _token_re(version: str) -> re.Pattern[str]:
         # индексный запрос; ложного попадания быть не может — строка должна
         # совпасть с канонической датой подмены этого заказчика.
         r"\b\d{1,2}([./ -])\d{1,2}\1\d{2,4}\b",         # DATE, свободная запись («15.9.82», «19 12 1992»)
-        r"\+79\d{9}",                                 # PHONE
+        r"\+79\d{9}(?!\d)",                          # PHONE, never a numeric prefix
         r"REDACTED[0-9a-f]{6}",                       # fallback
         r"\b\d{10}\b",                                # INN — least specific, last
     ]))
@@ -2841,14 +2883,20 @@ class Vault:
                     # THE DERIVED FORMS THE MODEL WRITES. A cardholder field, a
                     # `name_latin`, a summary «| Латиница | Tsvetkov Vsevolod |»
                     # — the model transliterates the substitute it read, and
-                    # none of those strings is the token. ONE row per word, the
-                    # FOLDED default rendering: the four standards' spellings
-                    # were indexed here and the model wrote a fifth
+                    # none of those strings is the token. ONE key per declared
+                    # rendering of the word: the four standards' spellings were
+                    # indexed here and the model wrote a fifth
                     # («Meshcheryakova»), which reached the tool unresolved.
-                    # Every rendering folds to this key (`translit.fold`), and
-                    # the lookup folds what the model wrote.
+                    # The lookup folds what the model wrote, so the index must
+                    # hold the fold of EVERY rendering `UNITS` declares — not
+                    # only the default one. It was one key, and the two are not
+                    # the same set: «Михаил» indexed as `mIXaIl`, the model's
+                    # declared «MIHAIL» folds to `mIhaIl`, the miss left the
+                    # FAKE given name in the customer's cardholder field beside
+                    # the real surname. `declared_keys` is that set, and no
+                    # string-level fold can replace it (see its docstring).
                     if translit.is_cyrillic_word(word):
-                        fake_parts.add(translit.folded(word))
+                        fake_parts |= translit.declared_keys(word)
                 fake_shape = morph_names.name_shape(token)
                 fake_words = token.split()
                 if len(fake_shape) == len(fake_words):
@@ -4227,18 +4275,66 @@ class Vault:
         nothing was replaced."""
         if not self._conversation or shown == original:
             return
-        with self._lock:
-            self._expire_place_parts()
+        # The first write obtains SQLite's transaction lock before reading the
+        # previous owner. A Python lock alone cannot serialize other workers.
+        # A self-mapping is a sticky ambiguity marker: it preserves the visible
+        # substitute instead of selecting either person's real value. It uses
+        # the existing schema and expires with the conversation's other forms.
+        with self._lock, self._conn:
             self._conn.execute(
-                "INSERT OR REPLACE INTO shown_forms "
+                "INSERT OR IGNORE INTO shown_forms "
                 "(customer, conversation, shown, original, entity_type, created) VALUES (?,?,?,?,?,?)",
                 (self._customer, self._conversation, shown, original, entity_type, time.time()))
-            self._conn.commit()
+            previous = self._conn.execute(
+                "SELECT original, entity_type FROM shown_forms "
+                "WHERE customer=? AND conversation=? AND shown=?",
+                (self._customer, self._conversation, shown)).fetchone()
+            if previous is None:
+                raise RuntimeError("shown form disappeared inside its write transaction")
+            old_original, old_type = str(previous[0]), str(previous[1])
+            if (old_type == entity_type and len(original) < len(old_original)
+                    and old_original.startswith(original)):
+                # A TOOL'S CUT IS NOT A SECOND OWNER, AND NOT A SECOND IDENTITY.
+                # The tool-result leg re-runs detection over a truncated real
+                # value and re-records the substitute it renders for the cut, so
+                # `raw[:85]` of a value this dialogue already named arrives here
+                # as a shorter original under the same surface. Last-writer used
+                # to win: the recorded original shrank to the cut, and the next,
+                # longer cut was no longer a prefix of the evidence and escaped.
+                # A cut whose digits also parse differently (`raw[:86]` of a
+                # dictated number) was worse — the canonical keys disagreed, the
+                # row became a self-mapping conflict marker, and the substitute
+                # stopped restoring at all. The authoritative identity is the
+                # one this dialogue recorded FIRST and fully; a strict prefix of
+                # it is the same mention, shorter, and never replaces it.
+                remembered: str = old_original
+            else:
+                old_key: str = canonicalize(entity_type, old_original)
+                new_key: str = canonicalize(entity_type, original)
+                if entity_type == "NAME":
+                    old_key, new_key = fold_key(old_key), fold_key(new_key)
+                elif entity_type == "LOC":
+                    # Detection canonicalizes the normalized address. A literal
+                    # homoglyph retained for rendering is not a second owner.
+                    old_key = canonicalize(entity_type, normalize(old_original))
+                    new_key = canonicalize(entity_type, normalize(original))
+                same_value: bool = old_type == entity_type and (
+                    old_original == original or (
+                        old_original != shown and old_key == new_key))
+                remembered = original if same_value else shown
+            self._conn.execute(
+                "UPDATE shown_forms SET original=?, created=? "
+                "WHERE customer=? AND conversation=? AND shown=?",
+                (remembered, time.time(), self._customer, self._conversation, shown))
+            # Refresh active evidence before sweeping stale rows. Sweeping
+            # between an ignored INSERT and its SELECT could delete this row.
+            self._expire_place_parts()
 
     def shown_forms(self) -> list[tuple[str, str, str]]:
         """Every (shown, original, entity_type) this conversation was shown,
         longest shown form first — so that a form containing another is
-        matched whole."""
+        matched whole. `shown == original` marks conflicting owners; it is
+        deliberately not a claim about a real value."""
         if not self._conversation:
             return []
         with self._lock:
@@ -4381,9 +4477,19 @@ class Vault:
         """Resolve numeric tokens by digit signature, for the case where the model
         reformatted one so it no longer matches its minted shape. A full-signature
         hit wins over a phone last-10 hit (the caller asks in that order)."""
-        resolved = self._lookup("digits10", signatures, for_tool)
-        resolved.update(self._lookup("digits", signatures, for_tool))  # exact wins
-        return resolved
+        return {signature: value for signature, (_kind, value) in
+                self.resolve_digit_signatures_typed(signatures, for_tool).items()}
+
+    def resolve_digit_signatures_typed(self, signatures: set[str],
+                                      for_tool: bool) -> dict[str, tuple[str, str]]:
+        """Resolve the same indexed signatures while retaining the minted type.
+
+        Rendering must not guess PHONE from an eleven-digit SNILS. Exact
+        signatures retain priority over the phone last-ten alias.
+        """
+        tails: dict[str, tuple[str, str]] = self._lookup_typed("digits10", signatures, for_tool)
+        exact: dict[str, tuple[str, str]] = self._lookup_typed("digits", signatures, for_tool)
+        return {**tails, **exact}
 
     def resolve_name_keys_typed(self, keys: set[str], for_tool: bool = False,
                                 ) -> dict[str, tuple[str, str]]:

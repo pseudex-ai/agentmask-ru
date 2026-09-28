@@ -440,8 +440,9 @@ def main() -> int:
             json.dumps({"v": written}, ensure_ascii=False), vault))["v"]
         failures += not _check(name, restored, want)
     prose = unmask_text(f"перезвоним на {fake_phone}", vault)
-    failures += not _check("в прозе — как написал клиент", prose,
-                           "перезвоним на 8 916 402 11 87")
+    # The current sender owns the form in prose too (owner ruling 2026-09-27).
+    failures += not _check("в прозе — форма текущего ответа агента", prose,
+                           "перезвоним на +79164021187")
 
     # --- фамилия, которой морфология не знает, перед известным именем -------
     # «миллер валерий» читалось как (имя, фамилия): подмена чеканилась в том же

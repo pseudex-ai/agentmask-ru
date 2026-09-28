@@ -22,12 +22,13 @@ Each check goes red on a revert:
     atoms, and `cost_matches_the_run` pins the sum against the run's own meta.
 """
 import json
+import re
 import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
-from bench.agentpii5 import contracts, records
+from bench.agentpii5 import contracts, payload_canaries as pc, records
 from bench.agentpii5.contracts import Line, Metric
 from bench.agentpii5.fixtures import FAKE_NAME, REAL_NAME, REAL_PHONE
 from bench.agentpii5.metrics import METRIC_FUNCTIONS
@@ -54,6 +55,36 @@ BROKEN = "toolresult_masked"
 
 def _built(root: Path) -> tuple[Path, Path]:
     return build_run(root, RUN_ID, True), build_run(root, "baseline01", False)
+
+
+def _write_capture_fixture(run_dir: Path, manifest: pc.CanaryManifest,
+                           delivered: tuple[pc.CapturedPayload, ...]) -> None:
+    """Persist explicit test bytes for every I arm the fixture's triple writer made."""
+    (run_dir / pc.MANIFEST_ARTIFACT).write_text(
+        json.dumps(pc.manifest_to_json(manifest), ensure_ascii=False), encoding="utf-8")
+    run_id = run_id_of(run_dir)
+    triples = records.read_rows(records.run_file(run_dir, run_id, "<run>.triples.jsonl"))
+    for triple in triples:
+        arms = triple.get("arms")
+        if isinstance(arms, dict) and "I" in arms:
+            pc.append_capture(run_dir, run_id, pc.RunCapture(
+                case_id=str(triple["case_id"]), repeat=int(triple["repeat"]), arm="I",
+                manifest=manifest, delivered=delivered))
+
+
+def _fixture_payloads() -> tuple[pc.CapturedPayload, ...]:
+    """Known bytes at each boundary; no detector or saved mention constructs them."""
+    return tuple(pc.CapturedPayload(name, f"VISIBLE payload at {name}")
+                 for name in pc.BOUNDARIES)
+
+
+def _plant_measured_manifest(run_dir: Path) -> None:
+    """A measurable capture with one hidden canary and no leak."""
+    manifest = pc.CanaryManifest(canaries=(pc.CanarySpec(
+        "hidden", "PHONE", "model_input",
+        (pc.PlantedSurface("CANARY-NEVER-WRITTEN-ANYWHERE", pc.SURFACE_FULL),),
+        "", "message"),), source="s02-reportjson-test")
+    _write_capture_fixture(run_dir, manifest, _fixture_payloads())
 
 
 # A model id no constant of the package carries: the fixture's own `meta.json`
@@ -200,7 +231,13 @@ def test_document_is_written_beside_the_markdown() -> list[str]:
 def test_incomplete_is_explained() -> list[str]:
     """A machine reader must be able to branch on WHY, not only on whether. The
     text report prints the three causes in three sections; a consumer that had
-    to tell them apart was reading three places and guessing."""
+    to tell them apart was reading three places and guessing.
+
+    THE COMPLETE HALF CARRIES A MEASURED CANARY MANIFEST. Since S02 an unmeasured
+    S02 half is itself a cause (C1), so «a healthy run is not marked» can only be
+    asserted of a run that really was measured — the fixture plants a version-1
+    manifest with one hidden canary rather than leaving the S02 half empty.
+    """
     problems: list[str] = []
 
     def always_one(_observations: object) -> Line:
@@ -208,6 +245,7 @@ def test_incomplete_is_explained() -> list[str]:
 
     with tempfile.TemporaryDirectory() as tmp:
         v5_dir, v4_dir = _built(Path(tmp))
+        _plant_measured_manifest(v5_dir)
         broken: dict[str, Metric] = {**METRIC_FUNCTIONS, BROKEN: always_one}
         parts = read_parts(v5_dir, v4_dir)
         side = assemble(parts, broken)
@@ -391,6 +429,313 @@ def test_the_two_names_are_run_files_of_the_contract() -> list[str]:
     return problems
 
 
+def _canary_section(text: str) -> str:
+    """The §1bis block of a rendered report, heading to the next section."""
+    start = text.find("1bis.")
+    if start == -1:
+        return ""
+    end = text.find("\n2.", start)
+    return text[start:end if end != -1 else len(text)]
+
+
+def test_unmeasured_canaries_are_never_printed_as_zero_leaks() -> list[str]:
+    """S02 — AN UNMEASURED RUN MUST NOT READ AS A CLEAN ONE, in all three
+    finished surfaces.
+
+    THE DEFECT THIS PINS. A saved run with no `canary_manifest.json` is
+    `NOT_MEASURED` at the source, and that is correct — but the finish line
+    dropped the status: §1bis iterated `by_boundary()`, which is `{}` when the
+    report has no boundaries, so the section rendered as a heading with no rows
+    (indistinguishable from «measured, zero leaks»); the oracle sidecar wrote
+    `"canaries": {}` with no status; and the versioned machine report carried no
+    canary field at all. A reader of the finished report could not tell a run
+    that measured nothing from a run that leaked nothing.
+
+    THE CHECK IS NOT VACUOUS. It first demands the SOURCE be `NOT_MEASURED` with
+    a reason (the fixture writes no manifest), then reads the three produced
+    surfaces back. The other side is exercised too: a manifest is planted with
+    one hidden and one leaked surface per delivered boundary, and the same three
+    surfaces must then say `MEASURED`, keep the per-boundary counts and still
+    name the leak — so a hard-coded «NOT_MEASURED» could not pass.
+
+    NO PROVIDER, NO NETWORK, NO ENGINE: the fixture is `test_report.build_run`,
+    and the planted surfaces are read off the run's own saved delivered bytes,
+    never off a detector span.
+    """
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        v5_dir, v4_dir = _built(root)
+        run_id = run_id_of(v5_dir)
+        source = pc.check_run(v5_dir)
+        if source.status != pc.STATUS_NOT_MEASURED:
+            return [f"the fixture carries a manifest (status {source.status!r}) — "
+                    f"the unmeasured half is vacuous"]
+        if not source.reason:
+            problems.append("the source report is NOT_MEASURED with no reason")
+        # --- surface 1: the human report, and surface 2: the oracle sidecar ----
+        report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        text = (v5_dir / f"{run_id}.report.txt").read_text(encoding="utf-8")
+        section = _canary_section(text)
+        if not section:
+            problems.append("§1bis is absent from the finished report")
+        if pc.STATUS_NOT_MEASURED not in section:
+            problems.append("§1bis does not say NOT_MEASURED — an unmeasured run reads as a "
+                            "measured one")
+        if source.reason not in section:
+            problems.append("§1bis names the status but not the reason")
+        if "скрыто" in section:
+            problems.append("§1bis printed per-boundary count rows for an unmeasured run — "
+                            "absence reads as zero leaks")
+        oracle = json.loads((v5_dir / f"{run_id}.oracle.json").read_text(encoding="utf-8"))
+        if oracle.get("canary_status") != pc.STATUS_NOT_MEASURED:
+            problems.append(f"the oracle sidecar does not carry the status: "
+                            f"{oracle.get('canary_status')!r}")
+        if not oracle.get("canary_reason"):
+            problems.append("the oracle sidecar does not carry the reason")
+        if oracle.get("canaries"):
+            problems.append(f"the oracle sidecar wrote boundary counts for an unmeasured run: "
+                            f"{oracle.get('canaries')!r}")
+        # --- surface 3: the versioned machine report --------------------------
+        document = json.loads(write(v5_dir, v4_dir, METRIC_FUNCTIONS)
+                              .report.read_text(encoding="utf-8"))
+        if document.get("canary_status") != pc.STATUS_NOT_MEASURED:
+            problems.append(f"the machine report omits the canary status: "
+                            f"{document.get('canary_status')!r}")
+        if not document.get("canary_reason"):
+            problems.append("the machine report omits the canary reason")
+        if document.get("canary_by_boundary"):
+            problems.append(f"the machine report carries boundary counts for an unmeasured run: "
+                            f"{document.get('canary_by_boundary')!r}")
+
+        # --- the other side: a MEASURED run keeps its counts and its leak ------
+        delivered = _fixture_payloads()
+        specs: list[pc.CanarySpec] = []
+        seen_names: list[str] = []
+        for payload in delivered:
+            if payload.name in seen_names:
+                continue
+            seen_names.append(payload.name)
+            specs.append(pc.CanarySpec(
+                f"absent@{payload.name}", "PHONE", payload.name,
+                (pc.PlantedSurface(f"CANARY-NOT-IN-BYTES-{payload.name}", pc.SURFACE_FULL),),
+                "", "message"))
+            visible = next((word for word in re.findall(r"[^\W\d_]{4,}", payload.text)
+                            if pc.surface_in(payload.text, word)), "")
+            if not visible:
+                return problems + [f"no whole-word canary stands in {payload.name!r}"]
+            specs.append(pc.CanarySpec(
+                f"leak@{payload.name}", "NAME", payload.name,
+                (pc.PlantedSurface(visible, pc.SURFACE_FULL),), "", "message"))
+        _write_capture_fixture(v5_dir, pc.CanaryManifest(
+            canaries=tuple(specs), source="s02-report-surface-test"), delivered)
+        report_lines(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        text = (v5_dir / f"{run_id}.report.txt").read_text(encoding="utf-8")
+        section = _canary_section(text)
+        if pc.STATUS_MEASURED not in section:
+            problems.append("a measured run does not say MEASURED in §1bis")
+        if "скрыто" not in section:
+            problems.append("a measured run printed no per-boundary counts")
+        oracle = json.loads((v5_dir / f"{run_id}.oracle.json").read_text(encoding="utf-8"))
+        if oracle.get("canary_status") != pc.STATUS_MEASURED:
+            problems.append(f"the oracle sidecar did not report the measured run: "
+                            f"{oracle.get('canary_status')!r}")
+        counts = oracle.get("canaries")
+        if not isinstance(counts, dict) or not counts:
+            problems.append(f"the measured run's per-boundary counts did not travel: {counts!r}")
+        else:
+            if not any(one.get("leaked", 0) >= 1 for one in counts.values()):
+                problems.append(f"a planted leak was not counted: {counts!r}")
+            if not any(one.get("hidden", 0) >= 1 for one in counts.values()):
+                problems.append(f"a hidden canary was not counted: {counts!r}")
+        document = json.loads(write(v5_dir, v4_dir, METRIC_FUNCTIONS)
+                              .report.read_text(encoding="utf-8"))
+        if document.get("canary_status") != pc.STATUS_MEASURED:
+            problems.append(f"the machine report did not report the measured run: "
+                            f"{document.get('canary_status')!r}")
+        coverage = document.get("canary_capture")
+        if coverage != {"known": True, "captured": 2, "intervention": 2,
+                        "selected": 2}:
+            problems.append(f"the machine report has no capture denominator: {coverage!r}")
+        machine = document.get("canary_by_boundary")
+        if not isinstance(machine, dict) or not any(
+                one.get("leaked", 0) >= 1 for one in machine.values()):
+            problems.append(f"the machine report lost the measured counts: {machine!r}")
+    return problems
+
+
+def test_unmeasured_canaries_make_the_public_file_incomplete() -> list[str]:
+    """S02 C1 — THE OUTWARD FILE MUST NOT BE THE ONE SURFACE THAT SAYS «ПОЛНЫЙ».
+
+    THE COUNTEREXAMPLE THIS PINS. A saved run with no `canary_manifest.json`
+    published `<run>.public.json` with `incomplete: false`,
+    `incomplete_reasons: []` and no canary key at all, because canary status fed
+    neither the flag nor the reason list. That is not silence: the public file
+    AFFIRMATIVELY claimed completeness while omitting the fact that invalidates
+    it, and the public file is the one whose readers by construction cannot
+    consult §1bis. The reason travels in `incomplete_reasons` and, as status and
+    reason only — never a corpus value — in the canary fields themselves.
+    """
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        run_id = run_id_of(v5_dir)
+        from bench.agentpii5.report import report_lines as render_report
+        render_report(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        written = write(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        shown = json.loads(written.public.read_text(encoding="utf-8"))
+        if not shown.get("incomplete"):
+            problems.append(f"the public file calls an unmeasured run complete: "
+                            f"incomplete={shown.get('incomplete')!r}")
+        reasons = shown.get("incomplete_reasons")
+        if not isinstance(reasons, list) or not any("канаре" in str(one).lower() for one in reasons):
+            problems.append(f"the public file does not name the canary reason: {reasons!r}")
+        if shown.get("canary_status") != pc.STATUS_NOT_MEASURED:
+            problems.append(f"the public file omits the canary status: "
+                            f"{shown.get('canary_status')!r}")
+        if not shown.get("canary_reason"):
+            problems.append("the public file omits the canary reason")
+        # The two surfaces that already said it must keep saying it.
+        private = json.loads(written.report.read_text(encoding="utf-8"))
+        if (private.get("canary_status") != pc.STATUS_NOT_MEASURED
+                or not private.get("canary_reason")):
+            problems.append("the private report lost the canary status or reason")
+        section = _canary_section((v5_dir / f"{run_id}.report.txt").read_text(encoding="utf-8"))
+        if pc.STATUS_NOT_MEASURED not in section or str(private["canary_reason"]) not in section:
+            problems.append("§1bis lost the status or the reason")
+        # Status and reason only: no value of the corpus rides along with them.
+        for value in (REAL_NAME, REAL_PHONE, FAKE_NAME):
+            if value in written.public.read_text(encoding="utf-8"):
+                problems.append(f"the public file now carries {value!r}")
+    return problems
+
+
+def test_an_empty_manifest_cannot_render_clean() -> list[str]:
+    """S02 C2 — a known-version manifest with ZERO canaries must not render
+    `MEASURED`/«чисто» on ANY finished surface.
+
+    The source guard lives in `check_run` (and `scan`); this check is the
+    consequence: §1bis says NOT_MEASURED with a reason instead of printing a
+    status line and nothing else, and both JSON documents mark the run
+    incomplete. A run that planted nothing has no denominator, so «no leaks»
+    about it is not a fact.
+    """
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        run_id = run_id_of(v5_dir)
+        (v5_dir / pc.MANIFEST_ARTIFACT).write_text(json.dumps(
+            {"version": pc.MANIFEST_VERSION,
+             "manifest": {"canaries": [], "neighbours": []}}, ensure_ascii=False),
+            encoding="utf-8")
+        source = pc.check_run(v5_dir)
+        if source.status != pc.STATUS_NOT_MEASURED or source.ok:
+            problems.append(f"the empty manifest measured as {source.status!r} ok={source.ok}")
+        from bench.agentpii5.report import report_lines as render_report
+        render_report(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        section = _canary_section((v5_dir / f"{run_id}.report.txt").read_text(encoding="utf-8"))
+        if pc.STATUS_NOT_MEASURED not in section:
+            problems.append("§1bis calls an empty manifest MEASURED")
+        if source.reason not in section:
+            problems.append("§1bis does not print the reason the empty manifest is unmeasured")
+        if "скрыто" in section:
+            problems.append("§1bis printed per-boundary rows for a run that declared no canary")
+        written = write(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        document = json.loads(written.report.read_text(encoding="utf-8"))
+        if document.get("canary_status") != pc.STATUS_NOT_MEASURED:
+            problems.append(f"the machine report calls an empty manifest "
+                            f"{document.get('canary_status')!r}")
+        if document.get("canary_by_boundary"):
+            problems.append(f"the machine report wrote rows for a zero-canary manifest: "
+                            f"{document.get('canary_by_boundary')!r}")
+        shown = json.loads(written.public.read_text(encoding="utf-8"))
+        if not shown.get("incomplete"):
+            problems.append("the public file calls a zero-canary run complete")
+        if not any("канаре" in str(one).lower()
+                   for one in shown.get("incomplete_reasons", [])):
+            problems.append(f"the public file does not name the canary reason: "
+                            f"{shown.get('incomplete_reasons')!r}")
+    return problems
+
+
+def test_measured_canaries_keep_their_counts_and_stay_complete() -> list[str]:
+    """THE GENUINE MEASUREMENT IS NOT COLLATERAL. A real version-1 manifest keeps
+    its hidden/leaked counts, its neighbour damage and its unreached boundary on
+    the machine report and §1bis, and is NOT dragged into «НЕПОЛНЫЙ» by the
+    canary term C1 adds — otherwise the fix for the empty case would mark every
+    honest run and the word would stop meaning anything.
+    """
+    problems: list[str] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        v5_dir, v4_dir = _built(Path(tmp))
+        delivered = _fixture_payloads()
+        run_id = run_id_of(v5_dir)
+        target = delivered[0]
+        # A surface that really stands in the delivered bytes, found by the
+        # scanner's OWN matcher: a whole letter token of the payload, so the
+        # leak half is not vacuous. This is a fixture literal, never a corpus
+        # value the instrument picked out of saved text.
+        visible = next((one for one in re.findall(r"[^\W\d_]{4,}", target.text)
+                        if pc.surface_in(target.text, one)), "")
+        if not visible:
+            return problems + [f"no declared surface stands in {target.name!r} — "
+                               f"the leak half is vacuous"]
+        specs = (
+            pc.CanarySpec("hidden", "PHONE", target.name,
+                          (pc.PlantedSurface("CANARY-NEVER-WRITTEN-ANYWHERE", pc.SURFACE_FULL),),
+                          "", "message"),
+            pc.CanarySpec("leaked", "NAME", target.name,
+                          (pc.PlantedSurface(visible, pc.SURFACE_FULL),),
+                          "", "message"),
+            pc.CanarySpec("unreached", "PHONE", "model_request",
+                          (pc.PlantedSurface("CANARY-NEVER-DELIVERED", pc.SURFACE_FULL),),
+                          "", "message"),
+        )
+        _write_capture_fixture(v5_dir, pc.CanaryManifest(
+            canaries=specs, neighbours=(
+                pc.Neighbour(target.name, "NEIGHBOUR-TEXT-NOT-PRESENT"),),
+            source="s02-measured-test"), delivered)
+        source = pc.check_run(v5_dir)
+        if source.status != pc.STATUS_MEASURED:
+            problems.append(f"the measured fixture did not measure: {source.status!r}")
+        if source.ok:
+            problems.append("a leaking, neighbour-damaging, unreached manifest reads as clean")
+        if not source.leaks or not source.neighbour_damage or not source.unreached:
+            problems.append(f"the measured fixture lost a fact: leaks={source.leaks} "
+                            f"damage={source.neighbour_damage} unreached={source.unreached}")
+        from bench.agentpii5.report import report_lines as render_report
+        render_report(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        section = _canary_section((v5_dir / f"{run_id}.report.txt").read_text(encoding="utf-8"))
+        for wanted in ("скрыто", "СОСЕДИ ЗАТРОНУТЫ", "ГРАНИЦЫ НЕ ДОСТИГНУТЫ"):
+            if wanted not in section:
+                problems.append(f"§1bis lost {wanted!r} on a measured run")
+        if "ЗАХВАТЫ: 2/2" not in section:
+            problems.append("§1bis omitted the measured I-arm denominator")
+        written = write(v5_dir, v4_dir, METRIC_FUNCTIONS)
+        document = json.loads(written.report.read_text(encoding="utf-8"))
+        if document.get("canary_capture") != {
+                "known": True, "captured": 2, "intervention": 2, "selected": 2}:
+            problems.append(f"the machine report lost capture counts: "
+                            f"{document.get('canary_capture')!r}")
+        if document.get("incomplete"):
+            problems.append("a genuinely measured run was marked incomplete")
+        counts = document.get("canary_by_boundary")
+        if not isinstance(counts, dict) or not any(
+                one.get("leaked", 0) >= 1 for one in counts.values()):
+            problems.append(f"the measured counts did not travel: {counts!r}")
+        if not document.get("canary_neighbour_damage") or not document.get("canary_unreached"):
+            problems.append("the machine report lost the neighbour damage or the unreached boundary")
+        shown = json.loads(written.public.read_text(encoding="utf-8"))
+        if shown.get("canary_capture") != document.get("canary_capture"):
+            problems.append("the public report lost the safe capture denominator")
+        if shown.get("incomplete"):
+            problems.append("a genuinely measured run reads as incomplete in public")
+        if shown.get("canary_status") != pc.STATUS_MEASURED:
+            problems.append(f"the public file did not carry the measured status: "
+                            f"{shown.get('canary_status')!r}")
+    return problems
+
+
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("no_pseudex", test_no_pseudex),
@@ -407,6 +752,13 @@ def main() -> int:
          test_public_refuses_a_document_missing_an_allowlisted_field),
         ("the_two_names_are_run_files_of_the_contract",
          test_the_two_names_are_run_files_of_the_contract),
+        ("unmeasured_canaries_are_never_printed_as_zero_leaks",
+         test_unmeasured_canaries_are_never_printed_as_zero_leaks),
+        ("unmeasured_canaries_make_the_public_file_incomplete",
+         test_unmeasured_canaries_make_the_public_file_incomplete),
+        ("an_empty_manifest_cannot_render_clean", test_an_empty_manifest_cannot_render_clean),
+        ("measured_canaries_keep_their_counts_and_stay_complete",
+         test_measured_canaries_keep_their_counts_and_stay_complete),
     )
     failures: list[str] = []
     for name, check in checks:

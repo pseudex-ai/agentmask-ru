@@ -343,7 +343,8 @@ def test_unmask_reformatted_phone() -> None:
     token = vault.tokenize("+7 999 123-45-67", "PHONE")
     rewritten = "8" + token[2:]  # +79021384756 -> 89021384756
     restored = unmask_text(f"Звоню на {rewritten}", vault)
-    assert "+7 999 123-45-67" in restored, f"reformatted token not restored: {restored!r}"
+    # Current-hop form belongs to the agent, including the domestic prefix.
+    assert "8 999 123-45-67" in restored, f"reformatted token not restored: {restored!r}"
     print(f"reformatted-token detok OK — {rewritten} -> {restored!r}")
 
 

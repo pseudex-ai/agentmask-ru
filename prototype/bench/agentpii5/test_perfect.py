@@ -8,8 +8,11 @@ Two halves, and neither is worth anything alone:
 
   * a RIGHT gateway (`perfect.simulate`) must clear a declared bound on EVERY
     line — the claim «these numbers are earnable» made checkable;
-  * SIX WRONG gateways must FAIL the same bounds — because an acceptance test
+  * EIGHT WRONG gateways must FAIL the same bounds — because an acceptance test
     a wrong gateway can also pass is not an acceptance test, it is a printout.
+    Two are M04's: a right-form/wrong-identity gateway (caught by
+    `round_trip`) and one that leaves a substitute standing in a tool argument
+    (caught by `residual`).
 
 And a third thing the round-4 proof taught: the three corrections that made the
 probe honest are themselves rules, so each is REVERTED here and the run must go
@@ -62,7 +65,7 @@ from dataclasses import dataclass, replace
 
 from bench.agentpii4.schema import PiiItem
 from bench.agentpii4.tools import flatten
-from bench.agentpii5 import contracts, metrics, observe, perfect
+from bench.agentpii5 import contracts, frozen_oracle, metrics, observe, perfect
 from bench.agentpii5.contracts import ArmRunV5, CaseV5, Line
 from bench.agentpii5.observe import fold, value_needles
 
@@ -196,9 +199,15 @@ class Probe:
 
 
 def measure(cases: Sequence[CaseV5], simulate: Callable[[CaseV5], ArmRunV5]) -> dict[str, Line]:
-    """Every single-arm line over the runs `simulate` leaves on `cases`."""
+    """Every single-arm line over the runs `simulate` leaves on `cases`.
+
+    THE FROZEN SCORER IS THE ONE THAT ANSWERS (M04). The mutant matrix is the
+    half of this instrument that makes the right-gateway bounds mean anything,
+    so it must run through the SAME producer the report runs through; scoring
+    the mutants with a second call into `metrics` would prove the bounds hold
+    for a path the product does not print."""
     seen = tuple(observe.observe(case, simulate(case), None, None) for case in cases)
-    return {name: metrics.METRIC_FUNCTIONS[name](seen) for name in perfect.SINGLE_ARM_METRICS}
+    return dict(frozen_oracle.score_observations(seen, cases, ()).lines)
 
 
 def build_probe(tier: str) -> Probe:
@@ -646,6 +655,59 @@ def wrong_absent_call(case: CaseV5) -> ArmRunV5:
                    call_turns=run.call_turns[:-1])
 
 
+def _other_value(text: str) -> str:
+    """A DIFFERENT value of the same shape: the last digit shifted, or the last
+    letter replaced by another of the same case. Deterministic and bounded, and
+    it never consults a dictionary — the point is that the VALUE changed while
+    the FORM stayed what the agent wrote."""
+    out = list(text)
+    for index in range(len(out) - 1, -1, -1):
+        if out[index].isdigit():
+            out[index] = str((int(out[index]) + 1) % 10)
+            return "".join(out)
+    for index in range(len(out) - 1, -1, -1):
+        if out[index].isalpha():
+            out[index] = "Я" if out[index].isupper() else "я"
+            return "".join(out)
+    return text + "Х"
+
+
+def wrong_identity(case: CaseV5) -> ArmRunV5:
+    """RIGHT FORM, WRONG PERSON: every restored leaf keeps the notation the
+    agent wrote and carries another value of the same shape.
+
+    The M04 row asks for a wrong-identity control BESIDE the form ones, because
+    a gateway can be perfect about case and notation while answering about
+    somebody else — and every form-reading line stays green while it does. The
+    line whose words are this defect is `round_trip`: the value came back.
+    """
+    return _map_calls(perfect.simulate(case),
+                      lambda written, restored: (written,
+                                                 {path: _other_value(value)
+                                                  for path, value in restored.items()}))
+
+
+def wrong_residual_fake(case: CaseV5) -> ArmRunV5:
+    """LEAVES THE SUBSTITUTE STANDING IN A TOOL ARGUMENT: one leaf the agent
+    wrote with a fake is handed to the tool exactly as the agent wrote it.
+
+    The product's critical defect — the JSON parses, the status is 200, and a
+    fake is now in the customer's CRM. The FIRST leaf only, so the mutant is a
+    residual and not a passthrough; the line whose words are this defect is
+    `residual`, and the value lines may move with it (a fake IS not the value).
+    """
+    def leave_fake(written: dict[str, str],
+                   restored: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
+        kept = dict(restored)
+        for path in list(kept):
+            if path in written:
+                kept[path] = written[path]
+                break
+        return written, kept
+
+    return _map_calls(perfect.simulate(case), leave_fake)
+
+
 def _leaf_pair_with(fix: Callable[[str, str], str]) -> Callable[..., tuple[str, str]]:
     """`perfect._leaf_pair` with `fix` laid over what the gateway RESTORED.
 
@@ -734,6 +796,8 @@ WRONG_GATEWAYS: tuple[tuple[str, Callable[[CaseV5], ArmRunV5], str], ...] = (
     ("never makes the last call", wrong_absent_call, "out_absent"),
     ("answers a case of its own", wrong_case_form, "form_hOUT"),
     ("returns the number in its own notation", wrong_normalised_number, "form_hOUT"),
+    ("returns another value in the right form", wrong_identity, "round_trip"),
+    ("leaves the substitute standing in a tool argument", wrong_residual_fake, "residual"),
 )
 
 
@@ -807,6 +871,49 @@ def test_number_mutant_moves_only_form_lines(probe: Probe) -> list[str]:
                 for name in moved if name not in FORM_READING_LINES]
     if not any(name in FORM_READING_LINES for name in moved):
         problems.append("the notation mutant moved no form line at all — it is not a mutant")
+    return problems
+
+
+# M04 asks that the action ORDER be varied without a scheduled-turn assumption.
+# `perfect.reverse_action_order` reverses the records COHERENTLY (`seq` and
+# `call_turns` move with the list). The eight lines below follow the permutation
+# and the rest do not, and BOTH halves are the finding: the invariant lines read
+# the order off the record, and these eight are NAMED because a line that
+# silently depended on the schedule would be indistinguishable from one
+# measuring the gateway. The set is MEASURED on `medium` and above — on `nano`
+# three of them (chain_value, chain_form, residual) have too few observations to
+# move, which is why the stale half of the check is gated on the tiers that
+# exercise it while the «nothing unlisted may move» half runs everywhere.
+ORDER_SENSITIVE: frozenset[str] = frozenset({
+    "round_trip", "round_trip_repaired", "end_to_end", "form_hOUT", "multi_all_out",
+    "chain_value", "chain_form", "residual"})
+# The tiers whose denominators exercise every line in ORDER_SENSITIVE.
+ORDER_FULL_TIERS: frozenset[str] = frozenset({"medium", "large", "max"})
+
+
+def test_action_order_is_read_not_assumed(probe: Probe) -> list[str]:
+    """VARY THE ORDER, and hold each line to the order it says it reads.
+
+    A benchmark that assumed «call k happens at turn k» would score a reordered
+    artifact against a schedule the run never had, and a gateway that acted in
+    another valid order would look broken. This reverses every artifact (with
+    `seq` and `call_turns` following) and demands the two declared halves: no
+    line outside `ORDER_SENSITIVE` may move, and the lines ON the list must move
+    wherever the tier has the observations to show it — a stale name would turn
+    a limitation into a decoration.
+    """
+    reversed_runs = measure(probe.cases,
+                            lambda case: perfect.reverse_action_order(perfect.simulate(case)))
+    moved = {name for name, line in reversed_runs.items() if line != probe.perfect[name]}
+    problems = [f"{name}: moved under a reversed action order and is not named in "
+                f"ORDER_SENSITIVE — the line assumes a scheduled turn"
+                for name in sorted(moved - ORDER_SENSITIVE)]
+    if probe.tier in ORDER_FULL_TIERS:
+        problems += [f"{name}: named order-sensitive but did not move on tier {probe.tier} — "
+                     f"the list is stale" for name in sorted(ORDER_SENSITIVE - moved)]
+    if not moved:
+        problems.append("reversing the action order changed nothing at all — the variation "
+                        "is not reaching the observer, so this check proves nothing")
     return problems
 
 
@@ -919,6 +1026,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ("readable_fakes_are_load_bearing", test_readable_fakes_are_load_bearing),
         ("number_mutant_moves_only_form_lines", test_number_mutant_moves_only_form_lines),
         ("wrong_gateways_are_caught", test_wrong_gateways_are_caught),
+        ("action_order_is_read_not_assumed", test_action_order_is_read_not_assumed),
     )
     failures: list[str] = []
     for name, check in checks:

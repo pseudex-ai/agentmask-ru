@@ -1,0 +1,361 @@
+{
+  "arm": "C2",
+  "calls": [
+    {
+      "name": "crm_find_contact",
+      "parsed": {
+        "query": {
+          "phone": "+79889990949"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "query": {
+          "phone": "+79889990949"
+        }
+      },
+      "seq": 1,
+      "written": {
+        "query": {
+          "phone": "+79889990949"
+        }
+      }
+    },
+    {
+      "name": "delivery_quote",
+      "parsed": {
+        "city": "краснодар",
+        "weight": 3000
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "city": "Краснодар",
+        "weight": 3000
+      },
+      "seq": 2,
+      "written": {
+        "city": "Краснодар",
+        "weight": 3000
+      }
+    },
+    {
+      "name": "delivery_create_order",
+      "parsed": {
+        "comment": "",
+        "packages": [
+          {
+            "weight": 3000
+          }
+        ],
+        "recipient": {
+          "name": "Мамедова Лейла",
+          "phones": [
+            "+79228231652"
+          ]
+        },
+        "to_location": {
+          "address": "проспект Кирова, 53, кв. 79",
+          "city": "краснодар",
+          "postal_code": "350000"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "packages": [
+          {
+            "weight": 3000
+          }
+        ],
+        "recipient": {
+          "name": "Мамедова Лейла",
+          "phones": [
+            {
+              "number": "+79228231652"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "проспект Кирова, 53, кв. 79",
+          "city": "Краснодар",
+          "postal_code": "350000"
+        }
+      },
+      "seq": 3,
+      "written": {
+        "packages": [
+          {
+            "weight": 3000
+          }
+        ],
+        "recipient": {
+          "name": "Мамедова Лейла",
+          "phones": [
+            {
+              "number": "+79228231652"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "проспект Кирова, 53, кв. 79",
+          "city": "Краснодар",
+          "postal_code": "350000"
+        }
+      }
+    },
+    {
+      "name": "courier_book",
+      "parsed": {
+        "address": {
+          "building": "53",
+          "locality": "краснодар",
+          "porch": "",
+          "sflat": "79",
+          "street": "кирова"
+        },
+        "contact": {
+          "name": "Васильев Иван Павлович",
+          "phone": "+79889990949"
+        },
+        "interval": {
+          "from": "2026-09-02T10:00:00+03:00",
+          "to": "2026-09-02T11:00:00+03:00"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "address": {
+          "building": "53",
+          "locality": "Краснодар",
+          "sflat": "79",
+          "street": "Кирова"
+        },
+        "contact": {
+          "name": "Васильев Иван Павлович",
+          "phone": "+79889990949"
+        },
+        "interval": {
+          "from": "2026-09-02T10:00:00+03:00",
+          "to": "2026-09-02T11:00:00+03:00"
+        }
+      },
+      "seq": 4,
+      "written": {
+        "address": {
+          "building": "53",
+          "locality": "Краснодар",
+          "sflat": "79",
+          "street": "Кирова"
+        },
+        "contact": {
+          "name": "Васильев Иван Павлович",
+          "phone": "+79889990949"
+        },
+        "interval": {
+          "from": "2026-09-02T10:00:00+03:00",
+          "to": "2026-09-02T11:00:00+03:00"
+        }
+      }
+    },
+    {
+      "name": "crm_add_note",
+      "parsed": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Клиент отправил посылку: заказ ord-1, получатель Мамедова Лейла (+79228231652), Краснодар, пр. Кирова 53, кв. 79, индекс 350000, вес 3000 г. Стоимость 510 ₽, срок 2 дня. Вызван курьер clm-1 на 02.09.2026, 10:00–11:00, адрес забора: Кирова 53, кв. 79."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Клиент отправил посылку: заказ ord-1, получатель Мамедова Лейла (+79228231652), Краснодар, пр. Кирова 53, кв. 79, индекс 350000, вес 3000 г. Стоимость 510 ₽, срок 2 дня. Вызван курьер clm-1 на 02.09.2026, 10:00–11:00, адрес забора: Кирова 53, кв. 79."
+      },
+      "seq": 5,
+      "written": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Клиент отправил посылку: заказ ord-1, получатель Мамедова Лейла (+79228231652), Краснодар, пр. Кирова 53, кв. 79, индекс 350000, вес 3000 г. Стоимость 510 ₽, срок 2 дня. Вызван курьер clm-1 на 02.09.2026, 10:00–11:00, адрес забора: Кирова 53, кв. 79."
+      }
+    },
+    {
+      "name": "order_cancel",
+      "parsed": {
+        "order_id": "ord-1",
+        "reason": "Клиент попросил отменить заказ"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "order_id": "ord-1",
+        "reason": "Клиент попросил отменить заказ"
+      },
+      "seq": 6,
+      "written": {
+        "order_id": "ord-1",
+        "reason": "Клиент попросил отменить заказ"
+      }
+    },
+    {
+      "name": "crm_add_note",
+      "parsed": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Клиент отменил заказ ord-1 (посылка Мамедовой Лейле). Отмена по просьбе клиента."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Клиент отменил заказ ord-1 (посылка Мамедовой Лейле). Отмена по просьбе клиента."
+      },
+      "seq": 7,
+      "written": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Клиент отменил заказ ord-1 (посылка Мамедовой Лейле). Отмена по просьбе клиента."
+      }
+    },
+    {
+      "name": "notify_sms",
+      "parsed": {
+        "number": "+79889990949",
+        "sign": "Dostavka",
+        "text": "Иван Павлович, заказ ord-1 на доставку в Краснодар (получатель Мамедова Лейла) отменён, курьер не приедет. Если нужно оформить отправку снова — позвоните нам. Хорошего дня!"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "number": "+79889990949",
+        "sign": "Dostavka",
+        "text": "Иван Павлович, заказ ord-1 на доставку в Краснодар (получатель Мамедова Лейла) отменён, курьер не приедет. Если нужно оформить отправку снова — позвоните нам. Хорошего дня!"
+      },
+      "seq": 8,
+      "written": {
+        "number": "+79889990949",
+        "sign": "Dostavka",
+        "text": "Иван Павлович, заказ ord-1 на доставку в Краснодар (получатель Мамедова Лейла) отменён, курьер не приедет. Если нужно оформить отправку снова — позвоните нам. Хорошего дня!"
+      }
+    }
+  ],
+  "case_id": "long_order-058",
+  "cluster": "PHONE:9889990949",
+  "cost_usd": 0.005232,
+  "key": "long_order-058|C2|0",
+  "kind": "long_order",
+  "masked_spans": {},
+  "meta": {
+    "api_error_status": null,
+    "cap_usd": 0.48,
+    "duration_ms": 25418,
+    "errors": [],
+    "is_error": false,
+    "model": "deepseek-flash",
+    "reason": "",
+    "session_id": "deepseek-1790427893789110000",
+    "subtype": "success",
+    "turns": 111
+  },
+  "register": "chat",
+  "repeat": 0,
+  "reply": "СМС отправлена на ваш номер **+7 988 999-09-49** 📩\n\nВ ней — подтверждение отмены заказа ord-1. Обращайтесь, если что-то ещё нужно!",
+  "state": [
+    {
+      "fields": {
+        "address": {
+          "building": "53",
+          "locality": "краснодар",
+          "porch": "",
+          "sflat": "79",
+          "street": "кирова"
+        },
+        "contact": {
+          "name": "Васильев Иван Павлович",
+          "phone": "+79889990949"
+        },
+        "interval": {
+          "from": "2026-09-02T10:00:00+03:00",
+          "to": "2026-09-02T11:00:00+03:00"
+        }
+      },
+      "id": "clm-1",
+      "seq": 4,
+      "table": "claims",
+      "tool": "courier_book"
+    },
+    {
+      "fields": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Клиент отправил посылку: заказ ord-1, получатель Мамедова Лейла (+79228231652), Краснодар, пр. Кирова 53, кв. 79, индекс 350000, вес 3000 г. Стоимость 510 ₽, срок 2 дня. Вызван курьер clm-1 на 02.09.2026, 10:00–11:00, адрес забора: Кирова 53, кв. 79."
+      },
+      "id": "note-1",
+      "seq": 5,
+      "table": "notes",
+      "tool": "crm_add_note"
+    },
+    {
+      "fields": {
+        "cancel_reason": "Клиент попросил отменить заказ",
+        "comment": "",
+        "packages": [
+          {
+            "weight": 3000
+          }
+        ],
+        "recipient": {
+          "name": "Мамедова Лейла",
+          "phones": [
+            "+79228231652"
+          ]
+        },
+        "status": "CANCELLED",
+        "to_location": {
+          "address": "проспект Кирова, 53, кв. 79",
+          "city": "краснодар",
+          "postal_code": "350000"
+        }
+      },
+      "id": "ord-1",
+      "seq": 6,
+      "table": "orders",
+      "tool": "order_cancel"
+    },
+    {
+      "fields": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Клиент отменил заказ ord-1 (посылка Мамедовой Лейле). Отмена по просьбе клиента."
+      },
+      "id": "note-2",
+      "seq": 7,
+      "table": "notes",
+      "tool": "crm_add_note"
+    },
+    {
+      "fields": {
+        "number": "+79889990949",
+        "sign": "Dostavka",
+        "text": "Иван Павлович, заказ ord-1 на доставку в Краснодар (получатель Мамедова Лейла) отменён, курьер не приедет. Если нужно оформить отправку снова — позвоните нам. Хорошего дня!"
+      },
+      "id": "sms-1",
+      "seq": 8,
+      "table": "sms",
+      "tool": "notify_sms"
+    }
+  ],
+  "substitutes": {},
+  "termination": "done"
+}

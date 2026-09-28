@@ -234,7 +234,11 @@ def test_masked_text_is_well_formed(vault: Vault, detector: Detector) -> None:
         masked_spans = [s for s in detector.detect(masked) if s.entity_type == "NAME"]
         if not masked_spans:
             continue
-        got = detect_case(masked_spans[0].value)
+        # A masculine given name disambiguates a surname such as Жукова:
+        # its feminine nominative prior must not outvote the whole person's
+        # oblique reading. Literal controls live in test_name_case_regression.
+        surface = masked_spans[0].value
+        got = detect_case(surface, detect_gender(surface))
         # Exact case cannot be asserted: Russian is heavily syncretic in
         # exactly this region. For animate masculine the accusative IS the
         # genitive («вижу Ивана Осипова» / «нет Ивана Осипова»), and for

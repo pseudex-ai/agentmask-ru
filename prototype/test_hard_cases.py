@@ -22,6 +22,7 @@ hard, so a future failure is diagnosable rather than just red.
 
 import json
 import os
+import re
 import sys
 import tempfile
 
@@ -190,6 +191,619 @@ MUST_NOT_DETECT: list[tuple[str, str]] = [
 ]
 
 
+# --------------------------------------------------- a card told in full
+
+# ONE NUMBER IN EVERY LENGTH AND GROUPING A CARD IS WRITTEN IN. The cue used to
+# capture four groups of four and stop there, so «карта 4012 3456 7890 1234 3»
+# masked sixteen digits and left the seventeenth in the clear: the model read a
+# substitute with a real digit glued to its tail. The number is the WHOLE run or
+# it is not typed at all, and these are Luhn-valid so the bare-digit path cannot
+# be what makes a positive pass.
+_CARD_VALID: tuple[tuple[int, str], ...] = (
+    (13, "4012345678909"),
+    (14, "40123456789017"),
+    (15, "401234567890124"),
+    (16, "4012345678901239"),
+    (17, "40123456789012343"),
+    (18, "401234567890123454"),
+    (19, "4012345678901234565"),
+)
+
+# LUHN-INVALID runs of the same lengths: only the cue may type these, so the
+# negatives prove the CUE is what refuses and not a checksum that happened to
+# fail. The 20-digit one is longer than any card and must not be bitten into.
+_CARD_ORDINARY: tuple[tuple[int, str], ...] = (
+    (13, "1234567890123"),
+    (14, "12345678901234"),
+    (15, "123456789012345"),
+    (16, "1234567890123456"),
+    (17, "12345678901234567"),
+    (18, "123456789012345678"),
+    (19, "1234567890123456789"),
+    (20, "12345678901234567890"),
+)
+
+# The number the other suites already pin for a card, so the 16-digit
+# compatibility of a widened grammar is checked against a literal that predates it.
+_CARD_COMPAT: str = "4276 1600 1234 5675"
+
+# Words that OPEN like the cue and name something else entirely. They are what
+# keeps the widening from becoming «anything at all after карт*».
+_NOT_A_CARD: tuple[str, ...] = ("картина", "картотека", "картон", "картошка", "картридж")
+
+# And words that END like it, or carry it inside a hyphenated compound. A cue is
+# a WORD, so `\b` on the left of «card» and a letter after the hyphen are part of
+# the pattern, not decoration: «postcard 1234…» and «карт-бланш 1234…» are the
+# same sentence shape as «карта 1234…» and the number behind them is an order,
+# not a card. The run is LUHN-INVALID and thirteen digits long, so no other path
+# in the engine can type it — a mask here can only have come from the cue.
+_NOT_A_CUE: tuple[str, ...] = ("postcard", "discard", "карт-бланш")
+_NOT_A_CUE_RUN: str = "1234567890123"
+
+
+def _only_digits(text: str) -> str:
+    return "".join(char for char in text if char.isdigit())
+
+
+def _card_grouped(digits: str, width: int, separator: str) -> str:
+    """The same number in the sender's grouping — no engine call involved."""
+    return separator.join(digits[at:at + width] for at in range(0, len(digits), width))
+
+
+def _card_forms(digits: str) -> tuple[tuple[str, str], ...]:
+    """The shapes a card is written in: bare, fours, twos, and the doubled
+    separator a copy-paste out of a table produces."""
+    fours = _card_grouped(digits, 4, " ")
+    return (
+        ("bare", digits),
+        ("fours/spaces", fours),
+        ("fours/dashes", _card_grouped(digits, 4, "-")),
+        ("twos/spaces", _card_grouped(digits, 2, " ")),
+        ("copy-paste double space", fours.replace(" ", "  ", 1)),
+    )
+
+
+def test_a_cued_card_is_typed_whole(vault: Vault, detector: Detector) -> None:
+    """Every length 13..19, every common grouping, one CARD span over ALL of it.
+
+    The assertion is the SPAN EXTENT, not a digit count: a 16-of-17 mask leaves
+    the same number of digits in the sentence as a correct one, so only «the span
+    IS the written number» can see the tail leak. The round trip is checked too,
+    because the substitute must carry the whole length for the tool to receive
+    the card the customer read out.
+    """
+    for length, digits in _CARD_VALID:
+        problems: list[str] = []
+        for form, written in _card_forms(digits):
+            text = f"карта {written}"
+            spans = detector.detect(text)
+            whole = [span for span in spans if span.entity_type == "CARD"
+                     and text[span.start:span.end] == written]
+            if len(whole) != 1:
+                problems.append(f"{form}: spans={[(s.entity_type, s.value) for s in spans]}")
+                continue
+            masked = mask_text(text, vault, spans)
+            restored = unmask_text(masked, vault)
+            if written not in restored:
+                problems.append(f"{form}: {written!r} did not come back from {masked!r}")
+        check(f"a {length}-digit card named by its cue is masked whole",
+              not problems,
+              "; ".join(problems) if problems else f"{len(_card_forms(digits))} groupings")
+    # 16 COMPATIBILITY, against the literal the other suites already pin.
+    missed: list[str] = []
+    for form, written in _card_forms(_only_digits(_CARD_COMPAT)):
+        text = f"Карта {written}"
+        if not any(span.entity_type == "CARD" and text[span.start:span.end] == written
+                   for span in detector.detect(text)):
+            missed.append(form)
+    check("the 16-digit card stays detected in every grouping", not missed,
+          f"missed={missed}" if missed else _CARD_COMPAT)
+
+
+def test_an_ordinary_number_after_a_card_word_stays_ordinary(detector: Detector) -> None:
+    """The cue must NAME A CARD, and the number must be card-shaped.
+
+    Two ways to widen this blindly, both refused here: letting any word that
+    starts like «карт» type a number («картина», «картотека»), and letting a bare
+    Luhn-valid run of a non-16 length be typed with no cue at all. The bare
+    policy is deliberately unchanged — a 13..19-digit run with no cue is not a
+    card to this engine, however valid its checksum — and that limit is pinned
+    here rather than left implied.
+    """
+    over: list[tuple[str, str, list[tuple[str, str]]]] = []
+    for word in _NOT_A_CARD:
+        for length, digits in _CARD_ORDINARY:
+            text = f"{word} {_card_grouped(digits, 4, ' ')}"
+            found = [(span.entity_type, span.value) for span in detector.detect(text)]
+            if found:
+                over.append((word, str(length), found))
+    check("a word that only starts like the cue does not type a number", not over,
+          f"over-masked={over[:3]}" if over
+          else f"{len(_NOT_A_CARD)} words x {len(_CARD_ORDINARY)} lengths")
+
+    bare: list[tuple[int, str]] = []
+    for length, digits in _CARD_ORDINARY:
+        if detector.detect(f"заказ {digits}"):
+            bare.append((length, digits))
+    for length, digits in _CARD_VALID:
+        if length == 16:
+            continue  # the documented bare-checksum policy types exactly these
+        if detector.detect(f"заказ {digits}"):
+            bare.append((length, digits))
+    check("an uncued digit run is not a card at any other length", not bare,
+          f"over-masked={bare[:3]}" if bare
+          else f"{len(_CARD_ORDINARY)} ordinary + 6 Luhn-valid runs")
+
+    long_runs: list[str] = []
+    for written in ("12345678901234567890", _card_grouped("12345678901234567890", 4, " ")):
+        text = f"карта {written}"
+        found = [(span.entity_type, span.value) for span in detector.detect(text)]
+        if found:
+            long_runs.append(f"{text!r} -> {found}")
+    check("a run longer than any card is not bitten into", not long_runs,
+          "; ".join(long_runs) if long_runs else "20 digits behind the cue, loose and grouped")
+
+
+def test_the_cue_is_a_whole_word(detector: Detector) -> None:
+    """The cue names a card; a word that merely contains it names something else.
+
+    M2 OF THE REVIEW. «postcard» and «discard» end in «card», and «карт-бланш»
+    begins with the card noun and continues in a hyphenated compound — all three
+    used to type the number after them. The run is chosen so that ONLY the cue
+    could type it, which is what makes a mask here evidence of the false cue and
+    not of the bare checksum policy."""
+    over: list[str] = []
+    for word in _NOT_A_CUE:
+        for separator in (" ", ": "):
+            text = f"{word}{separator}{_NOT_A_CUE_RUN}"
+            found = [(span.entity_type, span.value) for span in detector.detect(text)]
+            if found:
+                over.append(f"{text!r} -> {found}")
+    check("a word that only ends like, or compounds with, the cue types nothing",
+          not over, "; ".join(over) if over
+          else f"{len(_NOT_A_CUE)} words x 2 writings, each behind a 13-digit run")
+    cued = f"карта {_NOT_A_CUE_RUN}"
+    check("the cue itself still types the same run",
+          any(span.entity_type == "CARD" for span in detector.detect(cued)), cued)
+
+
+# A SECOND NUMBER IS NOT A CONTINUATION. A card is at most nineteen digits, so
+# digits after a card-length chunk are another number: «карта <16> <16>» is TWO
+# cards, and masking only the first — or refusing the run because it is longer
+# than any card — leaves a whole card in the model's hands.
+_CARD_PAIR_WRITINGS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("space", "4012 3456 7890 1239 4012 3456 7890 1238",
+     ("4012 3456 7890 1239", "4012 3456 7890 1238")),
+    ("hyphen", "4012-3456-7890-1239-4012-3456-7890-1238",
+     ("4012-3456-7890-1239", "4012-3456-7890-1238")),
+    ("touching second card", "4012 3456 7890 12394012345678901238",
+     ("4012 3456 7890 1239", "4012345678901238")),
+)
+
+
+def test_a_card_before_another_number_is_still_a_card(vault: Vault, detector: Detector) -> None:
+    """Adjacent numbers: the card is typed whole, and the run is not refused.
+
+    THE REVIEWER'S RED. A card is 13..19 digits, so digits after one are another
+    number — not a continuation — and a rule that reads the maximal run as «one
+    number, so no card» loses both cards. The controls below pin both directions:
+    a card followed by another card (space, hyphen, and touching), by an order
+    number, and by a quantity, with the follower left exactly as written.
+    """
+    for label, run, wanted in _CARD_PAIR_WRITINGS:
+        text = f"карта {run}"
+        spans = detector.detect(text)
+        found = [text[span.start:span.end] for span in spans if span.entity_type == "CARD"]
+        check(f"two cards via {label} are both typed", found == list(wanted),
+              f"found={found}, wanted={list(wanted)}")
+        if found != list(wanted):
+            continue
+        masked = mask_text(text, vault, spans)
+        digits = _only_digits(masked)
+        check(f"neither card survives the mask ({label})",
+              not any(_only_digits(one) in digits for one in wanted),
+              f"masked={masked}")
+
+    for label, run, card in (
+        ("space", "4012 3456 7890 1239 1428570", "4012 3456 7890 1239"),
+        ("hyphen", "4012-3456-7890-1239-1428570", "4012-3456-7890-1239"),
+    ):
+        text = f"карта {run}"
+        spans = detector.detect(text)
+        found = [text[span.start:span.end] for span in spans if span.entity_type == "CARD"]
+        check(f"a card before an order number ({label}) is typed whole", found == [card],
+              f"found={found}, wanted={[card]}")
+        check(f"the order number after the card ({label}) stays clear",
+              "1428570" in mask_text(text, vault, spans), "")
+
+    quantity = "карта 4012 3456 7890 1239, 12 коробок"
+    spans = detector.detect(quantity)
+    found = [quantity[span.start:span.end] for span in spans if span.entity_type == "CARD"]
+    check("a card before a punctuated quantity is typed whole",
+          found == ["4012 3456 7890 1239"], f"found={found}")
+    check("the quantity after a punctuated card stays clear",
+          "12 коробок" in mask_text(quantity, vault, spans), "")
+
+    # The bare path has the same shape and the same rule (a fresh vault, no cue).
+    bare = "4012 3456 7890 1239 4276 1600 1234 5675"
+    spans = detector.detect(bare)
+    found = [bare[span.start:span.end] for span in spans if span.entity_type == "CARD"]
+    check("two Luhn-valid cards with no cue are both typed", len(found) == 2, f"found={found}")
+
+
+def test_a_short_glued_group_is_read_as_the_longer_card(vault: Vault, detector: Detector) -> None:
+    """The one case the string cannot decide, pinned as POLICY rather than hidden.
+
+    «…1239 12» and an eighteen-digit card are the SAME string. C02 exists because
+    reading the shorter one and leaving « 12» behind is the tail leak, so the
+    longer-card reading wins. A 1..3-digit group is therefore part of the card; a
+    4-digit group would make a twenty-digit run, which is an account shape and is
+    refused whole (see `test_an_ordinary_number_after_a_card_word_stays_ordinary`).
+    """
+    glued = "карта 4012 3456 7890 1239 12"
+    spans = detector.detect(glued)
+    found = [glued[span.start:span.end] for span in spans if span.entity_type == "CARD"]
+    check("a 1..3-digit group after a card reads as the longer card (policy)",
+          found == ["4012 3456 7890 1239 12"], f"found={found}")
+    check("that reading leaves no real digit behind",
+          "401234567890123912" not in _only_digits(mask_text(glued, vault, spans)), "")
+
+
+# A CARD MAY SIT AFTER A NON-CARD NUMBER, and a router that reads a card only from
+# the START of the digit run is what made this fail: «карта 1428570 4012 3456 7890
+# 1239» masked the MANGLED span «1428570 4012 3456 7890» and sent the card's tail
+# «1239» to the model — the order number masked and four real card digits in the
+# clear, wrong in both directions at once. The grouping says where one number ends
+# and the next begins, so each number is read on its own. These are the literals
+# the correction exists for; the last one has no cue and is typed by its checksum.
+_CARD_AFTER_OTHER_NUMBER: tuple[tuple[str, str, str, str], ...] = (
+    ("seven-digit order before the card", "карта 1428570 4012 3456 7890 1239",
+     "4012 3456 7890 1239", "1428570"),
+    ("five-digit group before the card", "карта 12345 4012 3456 7890 1239",
+     "4012 3456 7890 1239", "12345"),
+    ("two numbers before the card", "карта 12345 67890 4012 3456 7890 1239",
+     "4012 3456 7890 1239", "12345"),
+    ("no cue at all, the checksum still types it", "1428570 4012 3456 7890 1239",
+     "4012 3456 7890 1239", "1428570"),
+)
+
+# B1, B2 AND M1 — THE REVIEW'S LITERALS — and each was wrong in a different
+# direction from the same cause: a boundary was decided before the grouping that
+# carries the evidence was read. A twenty-digit run of two four-grouped numbers
+# was refused WHOLE, so the card in it was never typed (B1); a nineteen-digit card
+# was cut after sixteen digits and its real tail («565 12») left in the model's
+# hands (B2); a thirteen-digit card and the group beside it were FUSED into one
+# seventeen-digit span that is neither number (M1). The card is now the exact span
+# the sender wrote and the neighbour stays clear — and the neighbour is asserted in
+# the MASKED text, because a span list that is right while the mask eats the
+# neighbour is the other half of the same defect.
+_CARD_BESIDE_ONE_NEIGHBOUR: tuple[tuple[str, str, str, str], ...] = (
+    ("a card then a year", "карта 4012 3456 7890 1239 2024",
+     "4012 3456 7890 1239", "2024"),
+    ("a four-digit group then the card", "карта 1234 4012 3456 7890 1239",
+     "4012 3456 7890 1239", "1234"),
+    ("a card whose third group is glued", "карта 4012 3456 7890 1234 565 12",
+     "4012 3456 7890 1234 565", "12"),
+    ("a bare thirteen then a group", "карта 4012345678909 1234",
+     "4012345678909", "1234"),
+    ("a group then the bare thirteen", "карта 1234 4012345678909",
+     "4012345678909", "1234"),
+    ("a thirteen beside a seven-digit order", "карта 1234567890123 4567890",
+     "1234567890123", "4567890"),
+)
+
+# RUNS THE GROUPING CANNOT SEPARATE, refused whole. Every card-shaped window in
+# these is an arbitrary cut of a value the sender wrote as ONE number: the groups
+# are uniform, so no boundary inside the run is evidence, and both sixteen-digit
+# windows of the first account fail Luhn — nothing is left to decide with. Refusing
+# costs an unmasked card; biting would hand the model a card carved out of an
+# account. Pinned because a policy nobody wrote down is indistinguishable from a bug.
+_CARD_REFUSED: tuple[tuple[str, str], ...] = (
+    ("a twenty-digit account in fours", "1234 5678 9012 3456 7890"),
+    ("a twenty-digit account with no grouping at all", "12345678901234567890"),
+    ("a twenty-four-digit number in fours", "4012 3456 7890 1239 4012 3456"),
+    ("a twenty-eight-digit number in fours", "4012 3456 7890 1239 4012 3456 7890"),
+)
+
+# B3. A separator was lost between the fourth and the fifth group, so the tail is
+# ONE seventeen-wide group after three fours. Read as a card on its own it masks
+# seventeen digits and leaves the first twelve of the real card in the clear; read
+# in the width the sender's OTHER groups established, the run is a sixteen-digit
+# card and a thirteen-digit one, and both are protected. The cut is evidence the
+# sender left in the run, not a guess about the number.
+_CARD_LOST_SEPARATOR: str = "карта 4012 3456 7890 12394012345678901"
+_CARD_LOST_SEPARATOR_READING: tuple[str, ...] = ("4012 3456 7890 1239", "4012345678901")
+
+# THE GRIDS ARE GENERATED, NOT LISTED. The old grammar's answer depended on which
+# length the card happened to have and which side the neighbour sat on: a card
+# before a four-digit group was refused while the same group before a thirteen was
+# fused. Every length 13/16/19 now meets every neighbour width 1..8 on both sides,
+# separated by a space, a hyphen and nothing at all, and the assertions are the two
+# properties that must hold everywhere — no digit run of the real card survives the
+# mask, and a neighbour the grouping separates stays clear. A bare card is one digit
+# group with no grouping of its own, so every neighbour is a different width and
+# every one is separated; the glued card of the pair grid is where the sender's
+# fours do reach the merged group.
+_CARD_GRID: tuple[str, ...] = tuple(
+    digits for length, digits in _CARD_VALID if length in (13, 16, 19))
+_CARD_GRID_NEIGHBOURS: tuple[str, ...] = tuple(
+    "9876543210"[:width] for width in range(1, 9))
+
+
+def test_a_card_after_a_non_card_number_is_still_typed(vault: Vault,
+                                                       detector: Detector) -> None:
+    """The whole run is read for cards, not only its first number.
+
+    Both halves are asserted: the card is masked WHOLE (its digits do not survive
+    anywhere), and the non-card number before it is NOT masked. The old failure
+    passed a digit-count check — it removed sixteen digits and added sixteen — so
+    only «the span IS the card» sees it.
+    """
+    broken: list[str] = []
+    for why, text, card, other in _CARD_AFTER_OTHER_NUMBER:
+        spans = detector.detect(text)
+        found = [text[span.start:span.end] for span in spans if span.entity_type == "CARD"]
+        if found != [card]:
+            broken.append(f"{why}: found={found}, wanted={[card]}")
+            continue
+        masked = mask_text(text, vault, spans)
+        if _only_digits(card) in _only_digits(masked):
+            broken.append(f"{why}: the card survives the mask ({masked!r})")
+        elif other not in masked:
+            broken.append(f"{why}: the number before it was masked too ({masked!r})")
+        elif card not in unmask_text(masked, vault):
+            broken.append(f"{why}: the card did not come back from {masked!r}")
+    check("a card after a non-card number is typed whole, and that number is not",
+          not broken, "; ".join(broken[:2]) if broken
+          else f"{len(_CARD_AFTER_OTHER_NUMBER)} leading-number runs")
+
+
+def test_a_card_beside_one_neighbour_keeps_both_readings(
+        vault: Vault, detector: Detector) -> None:
+    """B1, B2 and M1: the card is the exact span, and the neighbour is untouched."""
+    broken: list[str] = []
+    for why, text, card, other in _CARD_BESIDE_ONE_NEIGHBOUR:
+        spans = detector.detect(text)
+        found = [text[span.start:span.end] for span in spans if span.entity_type == "CARD"]
+        if found != [card]:
+            broken.append(f"{why}: found={found}, wanted={[card]}")
+            continue
+        masked = mask_text(text, vault, spans)
+        if _only_digits(card) in _only_digits(masked):
+            broken.append(f"{why}: the card survives the mask ({masked!r})")
+        elif other not in masked:
+            broken.append(f"{why}: the neighbour was masked too ({masked!r})")
+        elif text not in unmask_text(masked, vault):
+            broken.append(f"{why}: the run did not come back from {masked}")
+    check("a card beside one neighbour is the exact card, the neighbour clear",
+          not broken, "; ".join(broken[:2]) if broken
+          else f"{len(_CARD_BESIDE_ONE_NEIGHBOUR)} review literals")
+
+
+def test_a_lost_separator_is_cut_in_the_senders_grouping(
+        vault: Vault, detector: Detector) -> None:
+    """B3: a card-shaped tail after a partial card is read in the sender's fours."""
+    text = _CARD_LOST_SEPARATOR
+    spans = detector.detect(text)
+    found = [text[span.start:span.end] for span in spans if span.entity_type == "CARD"]
+    check("a lost separator is cut in the sender's grouping, protecting both numbers",
+          found == list(_CARD_LOST_SEPARATOR_READING), f"found={found}")
+    masked = mask_text(text, vault, spans)
+    check("no digit of either card survives the lost-separator mask",
+          not any(_only_digits(one) in _only_digits(masked)
+                  for one in _CARD_LOST_SEPARATOR_READING),
+          f"masked={masked}")
+
+
+def test_a_card_beside_one_neighbour_is_read_by_the_grouping(
+        vault: Vault, detector: Detector) -> None:
+    """The grid: 13/16/19 x neighbour widths 1..8 x both sides x space/hyphen.
+
+    The neighbour is written in a width the card's own group does not use, so the
+    sender's grouping separates the two numbers and the neighbour comes back
+    untouched. A twelve-digit neighbour is worth naming: it is not a card, and it
+    stays clear even though «card + twelve» is exactly twenty digits — what refuses
+    the twenty-digit account is the GROUPING (uniform fours all the way through),
+    never a digit count.
+    """
+    broken: list[str] = []
+    for card in _CARD_GRID:
+        for neighbour in _CARD_GRID_NEIGHBOURS:
+            for side in ("after", "before"):
+                for separator in (" ", "-"):
+                    written = (card + separator + neighbour if side == "after"
+                               else neighbour + separator + card)
+                    text = f"карта {written}"
+                    why = (f"{len(card)}-digit card, {len(neighbour)}-digit "
+                           f"neighbour, {side}, {separator!r}")
+                    spans = detector.detect(text)
+                    found = [text[span.start:span.end] for span in spans
+                             if span.entity_type == "CARD"]
+                    if found != [card]:
+                        broken.append(f"{why}: found={found}")
+                        continue
+                    masked = mask_text(text, vault, spans)
+                    if _only_digits(card) in _only_digits(masked):
+                        broken.append(f"{why}: the card survives ({masked!r})")
+                    elif neighbour not in masked:
+                        broken.append(f"{why}: the neighbour was masked too ({masked!r})")
+                    elif written not in unmask_text(masked, vault):
+                        broken.append(f"{why}: the run did not come back ({masked!r})")
+    check("a card beside one differently grouped neighbour is exact, the neighbour clear",
+          not broken, "; ".join(broken[:2]) if broken
+          else f"{len(_CARD_GRID)} lengths x {len(_CARD_GRID_NEIGHBOURS)} widths "
+               "x 2 sides x 2 separators")
+
+
+def test_a_touching_neighbour_is_one_card_or_refused_whole(
+        vault: Vault, detector: Detector) -> None:
+    """No separator: the run is ONE digit group and nothing inside it testifies.
+
+    13..19 digits IS that card and is masked whole; a longer run is refused WHOLE,
+    because the only windows a longer run offers are card-shaped cuts of a number
+    the sender wrote as one — biting one of those is the C02 shape, masking some of
+    the customer's digits and handing the model the rest. A refusal leaves the
+    number visible, which is a cost; a partial mask is a defect.
+    """
+    broken: list[str] = []
+    for card in _CARD_GRID:
+        for neighbour in _CARD_GRID_NEIGHBOURS:
+            for side in ("after", "before"):
+                written = card + neighbour if side == "after" else neighbour + card
+                text = f"карта {written}"
+                why = f"{len(card)}+{len(neighbour)} touching, {side}"
+                spans = detector.detect(text)
+                found = [text[span.start:span.end] for span in spans
+                         if span.entity_type == "CARD"]
+                # Any type may type a 13..19-digit run — a fifteen-digit one is
+                # also an ОГРНИП shape, and which recognizer wins is not the point
+                # here. The point is that the WHOLE run is one span, never a
+                # card-shaped window cut out of it.
+                whole = [text[span.start:span.end] for span in spans
+                         if text[span.start:span.end] == written]
+                if 13 <= len(written) <= 19:
+                    if not whole:
+                        broken.append(f"{why}: the run was not masked at all")
+                    elif _only_digits(written) in _only_digits(mask_text(text, vault, spans)):
+                        broken.append(f"{why}: the masked run survives")
+                elif found:
+                    broken.append(f"{why}: a {len(written)}-digit run was partly masked: {found}")
+    check("a touching run is one card when card-shaped, else refused whole — never partial",
+          not broken, "; ".join(broken[:2]) if broken
+          else f"{len(_CARD_GRID)} lengths x {len(_CARD_GRID_NEIGHBOURS)} widths "
+               "x 2 sides touching")
+
+
+def test_two_cards_in_one_run_are_both_typed(vault: Vault, detector: Detector) -> None:
+    """The pair grid: 13/16/19 with 13/16/19, spaced, hyphenated and glued.
+
+    Separated, the two spans ARE the two cards. Glued, the first card is written in
+    the sender's fours and the second has no separators, so the merged group is the
+    only place the grouping survives; where the two readings differ (sixteen-then-
+    thirteen or thirteen-then-sixteen) WHICH reading was chosen is not asserted —
+    the run is covered end to end and neither card's digits survive, and that is
+    what «protect both» means. A combination whose merged group no grouping can cut
+    (thirteen glued to thirteen, nineteen glued to nineteen) is refused whole
+    rather than partly masked.
+    """
+    broken: list[str] = []
+    for first in _CARD_GRID:
+        for second in _CARD_GRID:
+            for separator in (" ", "-"):
+                text = f"карта {first}{separator}{second}"
+                why = f"{len(first)}+{len(second)} {separator!r}"
+                spans = detector.detect(text)
+                found = [text[span.start:span.end] for span in spans
+                         if span.entity_type == "CARD"]
+                if found != [first, second]:
+                    broken.append(f"{why}: found={found}")
+                    continue
+                surviving = _only_digits(mask_text(text, vault, spans))
+                if _only_digits(first) in surviving or _only_digits(second) in surviving:
+                    broken.append(f"{why}: a card survives the mask")
+            glued = f"карта {_card_grouped(first, 4, ' ')}{second}"
+            spans = detector.detect(glued)
+            covered = sum(len(_only_digits(glued[span.start:span.end]))
+                          for span in spans if span.entity_type == "CARD")
+            why = f"{len(first)}+{len(second)} glued"
+            if covered not in (0, len(first) + len(second)):
+                broken.append(f"{why}: {covered} of {len(first) + len(second)} digits masked")
+            elif covered and any(one in _only_digits(mask_text(glued, vault, spans))
+                                 for one in (_only_digits(first), _only_digits(second))):
+                broken.append(f"{why}: a card survives the mask")
+    check("two cards in one run are both typed, separated or glued",
+          not broken, "; ".join(broken[:2]) if broken
+          else f"{len(_CARD_GRID) ** 2} pairs x 2 separators + {len(_CARD_GRID) ** 2} glued")
+
+
+def test_what_the_grouping_cannot_separate_is_refused(detector: Detector) -> None:
+    """A run whose groups are uniform offers no boundary, so nothing is guessed.
+
+    THE ONE PLACE A CUE DOES NOT OUTRANK THE CHECKSUM is the same shape: «<16> <4>»
+    in uniform fours is character for character a twenty-digit СЧЁТ, and it becomes
+    a card only when exactly ONE of its two sixteen-digit windows passes Luhn. Both
+    passing, or neither, leaves nothing to decide with and the run is refused.
+    """
+    guessed: list[str] = []
+    for why, run in _CARD_REFUSED:
+        text = f"карта {run}"
+        found = [text[span.start:span.end] for span in detector.detect(text)
+                 if span.entity_type == "CARD"]
+        if found:
+            guessed.append(f"{why}: {found}")
+    check("a run no grouping separates is refused whole, not bitten",
+          not guessed, "; ".join(guessed[:2]) if guessed
+          else f"{len(_CARD_REFUSED)} account-shaped runs")
+
+    wrong: list[str] = []
+    for why, run, card in (
+        ("the prefix passes", "4012 3456 7890 1239 2024", "4012 3456 7890 1239"),
+        ("the suffix passes", "1234 4012 3456 7890 1239", "4012 3456 7890 1239"),
+    ):
+        text = f"карта {run}"
+        found = [text[span.start:span.end] for span in detector.detect(text)
+                 if span.entity_type == "CARD"]
+        if found != [card]:
+            wrong.append(f"{why}: found={found}, wanted={[card]}")
+    check("the checksum separates a twenty-digit run into two equal-grouped readings",
+          not wrong, "; ".join(wrong) if wrong else "one window of two passes Luhn")
+
+
+def test_a_card_beside_another_card_keeps_the_cue_and_the_checksum_split(
+        vault: Vault, detector: Detector) -> None:
+    """BEHIND A CUE THE CUE IS THE EVIDENCE, and a bare run is gated by Luhn.
+
+    A 13..19-digit ORDER number beside a card is masked with it behind the cue —
+    «a mistyped card the customer named is still their card» cuts both ways and the
+    string says nothing about which run is which. With no cue at all, the same run
+    types only the sixteen digits the checksum validates. Both directions are
+    pinned, and the reviewer's literal is named here so the red this correction
+    exists for is visible at a glance.
+    """
+    broken: list[str] = []
+    for why, run, card in (
+        ("a five-digit group", "4012 3456 7890 1239 12345", "4012 3456 7890 1239"),
+        ("a six-digit group", "4012 3456 7890 1239 123456", "4012 3456 7890 1239"),
+        ("a seven-digit order", "4012 3456 7890 1239 1428570", "4012 3456 7890 1239"),
+    ):
+        text = f"карта {run}"
+        spans = detector.detect(text)
+        found = [text[span.start:span.end] for span in spans if span.entity_type == "CARD"]
+        if found != [card]:
+            broken.append(f"{why}: found={found}, wanted={[card]}")
+            continue
+        masked = mask_text(text, vault, spans)
+        if not (card not in masked and run[len(card):].strip(" ,") in masked):
+            broken.append(f"{why}: masked={masked}")
+        elif run not in unmask_text(masked, vault):
+            broken.append(f"{why}: did not come back from {masked}")
+    check("a card before a differently grouped number is typed, that number is not",
+          not broken, "; ".join(broken[:2]) if broken else "three mixed runs")
+
+    cued = "карта 1234567890123 4012345678901239"
+    found = [cued[span.start:span.end] for span in detector.detect(cued)
+             if span.entity_type == "CARD"]
+    check("a 13-digit run beside a card is a card behind the cue",
+          found == ["1234567890123", "4012345678901239"], f"found={found}")
+    bare = "1234567890123 4012345678901239"
+    found = [bare[span.start:span.end] for span in detector.detect(bare)
+             if span.entity_type == "CARD"]
+    check("the same run with no cue types only the Luhn-valid sixteen",
+          found == ["4012345678901239"], f"found={found}")
+
+    literal = "карта 4012 3456 7890 1239 4012 3456 7890 1238"
+    spans = detector.detect(literal)
+    found = [literal[span.start:span.end] for span in spans if span.entity_type == "CARD"]
+    check("the reviewer's literal: both cards, whole",
+          found == ["4012 3456 7890 1239", "4012 3456 7890 1238"], f"found={found}")
+    masked = mask_text(literal, vault, spans)
+    check("the reviewer's literal: no digit of either card survives",
+          not any(_only_digits(one) in _only_digits(masked)
+                  for one in ("4012 3456 7890 1239", "4012 3456 7890 1238")),
+          f"masked={masked}")
+
+
+
 def test_detection(detector: Detector) -> None:
     missed = []
     for text, wanted, why in MUST_DETECT:
@@ -277,11 +891,18 @@ def test_same_value_same_token(vault: Vault, detector: Detector) -> None:
     become two people in the agent's memory.
     """
     phone_forms = ["+7 916 214-88-03", "8 916 214 88 03", "89162148803", "+79162148803"]
-    tokens = set()
+    tokens: set[str] = set()
     for form in phone_forms:
         text = f"Телефон {form}"
-        tokens.add(mask_text(text, vault, detector.detect(text)).replace("Телефон ", ""))
-    check("one phone written four ways is ONE token", len(tokens) == 1,
+        shown: str = mask_text(text, vault, detector.detect(text)).replace("Телефон ", "")
+        # The pseudonym's identity stays stable, not its literal presentation.
+        # A domestic prefix and grouping belong to this mention; requiring the
+        # same string here rewarded discarding the customer's current form.
+        digits: str = re.sub(r"\D", "", shown)
+        tokens.add(digits[-10:])
+        check(f"phone mention returns its own form: {form}",
+              unmask_text(shown, vault) == form)
+    check("one phone written four ways is ONE identity", len(tokens) == 1,
           f"tokens={tokens}")
 
 
@@ -985,6 +1606,19 @@ def main() -> int:
 
     test_detection(detector)
     test_no_over_masking(detector)
+    test_a_cued_card_is_typed_whole(vault, detector)
+    test_a_card_before_another_number_is_still_a_card(vault, detector)
+    test_a_short_glued_group_is_read_as_the_longer_card(vault, detector)
+    test_a_card_after_a_non_card_number_is_still_typed(vault, detector)
+    test_a_card_beside_one_neighbour_keeps_both_readings(vault, detector)
+    test_a_lost_separator_is_cut_in_the_senders_grouping(vault, detector)
+    test_a_card_beside_one_neighbour_is_read_by_the_grouping(vault, detector)
+    test_a_touching_neighbour_is_one_card_or_refused_whole(vault, detector)
+    test_two_cards_in_one_run_are_both_typed(vault, detector)
+    test_what_the_grouping_cannot_separate_is_refused(detector)
+    test_a_card_beside_another_card_keeps_the_cue_and_the_checksum_split(vault, detector)
+    test_an_ordinary_number_after_a_card_word_stays_ordinary(detector)
+    test_the_cue_is_a_whole_word(detector)
     test_round_trip(vault, detector)
     test_model_never_sees_the_original(vault, detector)
     test_same_value_same_token(vault, detector)

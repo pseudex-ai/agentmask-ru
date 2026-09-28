@@ -1,0 +1,512 @@
+{
+  "runs": {
+    "A": {
+      "path": "/private/tmp/v5-quarter-deepseek-nojudge-clean-20260926",
+      "run_id": "b4296aa2-3e14-4e52-b5da-1aed64b2baa8",
+      "complete": 314,
+      "raw_observations": 321,
+      "excluded_observation_ids": [
+        "memory_anaphora-033",
+        "memory_anaphora-045",
+        "memory_anaphora-062",
+        "memory_anaphora-081",
+        "memory_anaphora-087",
+        "memory_anaphora-105",
+        "tool_chain-015"
+      ],
+      "metrics": {
+        "leak": {
+          "hits": 2724,
+          "total": 2725,
+          "rate": 0.9996330275229358
+        },
+        "coverage": {
+          "hits": 2693,
+          "total": 2725,
+          "rate": 0.9882568807339449
+        },
+        "residual": {
+          "hits": 5167,
+          "total": 5688,
+          "rate": 0.9084036568213784
+        },
+        "end_to_end": {
+          "hits": 197,
+          "total": 1251,
+          "rate": 0.1574740207833733
+        },
+        "form_hIN": {
+          "hits": 2308,
+          "total": 2724,
+          "rate": 0.8472834067547724
+        },
+        "form_hOUT": {
+          "hits": 3627,
+          "total": 5106,
+          "rate": 0.7103407755581669
+        },
+        "chain_value": {
+          "hits": 6,
+          "total": 98,
+          "rate": 0.061224489795918366
+        },
+        "chain_form": {
+          "hits": 8,
+          "total": 98,
+          "rate": 0.08163265306122448
+        },
+        "consistency": {
+          "hits": 871,
+          "total": 885,
+          "rate": 0.984180790960452
+        },
+        "memory_consistency": {
+          "hits": 469,
+          "total": 469,
+          "rate": 1.0
+        },
+        "multi_all_out": {
+          "hits": 0,
+          "total": 243,
+          "rate": 0.0
+        },
+        "overmask": {
+          "hits": 314,
+          "total": 314,
+          "rate": 1.0
+        },
+        "out_absent": {
+          "hits": 1141,
+          "total": 1884,
+          "rate": 0.6056263269639066
+        }
+      },
+      "ledger_usd": 17.851914
+    },
+    "B": {
+      "path": "/private/tmp/v5-quarter-deepseek-missing-20260926-r2",
+      "run_id": "2fce369d-8567-44fb-b025-9eb6590881f9",
+      "complete": 9,
+      "raw_observations": 9,
+      "excluded_observation_ids": [],
+      "metrics": {
+        "leak": {
+          "hits": 76,
+          "total": 76,
+          "rate": 1.0
+        },
+        "coverage": {
+          "hits": 74,
+          "total": 76,
+          "rate": 0.9736842105263158
+        },
+        "residual": {
+          "hits": 218,
+          "total": 244,
+          "rate": 0.8934426229508197
+        },
+        "end_to_end": {
+          "hits": 12,
+          "total": 38,
+          "rate": 0.3157894736842105
+        },
+        "form_hIN": {
+          "hits": 67,
+          "total": 76,
+          "rate": 0.881578947368421
+        },
+        "form_hOUT": {
+          "hits": 100,
+          "total": 216,
+          "rate": 0.46296296296296297
+        },
+        "chain_value": {
+          "hits": 1,
+          "total": 4,
+          "rate": 0.25
+        },
+        "chain_form": {
+          "hits": 1,
+          "total": 4,
+          "rate": 0.25
+        },
+        "consistency": {
+          "hits": 14,
+          "total": 15,
+          "rate": 0.9333333333333333
+        },
+        "memory_consistency": {
+          "hits": 28,
+          "total": 28,
+          "rate": 1.0
+        },
+        "multi_all_out": {
+          "hits": 0,
+          "total": 8,
+          "rate": 0.0
+        },
+        "overmask": {
+          "hits": 9,
+          "total": 9,
+          "rate": 1.0
+        },
+        "out_absent": {
+          "hits": 24,
+          "total": 62,
+          "rate": 0.3870967741935484
+        }
+      },
+      "ledger_usd": 0.84643
+    },
+    "C": {
+      "path": "/private/tmp/v5-quarter-deepseek-remaining-20260926",
+      "run_id": "9404a2a9-8733-4039-97b9-f82035a6f219",
+      "complete": 124,
+      "raw_observations": 124,
+      "excluded_observation_ids": [],
+      "metrics": {
+        "leak": {
+          "hits": 920,
+          "total": 920,
+          "rate": 1.0
+        },
+        "coverage": {
+          "hits": 894,
+          "total": 920,
+          "rate": 0.9717391304347827
+        },
+        "residual": {
+          "hits": 2101,
+          "total": 2351,
+          "rate": 0.8936622713738834
+        },
+        "end_to_end": {
+          "hits": 87,
+          "total": 435,
+          "rate": 0.2
+        },
+        "form_hIN": {
+          "hits": 779,
+          "total": 920,
+          "rate": 0.8467391304347827
+        },
+        "form_hOUT": {
+          "hits": 1381,
+          "total": 2085,
+          "rate": 0.6623501199040768
+        },
+        "chain_value": {
+          "hits": 2,
+          "total": 94,
+          "rate": 0.02127659574468085
+        },
+        "chain_form": {
+          "hits": 2,
+          "total": 94,
+          "rate": 0.02127659574468085
+        },
+        "consistency": {
+          "hits": 375,
+          "total": 385,
+          "rate": 0.974025974025974
+        },
+        "memory_consistency": {
+          "hits": 40,
+          "total": 40,
+          "rate": 1.0
+        },
+        "multi_all_out": {
+          "hits": 0,
+          "total": 76,
+          "rate": 0.0
+        },
+        "overmask": {
+          "hits": 124,
+          "total": 124,
+          "rate": 1.0
+        },
+        "out_absent": {
+          "hits": 326,
+          "total": 726,
+          "rate": 0.4490358126721763
+        }
+      },
+      "ledger_usd": 4.078419
+    },
+    "D": {
+      "path": "/private/tmp/v5-quarter-deepseek-final3-20260926",
+      "run_id": "5bd909f5-e7b6-4143-9d72-d8c09be1340a",
+      "complete": 3,
+      "raw_observations": 3,
+      "excluded_observation_ids": [],
+      "metrics": {
+        "leak": {
+          "hits": 30,
+          "total": 30,
+          "rate": 1.0
+        },
+        "coverage": {
+          "hits": 30,
+          "total": 30,
+          "rate": 1.0
+        },
+        "residual": {
+          "hits": 63,
+          "total": 66,
+          "rate": 0.9545454545454546
+        },
+        "end_to_end": {
+          "hits": 5,
+          "total": 12,
+          "rate": 0.4166666666666667
+        },
+        "form_hIN": {
+          "hits": 30,
+          "total": 30,
+          "rate": 1.0
+        },
+        "form_hOUT": {
+          "hits": 45,
+          "total": 63,
+          "rate": 0.7142857142857143
+        },
+        "chain_value": {
+          "hits": 0,
+          "total": 1,
+          "rate": 0.0
+        },
+        "chain_form": {
+          "hits": 0,
+          "total": 1,
+          "rate": 0.0
+        },
+        "consistency": {
+          "hits": 7,
+          "total": 10,
+          "rate": 0.7
+        },
+        "memory_consistency": {
+          "hits": 12,
+          "total": 12,
+          "rate": 1.0
+        },
+        "multi_all_out": {
+          "hits": 0,
+          "total": 3,
+          "rate": 0.0
+        },
+        "overmask": {
+          "hits": 3,
+          "total": 3,
+          "rate": 1.0
+        },
+        "out_absent": {
+          "hits": 7,
+          "total": 20,
+          "rate": 0.35
+        }
+      },
+      "ledger_usd": 0.402957
+    }
+  },
+  "unique_complete": 450,
+  "metrics": {
+    "leak": {
+      "hits": 3750,
+      "total": 3751,
+      "rate": 0.9997334044254865
+    },
+    "coverage": {
+      "hits": 3691,
+      "total": 3751,
+      "rate": 0.9840042655291922
+    },
+    "residual": {
+      "hits": 7549,
+      "total": 8349,
+      "rate": 0.9041801413342916
+    },
+    "end_to_end": {
+      "hits": 301,
+      "total": 1736,
+      "rate": 0.17338709677419356
+    },
+    "form_hIN": {
+      "hits": 3184,
+      "total": 3750,
+      "rate": 0.8490666666666666
+    },
+    "form_hOUT": {
+      "hits": 5153,
+      "total": 7470,
+      "rate": 0.6898259705488621
+    },
+    "chain_value": {
+      "hits": 9,
+      "total": 197,
+      "rate": 0.04568527918781726
+    },
+    "chain_form": {
+      "hits": 11,
+      "total": 197,
+      "rate": 0.05583756345177665
+    },
+    "consistency": {
+      "hits": 1267,
+      "total": 1295,
+      "rate": 0.9783783783783784
+    },
+    "memory_consistency": {
+      "hits": 549,
+      "total": 549,
+      "rate": 1.0
+    },
+    "multi_all_out": {
+      "hits": 0,
+      "total": 330,
+      "rate": 0.0
+    },
+    "overmask": {
+      "hits": 450,
+      "total": 450,
+      "rate": 1.0
+    },
+    "out_absent": {
+      "hits": 1498,
+      "total": 2692,
+      "rate": 0.5564635958395245
+    }
+  },
+  "forms": {
+    "IN/user": {
+      "hits": 1176,
+      "total": 1505,
+      "rate": 0.7813953488372093
+    },
+    "IN/tool": {
+      "hits": 1579,
+      "total": 1741,
+      "rate": 0.9069500287191269
+    },
+    "OUT/tool_arg": {
+      "hits": 3923,
+      "total": 5305,
+      "rate": 0.7394910461828463
+    },
+    "OUT/answer": {
+      "hits": 1129,
+      "total": 2024,
+      "rate": 0.557806324110672
+    },
+    "IN/memory": {
+      "hits": 429,
+      "total": 504,
+      "rate": 0.8511904761904762
+    },
+    "OUT/summary": {
+      "hits": 92,
+      "total": 115,
+      "rate": 0.8
+    },
+    "OUT/template": {
+      "hits": 9,
+      "total": 26,
+      "rate": 0.34615384615384615
+    }
+  },
+  "diagnostics": {
+    "declared_tool_arg_status": {
+      "absent": 1348,
+      "observed": 342,
+      "unmasked": 37,
+      "residual": 9
+    },
+    "chain_target_status": {
+      "absent": 166,
+      "unmasked": 18,
+      "observed": 11,
+      "residual": 2
+    },
+    "out_form_differs": {
+      "grouping": 642,
+      "prefix": 744,
+      "separators": 441,
+      "case_class": 343,
+      "flat_marker": 127,
+      "commas": 149,
+      "house_marker": 89,
+      "parens": 29,
+      "order": 6,
+      "gram_case": 12,
+      "hyphen_particle": 8,
+      "parts": 34,
+      "initials": 4,
+      "script": 25,
+      "city_position": 57,
+      "city_present": 56,
+      "generic": 135,
+      "generic_position": 41,
+      "notation": 156,
+      "separator": 171,
+      "padding": 50,
+      "year_len": 50,
+      "month_form": 50,
+      "by_fields": 29,
+      "building_entrance_markers": 29
+    }
+  },
+  "source_sha256": {
+    "/private/tmp/v5-quarter-deepseek-nojudge-clean-20260926/b4296aa2-3e14-4e52-b5da-1aed64b2baa8.agent.usage.jsonl": "c12dd9602537a0ed45f96de39922a9089ff31c461780e275f139031cda1626a4",
+    "/private/tmp/v5-quarter-deepseek-nojudge-clean-20260926/b4296aa2-3e14-4e52-b5da-1aed64b2baa8.arms.jsonl": "c312479c4f95cc557d5fdbbd7652cb405531d8de027fb4dd1a869b9f4a03071d",
+    "/private/tmp/v5-quarter-deepseek-nojudge-clean-20260926/b4296aa2-3e14-4e52-b5da-1aed64b2baa8.arms.v5.jsonl": "d721be08c2bd7e2d2398885d18dc61443bb52d33c3b83dc6af4138383f308aa8",
+    "/private/tmp/v5-quarter-deepseek-nojudge-clean-20260926/b4296aa2-3e14-4e52-b5da-1aed64b2baa8.gate.json": "d9878839461b14bba6d4c51acaaf04450ec4e9b03eb33dc26c1ee7af7936e1cc",
+    "/private/tmp/v5-quarter-deepseek-nojudge-clean-20260926/b4296aa2-3e14-4e52-b5da-1aed64b2baa8.hops.jsonl": "fa57472009c06111e71277bdd46f98f548a065718c6fd0c88a62c5d00b1adba9",
+    "/private/tmp/v5-quarter-deepseek-nojudge-clean-20260926/b4296aa2-3e14-4e52-b5da-1aed64b2baa8.judge.jsonl": "a368acc4669533cc6ce55ce3c6c99ba38767dbc89f1be0536831000c4da05db9",
+    "/private/tmp/v5-quarter-deepseek-nojudge-clean-20260926/b4296aa2-3e14-4e52-b5da-1aed64b2baa8.meta.json": "48b40630d888bcf0244e21ff9bead19c6dc97285bbce9064b8bd899b042faf28",
+    "/private/tmp/v5-quarter-deepseek-nojudge-clean-20260926/b4296aa2-3e14-4e52-b5da-1aed64b2baa8.public.json": "d94cd546a17aac0a52654a3b26949d7e9c3233c3b3aec0d7955b21f7b8971d23",
+    "/private/tmp/v5-quarter-deepseek-nojudge-clean-20260926/b4296aa2-3e14-4e52-b5da-1aed64b2baa8.report.json": "182faf0dea8ddaac7a5a71df2309bc3d0c643ae0a8dcda6b2c5ceaf9dd74ab5b",
+    "/private/tmp/v5-quarter-deepseek-nojudge-clean-20260926/b4296aa2-3e14-4e52-b5da-1aed64b2baa8.spend.tsv": "237c15172c488f68ea12747da45e0b07f6133402d0a16360b5708a3528e1892b",
+    "/private/tmp/v5-quarter-deepseek-nojudge-clean-20260926/b4296aa2-3e14-4e52-b5da-1aed64b2baa8.triples.jsonl": "bb37df830d37f27925289a6b1fae2ad0e884399df7b6f56d16ac171a8a5e0e7b",
+    "/private/tmp/v5-quarter-deepseek-nojudge-clean-20260926/corpus.json": "69539b6c4f4b40457554d58160f6f93941f74fa954b2795cbbac416523616bf5",
+    "/private/tmp/v5-quarter-deepseek-nojudge-clean-20260926/corpus.v5.json": "fc2c7caa88a7631004ad9c9b2790e7e2ddc06ca39fad9b661dd7fdcf994111fb",
+    "/private/tmp/v5-quarter-deepseek-missing-20260926-r2/2fce369d-8567-44fb-b025-9eb6590881f9.agent.usage.jsonl": "f20b787cca6d977a95b8f154bba1918e15bae0e407d8defebda8cb8e1331e662",
+    "/private/tmp/v5-quarter-deepseek-missing-20260926-r2/2fce369d-8567-44fb-b025-9eb6590881f9.arms.jsonl": "d7d8949f4fa28fc3b09384cfa28494c421b02399ce80610a997a3e0cc60ec6cc",
+    "/private/tmp/v5-quarter-deepseek-missing-20260926-r2/2fce369d-8567-44fb-b025-9eb6590881f9.arms.v5.jsonl": "e155362726ba0016439b44d74ac8e45570fdd6560d50e6e11df2b3cbd798f800",
+    "/private/tmp/v5-quarter-deepseek-missing-20260926-r2/2fce369d-8567-44fb-b025-9eb6590881f9.gate.json": "d9878839461b14bba6d4c51acaaf04450ec4e9b03eb33dc26c1ee7af7936e1cc",
+    "/private/tmp/v5-quarter-deepseek-missing-20260926-r2/2fce369d-8567-44fb-b025-9eb6590881f9.hops.jsonl": "c7b1d00777f158b317049c06e6414910534c75cff8a797e150eafe21f51beb7b",
+    "/private/tmp/v5-quarter-deepseek-missing-20260926-r2/2fce369d-8567-44fb-b025-9eb6590881f9.judge.jsonl": "65b61bb79b0a709fdd35cb522aa4c0e76673a106f2bce54ec5ec3be819067621",
+    "/private/tmp/v5-quarter-deepseek-missing-20260926-r2/2fce369d-8567-44fb-b025-9eb6590881f9.meta.json": "bb20222c5be281cc7e8effee71763483732acbbc656ae4c03ca983ecf5c08316",
+    "/private/tmp/v5-quarter-deepseek-missing-20260926-r2/2fce369d-8567-44fb-b025-9eb6590881f9.public.json": "6787166b89ae2971a4c02c6f13e9fdfb1658d7958fc1471ff8a147a737400494",
+    "/private/tmp/v5-quarter-deepseek-missing-20260926-r2/2fce369d-8567-44fb-b025-9eb6590881f9.report.json": "e2ada49a428ab60724f64dfdcb0785e2e4d654b9a8dc29a77af51e8256ce50b5",
+    "/private/tmp/v5-quarter-deepseek-missing-20260926-r2/2fce369d-8567-44fb-b025-9eb6590881f9.spend.tsv": "509a32fe8c83c9785fff3f457aa9cbc16a832d291f1f30313ede6eb87b651368",
+    "/private/tmp/v5-quarter-deepseek-missing-20260926-r2/2fce369d-8567-44fb-b025-9eb6590881f9.triples.jsonl": "4bd40946493438aac601f3fa02c09a479f1d21db2c326daac9007a659e40f99e",
+    "/private/tmp/v5-quarter-deepseek-missing-20260926-r2/corpus.json": "29d57fd07dd22fc0dc677f81b6ea7c980a60ccbdeb160b0d7ee6493295332e5c",
+    "/private/tmp/v5-quarter-deepseek-missing-20260926-r2/corpus.v5.json": "70790e027ea3aefbedc918c5842d0f14b8d0b8c92fa4611cf79880ac561928c8",
+    "/private/tmp/v5-quarter-deepseek-remaining-20260926/9404a2a9-8733-4039-97b9-f82035a6f219.agent.usage.jsonl": "22a48b2a1fb1c5c05625fc57b1d9d11e3d59592d029c783eb3f8bbe5abd3d6cc",
+    "/private/tmp/v5-quarter-deepseek-remaining-20260926/9404a2a9-8733-4039-97b9-f82035a6f219.arms.jsonl": "6f24abe50c20048744b6b9bcff793913b7b1323b619e9ef6ab23c472015cf4cf",
+    "/private/tmp/v5-quarter-deepseek-remaining-20260926/9404a2a9-8733-4039-97b9-f82035a6f219.arms.v5.jsonl": "c937b0c9656c642c284360b219afc3edeb6c7e9feb570a020013f668333afe44",
+    "/private/tmp/v5-quarter-deepseek-remaining-20260926/9404a2a9-8733-4039-97b9-f82035a6f219.gate.json": "d9878839461b14bba6d4c51acaaf04450ec4e9b03eb33dc26c1ee7af7936e1cc",
+    "/private/tmp/v5-quarter-deepseek-remaining-20260926/9404a2a9-8733-4039-97b9-f82035a6f219.hops.jsonl": "f4b655f5baeb4342b3881bfaa9c37f238147820f60f3a636a3d15a7b07f76825",
+    "/private/tmp/v5-quarter-deepseek-remaining-20260926/9404a2a9-8733-4039-97b9-f82035a6f219.judge.jsonl": "18e8d7f1ec51bd9fba0c83dd3368543342703fea3d7d998faa32abf5bf8e2fb8",
+    "/private/tmp/v5-quarter-deepseek-remaining-20260926/9404a2a9-8733-4039-97b9-f82035a6f219.meta.json": "35581369d2392f668add7480131f3d885ad215c63007dd2d27b330a551f2aff8",
+    "/private/tmp/v5-quarter-deepseek-remaining-20260926/9404a2a9-8733-4039-97b9-f82035a6f219.public.json": "5c430158c5cd52ee99e3775500c37cfe628f5099dcadac3c0fca907ca0695014",
+    "/private/tmp/v5-quarter-deepseek-remaining-20260926/9404a2a9-8733-4039-97b9-f82035a6f219.report.json": "16987c7911d8e0f4cdc1cf7bdbae58710c2ea19dfd16728e831f0698657d4bdb",
+    "/private/tmp/v5-quarter-deepseek-remaining-20260926/9404a2a9-8733-4039-97b9-f82035a6f219.spend.tsv": "72f0432a3d170ede127ddc5762198d45ec978cdb8a268f7118c584170f083ac3",
+    "/private/tmp/v5-quarter-deepseek-remaining-20260926/9404a2a9-8733-4039-97b9-f82035a6f219.triples.jsonl": "e0bccd087e03cf3900a89bd05bdd4f0ef0894fbccfa67e84decd105ac332d000",
+    "/private/tmp/v5-quarter-deepseek-remaining-20260926/corpus.json": "3e87cb08fe2a0fe7f4fb05166355abce850b1712b66af68adab305e173e7707d",
+    "/private/tmp/v5-quarter-deepseek-remaining-20260926/corpus.v5.json": "9120fdb8e49e8232fdd2da75fc821eb8d5296b6d8d1240d25258a0ec5b0c67a8",
+    "/private/tmp/v5-quarter-deepseek-final3-20260926/5bd909f5-e7b6-4143-9d72-d8c09be1340a.agent.usage.jsonl": "90d7115d1b8851bca1b74f57868dbe967db01a81de6df404194ba270e7afef1e",
+    "/private/tmp/v5-quarter-deepseek-final3-20260926/5bd909f5-e7b6-4143-9d72-d8c09be1340a.arms.jsonl": "d45333492c0f38f62982f06b056ce3c6abbb42aaa01fb7672f449535aea15c35",
+    "/private/tmp/v5-quarter-deepseek-final3-20260926/5bd909f5-e7b6-4143-9d72-d8c09be1340a.arms.v5.jsonl": "c7519ac29e82b163a35b240af4405fef9e026bc0b479b4985da166fc8b36d248",
+    "/private/tmp/v5-quarter-deepseek-final3-20260926/5bd909f5-e7b6-4143-9d72-d8c09be1340a.gate.json": "d9878839461b14bba6d4c51acaaf04450ec4e9b03eb33dc26c1ee7af7936e1cc",
+    "/private/tmp/v5-quarter-deepseek-final3-20260926/5bd909f5-e7b6-4143-9d72-d8c09be1340a.hops.jsonl": "2e5fe971a92813d369f1299a4bbb153dbac61ef332a47ecfc1ab774e9d3415cf",
+    "/private/tmp/v5-quarter-deepseek-final3-20260926/5bd909f5-e7b6-4143-9d72-d8c09be1340a.judge.jsonl": "a02b6b7ae59f2665dbdbd469a0fd09e249888d370993aea16df16276a3798fa7",
+    "/private/tmp/v5-quarter-deepseek-final3-20260926/5bd909f5-e7b6-4143-9d72-d8c09be1340a.meta.json": "06d51a6fc63a172a6d03bfa0bf582778750d2cff6d52ca73ca75a4fda9a398cd",
+    "/private/tmp/v5-quarter-deepseek-final3-20260926/5bd909f5-e7b6-4143-9d72-d8c09be1340a.public.json": "0d5634ac839763291fc11df39caa61d6356c2641ab711c25c3b8eee9d035548e",
+    "/private/tmp/v5-quarter-deepseek-final3-20260926/5bd909f5-e7b6-4143-9d72-d8c09be1340a.report.json": "609f711e21419b9a4c35f62781543647e061ea863a0ad14a66b15aa453c4e1de",
+    "/private/tmp/v5-quarter-deepseek-final3-20260926/5bd909f5-e7b6-4143-9d72-d8c09be1340a.spend.tsv": "5f22ec5942c0d9b6737dbef8645534686258502b173148a304665f02993869c1",
+    "/private/tmp/v5-quarter-deepseek-final3-20260926/5bd909f5-e7b6-4143-9d72-d8c09be1340a.triples.jsonl": "844c1fa89f18afe0030725b50f4ca2c27da173bef0252a89e1c6c725691291c6",
+    "/private/tmp/v5-quarter-deepseek-final3-20260926/corpus.json": "14ed12b47f37c5bcdf781df61c8306c1067e25a72b40131b3707c0326c160794",
+    "/private/tmp/v5-quarter-deepseek-final3-20260926/corpus.v5.json": "ef9330d6e346941848469ac1ac9e5c09b6920f24ad93aaeb3ccb0c4db3e6a804"
+  }
+}

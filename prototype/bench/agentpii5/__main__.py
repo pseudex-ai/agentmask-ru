@@ -56,6 +56,8 @@ COMMANDS: tuple[Command, ...] = (
             "--selftest — мутанты метрик"),
     Command("compare", "bench.agentpii5.compare", (),
             "любой прогон против любого: строки, разница с интервалом, --cases — по случаям"),
+    Command("hop-report", "bench.agentpii5.hop_report", (),
+            "offline completed cohort: historical metrics and versioned actual-hop evidence"),
     Command("microscope", "bench.agentpii5.microscope", (),
             "один случай целиком: что видела модель, что написала, что вернулось, вердикт"),
     Command("trend", "bench.agentpii5.trend", (),

@@ -277,6 +277,18 @@ async def _async_tests() -> None:
         assert token not in out, "fake token leaked to the user in the stream"
         print(f"/unmask_chunk OK — {out!r}")
 
+        # E02: one added digit cannot turn a known fake into a real/fake hybrid.
+        # The caller receives the unchanged argument and an explicit residual
+        # signal, so it can refuse the tool call rather than sending the fake.
+        altered = token + "1"
+        unresolved = await _post(client, "/unmask_arguments", {
+            "org_id": org7,
+            "arguments": [json.dumps({"phone": altered})],
+        })
+        assert json.loads(unresolved["arguments"][0])["phone"] == altered
+        assert unresolved.get("residual_tokens"), (
+            "a known fake with an added digit reached the tool without a residual signal")
+
         # 8. STREAMED TOOL CALL: the arguments go through /unmask_arguments and
         #    the result must still be JSON. This is the whole reason the endpoint
         #    exists, so the test pins BOTH halves — the streaming path breaking

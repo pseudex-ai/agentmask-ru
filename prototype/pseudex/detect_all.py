@@ -274,6 +274,6 @@ class Detector:
             # vault reads the phrase alone, and «на имя марину» alone is a man.
             return [Span(s.start, s.end, "LOC", s.value) if s.entity_type == "ADDR"
                     else NameSpan(s.start, s.end, "NAME", s.value,
-                                  morph_names.governing_cases(text, s.start))
+                                  morph_names.governing_cases(text, s.start, s.value))
                     if s.entity_type == "NAME" and not isinstance(s, NameSpan) else s
                     for s in resolved]

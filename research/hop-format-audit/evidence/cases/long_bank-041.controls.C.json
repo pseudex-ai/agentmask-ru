@@ -1,0 +1,401 @@
+{
+  "arm": "C",
+  "calls": [
+    {
+      "name": "payment_create",
+      "parsed": null,
+      "refusal_path": "payment_method_data.card.cardholder",
+      "refusal_rule": "missing_required",
+      "residual": {},
+      "restored": {
+        "amount": {
+          "currency": "RUB",
+          "value": "6002.00"
+        },
+        "payment_method_data": {
+          "card": {
+            "expiry_month": "03",
+            "expiry_year": "2027",
+            "number": "2202686872100878"
+          },
+          "type": "bank_card"
+        }
+      },
+      "seq": 1,
+      "written": {
+        "amount": {
+          "currency": "RUB",
+          "value": "6002.00"
+        },
+        "payment_method_data": {
+          "card": {
+            "expiry_month": "03",
+            "expiry_year": "2027",
+            "number": "2202686872100878"
+          },
+          "type": "bank_card"
+        }
+      }
+    },
+    {
+      "name": "payment_create",
+      "parsed": {
+        "amount": {
+          "currency": "RUB",
+          "value": "6002.00"
+        },
+        "payment_method_data": {
+          "card": {
+            "cardholder": "IRINA LEBEDEVA",
+            "expiry_month": "03",
+            "expiry_year": "2027",
+            "number": "2202686872100878"
+          },
+          "type": "bank_card"
+        },
+        "receipt": {
+          "customer": {
+            "phone": "+79651965497"
+          }
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "amount": {
+          "currency": "RUB",
+          "value": "6002.00"
+        },
+        "payment_method_data": {
+          "card": {
+            "cardholder": "IRINA LEBEDEVA",
+            "expiry_month": "03",
+            "expiry_year": "2027",
+            "number": "2202686872100878"
+          },
+          "type": "bank_card"
+        },
+        "receipt": {
+          "customer": {
+            "phone": "+79651965497"
+          }
+        }
+      },
+      "seq": 2,
+      "written": {
+        "amount": {
+          "currency": "RUB",
+          "value": "6002.00"
+        },
+        "payment_method_data": {
+          "card": {
+            "cardholder": "IRINA LEBEDEVA",
+            "expiry_month": "03",
+            "expiry_year": "2027",
+            "number": "2202686872100878"
+          },
+          "type": "bank_card"
+        },
+        "receipt": {
+          "customer": {
+            "phone": "+79651965497"
+          }
+        }
+      }
+    },
+    {
+      "name": "payment_status",
+      "parsed": {
+        "payment_id": "pay-1"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "payment_id": "pay-1"
+      },
+      "seq": 3,
+      "written": {
+        "payment_id": "pay-1"
+      }
+    },
+    {
+      "name": "crm_find_contact",
+      "parsed": {
+        "query": {
+          "phone": "+79651965497"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "query": {
+          "phone": "+79651965497"
+        }
+      },
+      "seq": 4,
+      "written": {
+        "query": {
+          "phone": "+79651965497"
+        }
+      }
+    },
+    {
+      "name": "crm_upsert_contact",
+      "parsed": {
+        "contact": {
+          "first_name": "ирина",
+          "last_name": "лебедева",
+          "phone": "+79651965497"
+        },
+        "id": ""
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "contact": {
+          "first_name": "Ирина",
+          "last_name": "Лебедева",
+          "phone": "+79651965497"
+        }
+      },
+      "seq": 5,
+      "written": {
+        "contact": {
+          "first_name": "Ирина",
+          "last_name": "Лебедева",
+          "phone": "+79651965497"
+        }
+      }
+    },
+    {
+      "name": "receipt_fetch",
+      "parsed": {
+        "payment_id": "pay-1"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "payment_id": "pay-1"
+      },
+      "seq": 6,
+      "written": {
+        "payment_id": "pay-1"
+      }
+    },
+    {
+      "name": "crm_add_note",
+      "parsed": {
+        "entity_id": "c-1",
+        "note_type": "common",
+        "text": "Оплата заказа картой. Платёж pay-1: 6002.00 ₽, карта 2202 6868 7210 0878, срок 03/2027, держатель IRINA LEBEDEVA. Фискальный чек fd-y-1, телефон для чека +79651965497. Статус на момент оформления: pending."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "entity_id": "c-1",
+        "note_type": "common",
+        "text": "Оплата заказа картой. Платёж pay-1: 6002.00 ₽, карта 2202 6868 7210 0878, срок 03/2027, держатель IRINA LEBEDEVA. Фискальный чек fd-y-1, телефон для чека +79651965497. Статус на момент оформления: pending."
+      },
+      "seq": 7,
+      "written": {
+        "entity_id": "c-1",
+        "note_type": "common",
+        "text": "Оплата заказа картой. Платёж pay-1: 6002.00 ₽, карта 2202 6868 7210 0878, срок 03/2027, держатель IRINA LEBEDEVA. Фискальный чек fd-y-1, телефон для чека +79651965497. Статус на момент оформления: pending."
+      }
+    },
+    {
+      "name": "payment_status",
+      "parsed": {
+        "payment_id": "pay-1"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "payment_id": "pay-1"
+      },
+      "seq": 8,
+      "written": {
+        "payment_id": "pay-1"
+      }
+    },
+    {
+      "name": "payment_refund",
+      "parsed": {
+        "amount": {
+          "currency": "RUB",
+          "value": "6002.00"
+        },
+        "payment_id": "pay-1"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "amount": {
+          "currency": "RUB",
+          "value": "6002.00"
+        },
+        "payment_id": "pay-1"
+      },
+      "seq": 9,
+      "written": {
+        "amount": {
+          "currency": "RUB",
+          "value": "6002.00"
+        },
+        "payment_id": "pay-1"
+      }
+    },
+    {
+      "name": "crm_add_note",
+      "parsed": {
+        "entity_id": "c-1",
+        "note_type": "common",
+        "text": "Оформлен возврат по платежу pay-1 на полную сумму 6002.00 ₽ (карта 2202 6868 7210 0878, держатель IRINA LEBEDEVA). Статус платежа: refunded."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "entity_id": "c-1",
+        "note_type": "common",
+        "text": "Оформлен возврат по платежу pay-1 на полную сумму 6002.00 ₽ (карта 2202 6868 7210 0878, держатель IRINA LEBEDEVA). Статус платежа: refunded."
+      },
+      "seq": 10,
+      "written": {
+        "entity_id": "c-1",
+        "note_type": "common",
+        "text": "Оформлен возврат по платежу pay-1 на полную сумму 6002.00 ₽ (карта 2202 6868 7210 0878, держатель IRINA LEBEDEVA). Статус платежа: refunded."
+      }
+    },
+    {
+      "name": "crm_add_note",
+      "parsed": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Обращение клиента: оплата заказа картой. Оформлен платёж pay-1 на 6002.00 ₽ (карта 2202 6868 7210 0878, срок 03/2027, держатель IRINA LEBEDEVA), телефон для чека +79651965497, фискальный чек fd-y-1. Платёж не подтвердился (оставался в статусе pending), по просьбе клиента оформлен полный возврат средств — статус refunded. Уточнить у клиента фактическую сумму заказа при необходимости."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Обращение клиента: оплата заказа картой. Оформлен платёж pay-1 на 6002.00 ₽ (карта 2202 6868 7210 0878, срок 03/2027, держатель IRINA LEBEDEVA), телефон для чека +79651965497, фискальный чек fd-y-1. Платёж не подтвердился (оставался в статусе pending), по просьбе клиента оформлен полный возврат средств — статус refunded. Уточнить у клиента фактическую сумму заказа при необходимости."
+      },
+      "seq": 11,
+      "written": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Обращение клиента: оплата заказа картой. Оформлен платёж pay-1 на 6002.00 ₽ (карта 2202 6868 7210 0878, срок 03/2027, держатель IRINA LEBEDEVA), телефон для чека +79651965497, фискальный чек fd-y-1. Платёж не подтвердился (оставался в статусе pending), по просьбе клиента оформлен полный возврат средств — статус refunded. Уточнить у клиента фактическую сумму заказа при необходимости."
+      }
+    }
+  ],
+  "case_id": "long_bank-041",
+  "cluster": "PHONE:9651965497",
+  "cost_usd": 0.023087,
+  "key": "long_bank-041|C|0",
+  "kind": "long_bank",
+  "masked_spans": {},
+  "meta": {
+    "api_error_status": null,
+    "cap_usd": 0.37,
+    "duration_ms": 88566,
+    "errors": [],
+    "is_error": false,
+    "model": "deepseek-flash",
+    "reason": "",
+    "session_id": "deepseek-1790433560851168000",
+    "subtype": "success",
+    "turns": 148
+  },
+  "register": "voice_raw",
+  "repeat": 0,
+  "reply": "Обращение зафиксировано ✅\n\nЗапись в карточке клиента (Лебедева Ирина, +7 965 196-54-97), тип «входящее обращение»:\n\n> Оплата заказа картой. Платёж pay-1 на 6002.00 ₽ (карта 2202 6868 7210 0878, срок 03/2027, держатель IRINA LEBEDEVA), телефон для чека +79651965497, фискальный чек fd-y-1. Платёж не подтвердился (оставался в статусе pending), по просьбе клиента оформлен полный возврат — статус refunded.\n\nКратко по всему разговору:\n1. Создан платёж pay-1 — 6002.00 ₽ — не подтверждён (pending).\n2. Оформлен полный возврат — refunded.\n3. Обращение и итог зафиксированы в CRM.\n\nЕсли нужно ещё что-то — сообщите.",
+  "state": [
+    {
+      "fields": {
+        "first_name": "ирина",
+        "last_name": "лебедева",
+        "phone": "+79651965497"
+      },
+      "id": "c-1",
+      "seq": 5,
+      "table": "contacts",
+      "tool": "crm_upsert_contact"
+    },
+    {
+      "fields": {
+        "entity_id": "c-1",
+        "note_type": "common",
+        "text": "Оплата заказа картой. Платёж pay-1: 6002.00 ₽, карта 2202 6868 7210 0878, срок 03/2027, держатель IRINA LEBEDEVA. Фискальный чек fd-y-1, телефон для чека +79651965497. Статус на момент оформления: pending."
+      },
+      "id": "note-1",
+      "seq": 7,
+      "table": "notes",
+      "tool": "crm_add_note"
+    },
+    {
+      "fields": {
+        "amount": {
+          "currency": "RUB",
+          "value": "6002.00"
+        },
+        "payment_method_data": {
+          "card": {
+            "cardholder": "IRINA LEBEDEVA",
+            "expiry_month": "03",
+            "expiry_year": "2027",
+            "number": "2202686872100878"
+          },
+          "type": "bank_card"
+        },
+        "receipt": {
+          "customer": {
+            "phone": "+79651965497"
+          }
+        },
+        "refund": {
+          "currency": "RUB",
+          "value": "6002.00"
+        },
+        "status": "refunded"
+      },
+      "id": "pay-1",
+      "seq": 9,
+      "table": "payments",
+      "tool": "payment_refund"
+    },
+    {
+      "fields": {
+        "entity_id": "c-1",
+        "note_type": "common",
+        "text": "Оформлен возврат по платежу pay-1 на полную сумму 6002.00 ₽ (карта 2202 6868 7210 0878, держатель IRINA LEBEDEVA). Статус платежа: refunded."
+      },
+      "id": "note-2",
+      "seq": 10,
+      "table": "notes",
+      "tool": "crm_add_note"
+    },
+    {
+      "fields": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Обращение клиента: оплата заказа картой. Оформлен платёж pay-1 на 6002.00 ₽ (карта 2202 6868 7210 0878, срок 03/2027, держатель IRINA LEBEDEVA), телефон для чека +79651965497, фискальный чек fd-y-1. Платёж не подтвердился (оставался в статусе pending), по просьбе клиента оформлен полный возврат средств — статус refunded. Уточнить у клиента фактическую сумму заказа при необходимости."
+      },
+      "id": "note-3",
+      "seq": 11,
+      "table": "notes",
+      "tool": "crm_add_note"
+    }
+  ],
+  "substitutes": {},
+  "termination": "done"
+}

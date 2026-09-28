@@ -161,7 +161,12 @@ class RealGateway:
             self._masked[index] = observed
         else:
             self._tool_results.append(observed)
+        self._on_masked_request(masked)
         return content
+
+    def _on_masked_request(self, masked: list[dict[str, object]]) -> None:
+        """Optional exact request capture at the production mask call."""
+        return None
 
     def push_system(self, text: str) -> str:
         return self._push({"role": "system", "content": text}, text, 0)

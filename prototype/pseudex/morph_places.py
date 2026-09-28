@@ -164,12 +164,19 @@ def _is_genitive(word: str) -> bool:
     Frozen rather than inflected: it is a possessive, not an agreeing adjective,
     and the single most visible failure of naive address inflection is turning
     `улица Ленина` into `улицы Лениной`.
+
+    ONLY A DICTIONARY-KNOWN GENITIVE. pymorphy guesses a `Geox` genitive for an
+    unknown word before it guesses the adjective — «Зацепская»'s top parse was a
+    NOUN-genitive of a place nobody has heard of, and freezing it there left
+    `на улице Зацепская` instead of `…Зацепской` (E05). «Ленина»/«Комиссарова»
+    are real genitives in the dictionary and stay frozen.
     """
     parses = MORPH.parse(word)
     if not parses:
         return False
     best = max(parses, key=lambda p: p.score)
-    return best.tag.case == "gent" and "ADJF" not in best.tag.grammemes
+    return (best.is_known and best.tag.case == "gent"
+            and "ADJF" not in best.tag.grammemes)
 
 
 def phrase_to_nominative(phrase: str) -> str:
@@ -243,14 +250,6 @@ def _inflect_word(word: str, case: str, gender: str | None) -> str:
     parses = MORPH.parse(word)
     if not parses:
         return word
-    # ALREADY IN THE TARGET CASE — leave it, and check that against EVERY
-    # reading, before the geographic and gender filters below. Those filters
-    # exist to pick which paradigm to inflect along, and either of them can
-    # discard the very parse that proves no inflection is needed: «Ленинском»
-    # has a masculine locative reading that a feminine filter drops, and the
-    # word was then inflected a second time into «Ленинске».
-    if any(parse.tag.case == case for parse in parses):
-        return word
     # ONLY A FULL FORM THE DICTIONARY KNOWS IS INFLECTED. «ленна» — a typo of
     # «Ленина» admitted by the fuzzy arm — is in the dictionary as the SHORT
     # adjective of «ленный», and bending it through that lemma restored the
@@ -258,6 +257,32 @@ def _inflect_word(word: str, case: str, gender: str | None) -> str:
     # is the same guess from the other side. A word with no full-form reading
     # (adjective, noun, participle) from the dictionary is left as written.
     if not any(parse.is_known and parse.tag.POS in _INFLECTABLE_POS for parse in parses):
+        # …UNLESS THE GUESS IS A REGULAR ADJECTIVE. «Зацепская» is absent from
+        # OpenCorpora, but -ская declines like every other feminine adjective,
+        # so the guessed ADJF parse is not the same gamble as a noun's paradigm
+        # (nouns are unpredictable, adjectives are not). The short-form trap
+        # above is `ADJS`, which this explicitly excludes — only the FULL
+        # adjective `ADJF` is admitted here.
+        guessed = [p for p in parses if p.tag.POS == "ADJF"]
+        if not guessed:
+            return word
+        parses = guessed
+    return _inflect_parses(word, case, gender, parses)
+
+
+def _inflect_parses(word: str, case: str, gender: str | None, parses) -> str:
+    """Inflect `word` to `case` along the best of `parses` (already filtered).
+
+    The ALREADY-IN-TARGET-CASE check lives HERE, over the parses that survived
+    the trust gate, and against EVERY one of them before the geographic and
+    gender filters: those filters exist to pick which paradigm to inflect along,
+    and either can discard the very parse that proves no inflection is needed
+    («Ленинском» has a masculine locative reading a feminine filter drops). The
+    gate matters — «Зацепская» carries a spurious `Geox` genitive GUESS that the
+    old check saw as "already genitive" and froze, leaving `на улице Зацепская`
+    (E05).
+    """
+    if any(parse.tag.case == case for parse in parses):
         return word
     # A geographic reading first, for the same reason `to_nominative` does it:
     # `Луга` is a town and also the genitive of `луг`, and the meadow does not
@@ -1310,7 +1335,7 @@ def role_spans(phrase: str) -> dict[str, tuple[int, int]]:
     return {role: (start + offset, end + offset) for role, (start, end) in out.items()}
 
 
-_LEADING_WORD = re.compile(r"^\s*([А-ЯЁа-яё][а-яё-]+),?(?=\s|$)")
+_LEADING_WORD = re.compile(r"^\s*([А-ЯЁа-яё][А-ЯЁа-яё-]+),?(?=\s|$)")
 
 
 def _leading_settlement(phrase: str) -> re.Match[str] | None:
@@ -1386,7 +1411,7 @@ def _leading_settlement(phrase: str) -> re.Match[str] | None:
 
 
 _LEADING_CITY = re.compile(
-    r"^(?:г\.?\s*)?([А-ЯЁ][а-яё]+(?:-[А-ЯЁа-яё]+)*(?:\s[А-ЯЁ][а-яё]+)?),\s*(?=\S)")
+    r"^(?:[гГ]\.?\s*)?([А-ЯЁ][А-ЯЁа-яё]+(?:-[А-ЯЁа-яё]+)*(?:\s[А-ЯЁ][А-ЯЁа-яё]+)?),\s*(?=\S)")
 _STREET_TYPE_LEAD = re.compile(
     r"(?i)^(?:ул\.?|улица|улице|улицу|пр-т|пр\.?|просп\.?|проспект\w*|пер\.?|переулок|переулк\w*|"
     r"б-р|бульвар\w*|ш\.?|шоссе|пл\.?|площад\w*|наб\.?|набережн\w*|проезд\w*|тупик\w*|аллея|аллее)\s+")
@@ -1619,15 +1644,13 @@ def _street_like(street: str, model: str) -> str:
     РЕГИСТР: агент написал подмену «Вязовая» с заглавной — настоящее «мончгорская»
     уходит «Мончгорская», как и всякая часть адреса через `_like`).
     """
-    words = street.split()
+    case: str | None = street_case(model)
+    inflected: str = inflect_place(street, case) if case not in (None, "nomn") else street
+    words = inflected.split()
     named = [w for w in words if not is_generic_word(w)]
     real_name = " ".join(named) if named else street
-    if len(named) == len(words):
-        # У клиента типа нет — не навязываем свой, что бы агент ни скопировал.
-        result = real_name
-    else:
-        agent_marker = _leading_generic(model)
-        result = f"{agent_marker} {real_name}" if agent_marker else real_name
+    agent_marker = _leading_generic(model)
+    result = f"{agent_marker} {real_name}" if agent_marker else real_name
     return agent_form.cased_like(result, model)
 
 def in_form_of(value: str, surface: str) -> str:
@@ -1661,7 +1684,9 @@ def in_form_of(value: str, surface: str) -> str:
         return value
     theirs = role_spans(surface)
     ours = split_roles(value)
-    if "street" not in theirs or "street" not in ours:
+    # A resolved address can be projected onto numeric roles alone. Requiring
+    # a street on the sender side expands a lone flat into the entire address.
+    if not theirs or "street" not in ours:
         return value
     spans: list[tuple[int, int, str]] = []
     for role, (start, end) in sorted(theirs.items(), key=lambda item: item[1][0]):
