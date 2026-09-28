@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.21](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.20...platform/v0.3.21) (2026-09-28)
+
+
+### Новое
+
+* **storefront:** витрина из pseudex-storefront — цены выше, одна кнопка к видео, подсветка действий ([ecae76a](https://github.com/Isk4R1oT/Obscura/commit/ecae76aeed3ee7487bdf60c5003af6997d614c76))
+
+
+### Исправления
+
+* **storefront:** оплачено у провайдера — значит оплачено у нас; деньги больше не ждут уведомления ([8e2226e](https://github.com/Isk4R1oT/Obscura/commit/8e2226e91a4bc5072fc4e8cbb587a9a014a2adb4))
+
 ## [0.3.20](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.19...platform/v0.3.20) (2026-09-24)
 
 
