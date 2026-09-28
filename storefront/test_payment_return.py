@@ -28,6 +28,7 @@
 
 import os
 import sys
+from datetime import date, timedelta
 
 from decimal import Decimal
 
@@ -406,6 +407,68 @@ def main() -> int:
               str(answer.status_code))
     finally:
         payments.fetch_status = original_fetch
+
+    # ── 11. у КЛИЕНТА С КЛЮЧОМ оплата доезжает до лицензионного сервера ───
+    #
+    # РАЗНИЦА МЕЖДУ ПЕРВОЙ ПОКУПКОЙ И ПРОДЛЕНИЕМ, и она не косметическая.
+    # Клиенту БЕЗ ключей лицензионный сервер не нужен вовсе: организации он ещё
+    # не знает, и `mark_paid` намеренно молчит — он узнает её при выпуске
+    # первого ключа. А у клиента С ключом лимиты живут на сервере, и без звонка
+    # оплата поднимет цифру в кабинете, оставив контейнеры под прежним потолком.
+    #
+    # ЭТО ЖЕ И ЕСТЬ ПЛЕЧО, КОТОРОЕ ДО СИХ ПОР НЕ ДОСТИГАЛОСЬ: пока платёж не
+    # закрывался, `mark_paid` не вызывался вообще, и до лицензионного сервера не
+    # доезжало ничего. Проверка держит обе половины: звонок делается, когда он
+    # нужен, и не делается, когда ключей нет.
+    from billing.models import LicenseKey
+
+    def org_with_a_key(email: str, ip: str):
+        """Клиент, который уже работает: ключ есть, обслуживание остановлено."""
+        client_org = services.create_account(email, "Ключевой", "work", ip)
+        # Хеш ключа уникален на всю таблицу: два клиента с одним ключом — не наш
+        # случай, а нарушение инварианта самой модели.
+        LicenseKey.record(client_org, f"ps_live_{email.split('@')[0]}0000000001",
+                          "прод", "live")
+        subscription = client_org.subscription
+        subscription.state = Subscription.PAST_DUE
+        subscription.save(update_fields=["state"])
+        return client_org
+
+    renewing = org_with_a_key("renew@acme-corp.ru", "203.0.113.8")
+    renew_invoice = services.build_invoice(renewing, date.today(),
+                                           date.today() + timedelta(days=30))
+    renew_invoice.state = Invoice.ISSUED
+    renew_id = "2f8e1c3a-9999-4000-8000-111111111111"
+    renew_invoice.payment_ref = renew_id
+    renew_invoice.save(update_fields=["state", "payment_ref"])
+    as_provider(renew_id, renew_invoice.total, renew_invoice.number)
+    statuses.clear()
+    services.settle_payment(invoice=renew_invoice)
+    renewing.subscription.refresh_from_db()
+    check((renewing.id, "active") in statuses,
+          "оплата клиента С КЛЮЧОМ доезжает до лицензионного сервера",
+          str(statuses))
+    check(renewing.subscription.state == Subscription.ACTIVE,
+          "и подписка становится активной", renewing.subscription.state)
+
+    # Смена тарифа — ВТОРОЙ звонок, и он несёт САМ тариф: потолок на сервере
+    # берётся из него. Без этого оплата «Промышленного» осталась бы цифрой в
+    # кабинете.
+    switched: list[tuple[str, str]] = []
+    licensing.set_org_plan = lambda org_id, plan: switched.append((org_id, plan)) or 1
+    mover = org_with_a_key("move@acme-corp.ru", "203.0.113.9")
+    move_invoice = services.build_switch_invoice(mover, Plan.objects.get(code="industrial"))
+    move_id = "2f8e1c3a-aaaa-4000-8000-222222222222"
+    move_invoice.payment_ref = move_id
+    move_invoice.save(update_fields=["payment_ref"])
+    as_provider(move_id, move_invoice.total, move_invoice.number)
+    services.settle_payment(invoice=move_invoice)
+    mover.subscription.refresh_from_db()
+    check(switched and switched[-1] == (mover.id, "industrial"),
+          "смена тарифа уходит на лицензионный сервер вместе с оплатой",
+          str(switched))
+    check(mover.subscription.plan_id == "industrial",
+          "и тариф подписки переставлен по факту денег", mover.subscription.plan_id)
 
     print()
     if ok:
