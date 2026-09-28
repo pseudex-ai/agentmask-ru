@@ -329,16 +329,20 @@ def test_only_harness_imports_pseudex() -> list[str]:
     error_with_value) the B2 fix made mask like a normal tool result.
     `test_loc_settlement_echo` (C1) pins the same masking path's PRIVACY leg — a
     bare settlement a tool result echoes stays real while the address stays
-    masked, which is the over-masking half of the LOC closure. Every other
-    test must stay engine-free or its own `test_no_pseudex` would be a formality.
-    Both halves are asserted, so neither list can grow quietly.
+    masked, which is the over-masking half of the LOC closure.
+    `test_echo_marker_survives` pins the E01 precedence the long_order-002
+    recipient leg tripped on: a reserved-echo marker standing in a numeric key's
+    value must survive the structured-KV layer and keep the call's substitute.
+    Every other test must stay engine-free or its own `test_no_pseudex` would be
+    a formality. Both halves are asserted, so neither list can grow quietly.
     """
     here = Path(__file__).resolve().parent
     importers = h.pseudex_importers(here)
     allowed = tuple(name.rsplit(".", 1)[-1] for name in PSEUDEX_ALLOWED_MODULES)
     engine_tests = ("test_harness_stream", "test_call_scoped_name_consistency",
                     "test_mint_consistency", "test_loc_acceptance",
-                    "test_error_payload_coverage", "test_loc_settlement_echo")
+                    "test_error_payload_coverage", "test_loc_settlement_echo",
+                    "test_echo_marker_survives")
     failures: list[str] = []
     modules = tuple(name for name in importers if not name.startswith("test_"))
     tests = tuple(name for name in importers if name.startswith("test_"))

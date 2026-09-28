@@ -1339,7 +1339,17 @@ def _mask_one(text: str, context: MaskContext, own_renderings: frozenset[str]) -
         spans = [span for span in context.detector.detect(text)
                  if not is_own_substitute(span, context.vault)
                  and not _is_own_rendering(span, relevant)
-                 and not _is_own_composition(span, relevant)]
+                 and not _is_own_composition(span, relevant)
+                 # THE RESERVED-ECHO MARKER IS INVISIBLE TO THE RECOGNIZERS BUT
+                 # NOT TO THE STRUCTURED-KV LAYER. A marker standing in a numeric
+                 # key's value («phone») carries the nonce/index DIGITS, so
+                 # `detect_structured_kv` types the whole marker as a PHONE and
+                 # `_mask_one` would mint a fresh number over the reservation —
+                 # the exact corruption that split production from the scorer on
+                 # long_order-002's `recipient.phone`. Dropping the marker span
+                 # keeps the reservation intact; `_free_marker_nonce` already
+                 # guarantees the marker bytes never occur in the raw text.
+                 and _ECHO_RESERVED not in span.value]
         with stage("mask.tokenize_and_audit"):
             # Collected first, written once: one commit per MESSAGE instead of one
             # per entity. See AuditLog.record_many — per-span commits made four
