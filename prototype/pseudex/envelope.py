@@ -17,6 +17,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
+from pseudex import morph_places
 from pseudex.audit import AuditLog
 from pseudex.detect import Span
 from pseudex.detect_all import Detector
@@ -24,7 +25,7 @@ from pseudex.maskcache import MaskCache, content_key
 from pseudex.profiling import stage
 from pseudex.redact import (_digits_in_form_of, is_own_substitute, mask_text,
                             tokenize_span, unmask_arguments, unmask_text)
-from pseudex.vault import Vault, canonicalize, fold_key
+from pseudex.vault import Vault, canonicalize, fold_key, _settlement_of
 
 
 @dataclass(frozen=True)
@@ -1132,6 +1133,30 @@ def _splice_reserved(text: str, replacements: tuple[str, ...], nonce: int) -> st
     return text
 
 
+def _is_bare_settlement_echo(fragment: str, value: _InjectedValue) -> bool:
+    """Whether an echo span is the LOC value's settlement alone — KEPT REAL.
+
+    The recorded privacy leg matches a leading part of a recorded address, so a
+    tool result that echoes just the settlement (`{"city": "сортавала"}`) reads as
+    a cut and is answered with a neutral redaction. That is wrong exactly where the
+    vault already drew the line: a settlement is not personal data
+    (`vault._settlement_of`), and redacting it here made the model and the tool
+    disagree about the place a live run had handled. Only the WHOLE settlement is
+    kept — a fragment of it («нижний» of «нижний новгород») is still a cut and
+    stays redacted. Both sides are read to the nominative before the casefold,
+    because `split_roles` returns the city as written and the dialogue may have
+    recorded the address in an oblique case («сортавале…»), which a raw
+    comparison of surfaces would miss.
+    """
+    if value.entity_type != "LOC":
+        return False
+    settlement = _settlement_of(value.real)
+    if not settlement:
+        return False
+    return morph_places.phrase_to_nominative(fragment).strip().casefold() \
+        == settlement.casefold()
+
+
 def _replace_echoes(text: str,
                     echoes: tuple[tuple[_InjectedValue, str | None], ...],
                     recorded: tuple[tuple[_InjectedValue, str | None], ...],
@@ -1165,7 +1190,8 @@ def _replace_echoes(text: str,
         neutral = [(start, end, _neutral_redaction(value.entity_type, value.real))
                    for value, digits in recorded
                    for start, end in _typed_echo_spans(text, value, digits)
-                   if _free(start, end)]
+                   if _free(start, end)
+                   and not _is_bare_settlement_echo(text[start:end], value)]
         for span in _choose_spans(neutral):
             if not any(span[0] < claim[1] and claim[0] < span[1] for claim in chosen):
                 chosen.append(span)

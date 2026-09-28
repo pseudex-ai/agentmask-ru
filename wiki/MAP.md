@@ -162,7 +162,7 @@ with the generic word, `split_roles` (city / street / house / flat / entrance 鈥
 the one parser every consumer must reuse), keys for the vault, `in_form_of` for
 restoring a tool argument in the agent's own form.
 - **API:** `looks_like_street`, `to_nominative`, `phrase_to_nominative`, `inflect_place`, `detect_case`, `place_gender`, `generic_forms`, `region_prefix_end`, `address_key`, `generic_full`, `street_house_key`, `strip_flat`, `strip_leading_city`, `place_shape`, `agree_with_generic`, `match_signature`, `signature_parts`, `is_generic_word`, `street_case`, `split_roles`, `role_spans`, `field_role`, `role_of_field`, `city_case`, `address_from_fields`, `part_in_form_of`, `house_digits`, `in_form_of`, `reduce_address`
-- **Uses:** agent_form, assets, morph, spoken 路 **Used by:** address, assets, redact, structured, vault
+- **Uses:** agent_form, assets, morph, spoken 路 **Used by:** address, assets, envelope, redact, structured, vault
 - **Tests:** test_hard_cases, test_product, test_unload_scrub; `bench/agentpii4/harness.py`, `bench/agentpii4/microscope.py`
 - **Docs:** `docs/known-issues.md` (搂2, 袘2, 袘10), `research/2026-09-02-agent-form-benchmark.md` 路 rules: INVARIANTS.md#address, INVARIANTS.md#agent-form
 
@@ -276,7 +276,7 @@ messages when the caller names none).
 - `tool_result_contexts` binds exact preceding IDs for contextual echo protection;
   an unbound result can neutral-redact a typed echo recorded in this conversation.
 - **API:** `MaskContext`, `ToolCallContext`, `ToolResultContext`, `tool_result_contexts`, `conversation_key`, `mask_one`, `mask_messages`, `mask_tools`, `unmask_response`
-- **Uses:** audit, detect, detect_all, maskcache, profiling, redact, vault 路 **Used by:** proxy, service
+- **Uses:** audit, detect, detect_all, maskcache, morph_places, profiling, redact, vault 路 **Used by:** proxy, service
 - **Tests:** test_collisions, test_persona_defects, test_product, test_tool_result_context, profile_deep; `bench/agentpii*/`
 - **Docs:** `docs/how-it-works.md` 路 rules: INVARIANTS.md#conversation-scope, INVARIANTS.md#cache
 
