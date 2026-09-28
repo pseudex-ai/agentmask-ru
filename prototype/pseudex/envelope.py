@@ -1012,7 +1012,11 @@ def _project_echo(value: _InjectedValue, fragment: str, as_is: bool) -> str:
         if covered <= start:
             break
         take = min(covered, start + len(real_word)) - start
-        out.append(fake_word[:take])
+        # A FULL word keeps the FULL substitute word: cutting the fake to the
+        # real word's length truncated «кудрявцев» to «кудрявц» whenever the
+        # fake was longer than the real («Битюков»), a broken name the model
+        # would read as a typo. Only a PARTIAL cut is mirrored by length.
+        out.append(fake_word if take == len(real_word) else fake_word[:take])
         if take < len(real_word):
             break
         start += len(real_word) + 1
