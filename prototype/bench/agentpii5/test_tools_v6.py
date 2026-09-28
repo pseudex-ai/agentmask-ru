@@ -1,18 +1,33 @@
 """The v6 tool registry under test: 47 grounded specs, 9 unschemed names.
 
 THE WELLFORMED CHECK IS PER-SPEC, NOT THE WHOLE `registry_problems`. v5's
-`registry_problems` also enforces V01/V02/V03 — the VERTICAL-WIDE rules («a
-vertical declares a list form», «a vertical has an error/empty», «a vertical has
-a differing notation») — and the v6 registry holds tools for only some of the
-eleven verticals. A v6 tool is therefore checked against the PER-SPEC half of the
-ruleset (V04 result_pii + forms, V05 source + strict parse, V06 every result path
-promised by a form), on its own single-entry dict, plus the v6 extras the task
-adds: non-empty `source`, every pii_type a registry id, and the V6T-01 metadata.
+`registry_problems` also enforces V01/V02/V03 — the VERTICAL-WIDE rules — and the
+v6 registry holds tools for only some of the eleven verticals. A v6 tool is
+therefore checked against the PER-SPEC half of the ruleset (V04 result_pii +
+forms, V05 source + strict parse, V06 every result path promised by a form), on
+its own single-entry dict, plus the v6 extras: non-empty `source`, every pii_type
+a registry id, and the V6T-01 metadata.
 
 THE PARSERS ARE EXERCISED, NOT INSPECTED: each tool gets one accepted and at
 least one refused shape, and the refusal must name the documented rule.
+
+EXACT PATHS FROM DISCOVERY (`test_exact_paths_from_discovery`) reads the W1
+`apis.json` and asserts, for every implemented apis.json tool, that its
+`FieldSpec` paths equal the `request[].path` set and its `result_pii` equals the
+`returns[].pii_paths` union VERBATIM. The five tools whose `returns[].pii_paths`
+cannot be carried 1:1 by a v5 ToolSpecV5 are named in `RESULT_PII_APPROX` with
+their approximation:
+  * fiscal_receipt_create / email_contacts_import — verified pure-OUT tools
+    (union is empty); V04 forbids an empty result_pii, so they carry the v5 R-41
+    write-echo instead of nothing.
+  * payroll_card_registry — `result_set` columnar `rows[][N]` -> named `rows[].<col>`.
+  * bi_chart_export — `$csv` columnar path -> a `free_text` `text` leaf.
+  * web_visits_export — `$tsv[col]` columnar path -> a `free_text` `text` leaf.
+(The `result_set` return FORM itself is renamed `list` everywhere — `result_set`
+is not a v5 `contracts.RETURN_FORMS` value — which changes no result_pii path.)
 """
 import json
+import os
 import sys
 
 from bench.agentpii4.tools import Refusal
@@ -25,13 +40,20 @@ from bench.agentpii5.tools_v6 import (TOOLS_V6, UNSCHEMED_TOOLS, V6_META,
 TYPE_IDS = frozenset(t.id for t in pii_types.TYPE_REGISTRY)
 EVIDENCE_KINDS = frozenset(("primary", "secondary", "summary"))
 API_STATUSES = frozenset(("official", "closed", "synthetic"))
+APIS_JSON = "/Users/igor/pseudex-private/v6-work/w1/apis.json"
+# The tools whose result_pii is an approximation of the verbatim union (see the
+# module docstring). Everything else must match apis.json exactly.
+RESULT_PII_APPROX: dict[str, str] = {
+    "fiscal_receipt_create": "pure-OUT (union empty): R-41 write-echo",
+    "email_contacts_import": "pure-OUT (union empty): R-41 write-echo",
+    "payroll_card_registry": "result_set rows[][N] -> named rows[].<col>",
+    "bi_chart_export": "$csv -> free_text text leaf",
+    "web_visits_export": "$tsv[col] -> free_text text leaf",
+}
 
 
 def _leaves(value: object) -> frozenset[str]:
-    """Every dotted leaf of an example, array indexes erased («rows[].phone»).
-
-    THE SAME WALK AS `tools.generic_paths`, written here rather than imported so
-    this test does not couple to the v5 registry object for one helper."""
+    """Every dotted leaf of an example, array indexes erased («rows[].phone»)."""
     out: set[str] = set()
 
     def walk(node: object, prefix: str) -> None:
@@ -54,6 +76,11 @@ def _leaves(value: object) -> frozenset[str]:
     return frozenset(out)
 
 
+def _audience_rows(n: int) -> list[dict[str, str]]:
+    """`n` valid numeric-phone rows for the Яндекс Аудитории bulk upload."""
+    return [{"phone": f"7999000{i:04d}"} for i in range(n)]
+
+
 def test_no_pseudex() -> list[str]:
     leaked = [name for name in sys.modules if name.split(".")[0] == "pseudex"]
     return [f"the v6 registry pulled in {leaked}"] if leaked else []
@@ -64,7 +91,6 @@ def test_specs_wellformed() -> list[str]:
     by_name = {spec.base.name: spec for spec in TOOLS_V6}
     for name, spec in sorted(by_name.items()):
         base = spec.base
-        # V04 — a result carrying no PII has no IN/tool hop to measure.
         if not base.result_pii:
             problems.append(f"V04 {name}: result_pii is empty")
         if not spec.return_forms:
@@ -88,11 +114,9 @@ def test_specs_wellformed() -> list[str]:
             missing = sorted(set(form.pii_paths) - leaves)
             if missing:
                 problems.append(f"{name}/{form.form}: example does not resolve {missing}")
-        # V06 — a result path promised by no form is measured by nothing.
         unpromised = sorted(declared - in_forms)
         if unpromised:
             problems.append(f"V06 {name}: result_pii {unpromised} named by no return form")
-        # V05 — non-empty source and a strict parser.
         if not base.source:
             problems.append(f"V05 {name}: no source API cited")
         refused = base.parse({})
@@ -101,7 +125,6 @@ def test_specs_wellformed() -> list[str]:
                             f"rule (got {refused!r})")
         if spec.vertical not in VERTICALS:
             problems.append(f"{name}: vertical {spec.vertical!r} is not in contracts.VERTICALS")
-        # V6T-04 — every pii_type is a registry id, in the fields and in the result.
         for field in base.fields:
             if field.pii_type and field.pii_type not in TYPE_IDS:
                 problems.append(f"{name}: field {field.path} carries pii_type "
@@ -109,7 +132,6 @@ def test_specs_wellformed() -> list[str]:
         for pii_type in V6_RESULT_TYPES.get(name, ()):
             if pii_type not in TYPE_IDS:
                 problems.append(f"{name}: result type {pii_type!r} is not a registry id")
-        # V6T-01 — the provenance that has no ToolSpecV5 field.
         meta = V6_META.get(name)
         if meta is None:
             problems.append(f"{name}: no V6_META row (V6T-01)")
@@ -125,9 +147,40 @@ def test_specs_wellformed() -> list[str]:
     return problems
 
 
+def test_exact_paths_from_discovery() -> list[str]:
+    """result_pii == returns[].pii_paths union, FieldSpec paths == request[].path.
+
+    Skipped (empty result) when the discovery file is absent, so the suite stays
+    green in an environment without the W1 worktree; it is the cross-check the
+    upgrade exists to satisfy when the file IS present."""
+    if not os.path.exists(APIS_JSON):
+        return []
+    with open(APIS_JSON) as handle:
+        data = json.load(handle)
+    by_name = {spec.base.name: spec for spec in TOOLS_V6}
+    problems: list[str] = []
+    for tool in data["tools"]:
+        name = tool["name"]
+        if name not in by_name:
+            continue  # unschemed: fssp, call_detail_records, court_document_fetch, post_tracking
+        spec = by_name[name]
+        req_paths = [r["path"] for r in tool["request"]]
+        fs_paths = [f.path for f in spec.base.fields]
+        if req_paths != fs_paths:
+            problems.append(f"{name}: FieldSpec paths {fs_paths} != request paths {req_paths}")
+        union = tuple(p for r in tool["returns"] for p in r["pii_paths"])
+        if name in RESULT_PII_APPROX:
+            if not spec.base.result_pii:
+                problems.append(f"{name}: approximated ({RESULT_PII_APPROX[name]}) "
+                                f"but result_pii is empty")
+            continue
+        if spec.base.result_pii != union:
+            problems.append(f"{name}: result_pii {spec.base.result_pii} "
+                            f"!= returns[].pii_paths union {union}")
+    return problems
+
+
 def test_no_collision() -> list[str]:
-    # R6-18: a v6 name sharing a v4/v5 name would replace the baseline's spec, and
-    # a v4/v5 corpus case calling it would be scored against a different API.
     v6_names = {spec.base.name for spec in TOOLS_V6}
     existing = set(V4_TOOL_NAMES) | set(NEW_TOOL_NAMES)
     collided = sorted(v6_names & existing)
@@ -152,9 +205,9 @@ def test_unschemed_named() -> list[str]:
 
 def test_parsers_good_bad() -> list[str]:
     problems: list[str] = []
-    # Accepted and refused shapes, one per tool, with the exact documented rule.
     cases: dict[str, tuple[tuple[dict[str, object], ...],
                            tuple[tuple[dict[str, object], str], ...]]] = {
+        # --- research-grounded (unchanged) -----------------------------------
         "crm_requisite_get": (
             ({"inn": "500100732259"}, {"ogrnip": "312345678901230"}),
             (({"inn": "500100732258"}, "inn_checksum"),
@@ -176,13 +229,6 @@ def test_parsers_good_bad() -> list[str]:
              ({"first_name": "Марина", "last_name": "Громова",
                "custom_fields_values": [{"field_id": 10001, "values": []}]}, "array_required")),
         ),
-        "email_contacts_import": (
-            ({"data": [{"email": "grom@mail.ru", "phone": "+79164021187",
-                        "name": "Громова Марина"}]},),
-            (({"data": []}, "no_contacts"),
-             ({"data": [{"email": "bad", "phone": "+79164021187",
-                         "name": "Громова Марина"}]}, "email_format")),
-        ),
         "phone_clean": (
             ({"source": "8 (916) 402-11-87"},),
             (({"source": "   "}, "empty_source"),
@@ -201,90 +247,125 @@ def test_parsers_good_bad() -> list[str]:
             (({"destination": "89164021187", "text": "Перезвоним завтра."}, "phone_not_e164"),
              ({"destination": "+79164021187", "text": ""}, "missing_required")),
         ),
-        # --- §2.3 doc-proc tools (evidence=summary) ----------------------------
+        # --- apis.json exact --------------------------------------------------
         "bank_accounts_list": (
             ({"client_id": "bc-1"},),
-            (({"client_id": "x"}, "id_format"),),
+            (({"client_id": "bad id"}, "id_format"),),
         ),
         "ruble_transfer_create": (
-            ({"account": "40602810700000000025", "bik": "049805746"},),
-            (({"account": "123", "bik": "049805746"}, "account_format"),
-             ({"account": "40602810800000000025", "bik": "049805746"}, "account_key_mismatch")),
+            ({"payment_id": "p-1",
+              "recipient": {"name": "Громова Марина Борисовна",
+                            "account": "40602810700000000025", "bik": "049805746"},
+              "amount": "1000.00", "purpose": "Перевод за товар"},),
+            (({"payment_id": "p-1",
+               "recipient": {"name": "Громова Марина Борисовна",
+                             "account": "123", "bik": "049805746"},
+               "amount": "1000", "purpose": "x"}, "account_format"),
+             ({"payment_id": "p-1",
+               "recipient": {"name": "Громова Марина Борисовна",
+                             "account": "40602810800000000025", "bik": "049805746"},
+               "amount": "1000", "purpose": "x"}, "account_key_mismatch")),
         ),
         "credit_report_request": (
-            ({"snils": "112-233-445 95"}, {"client_id": "bc-1"}),
-            (({"snils": "123-456-789 00"}, "snils_checksum"),
-             ({}, "exactly_one_key")),
+            ({"subject": {"last_name": "Громова", "first_name": "Марина",
+                          "birth_date": "1987-03-14", "passport": "4507 443564"},
+              "consent_id": "c-1"},),
+            (({}, "missing_required"),
+             ({"subject": {"last_name": "Громова", "first_name": "Марина",
+                           "birth_date": "1987-03-14", "passport": "4507 443564",
+                           "snils": "123-456-789 00"}, "consent_id": "c-1"},
+              "snils_checksum")),
         ),
         "debtor_card_get": (
             ({"contract_number": "12-345678/2025"},),
-            (({"contract_number": "x" * 41}, "contract_number_format"),),
+            (({"contract_number": "x" * 41}, "contract_format"),),
         ),
         "eln_get": (
-            ({"ln_code": "900012345678"},),
-            (({"ln_code": "x" * 13}, "ln_code_format"),),
+            ({"ogrn": "1027700000000", "ln_code": "900012345678",
+              "snils": "11223344595"},),
+            (({"ogrn": "123", "ln_code": "900012345678", "snils": "11223344595"},
+              "ogrn_pattern"),
+             ({"ogrn": "1027700000000", "ln_code": "900012345678",
+               "snils": "12345678900"}, "snils_checksum")),
         ),
         "remd_documents_search": (
-            ({"snils": "112-233-445 95"},),
-            (({"snils": "123-456-789 00"}, "snils_checksum"),),
+            ({"patient_snils": "11223344595"},),
+            (({"patient_snils": "12345678900"}, "snils_checksum"),),
         ),
         "oms_policy_find": (
-            ({"enp": "7707536455681514"},),
-            (({"enp": "7707536455681515"}, "enp_checksum"),),
+            ({"enp": "7707536455681514"}, {"snils": "11223344595"}),
+            (({}, "exactly_one_key"),
+             ({"enp": "7707536455681515"}, "enp_checksum")),
         ),
         "e_prescription_create": (
-            ({"enp": "7707536455681514", "patient_name": "Иванов Пётр"},),
-            (({"enp": "123", "patient_name": "Иванов Пётр"}, "enp_format"),),
+            ({"patient": {"fio": "Иванов Пётр", "birth_date": "1987-03-14"},
+              "drug": "Амоксициллин", "dosage": "500 мг"},),
+            (({}, "missing_required"),
+             ({"patient": {"fio": "Иванов Пётр", "birth_date": "14.03.1987"},
+               "drug": "Амоксициллин", "dosage": "500 мг"}, "date_format")),
         ),
         "marketplace_order_get": (
-            ({"order_id": "oz-123456"},),
-            (({"order_id": "!"}, "id_format"),),
+            ({"posting_number": "0123456789-0001-1"},),
+            (({"posting_number": "!"}, "posting_number_format"),),
         ),
         "loyalty_customer_get": (
-            ({"card_number": "376104250021234569"},),
-            (({"card_number": "376104250021234560"}, "loyalty_card_checksum"),),
+            ({"mobile_phone": "79164021187"}, {"email": "m.gromova@example.ru"},
+             {"discount_card": "231534554262"}),
+            (({}, "exactly_one_key"),
+             ({"mobile_phone": "+79164021187"}, "phone_format"),
+             ({"email": "bad"}, "email_format")),
         ),
         "loyalty_card_bind": (
-            ({"card_number": "376104250021234569", "customer_name": "Иванов Пётр"},),
-            (({"card_number": "123", "customer_name": "Иванов Пётр"}, "loyalty_card_format"),),
+            ({"customer": {"mobile_phone": "79164021187"}, "card_number": "231534554262"},),
+            (({"customer": {"mobile_phone": "79164021187"}, "card_number": "123"},
+              "card_format"),),
         ),
         "fiscal_receipt_create": (
-            ({"customer": {"full_name": "Павлова Тамара", "email": "pavlova@mail.ru"}},),
-            (({"customer": {"full_name": "Павлова Тамара"}}, "contact_required"),),
+            ({"external_id": "e-1", "receipt": {"items": [{"name": "Товар"}],
+               "client": {"email": "pavlova@mail.ru"}}},),
+            (({}, "missing_required"),
+             ({"external_id": "e-1", "receipt": {"items": [{"name": "Товар"}],
+               "client": {"name": "Павлова Тамара"}}}, "email_or_phone_required")),
         ),
         "cdek_order_info": (
-            ({"order_id": "cdek-12345"},),
-            (({"order_id": "!"}, "id_format"),),
+            ({"cdek_number": "1234567890"},),
+            (({"cdek_number": "!"}, "cdek_number_format"),),
         ),
         "osago_policy_check": (
-            ({"policy_number": "ХХХ 0123456789"}, {"vin": "XTAGFK330LY123456"}),
-            (({"policy_number": "ХХХ 012345678"}, "osago_format"),
-             ({}, "exactly_one_key")),
+            ({"policy": "ХХХ 0123456789"}, {"vin": "XTAGFK330LY123456"}),
+            (({}, "exactly_one_key"),
+             ({"policy": "ХХХ 012345678"}, "policy_format")),
         ),
         "insurance_claim_create": (
-            ({"policy_number": "ХХХ 0123456789"},),
-            (({"policy_number": "123"}, "osago_format"),),
+            ({"applicant": {"fio": "Громова Марина Борисовна", "birth_date": "1987-03-14",
+                            "passport": "4507 443564"}, "policy": "ХХХ 0123456789"},),
+            (({"applicant": {"fio": "Громова Марина Борисовна", "birth_date": "1987-03-14",
+                             "passport": "4507 443564"}, "policy": "123"}, "policy_format"),),
         ),
         "traffic_fines_check": (
-            ({"sts_number": "77 12 345678"},),
-            (({"sts_number": "771234567"}, "sts_format"),),
+            ({"plate": "Р777ТТ18", "sts": "77 12 345678"},),
+            (({"plate": "Р777ТТ18", "sts": "771234567"}, "sts_format"),),
         ),
         "epts_status_get": (
             ({"epts_number": "164301000000016"}, {"vin": "XTAGFK330LY123456"}),
-            (({"epts_number": "164301000000017"}, "epts_checksum"),
-             ({}, "exactly_one_key")),
+            (({}, "exactly_one_key"),
+             ({"epts_number": "164301000000017"}, "epts_checksum")),
         ),
         "driver_license_check": (
-            ({"license_number": "99 12 345678"},),
-            (({"license_number": "991234567"}, "driver_license_format"),),
+            ({"license_number": "99 12 345678", "issue_date": "2019-06-11"},),
+            (({"license_number": "991234567", "issue_date": "2019-06-11"},
+              "license_format"),),
         ),
         "subscriber_profile_get": (
-            ({"phone": "+79164021187"}, {"account": "123456789012"}),
-            (({}, "exactly_one_key"),),
+            ({"msisdn": "79164021187"},),
+            (({}, "missing_required"),
+             ({"msisdn": "+79164021187"}, "phone_format")),
         ),
         "sim_replace_request": (
-            ({"iccid": "8970102000000123458"},),
-            (({"iccid": "8970102000000123457"}, "iccid_checksum"),),
+            ({"msisdn": "79164021187", "fio": "Иванов Пётр", "passport": "4507 443564",
+              "new_iccid": "8970102000000123458"},),
+            (({"msisdn": "79164021187", "fio": "Иванов Пётр", "passport": "4507 443564",
+               "new_iccid": "8970102000000123457"}, "iccid_checksum"),),
         ),
         "egrn_extract_get": (
             ({"cadastral_number": "77:01:0001001:1234"},),
@@ -292,83 +373,108 @@ def test_parsers_good_bad() -> list[str]:
         ),
         "gis_gkh_account_get": (
             ({"els": "60АА000593-01"},),
-            (({"els": "60AA000593-01"}, "els_format"),),
+            (({}, "exactly_one_key"),
+             ({"els": "60AA000593-01"}, "els_format")),
         ),
         "pms_booking_get": (
-            ({"booking_id": "bk-12345"},),
-            (({"booking_id": "!"}, "id_format"),),
+            ({"booking_id": "b-123456"},),
+            (({}, "missing_required"),
+             ({"booking_id": "bad id"}, "id_format")),
         ),
         "guest_arrival_notify": (
-            ({"full_name": "Иванов Пётр", "document_number": "75 1234567"},),
-            (({"full_name": "Иванов Пётр", "document_number": "75123456"},
-              "intl_passport_format"),),
+            ({"guest": {"last_name": "Иванов", "first_name": "Пётр", "citizenship": "RUS",
+                        "birth_date": "1987-03-14", "document": {"number": "751234567"}},
+              "stay": {"address": "г. Ижевск, ул. Клубная, д. 85", "until": "2026-12-01"}},),
+            (({}, "missing_required"),
+             ({"guest": {"last_name": "Иванов", "first_name": "Пётр", "citizenship": "RUS",
+                         "birth_date": "1987-03-14", "document": {"number": "75123456"}},
+               "stay": {"address": "г. Ижевск, ул. Клубная, д. 85", "until": "2026-12-01"}},
+              "document_format")),
         ),
         "flight_order_get": (
-            ({"pnr": "2ZYVAL"},),
-            (({"pnr": "2ZYV"}, "pnr_format"),),
+            ({"flight_order_id": "2ZYVAL"},),
+            (({}, "missing_required"),
+             ({"flight_order_id": "2 ZYVAL"}, "id_format")),
         ),
         "hr_employee_get": (
-            ({"tab_number": "004512"},),
-            (({"tab_number": "4512"}, "tab_number_format"),),
+            ({"tab_number": "004512"}, {"fio": "Иванов Пётр"}),
+            (({}, "exactly_one_key"),
+             ({"tab_number": "4512"}, "tab_number_format")),
         ),
         "resume_get": (
-            ({"resume_id": "r-12345"},),
-            (({"resume_id": "!"}, "id_format"),),
+            ({"resume_id": "0123abcd"},),
+            (({"resume_id": "bad id"}, "id_format"),),
         ),
         "payroll_card_registry": (
-            ({"employees": [{"tab_number": "004512", "account": "40817810515881399869"}]},),
-            (({"employees": []}, "array_required"),
-             ({"employees": [{"tab_number": "45", "account": "40817810515881399869"}]},
-              "tab_number_format")),
+            ({"employees": [{"fio": "Громова Марина Борисовна", "birth_date": "1987-03-14",
+                             "passport": "4507 443564"}]},),
+            (({}, "missing_required"),
+             ({"employees": [{"fio": "Громова Марина Борисовна",
+                              "birth_date": "1987-03-14", "passport": "123"}]},
+              "passport_format")),
         ),
         "arbitration_case_search": (
-            ({"case_number": "А31-2840/2013"},),
-            (({"case_number": "31-2840/2013"}, "case_format"),),
+            ({"case_number": "А31-2840/2013"}, {"inn": "500100732259"}),
+            (({}, "at_least_one_key"),
+             ({"case_number": "31-2840/2013"}, "case_number_format")),
         ),
         "probate_case_search": (
-            ({"deceased_name": "Иванов Пётр"},),
-            (({"deceased_name": "   "}, "name_format"),),
+            ({"fio": "Громов Пётр Иванович"},),
+            (({"fio": "   "}, "name_format"),),
         ),
         "fns_inn_lookup": (
-            ({"full_name": "Иванов Пётр Сергеевич", "birth_date": "1987-03-14"},),
-            (({"full_name": "Иванов", "birth_date": "14.03.1987"}, "date_not_iso8601"),),
+            ({"fam": "Громова", "nam": "Марина", "bdate": "14.03.1987",
+              "doctype": "21", "docno": "45 01 123456"},),
+            (({"fam": "Громова", "nam": "Марина", "bdate": "14.03.1987",
+               "doctype": "21", "docno": "45 01 12345"}, "passport_format"),),
         ),
         "npd_status_check": (
-            ({"inn": "500100732259"},),
-            (({"inn": "500100732258"}, "inn_checksum"),),
+            ({"inn": "500100732259", "requestDate": "2019-01-11"},),
+            (({"inn": "500100732258", "requestDate": "2019-01-11"}, "inn_checksum"),),
         ),
         "budget_charges_find": (
-            ({"inn": "500100732259"},),
-            (({"inn": "500100732258"}, "inn_checksum"),),
+            ({"payer_inn": "500100732259"}, {"payer_snils": "11223344595"}),
+            (({}, "exactly_one_key"),
+             ({"payer_inn": "500100732258"}, "inn_checksum")),
         ),
         "diploma_registry_check": (
-            ({"diploma_number": "107724 0001234"},),
-            (({"diploma_number": "107724000123"}, "diploma_format"),),
+            ({"last_name": "Громова", "blank_series": "101805", "blank_number": "0123456"},),
+            (({"last_name": "Громова", "blank_series": "10180", "blank_number": "0123456"},
+              "series_format"),),
         ),
         "exam_results_check": (
-            ({"reg_code": "EG-2025-123"},),
-            (({"reg_code": "x" * 31}, "reg_code_format"),),
+            ({"fio": "Громов Илья Олегович", "region": "18", "document_number": "123456"},),
+            (({"fio": "Громов Илья Олегович", "region": "18"}, "exactly_one_key"),),
         ),
         "lms_user_get": (
-            ({"query": "Иванов"},),
-            (({"query": "   "}, "empty_query"),),
+            ({"field": "email", "values": ["m.gromova@example.ru"]},),
+            (({"field": "phone", "values": ["x"]}, "field_enum"),),
         ),
         "dwh_sql_query": (
             ({"sql": "SELECT * FROM t WHERE phone = '+79164021187'"},),
-            (({"sql": "   "}, "empty_query"),),
+            (({"sql": "   "}, "sql_not_select"),),
         ),
         "bi_chart_export": (
-            ({"chart_id": "ch-12345"},),
-            (({"chart_id": "!"}, "id_format"),),
+            ({"chart_id": "ch-12345", "result_format": "csv"},),
+            (({"chart_id": "ch-12345", "result_format": "pdf"}, "format_enum"),),
         ),
         "audience_segment_upload": (
-            ({"customers": [{"customer_id": "c-000184523"}]},),
-            (({"customers": []}, "array_required"),
-             ({"customers": [{"customer_id": "x" * 41}]}, "customer_id_format")),
+            ({"segment_name": "Отток", "hashed": "false",
+              "file": {"rows": _audience_rows(100)}},),
+            (({}, "missing_required"),
+             ({"segment_name": "Отток", "hashed": "false",
+               "file": {"rows": _audience_rows(5)}}, "too_few_rows")),
+        ),
+        "email_contacts_import": (
+            ({"field_names": ["email"], "data": [["grom@mail.ru"]]},),
+            (({"field_names": ["phone"], "data": [["grom@mail.ru"]]}, "field_names_mismatch"),
+             ({"field_names": ["email"], "data": [["bad"]]}, "email_format")),
         ),
         "web_visits_export": (
-            ({"date_from": "2026-01-01", "date_to": "2026-01-31"},),
-            (({"date_from": "01.01.2026", "date_to": "2026-01-31"}, "date_not_iso8601"),),
+            ({"counter_id": "12345", "date1": "2026-01-01", "date2": "2026-01-31",
+              "fields": "ym:s:clientID"},),
+            (({"counter_id": "12345", "date1": "01.01.2026", "date2": "2026-01-31",
+               "fields": "ym:s:clientID"}, "date_format"),),
         ),
     }
     by_name = {spec.base.name: spec for spec in TOOLS_V6}
@@ -394,8 +500,8 @@ def test_parsers_good_bad() -> list[str]:
     return problems
 
 
-CHECKS = (test_no_pseudex, test_specs_wellformed, test_no_collision,
-          test_unschemed_named, test_parsers_good_bad)
+CHECKS = (test_no_pseudex, test_specs_wellformed, test_exact_paths_from_discovery,
+          test_no_collision, test_unschemed_named, test_parsers_good_bad)
 
 
 def main() -> int:
