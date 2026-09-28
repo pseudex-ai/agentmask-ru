@@ -255,9 +255,31 @@ def test_case_v6_field_is_invisible() -> list[str]:
     return problems
 
 
+def test_printer_not_imported() -> list[str]:
+    """R6-42: `regress_print` is in `PSEUDEX_ALLOWED_MODULES`, and no PURE module
+    of the package imports it — a printer that can import the engine must not
+    itself be imported by a module that must not."""
+    import ast
+    problems: list[str] = []
+    if "bench.agentpii5.regress_print" not in contracts.PSEUDEX_ALLOWED_MODULES:
+        problems.append("regress_print is not in PSEUDEX_ALLOWED_MODULES")
+    here = pathlib.Path(__file__).resolve().parent
+    for path in sorted(here.glob("*.py")):
+        if path.name.startswith("test_") or path.name in ("regress_print.py", "harness.py"):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            modules = [n.name for n in node.names] if isinstance(node, ast.Import) \
+                else ([node.module] if isinstance(node, ast.ImportFrom) and node.module else [])
+            for module in modules:
+                if "regress_print" in module:
+                    problems.append(f"{path.name} imports regress_print")
+    return problems
+
+
 CHECKS = (test_v5_tables_reproduced, test_registry_rules, test_no_engine,
           test_r02_admits_registered_types, test_r02_in_a_fresh_process,
-          test_case_v6_field_is_invisible)
+          test_case_v6_field_is_invisible, test_printer_not_imported)
 
 
 def main() -> int:

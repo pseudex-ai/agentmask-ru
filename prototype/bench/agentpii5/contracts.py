@@ -54,10 +54,13 @@ V5_PACKAGE: str = "bench.agentpii5"
 # not. `test_contracts.py` checks `sys.modules` after importing this file; each
 # component's test does the same for its own modules.
 FORBIDDEN_IMPORT_PREFIX: str = "pseudex"
-# The ONE module allowed to import the engine: it runs the gateway arm on the
-# production path. Everything it learns is written to the run files (§8) so
-# every other module reads records, never the engine.
-PSEUDEX_ALLOWED_MODULES: tuple[str, ...] = ("bench.agentpii5.harness",)
+# The two modules allowed to import the engine: `harness` runs the gateway arm
+# on the production path, and `regress_print` prints the SAME path offline
+# (bundle + GatewayV5 + mock, no model) for G4/L9. Everything each learns is
+# written to the run files (§8) or printed, so every other module reads records,
+# never the engine.
+PSEUDEX_ALLOWED_MODULES: tuple[str, ...] = ("bench.agentpii5.harness",
+                                            "bench.agentpii5.regress_print")
 # Never published. The public harness lives in `public/agentmask-ru/`; this
 # package shares no file with it and writes nothing under `public/`.
 PUBLISHED: bool = False
