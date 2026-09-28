@@ -294,6 +294,24 @@ def baseline_forms() -> dict[str, dict[str, int]]:
     return _BASELINE_FORMS_CACHE
 
 
+# `--compare-run` makes the reference another RUN rather than the saved audit
+# summary. The next cohort holds DIFFERENT cases, so the only honest reference is
+# the previous cohort's own aggregate: a per-case join would match nothing and
+# quietly print dashes, which reads as "no change" when it means "no overlap".
+COMPARE_RUN: Path | None = None
+_COMPARE_CACHE: dict[str, object] | None = None
+
+
+def compare_snapshot() -> dict[str, object]:
+    """The comparison run's metrics, computed by the very same code path as the
+    live ones — two columns built by two functions are two different measures."""
+    global _COMPARE_CACHE
+    if _COMPARE_CACHE is None:
+        assert COMPARE_RUN is not None
+        _COMPARE_CACHE = live_snapshot(COMPARE_RUN)
+    return _COMPARE_CACHE
+
+
 def _pct(cell: dict[str, object] | None) -> str:
     """One line as `57.3% 12/21`, or a dash when nothing was measured."""
     if not cell:
@@ -332,14 +350,16 @@ def _render_main(snapshot: dict[str, object]) -> str:
                 '<br>ждём завершения первой тройки / создания каталога прогона…</div>')
 
     ids = frozenset(str(one) for one in (snapshot.get("case_ids") or ()))
-    base = baseline_counts(ids)
+    compare = compare_snapshot() if COMPARE_RUN is not None else None
+    base: dict[str, object] = dict(compare.get("historical") or {}) if compare else baseline_counts(ids)
     hist = snapshot.get("historical") or {}
     assert isinstance(hist, dict)
+    note = ("слева — ПРЕДЫДУЩИЙ прогон целиком (другая выборка кейсов), справа — идущий; Δ в п.п."
+            if compare else
+            "слева — прошлый прогон на ТЕХ ЖЕ кейсах, справа — идущий; Δ в п.п.")
 
     out: list[str] = []
-    out.append('<section><h2>Метрики спринта'
-               '<span class="sub">слева — прошлый прогон на ТЕХ ЖЕ кейсах, справа — идущий;'
-               ' Δ в п.п.</span></h2>')
+    out.append(f'<section><h2>Метрики спринта<span class="sub">{note}</span></h2>')
     out.append('<table class="grid"><thead><tr><th>Метрика</th>'
                '<th>Прошлый прогон</th><th class="hl">Сейчас</th><th>Δ</th></tr></thead><tbody>')
     for name in HISTORICAL_METRICS:
@@ -353,7 +373,10 @@ def _render_main(snapshot: dict[str, object]) -> str:
     owners = snapshot.get("owners") or {}
     assert isinstance(owners, dict)
     if owners:
-        base_forms = baseline_forms()
+        # The reference's own per-hop lines: the compare RUN when we have one,
+        # else the saved audit summary (which is the whole 450, hence the note).
+        base_owners = (compare.get("owners") or {}) if compare else None
+        base_forms = baseline_forms() if compare is None else {}
         details = ("coverage", "end_to_end", "typed", "leak", "out_absent")
         order = tuple(o for o in TRANSITION_ORDER if o in owners) + tuple(
             o for o in sorted(owners) if o not in TRANSITION_ORDER)
@@ -369,7 +392,8 @@ def _render_main(snapshot: dict[str, object]) -> str:
             # are two names for the same question.
             form_key = "form_hIN" if owner.startswith("IN/") else "form_hOUT"
             cur_form = owners[owner].get(form_key) or {}
-            base_form = base_forms.get(owner)
+            base_form = (((base_owners or {}).get(owner) or {}).get(form_key)
+                         if base_owners is not None else base_forms.get(owner))
             cls = ' class="name hl"' if owner in TRANSITION_ORDER else ' class="name"'
             cells = "".join(
                 f'<td>{_pct(owners[owner].get(col) or {})}</td>' for col in details)
@@ -546,9 +570,15 @@ def main() -> int:
                         help="HTTP-страница со ссылкой (браузер) вместо терминала")
     parser.add_argument("--host", default="127.0.0.1",
                         help="адрес для --web (по умолчанию 127.0.0.1)")
+    parser.add_argument("--compare-run", type=Path, default=None,
+                        help="каталог прогона-эталона для колонки «прошлый»; по умолчанию — "
+                             "сохранённый аудит (evidence/case-index.json) на тех же кейсах")
     parser.add_argument("--port", type=int, default=8787,
                         help="порт для --web (по умолчанию 8787)")
     args = parser.parse_args()
+
+    global COMPARE_RUN
+    COMPARE_RUN = args.compare_run.resolve() if args.compare_run is not None else None
 
     run_dir: Path
     if args.latest:
