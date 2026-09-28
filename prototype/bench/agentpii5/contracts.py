@@ -62,6 +62,14 @@ PSEUDEX_ALLOWED_MODULES: tuple[str, ...] = ("bench.agentpii5.harness",)
 PUBLISHED: bool = False
 
 TYPES: tuple[str, ...] = v4.TYPES + pii_types.NEW_ITEM_TYPES
+# Re-exported so `schema.R02` and the orchestrator's `reg_types` read the same
+# set from the one home (pii_types), never a copy.
+NEW_ITEM_TYPES: tuple[str, ...] = pii_types.NEW_ITEM_TYPES
+# The v6 negative families (§1.6 of tz-agentpii6-registry.md). R02 admits a
+# v4.validate «negative family … unknown» line for exactly these. Empty until
+# the first v6 case registers one; the list itself lives in `contracts_v6.py`
+# and is merged here once that file lands.
+V6_NEGATIVE_FAMILIES: tuple[str, ...] = ()
 REGISTERS: tuple[str, ...] = v4.REGISTERS
 SPEECH_REGISTERS: tuple[str, ...] = v4.SPEECH_REGISTERS
 V4_SCENARIO_KINDS: tuple[str, ...] = v4.SCENARIO_KINDS

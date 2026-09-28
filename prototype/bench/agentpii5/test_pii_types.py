@@ -197,7 +197,44 @@ def test_no_engine() -> list[str]:
     return []
 
 
-CHECKS = (test_v5_tables_reproduced, test_registry_rules, test_no_engine)
+def test_r02_admits_registered_types() -> list[str]:
+    """W0-R3: R02 admits exactly `NEW_ITEM_TYPES` ∪ `V6_NEGATIVE_FAMILIES`. The
+    red demo is the negative direction — a typo'd type and a DATE element stay
+    red. The positive direction (a registered v6 type IS admitted) activates
+    with the first v6 record; until then the admitted set is empty and only the
+    negative direction is observable."""
+    import bench.agentpii5.schema as schema
+    problems: list[str] = []
+    if schema._r02_suppressed("c1: item p1 has unknown type 'OMZ'"):
+        problems.append("typo'd type 'OMZ' was suppressed")
+    if schema._r02_suppressed("c1: item p1 has unknown type 'DATE'"):
+        problems.append("DATE element was suppressed")
+    if schema._r02_suppressed("c1: negative family 'XYZ' unknown"):
+        problems.append("an unregistered negative family was suppressed")
+    return problems
+
+
+def test_r02_in_a_fresh_process() -> list[str]:
+    """W0-R4: R02 does not depend on import order. `schema` imports `tools` at
+    module level (F1), and `tools` updates v4's REGISTRY with the v5 tools, so a
+    fresh process that imports `schema` first still sees `kb_search` in v4's
+    registry — no spurious «tool 'kb_search' is not in the registry»."""
+    code = (
+        "import bench.agentpii5.schema; "
+        "from bench.agentpii4.tools import REGISTRY; "
+        "print('kb_search' in REGISTRY)"
+    )
+    proc = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                          cwd=_PROTOTYPE)
+    if proc.returncode != 0:
+        return [f"fresh process failed: {proc.stderr.strip()}"]
+    if proc.stdout.strip() != "True":
+        return [f"schema import does not load v5 tools into v4 REGISTRY: {proc.stdout.strip()!r}"]
+    return []
+
+
+CHECKS = (test_v5_tables_reproduced, test_registry_rules, test_no_engine,
+          test_r02_admits_registered_types, test_r02_in_a_fresh_process)
 
 
 def main() -> int:

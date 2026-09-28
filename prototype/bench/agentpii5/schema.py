@@ -39,6 +39,7 @@ from bench.agentpii5 import contracts as c
 from bench.agentpii5.contracts import (BranchSpec, CaseV5, DocumentSpec, ForcedError, Hop,
                                        LoopSpec, MemorySpec, PickSpec, RagSpec,
                                        ReturnExpectation)
+from bench.agentpii5.tools import REGISTRY_V5
 
 # The owners whose hop names a tool, from `contracts.Hop.tool_name`'s own
 # comment. A constant rather than a literal in three checks: the comment is
@@ -67,19 +68,29 @@ def has_result(hops: Sequence[Hop]) -> bool:
 def _declared_return_forms() -> dict[str, tuple[str, ...]]:
     """Each tool's declared return forms, read off the landed registry.
 
-    IMPORTED INSIDE THE FUNCTION, AND THERE IS NO «NOT YET» BRANCH ANY MORE.
-    The import is lazy because `bench.agentpii5.tools` imports v4's registry and
-    this module is imported by `scenarios5/common.py`, which `tools.py` does not
-    need — a module-level import would make the two files a cycle. It is
-    UNGUARDED because `tools.py` has landed: the earlier `find_spec` probe let
-    R19 fall back to «the form is in the closed vocabulary», which is the weaker
-    half of the rule, and a weaker check that nothing announces is the kind of
-    silent fallback this repository refuses. A broken `tools.py` now raises here
-    with its own traceback instead of quietly lowering the bar.
+    IMPORTED AT MODULE LEVEL (F1): the lazy import made R02 depend on import
+    order — a fresh process that had not yet loaded `tools` let `v4.validate`
+    report «tool 'kb_search' is not in the registry». There is no cycle:
+    `tools` imports `contracts` and v4, never `schema`; `scenarios5/common.py`
+    imports both `schema` and `tools` after each has loaded.
     """
-    from bench.agentpii5.tools import REGISTRY_V5
     return {name: tuple(form.form for form in spec.return_forms)
             for name, spec in REGISTRY_V5.items()}
+
+
+def _r02_suppressed(problem: str) -> bool:
+    """R02 admits exactly the registered v6 item types and v6 negative families
+    (tz-agentpii6.md §8.1). Everything else v4 reports stays red: a typo'd type
+    and a DATE element are not admitted, and neither is a family nobody
+    registered. The match is on the exact v4 message, so the admitted set is
+    exactly `NEW_ITEM_TYPES` ∪ `V6_NEGATIVE_FAMILIES`, never a superset."""
+    for type_id in c.NEW_ITEM_TYPES:
+        if f"has unknown type {type_id!r}" in problem:
+            return True
+    for family in c.V6_NEGATIVE_FAMILIES:
+        if f"negative family {family!r} unknown" in problem:
+            return True
+    return False
 
 
 # --- per case: R01 … R21 ------------------------------------------------------
@@ -104,8 +115,10 @@ def validate_v5(case: CaseV5) -> list[str]:
     if case.behaviour not in c.BEHAVIOURS:
         problems.append(f"R01 {tag}: unknown behaviour {case.behaviour!r}")
 
-    # R02 v4.validate(base) reports nothing
+    # R02 v4.validate(base) reports nothing the v6 registry has not admitted
     for problem in v4.validate(base):
+        if _r02_suppressed(problem):
+            continue
         problems.append(f"R02 {problem}")
 
     # R03 hop indexes, kinds and owners
@@ -779,7 +792,6 @@ def _undeclared_result_paths(cases: Sequence[CaseV5]) -> list[str]:
     asks only that the leaf be a leaf the tool is declared to carry, which is the
     question the «ПД в результате» column answers.
     """
-    from bench.agentpii5.tools import REGISTRY_V5
     problems: list[str] = []
     seen: set[tuple[str, str]] = set()
     for case in cases:
@@ -830,10 +842,6 @@ def _unread_verticals(cases: Sequence[CaseV5]) -> list[str]:
     was offered by 145 cases of the corpus this rule was written for, which is
     why 584 of its hops were declared and none of them read anything.
     """
-    # Lazy, for `_declared_return_forms`'s reason: `scenarios5/common.py` imports
-    # this module and `tools.py` imports v4's registry, so a module-level import
-    # would close a cycle.
-    from bench.agentpii5.tools import REGISTRY_V5
     offered: set[str] = {name for case in cases for name in case.base.tools}
     readable: dict[str, list[str]] = {}
     for name, spec in sorted(REGISTRY_V5.items()):
