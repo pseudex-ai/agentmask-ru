@@ -300,16 +300,23 @@ def baseline_forms() -> dict[str, dict[str, int]]:
 # quietly print dashes, which reads as "no change" when it means "no overlap".
 COMPARE_RUN: Path | None = None
 _COMPARE_CACHE: dict[str, object] | None = None
+_COMPARE_LOCK = threading.Lock()
 
 
 def compare_snapshot() -> dict[str, object]:
     """The comparison run's metrics, computed by the very same code path as the
-    live ones — two columns built by two functions are two different measures."""
+    live ones — two columns built by two functions are two different measures.
+
+    Computed ONCE and locked. The reference is a FINISHED run, so its numbers
+    cannot change; but its snapshot costs seconds (5.2 s for the 363-case
+    cohort), and without the lock every 2 s tick started its own copy until the
+    browser gave up. The server also warms it before the first request."""
     global _COMPARE_CACHE
-    if _COMPARE_CACHE is None:
-        assert COMPARE_RUN is not None
-        _COMPARE_CACHE = live_snapshot(COMPARE_RUN)
-    return _COMPARE_CACHE
+    with _COMPARE_LOCK:
+        if _COMPARE_CACHE is None:
+            assert COMPARE_RUN is not None
+            _COMPARE_CACHE = live_snapshot(COMPARE_RUN)
+        return _COMPARE_CACHE
 
 
 def _pct(cell: dict[str, object] | None) -> str:
@@ -547,6 +554,11 @@ def _serve_web(run_dir: Path, host: str, port: int) -> None:
             pass  # a watch face has nothing to log
 
     server = ThreadingHTTPServer((host, port), Handler)
+    if COMPARE_RUN is not None:
+        # Warm the reference BEFORE the first request, so the page's first paint
+        # is not the one that pays seconds and looks broken.
+        print(f"live web UI: считаю эталон {COMPARE_RUN.name}…", flush=True)
+        compare_snapshot()
     print(f"live web UI: http://{host}:{server.server_port}/  (Ctrl-C чтобы остановить)", flush=True)
     try:
         server.serve_forever()
