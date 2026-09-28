@@ -321,15 +321,21 @@ def test_only_harness_imports_pseudex() -> list[str]:
     exercised where its own defect lived — and `test_mint_consistency` drives the
     vault directly to pin canonicalization + minting (one real value, one
     substitute), which is the third leg the hop-format audit found carrying the
-    random-mint defect. Every other test must stay engine-free
-    or its own `test_no_pseudex` would be a formality. Both halves are asserted,
-    so neither list can grow quietly.
+    random-mint defect. The two hop-format ACCEPTANCE files close the same audit
+    on the production masking path, so they are engine-touching by construction:
+    `test_loc_acceptance` (C1) pins composite/two-entity/no-hybrid LOC and the A2
+    type-word fix through `envelope.mask_messages`, and `test_error_payload_
+    coverage` (C2) pins every error-payload form (scripted, refusal,
+    error_with_value) the B2 fix made mask like a normal tool result. Every other
+    test must stay engine-free or its own `test_no_pseudex` would be a formality.
+    Both halves are asserted, so neither list can grow quietly.
     """
     here = Path(__file__).resolve().parent
     importers = h.pseudex_importers(here)
     allowed = tuple(name.rsplit(".", 1)[-1] for name in PSEUDEX_ALLOWED_MODULES)
     engine_tests = ("test_harness_stream", "test_call_scoped_name_consistency",
-                    "test_mint_consistency")
+                    "test_mint_consistency", "test_loc_acceptance",
+                    "test_error_payload_coverage")
     failures: list[str] = []
     modules = tuple(name for name in importers if not name.startswith("test_"))
     tests = tuple(name for name in importers if name.startswith("test_"))
