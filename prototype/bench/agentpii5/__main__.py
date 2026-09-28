@@ -58,6 +58,9 @@ COMMANDS: tuple[Command, ...] = (
             "любой прогон против любого: строки, разница с интервалом, --cases — по случаям"),
     Command("hop-report", "bench.agentpii5.hop_report", (),
             "offline completed cohort: historical metrics and versioned actual-hop evidence"),
+    Command("live", "bench.agentpii5.live", (),
+            "живые метрики ИДУЩЕГО прогона: все 13 спринта + переходы + actual/causal, "
+            "<run_dir> или --latest"),
     Command("microscope", "bench.agentpii5.microscope", (),
             "один случай целиком: что видела модель, что написала, что вернулось, вердикт"),
     Command("trend", "bench.agentpii5.trend", (),
