@@ -586,6 +586,10 @@ def test_chain_repeat_correction_memory_two_entities() -> list[str]:
       * (e) two entities of one type stay their own: each leaf restores to the
         real value of the item it is attributed to, and the two never swap.
     """
+    # Standalone load, like every other check in this file: the E07 check is
+    # callable directly (not only through `main()`) and must lease the detection
+    # bundle itself — `Detector()`/`GatewayV5` raise `BundleNotLeased` without it.
+    load_dev_bundle()
     case, run, observation = _scripted_chain_run()
     failures: list[str] = []
     events = observation.events
@@ -622,8 +626,19 @@ def test_chain_repeat_correction_memory_two_entities() -> list[str]:
             failures.append(f"цепь: value_ok/form_ok = {chain_event.value_ok}/"
                             f"{chain_event.form_ok} на {chain_event.restored!r}")
 
-    # (b) REPEAT does not merge: every actual `notify_sms` call is ONE `number`
-    # crossing, so a call made twice is two events and never folded into one.
+    # (b) REPEAT is itself present AND does not merge. The repeat is the SECOND
+    # p1s crossing in turn 1; the chain, the repeat and the correction together
+    # write p1s three times, so the count of p1s crossings in turn 1 is the
+    # unique fingerprint of the repeat — delete the repeat and it drops to two.
+    # This is what makes the check a PIN rather than a tautology: counting
+    # `len(numbers) == notify_calls` alone stayed green with the repeat deleted.
+    p1s_turn1 = [event for event in numbers
+                 if event.item_id == "p1s" and event.call_turn == 1]
+    if len(p1s_turn1) != 3:
+        failures.append(f"повтор не различим: {len(p1s_turn1)} пересечений p1s на "
+                        f"ходе 1 вместо 3 (цепь+повтор+исправление)")
+    # Every actual `notify_sms` call is ONE `number` crossing, so a call made
+    # twice is two events and never folded into one.
     notify_calls = sum(1 for call in run.base.calls if call.name == "notify_sms")
     if len(numbers) != notify_calls:
         failures.append(f"повтор слился: {notify_calls} вызовов notify_sms, "
@@ -632,16 +647,20 @@ def test_chain_repeat_correction_memory_two_entities() -> list[str]:
         failures.append("два повтора поделили один call_seq — события не различимы")
 
     # (c) CORRECTION: the wrong number was re-issued as the right one, and the
-    # RIGHT one is the value the later call measured.
+    # RIGHT one is the value the later call measured. The correction-wrong is the
+    # SECOND p2s crossing in turn 1 (the first belongs to the second entity), so
+    # it exists only because the correction wrote it; the correction-right is the
+    # LAST p1s crossing, after it. The old check read any p2s as «wrong» and any
+    # later p1s as «right», so the second entity plus the repeat satisfied it with
+    # the correction deleted — now each half is uniquely required.
     wrong = [event for event in numbers
              if event.item_id == "p2s" and event.call_turn == 1]
     right = [event for event in numbers
              if event.item_id == "p1s" and event.call_turn == 1
              and event.restored == CHAIN_PHONE_ONE]
-    if not wrong:
-        failures.append("исправлению не предшествовал неверный номер (p2s)")
-    if not right or max(event.call_seq for event in right) <= max(
-            event.call_seq for event in wrong):
+    if len(wrong) < 2:
+        failures.append("исправлению не предшествовал отдельный неверный номер (p2s)")
+    elif max(event.call_seq for event in right) <= max(event.call_seq for event in wrong):
         failures.append("исправленный номер не стал ПОЗЖЕ неверного — правка не измерена")
 
     # (d) MEMORY: turn 2 acts on the value obtained in turn 1 and it restores.

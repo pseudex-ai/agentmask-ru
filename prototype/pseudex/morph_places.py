@@ -551,8 +551,11 @@ def address_key(phrase: str) -> str:
     string they wrote. Only the row it finds changes.
 
     Built by SLOT, not by sorting words: the city goes first if there is one,
-    then the street type, then the name, then the numbers in the order they were
-    written. House 42 flat 118 and house 118 flat 42 are different addresses.
+    then the street NAME, then the numbers in the order they were written. The
+    street-type word («улица», «переулок», «проспект») is deliberately NOT part
+    of the key — it is presentation, and the same street written with or without
+    it must be one row (see the note at the return). House 42 flat 118 and house
+    118 flat 42 are different addresses.
     """
     # Prepositions come off BEFORE normalisation: they are what makes
     # `phrase_to_nominative` read «на Ленинском» as a stem rather than an
@@ -658,19 +661,24 @@ def address_key(phrase: str) -> str:
                 cities.append(parts[-1])
     # A city named anywhere goes to the front, so «Москва, X» and «X, Москва»
     # are one address. Everything else keeps the order it was written in.
-    # The city first, then the street TYPE, then everything else in the order it
-    # was written. Russian puts the type on either side — «улица Тверская» and
-    # «Тверская улица» are one street — so its position cannot be part of the
-    # key. The numbers keep their order: house 42 flat 118 is not house 118
-    # flat 42.
+    # The numbers keep their order: house 42 flat 118 is not house 118 flat 42.
     city = [part for part in parts if part in cities or _CITY_RE.match(part)]
     rest = [part for part in parts if part not in city]
-    generic = [part for part in rest if part in _GENERIC]
     tail = [part for part in rest if part not in _GENERIC]
     # ё IS FOLDED IN THE KEY, AFTER lemmatisation too: the input was folded
     # before the lemma and pymorphy handed back «вишнёвый» with its ё, so the
     # customer's «вишенвая» and the register's «Вишнёвая» never met.
-    return " ".join(city + generic[:1] + tail).replace("ё", "е")
+    #
+    # THE STREET-TYPE WORD IS PRESENTATION, NOT IDENTITY. «переулок
+    # Мончегорская 10» and «Мончегорская 10» are one street, and the type word
+    # is what the customer may write or omit — the identity is the street stem
+    # plus the house, which is exactly what `street_house_key` already keeps.
+    # Keying the canonical with the type word made the two writings two rows,
+    # so the same place got two substitutes. Dropped here, in the key only:
+    # `detokenize` returns the ORIGINAL, and the substitute still mirrors the
+    # type word through `place_shape`, so «переулок» stays a «переулок» in the
+    # fake and nothing about the form the tool receives moves.
+    return " ".join(city + tail).replace("ё", "е")
 
 
 def _has_city(phrase: str) -> bool:

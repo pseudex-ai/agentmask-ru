@@ -316,16 +316,20 @@ def test_only_harness_imports_pseudex() -> list[str]:
     The instrument's modules are the closed list `PSEUDEX_ALLOWED_MODULES`.
     Tests are a separate question with a separate answer: `test_harness_stream`
     must run the real restoration leg in process (that is what it measures),
-    and `test_call_scoped_name_consistency` pins the masking leg's call-scoped
+    `test_call_scoped_name_consistency` pins the masking leg's call-scoped
     attribution on the production path — the two halves of one round trip, each
-    exercised where its own defect lived. Every other test must stay engine-free
+    exercised where its own defect lived — and `test_mint_consistency` drives the
+    vault directly to pin canonicalization + minting (one real value, one
+    substitute), which is the third leg the hop-format audit found carrying the
+    random-mint defect. Every other test must stay engine-free
     or its own `test_no_pseudex` would be a formality. Both halves are asserted,
     so neither list can grow quietly.
     """
     here = Path(__file__).resolve().parent
     importers = h.pseudex_importers(here)
     allowed = tuple(name.rsplit(".", 1)[-1] for name in PSEUDEX_ALLOWED_MODULES)
-    engine_tests = ("test_harness_stream", "test_call_scoped_name_consistency")
+    engine_tests = ("test_harness_stream", "test_call_scoped_name_consistency",
+                    "test_mint_consistency")
     failures: list[str] = []
     modules = tuple(name for name in importers if not name.startswith("test_"))
     tests = tuple(name for name in importers if name.startswith("test_"))

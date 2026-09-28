@@ -141,14 +141,6 @@ def is_own_substitute(span: Span, vault: Vault) -> bool:
         return True
     if vault.is_minted_token(span.value):
         return True
-    # A NAME THE MODEL COMPOSED FROM OUR SUBSTITUTES IS OURS TOO. The card's
-    # separate `last_name`/`first_name`/`middle_name` become a full
-    # «Фамилия Имя Отчество» in the next tool call; the string is not one
-    # minted token but every word is. Re-minting it would turn the model's own
-    # writing into a fresh fake, and the result leg could no longer equal the
-    # call leg (long_order-003).
-    if span.entity_type == "NAME" and vault.as_minted_here(span.value):
-        return True
     if span.entity_type in {"PHONE", "SNILS", "INN", "CARD", "PASSPORT"} and not any(
             char.isdigit() for char in span.value):
         digits: str = re.sub(r"\D", "", canonicalize(span.entity_type, span.value))

@@ -1217,6 +1217,25 @@ def _is_own_rendering(span: Span, own_renderings: frozenset[str]) -> bool:
     return span.value in own_renderings or span.value.casefold() in own_renderings
 
 
+def _is_own_composition(span: Span, own_renderings: frozenset[str]) -> bool:
+    """A NAME every word of which is a rendering this conversation showed.
+
+    The CRM card's `last_name`/`first_name`/`middle_name` are shown to the model
+    as three separate substitutes; the model then composes them into a full
+    «Фамилия Имя Отчество» in the next tool call. The whole string is not any
+    single rendering, but every word is. EVIDENCE-GATED, like
+    `_is_own_rendering`: the evidence-free public entry must still re-mint a
+    re-cased own name (the fake-of-a-fake), because without the caller's
+    evidence it cannot know the words are ours — «крылов сергей» might be a real
+    person, and leaving it raw would leak. Putting this in `is_own_substitute`
+    (evidence-free) is what broke the cache-key policy for `mask_one`.
+    """
+    if not own_renderings or span.entity_type != "NAME":
+        return False
+    words = [word.casefold() for word in span.value.split() if word]
+    return bool(words) and all(word in own_renderings for word in words)
+
+
 def _relevant_own_renderings(text: str,
                              own_renderings: frozenset[str]) -> frozenset[str]:
     """The part of the evidence THIS text can actually be affected by.
@@ -1289,7 +1308,8 @@ def _mask_one(text: str, context: MaskContext, own_renderings: frozenset[str]) -
         # re-typed by a JSON field, which is exact-case `is_own_substitute` misses.
         spans = [span for span in context.detector.detect(text)
                  if not is_own_substitute(span, context.vault)
-                 and not _is_own_rendering(span, relevant)]
+                 and not _is_own_rendering(span, relevant)
+                 and not _is_own_composition(span, relevant)]
         with stage("mask.tokenize_and_audit"):
             # Collected first, written once: one commit per MESSAGE instead of one
             # per entity. See AuditLog.record_many — per-span commits made four

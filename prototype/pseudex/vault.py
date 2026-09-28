@@ -264,8 +264,15 @@ def canonicalize(entity_type: str, value: str) -> str:
         spoken = plate_from_words(value)
         if spoken:
             return spoken
-        return (value.strip().upper()
-                .translate(str.maketrans("ABEKMHOPCTYX", "АВЕКМНОРСТУХ")))
+        # SPACES AND HYPHENS ARE PRESENTATION, NOT IDENTITY. «А123ВС777» and
+        # «А 123 ВС 777» are one car, but the separator survived into the key
+        # (CARD/SNILS/INN collapse it through `_digits_of`; PLATE was not in
+        # `_NUMERIC_TYPES`), so the spaced form the detector emits and the tight
+        # form the customer typed minted two tokens. Stripped HERE, in the key,
+        # and only in the key: `detokenize` still returns the ORIGINAL, so the
+        # tool receives the grouping the customer actually wrote.
+        return re.sub(r"[\s-]+", "", value.strip().upper()
+                      .translate(str.maketrans("ABEKMHOPCTYX", "АВЕКМНОРСТУХ")))
     if entity_type == "LOC":
         # THE ADDRESS HAD NO KEY AT ALL — the raw surface was used, so one place
         # written nine ways was nine rows and the model met nine addresses.
@@ -1508,6 +1515,15 @@ def _shares_a_word(token: str, original: str) -> str:
     def words(value: str) -> set[str]:
         out = set()
         for part in value.split():
+            # AN INITIAL IS NOT A WORD. A single letter (optionally dotted)
+            # stands for a name we are not told, and «Котова С. Л.» for
+            # «Ващенко Т. С.» shares the letter «С» by pure chance — one letter
+            # of thirty-three reveals nothing, and treating it as a shared word
+            # would refuse the initials reuse this file mints on purpose
+            # (`_initials_reuse`). Only a full word can leak the value it
+            # replaces.
+            if len(part.strip(".")) <= 1:
+                continue
             out.add(part.casefold())
             try:
                 out.add(morph_names.to_nominative(part).casefold())
@@ -2744,6 +2760,10 @@ class Vault:
                     grown = self._extends_known_person(canonical, value, gender)
                     if grown is not None:
                         token, extends = grown
+                    else:
+                        initials = self._initials_reuse(canonical, value)
+                        if initials is not None:
+                            token, extends = initials
             elif entity_type == "LOC":
                 same = self._same_place_written_differently(canonical, value, shape)
                 if same is not None:
@@ -4235,6 +4255,86 @@ class Vault:
             return candidate, short_token
         return None
 
+    def _initials_reuse(self, canonical: str, value: str) -> tuple[str, str] | None:
+        """«Ващенко Т. С.» after «Ващенко Таисия Савельевна» is ONE person.
+
+        Initials are a DERIVED form of a full name, not a second name: «Т.» and
+        «С.» stand for the given name and patronymic the conversation already
+        spelled out. Keyed as written, the two forms were two rows, so the model
+        read one surname in the call and another in the result. The substitute
+        is the same abbreviation of the full name's substitute — its surname
+        word, and the first letters of its given and patronymic words — so
+        «Ващенко Т. С.» becomes «Бирюкова Д. Е.» when «Ващенко Таисия
+        Савельевна» became «Бирюкова Дарья Евгеньевна».
+
+        The match is surname PLUS initials, never surname alone: «Ващенко Т. С.»
+        against a conversation that holds only «Ващенко Анна Савельевна» is a
+        different person, and must mint fresh — the same single-owner discipline
+        as `_linked_token`, which refuses when two people share the looked-up
+        word. A conversation with no full name at all also mints fresh, exactly
+        as the ТЗ demands.
+        """
+        if not self._conversation:
+            return None
+        shape = morph_names.name_shape(canonical)
+        real_parts = canonical.split()
+        # A PURE INITIALS ABBREVIATION: a surname plus one or more initials and
+        # nothing else. A mention with a full given name or patronymic is not
+        # this case — it is grown (`_extends_known_person`) or reordered
+        # (`_same_person_reordered`) elsewhere.
+        if len(real_parts) != len(shape) or "surn" not in shape or "init" not in shape:
+            return None
+        if any(kind not in ("surn", "init") for kind in shape):
+            return None
+        surname = next(w for w, k in zip(real_parts, shape) if k == "surn")
+        initials = [w.strip(".").upper() for w, k in zip(real_parts, shape) if k == "init"]
+        if not initials:
+            return None
+        rows = self._conn.execute(
+            "SELECT DISTINCT t.canonical, t.token FROM name_parts p "
+            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
+            "WHERE p.customer=? AND t.entity_type='NAME' AND t.minted_in=? AND p.part=?",
+            (self._customer, self._conversation, surname.casefold()),
+        ).fetchall()
+        candidates: list[tuple[str, str, tuple[str, ...]]] = []
+        for other, token in rows:
+            if other == canonical:
+                continue
+            other_parts = other.split()
+            other_shape = morph_names.name_shape(other)
+            if len(other_parts) != len(other_shape):
+                continue
+            other_surname = next((w for w, k in zip(other_parts, other_shape) if k == "surn"), None)
+            if other_surname is None or other_surname.casefold() != surname.casefold():
+                continue
+            # The full name's given/patronymic words, in the written order, must
+            # supply one initial each — the SAME first letters the mention spells.
+            other_name_parts = [w for w, k in zip(other_parts, other_shape) if k in ("name", "patr")]
+            if len(other_name_parts) != len(initials):
+                continue
+            if any(not w or w[0].upper() != initial
+                   for w, initial in zip(other_name_parts, initials)):
+                continue
+            if len(token.split()) != len(other_parts):
+                continue
+            candidates.append((other, token, other_shape))
+        if len(candidates) != 1:
+            return None
+        other, full_token, other_shape = candidates[0]
+        token_parts = full_token.split()
+        token_surname = next(w for w, k in zip(token_parts, other_shape) if k == "surn")
+        token_name_parts = [w for w, k in zip(token_parts, other_shape) if k in ("name", "patr")]
+        # The substitute's words, mapped by kind onto the mention's slots: the
+        # surname word in the surname slot, the first letter of each given/
+        # patronymic word in the matching initial slot. Counts already agree.
+        name_iter = iter(token_name_parts)
+        built = [token_surname if kind == "surn" else next(name_iter)[0] + "."
+                 for _, kind in zip(real_parts, shape)]
+        candidate = " ".join(built)
+        if not self._is_free_token(candidate, "NAME", value, canonical):
+            return None
+        return candidate, full_token
+
     def _one_identity(self, tokens: set[str]) -> str | None:
         """The FULLEST of several tokens when they are one chain of `extends`
         — a short mention and the full mention grown from it — else None.
@@ -4401,36 +4501,6 @@ class Vault:
                 "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
                 f"WHERE t.customer=? AND k.entity_type='NAME' AND t.part IN ({','.join('?' * len(asked))})",
                 (self._customer, *asked),
-            ).fetchall()
-        found = {row[0] for row in rows}
-        return all(word in found or word.replace("ё", "е") in found for word in words)
-
-    def as_minted_here(self, surface: str) -> bool:
-        """`as_minted` scoped to THIS conversation, for the MASK leg.
-
-        A model that composes several substitutes it was shown into one name —
-        the CRM card's `last_name`/`first_name`/`middle_name` into a full
-        «Фамилия Имя Отчество» — writes a string that is not any single token
-        but is ours word for word. Without this the call leg re-mints it (a
-        fake of a fake), the result leg can no longer equal it, and one person
-        gets two patronymics (long_order-003). Scoped to the conversation the
-        substitutes were minted in, exactly like `is_minted_token`: a real
-        person bearing the same words in another dialogue is a leak, not an
-        echo. `pseudonym_scope=customer` widens it the same way that guard does.
-        """
-        if self._pseudonym_scope == "customer":
-            return self.as_minted(surface)
-        words = [word.casefold() for word in surface.split() if word]
-        if not words:
-            return False
-        asked = sorted({w for word in words for w in (word, word.replace("ё", "е"))})
-        with self._lock:
-            rows = self._conn.execute(
-                "SELECT DISTINCT t.part FROM token_parts AS t "
-                "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
-                "WHERE t.customer=? AND k.entity_type='NAME' AND k.minted_in=? "
-                f"AND t.part IN ({','.join('?' * len(asked))})",
-                (self._customer, self._conversation, *asked),
             ).fetchall()
         found = {row[0] for row in rows}
         return all(word in found or word.replace("ё", "е") in found for word in words)
