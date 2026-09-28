@@ -271,6 +271,29 @@ def baseline_counts(case_ids: frozenset[str]) -> dict[str, dict[str, int]]:
     return sums
 
 
+# The saved run's PER-OWNER form lines live in the audit summary beside the
+# per-case index; there is no per-case owner split, so this leg is the whole
+# saved population and the caption says so.
+BASELINE_AUDIT: Path = BASELINE_INDEX.parent / "audit.json"
+_BASELINE_FORMS_CACHE: dict[str, dict[str, int]] | None = None
+
+
+def baseline_forms() -> dict[str, dict[str, int]]:
+    """The saved run's form rate per `hop_owner`, parsed once."""
+    global _BASELINE_FORMS_CACHE
+    if _BASELINE_FORMS_CACHE is None:
+        try:
+            data = json.loads(BASELINE_AUDIT.read_text(encoding="utf-8"))
+            forms = data.get("forms") or {}
+            _BASELINE_FORMS_CACHE = {
+                str(key): {"hits": int(one.get("hits") or 0),
+                           "total": int(one.get("total") or 0)}
+                for key, one in forms.items()}
+        except (OSError, ValueError, AttributeError):
+            _BASELINE_FORMS_CACHE = {}
+    return _BASELINE_FORMS_CACHE
+
+
 def _pct(cell: dict[str, object] | None) -> str:
     """One line as `57.3% 12/21`, or a dash when nothing was measured."""
     if not cell:
@@ -330,19 +353,29 @@ def _render_main(snapshot: dict[str, object]) -> str:
     owners = snapshot.get("owners") or {}
     assert isinstance(owners, dict)
     if owners:
-        cols = tuple(metrics.HOP_SLICEABLE)
+        base_forms = baseline_forms()
+        details = ("coverage", "end_to_end", "typed", "leak", "out_absent")
         order = tuple(o for o in TRANSITION_ORDER if o in owners) + tuple(
             o for o in sorted(owners) if o not in TRANSITION_ORDER)
-        out.append('<section><h2>Переходы<span class="sub">по hop_owner, идущий прогон</span></h2>')
+        out.append('<section><h2>Переходы<span class="sub">форма на самом хопе: прошлый '
+                   'прогон (весь, 450) против идущего на тех же переходах; прочие колонки — '
+                   'только текущий</span></h2>')
         out.append('<table class="grid"><thead><tr><th>Переход</th>'
-                   + "".join(f"<th>{c}</th>" for c in cols) + '</tr></thead><tbody>')
+                   '<th>Форма: прошлый</th><th class="hl">Форма: сейчас</th><th>Δ</th>'
+                   + "".join(f"<th>{col}</th>" for col in details) + '</tr></thead><tbody>')
         for owner in order:
-            cells = []
-            for col in cols:
-                cell = owners[owner].get(col) or {}
-                cells.append(f'<td>{_pct(cell)}</td>')
+            # ONE form line per owner: the side that carries it is IN for the
+            # inbound hops and OUT for the outbound ones, so form_hIN/form_hOUT
+            # are two names for the same question.
+            form_key = "form_hIN" if owner.startswith("IN/") else "form_hOUT"
+            cur_form = owners[owner].get(form_key) or {}
+            base_form = base_forms.get(owner)
             cls = ' class="name hl"' if owner in TRANSITION_ORDER else ' class="name"'
-            out.append(f'<tr><td{cls}>{owner}</td>' + "".join(cells) + '</tr>')
+            cells = "".join(
+                f'<td>{_pct(owners[owner].get(col) or {})}</td>' for col in details)
+            out.append(f'<tr><td{cls}>{owner}</td>'
+                       f'<td>{_pct(base_form)}</td><td class="hl">{_pct(cur_form)}</td>'
+                       f'{_movement(base_form, cur_form)}{cells}</tr>')
         out.append('</tbody></table></section>')
 
     actual = snapshot.get("actual") or {}
@@ -351,7 +384,8 @@ def _render_main(snapshot: dict[str, object]) -> str:
     if actual.get("events_total"):
         out.append('<section><h2>Actual OUT<span class="sub">листовые события, M0 estimator · '
                    f'событий {actual.get("events_total")}, не применимо {actual.get("not_applicable")}, '
-                   f'прогонов {actual.get("runs")}</span></h2>')
+                   f'прогонов {actual.get("runs")} · прошлый прогон не хранит actual-OUT по типам'
+                   '</span></h2>')
         keys = ("attributed", "value_ok", "form_ok", "form_unmeasured", "residual", "joint_ok")
         out.append('<table class="grid"><thead><tr><th>Тип</th><th>Cand.</th>'
                    + "".join(f"<th>{k}</th>" for k in keys) + '</tr></thead><tbody>')
