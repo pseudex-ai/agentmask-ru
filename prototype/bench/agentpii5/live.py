@@ -25,6 +25,7 @@ Engine-free, like `compare`/`hop-report`: it imports `report` (file reader),
 import argparse
 import json
 import os
+import threading
 import time
 from dataclasses import asdict
 from datetime import datetime
@@ -434,6 +435,28 @@ tick();setInterval(tick,2000);
 
 
 
+_SNAPSHOT_LOCK = threading.Lock()
+_SNAPSHOT_CACHE: dict[str, tuple[float, dict[str, object]]] = {}
+# `live_snapshot` walks EVERY finished triple through the actual and causal
+# estimators; on a long run that is seconds, not milliseconds (measured 3.3 s at
+# 119 triples). A browser asking every 2 s would pile requests up until it gave
+# up — the page just said «загрузка…» forever. One computation is shared, and a
+# request that arrives while it runs waits for it rather than starting its own.
+SNAPSHOT_TTL: float = 2.5
+
+
+def cached_snapshot(run_dir: Path) -> dict[str, object]:
+    """The snapshot, recomputed at most once per `SNAPSHOT_TTL`."""
+    key = str(run_dir)
+    with _SNAPSHOT_LOCK:
+        entry = _SNAPSHOT_CACHE.get(key)
+        if entry is not None and time.monotonic() - entry[0] < SNAPSHOT_TTL:
+            return entry[1]
+        snapshot = live_snapshot(run_dir)
+        _SNAPSHOT_CACHE[key] = (time.monotonic(), snapshot)
+        return snapshot
+
+
 def _serve_web(run_dir: Path, host: str, port: int) -> None:
     """A tiny read-only HTTP face: `/` is the auto-refreshing page, `/snapshot.txt`
     is the rendered metrics text, `/snapshot.json` is the raw snapshot. No
@@ -451,13 +474,13 @@ def _serve_web(run_dir: Path, host: str, port: int) -> None:
             if self.path in ("/", "/index.html"):
                 self._send(200, WEB_SHELL.encode("utf-8"), "text/html; charset=utf-8")
             elif self.path == "/fragment":
-                html = _render_main(live_snapshot(run_dir))
+                html = _render_main(cached_snapshot(run_dir))
                 self._send(200, html.encode("utf-8"), "text/html; charset=utf-8")
             elif self.path == "/snapshot.txt":
-                text = render(live_snapshot(run_dir))
+                text = render(cached_snapshot(run_dir))
                 self._send(200, text.encode("utf-8"), "text/plain; charset=utf-8")
             elif self.path == "/snapshot.json":
-                payload = json.dumps(live_snapshot(run_dir), ensure_ascii=False)
+                payload = json.dumps(cached_snapshot(run_dir), ensure_ascii=False)
                 self._send(200, payload.encode("utf-8"), "application/json; charset=utf-8")
             else:
                 self._send(404, b"not found", "text/plain; charset=utf-8")
