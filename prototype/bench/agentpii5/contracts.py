@@ -43,6 +43,8 @@ from bench.agentpii4.schema import (  # noqa: F401 - re-exported on purpose
 from bench.agentpii4.stats import clopper_pearson, zero_failure_floor
 from bench.agentpii4.tools import REGISTRY, FieldSpec, Refusal, ToolSpec  # noqa: F401
 
+from bench.agentpii5 import pii_types
+
 # --- §0 package rules ------------------------------------------------------------
 
 V4_PACKAGE: str = "bench.agentpii4"
@@ -59,7 +61,7 @@ PSEUDEX_ALLOWED_MODULES: tuple[str, ...] = ("bench.agentpii5.harness",)
 # package shares no file with it and writes nothing under `public/`.
 PUBLISHED: bool = False
 
-TYPES: tuple[str, ...] = v4.TYPES
+TYPES: tuple[str, ...] = v4.TYPES + pii_types.NEW_ITEM_TYPES
 REGISTERS: tuple[str, ...] = v4.REGISTERS
 SPEECH_REGISTERS: tuple[str, ...] = v4.SPEECH_REGISTERS
 V4_SCENARIO_KINDS: tuple[str, ...] = v4.SCENARIO_KINDS
@@ -809,21 +811,8 @@ class ResultRenderer(Protocol):
 # the engine substituted (an appointment slot, a document date): same features
 # as DOB, listed separately because the spec lists «DOB/DATE» and a metric
 # slice by type must not fold the two.
-FORM_FEATURES: dict[str, tuple[str, ...]] = {
-    "NAME": ("case_class", "gram_case", "order", "parts", "initials", "script", "hyphen_particle"),
-    "PHONE": ("prefix", "grouping", "separators", "parens"),
-    "LOC": ("case_class", "generic", "generic_position", "house_marker", "flat_marker", "commas",
-            "city_present", "city_position", "by_fields", "building_entrance_markers"),
-    "DOB": ("notation", "separator", "padding", "year_len", "month_form"),
-    "DATE": ("notation", "separator", "padding", "year_len", "month_form"),
-    "EMAIL": ("case_class",),
-    "CARD": ("grouping", "separator"),
-    "SNILS": ("separators",),
-    "INN": ("length", "separators"),
-    "PASSPORT": ("series_number_split",),
-    "PLATE": ("case_class", "spaces", "region_sep"),
-}
-FORM_TYPES: tuple[str, ...] = tuple(FORM_FEATURES)
+FORM_FEATURES: dict[str, tuple[str, ...]] = pii_types.form_features(pii_types.TYPE_REGISTRY)
+FORM_TYPES: tuple[str, ...] = pii_types.form_types(pii_types.TYPE_REGISTRY)
 # The closed label set each feature extractor returns. Two strings with the
 # same label agree on the feature; anything else is a difference named by the
 # feature. A label written `prefix:*` is an open family whose members are
@@ -832,49 +821,7 @@ FORM_TYPES: tuple[str, ...] = tuple(FORM_FEATURES)
 # adversarial fixtures of `form_hIN`/`form_hOUT` can name the label they
 # expect, and so two extractors written by two people cannot disagree about
 # what «title case» means.
-FEATURE_LABELS: dict[tuple[str, str], tuple[str, ...]] = {
-    ("NAME", "case_class"): ("lower", "title", "upper", "mixed", "none"),
-    ("NAME", "gram_case"): ("nomn", "gent", "datv", "accs", "ablt", "loct", "unknown"),
-    ("NAME", "order"): ("F-I-O", "I-F", "I-O-F", "single", "other"),
-    ("NAME", "parts"): ("1", "2", "3", "4+"),
-    ("NAME", "initials"): ("none", "given", "given_patronymic"),
-    ("NAME", "script"): ("cyrillic", "latin:gost", "latin:icao", "latin:bgn", "latin:unknown", "mixed", "none"),
-    ("NAME", "hyphen_particle"): ("none", "hyphen", "particle", "both"),
-    ("PHONE", "prefix"): ("plus7", "eight", "seven", "bare", "other"),
-    ("PHONE", "grouping"): ("3-3-2-2", "3-3-4", "solid", "other"),
-    ("PHONE", "separators"): ("none", "space", "hyphen", "dot", "mixed"),
-    ("PHONE", "parens"): ("yes", "no"),
-    ("LOC", "case_class"): ("lower", "title", "upper", "mixed", "none"),
-    ("LOC", "generic"): ("none", "full:*", "abbr:*"),
-    ("LOC", "generic_position"): ("before", "after", "none"),
-    ("LOC", "house_marker"): ("none", "d_dot_space", "d_dot_nospace", "d_nodot", "dom", "other"),
-    ("LOC", "flat_marker"): ("none", "kv_dot_space", "kv_dot_nospace", "kv_nodot", "kvartira", "other"),
-    ("LOC", "commas"): ("yes", "no"),
-    ("LOC", "city_present"): ("yes", "no"),
-    ("LOC", "city_position"): ("first", "last", "middle", "none"),
-    ("LOC", "by_fields"): ("fields", "string"),
-    ("LOC", "building_entrance_markers"): ("none", "markers:*"),
-    ("DOB", "notation"): ("dmy_dots", "dmy_slashes", "iso", "words", "solid", "other"),
-    ("DOB", "separator"): ("dot", "slash", "hyphen", "space", "none"),
-    ("DOB", "padding"): ("padded", "unpadded"),
-    ("DOB", "year_len"): ("2", "4", "none"),
-    ("DOB", "month_form"): ("number", "word_nominative", "word_genitive"),
-    ("DATE", "notation"): ("dmy_dots", "dmy_slashes", "iso", "words", "solid", "other"),
-    ("DATE", "separator"): ("dot", "slash", "hyphen", "space", "none"),
-    ("DATE", "padding"): ("padded", "unpadded"),
-    ("DATE", "year_len"): ("2", "4", "none"),
-    ("DATE", "month_form"): ("number", "word_nominative", "word_genitive"),
-    ("EMAIL", "case_class"): ("lower", "upper", "mixed", "none"),
-    ("CARD", "grouping"): ("4x4", "solid", "other"),
-    ("CARD", "separator"): ("space", "hyphen", "none", "other"),
-    ("SNILS", "separators"): ("canonical", "solid", "other"),
-    ("INN", "length"): ("10", "12", "other"),
-    ("INN", "separators"): ("none", "space", "other"),
-    ("PASSPORT", "series_number_split"): ("2-2-6", "4-6", "solid", "other"),
-    ("PLATE", "case_class"): ("lower", "upper", "mixed", "none"),
-    ("PLATE", "spaces"): ("yes", "no"),
-    ("PLATE", "region_sep"): ("space", "none", "other"),
-}
+FEATURE_LABELS: dict[tuple[str, str], tuple[str, ...]] = pii_types.feature_labels(pii_types.TYPE_REGISTRY)
 
 # ABSTAIN (ruling 2026-09-22 on the comparator's question): `form_match` adds a
 # feature to `differs` iff a != b AND neither side carries the feature's abstain
@@ -897,16 +844,7 @@ FEATURE_LABELS: dict[tuple[str, str], tuple[str, ...]] = {
 # (Ирина, Марина, Дмитрий, Аркадий) is surname-shaped — so comparing `other`
 # as a reading made a PERFECT restoration a form MISS whenever the real value
 # and the minted substitute fell on opposite sides of the guess.
-FORM_ABSTAIN: dict[tuple[str, str], str] = {
-    ("NAME", "gram_case"): "unknown",
-    ("LOC", "generic_position"): "none",
-    ("NAME", "case_class"): "none",
-    ("LOC", "case_class"): "none",
-    ("EMAIL", "case_class"): "none",
-    ("PLATE", "case_class"): "none",
-    ("NAME", "script"): "none",
-    ("NAME", "order"): "other",
-}
+FORM_ABSTAIN: dict[tuple[str, str], str] = pii_types.form_abstain(pii_types.TYPE_REGISTRY)
 # LEXEME-DEPENDENT FEATURES, and why a label is not enough for them.
 #
 # `form_match` is handed two DIFFERENT LEXEMES on the OUT leg — `observe.
@@ -1059,32 +997,20 @@ class FeatureComparator(Protocol):
 #   squeezed  — the surface with every separator dropped, for the one type
 #               whose notation carries no other robust needle (see
 #               SQUEEZED_TYPES)
-NEEDLE_KINDS: tuple[str, ...] = ("whole", "stem", "digits", "date", "initials", "squeezed")
+NEEDLE_KINDS: tuple[str, ...] = pii_types.NEEDLE_KINDS
 
 # WHAT A PIECE OF A VALUE IS, BY TYPE. The roles named here are the ones whose
 # survival in free text is evidence that THIS value stood there; a role not
 # named is either generic (N4) or too short to identify (a house number, a
 # passport series — every street has a 79 and the leaf that holds one is judged
 # by N6 instead).
-IDENTIFYING_ROLES: dict[str, tuple[str, ...]] = {
-    "NAME": ("surname", "given", "patronymic"),
-    "LOC": ("street",),
-    "EMAIL": ("local",),
-    "PHONE": ("digits",),
-    "CARD": ("digits",),
-    "SNILS": ("digits",),
-    "INN": ("digits",),
-    "PASSPORT": ("digits",),
-    "DOB": ("iso",),
-    "DATE": ("iso",),
-    # Every part `parts_of` reads off a plate is one to three characters — a
-    # letter, three digits, a letter pair, a region — so a plate has no piece
-    # that identifies on its own and the whole is matched instead, respacing
-    # included (SQUEEZED_TYPES). Leaving the tuple empty and saying why is the
-    # point: a silent absence read as «no needles» is how the fake plate came
-    # to be invisible to `residual` for three rounds.
-    "PLATE": (),
-}
+IDENTIFYING_ROLES: dict[str, tuple[str, ...]] = pii_types.identifying_roles(pii_types.TYPE_REGISTRY)
+# A plate carries no identifying role: every part `parts_of` reads off it is one
+# to three characters — a letter, three digits, a letter pair, a region — so a
+# plate has no piece that identifies on its own and the whole is matched instead,
+# respacing included (SQUEEZED_TYPES). Leaving the tuple empty and saying why is
+# the point: a silent absence read as «no needles» is how the fake plate came to
+# be invisible to `residual` for three rounds.
 # Roles that belong to EVERYBODY, so a needle built from one proves nothing
 # about which value stood in a string: the settlement (a place reference every
 # Russian city shares), the grammatical gender, the mail domain, the street's
@@ -1119,14 +1045,14 @@ PHONE_SIGNATURE_DIGITS: int = 10
 # Types whose identity is a DIGIT SIGNATURE and never a spelling: the model
 # reformats «+79990001122» as «8 999 000-11-22» and a letters-and-stems test
 # finds nothing at all.
-DIGIT_PIECE_TYPES: frozenset[str] = frozenset({"PHONE", "CARD", "SNILS", "INN", "PASSPORT"})
+DIGIT_PIECE_TYPES: frozenset[str] = pii_types.digit_piece_types(pii_types.TYPE_REGISTRY)
 # A date is neither: «14.03.1987» and «1987-03-14» share no substring at all.
-DATE_PIECE_TYPES: frozenset[str] = frozenset({"DOB", "DATE"})
+DATE_PIECE_TYPES: frozenset[str] = pii_types.date_piece_types(pii_types.TYPE_REGISTRY)
 # Types whose value a model rewrites in another ALPHABET or squeezes to
 # initials. NAME only, and deliberately: `FORM_FEATURES` declares `script` and
 # `initials` for NAME alone, and a transliterated STREET needle would fire on
 # ordinary Latin text in an address field with no derived form present.
-DERIVED_PIECE_TYPES: frozenset[str] = frozenset({"NAME"})
+DERIVED_PIECE_TYPES: frozenset[str] = pii_types.derived_piece_types(pii_types.TYPE_REGISTRY)
 # The one type matched with every separator dropped. A plate is a letter, three
 # digits, a letter pair and a region: the four groups cannot form by accident
 # across a word boundary, which is why the squeeze is safe HERE and is not
@@ -1134,7 +1060,7 @@ DERIVED_PIECE_TYPES: frozenset[str] = frozenset({"NAME"})
 # needle. Without it a gateway that left the fake plate in the tool argument
 # RESPACED was invisible to all 29 lines while the same fake written verbatim
 # was caught — the critical-defect line defeated by inserting spaces.
-SQUEEZED_TYPES: frozenset[str] = frozenset({"PLATE"})
+SQUEEZED_TYPES: frozenset[str] = pii_types.squeezed_types(pii_types.TYPE_REGISTRY)
 
 
 @dataclass(frozen=True)
