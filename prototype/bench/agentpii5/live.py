@@ -27,6 +27,7 @@ import os
 import time
 from dataclasses import asdict
 from datetime import datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from bench.agentpii5 import causal_hops, metrics, report
@@ -225,6 +226,82 @@ def _clear() -> None:
         print("\033[2J\033[H", end="")
 
 
+WEB_HTML: str = """<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>pseudex v5 LIVE</title>
+<style>
+  :root{color-scheme:dark}
+  body{background:#0d1117;color:#e6edf3;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+       margin:0;padding:14px}
+  #bar{position:sticky;top:0;background:#161b22;border-bottom:1px solid #30363d;
+       padding:8px 12px;margin:-14px -14px 12px;display:flex;justify-content:space-between;
+       align-items:center;gap:10px;flex-wrap:wrap}
+  #bar b{color:#58a6ff}
+  #state{color:#7ee787}
+  pre{margin:0;white-space:pre-wrap;word-wrap:break-word}
+  a{color:#58a6ff}
+</style></head><body>
+<div id="bar"><span><b>pseudex v5 LIVE</b> — обновляется каждые 2 с</span>
+<span id="meta">—</span><span id="state"></span></div>
+<pre id="out">загрузка…</pre>
+<script>
+const out=document.getElementById('out');
+const meta=document.getElementById('meta');
+const state=document.getElementById('state');
+async function tick(){
+  try{
+    const r=await fetch('/snapshot.txt',{cache:'no-store'});
+    out.textContent=await r.text();
+    state.textContent='';
+  }catch(e){
+    state.textContent='нет связи: '+e;
+  }
+  meta.textContent=new Date().toLocaleTimeString();
+}
+tick(); setInterval(tick,2000);
+</script></body></html>
+"""
+
+
+def _serve_web(run_dir: Path, host: str, port: int) -> None:
+    """A tiny read-only HTTP face: `/` is the auto-refreshing page, `/snapshot.txt`
+    is the rendered metrics text, `/snapshot.json` is the raw snapshot. No
+    engine, no writes, no secrets — it only READS the run directory."""
+    class Handler(BaseHTTPRequestHandler):
+        def _send(self, code: int, body: bytes, ctype: str) -> None:
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self) -> None:
+            if self.path == "/" or self.path == "/index.html":
+                self._send(200, WEB_HTML.encode("utf-8"), "text/html; charset=utf-8")
+            elif self.path == "/snapshot.txt":
+                text = render(live_snapshot(run_dir))
+                self._send(200, text.encode("utf-8"), "text/plain; charset=utf-8")
+            elif self.path == "/snapshot.json":
+                import json
+                self._send(200, json.dumps(live_snapshot(run_dir), ensure_ascii=False).encode("utf-8"),
+                           "application/json; charset=utf-8")
+            else:
+                self._send(404, b"not found", "text/plain; charset=utf-8")
+
+        def log_message(self, *_args) -> None:
+            pass  # a watch face has nothing to log
+
+    server = ThreadingHTTPServer((host, port), Handler)
+    print(f"live web UI: http://{host}:{server.server_port}/  (Ctrl-C чтобы остановить)", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print()
+    finally:
+        server.server_close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run_dir", nargs="?", type=Path,
@@ -235,6 +312,12 @@ def main() -> int:
                         help="один снимок, без цикла")
     parser.add_argument("--interval", type=float, default=2.0,
                         help="секунды между обновлениями (по умолчанию 2)")
+    parser.add_argument("--web", action="store_true",
+                        help="HTTP-страница со ссылкой (браузер) вместо терминала")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="адрес для --web (по умолчанию 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=8787,
+                        help="порт для --web (по умолчанию 8787)")
     args = parser.parse_args()
 
     run_dir: Path
@@ -252,6 +335,10 @@ def main() -> int:
 
     if args.once:
         print(render(live_snapshot(run_dir)))
+        return 0
+
+    if args.web:
+        _serve_web(run_dir, args.host, args.port)
         return 0
 
     interval = max(0.5, args.interval)
