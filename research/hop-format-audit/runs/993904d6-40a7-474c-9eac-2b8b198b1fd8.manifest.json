@@ -1,0 +1,155 @@
+{
+ "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+ "source_dir": "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/runs/2026-09-28/v5-live-cohort2-450-v5",
+ "archived_at": "2026-09-28T21:43:57+00:00",
+ "archived_on": "MacBook-Pro-Igor.local",
+ "files": [
+  {
+   "path": "993904d6-40a7-474c-9eac-2b8b198b1fd8.agent.usage.jsonl",
+   "bytes": 428795,
+   "sha256": "c80e69b72cb602f65a96effbb922bbcd3c510112b340f24a5e8fb16efa51e7d9"
+  },
+  {
+   "path": "993904d6-40a7-474c-9eac-2b8b198b1fd8.arms.jsonl",
+   "bytes": 4388580,
+   "sha256": "1ad2463c32e0a2baa289022f35290e0fe2b8e09ba9cb8c975df6a90478668ffd"
+  },
+  {
+   "path": "993904d6-40a7-474c-9eac-2b8b198b1fd8.arms.v5.jsonl",
+   "bytes": 6048148,
+   "sha256": "5448738f4308e05f5cbd7214e7b5a2ca9d3bfcea10203d78e81a1d05f681ad4b"
+  },
+  {
+   "path": "993904d6-40a7-474c-9eac-2b8b198b1fd8.canary.jsonl",
+   "bytes": 13740489,
+   "sha256": "865e5049c43a3b28ded0495e334d8da9dd7b1a38de79423f3c3455931e6b62c0"
+  },
+  {
+   "path": "993904d6-40a7-474c-9eac-2b8b198b1fd8.gate.json",
+   "bytes": 1799,
+   "sha256": "d9878839461b14bba6d4c51acaaf04450ec4e9b03eb33dc26c1ee7af7936e1cc"
+  },
+  {
+   "path": "993904d6-40a7-474c-9eac-2b8b198b1fd8.hops.jsonl",
+   "bytes": 3398818,
+   "sha256": "7b3705483694077af13d5b7d323593ba8f8ae40a11a0a27ed80556f11059a6d5"
+  },
+  {
+   "path": "993904d6-40a7-474c-9eac-2b8b198b1fd8.judge.jsonl",
+   "bytes": 112055,
+   "sha256": "0c7a4c9ca82529bba1709efe46eb81594413e911a9136896443b23b304ebd7c6"
+  },
+  {
+   "path": "993904d6-40a7-474c-9eac-2b8b198b1fd8.meta.json",
+   "bytes": 3163,
+   "sha256": "3d76bfbfe75d6311997602874d357c843d36ca54234b0dba5aa1e86812b801cb"
+  },
+  {
+   "path": "993904d6-40a7-474c-9eac-2b8b198b1fd8.oracle.json",
+   "bytes": 801,
+   "sha256": "cfe0dfcb1fda907883c7b36dd8a9a1a8e4e6490fcbad8ab397d319a9ff5c8553"
+  },
+  {
+   "path": "993904d6-40a7-474c-9eac-2b8b198b1fd8.public.json",
+   "bytes": 2563,
+   "sha256": "aa826f6bce149fdde8c527f961d3c4ce9262a45d76d64fb48d651ab7bcbb0584"
+  },
+  {
+   "path": "993904d6-40a7-474c-9eac-2b8b198b1fd8.report.json",
+   "bytes": 460205,
+   "sha256": "e15d0cd98427f1e66d790e22d2c033fe89c60f353d8130174b836dd4d149c0f5"
+  },
+  {
+   "path": "993904d6-40a7-474c-9eac-2b8b198b1fd8.report.txt",
+   "bytes": 133312,
+   "sha256": "b078c5a0ab54e03da2b4121043c8741e6a3b460635f32e8ef097f7ac66f3f355"
+  },
+  {
+   "path": "993904d6-40a7-474c-9eac-2b8b198b1fd8.spend.tsv",
+   "bytes": 25451,
+   "sha256": "47ce79cde522a0a981333884fe260c45fc2747b48a0c7f30c350f477cb2eb85f"
+  },
+  {
+   "path": "993904d6-40a7-474c-9eac-2b8b198b1fd8.triples.jsonl",
+   "bytes": 317493,
+   "sha256": "a220730378a5d6c7b55fa59919d017a72fb996cc9ef888e92ffd79569cefc4fa"
+  },
+  {
+   "path": "corpus.json",
+   "bytes": 3643601,
+   "sha256": "b4764b841ca9c0ecc6b5c076003d599e1aad97c216e66f221467752de9a3bfff"
+  },
+  {
+   "path": "corpus.v5.json",
+   "bytes": 4943822,
+   "sha256": "49fccfe8173c1907b576aab3e901b1f2662595efc7fbad575c6b56089a3c0e2a"
+  },
+  {
+   "path": "repairs.json",
+   "bytes": 95121,
+   "sha256": "0c1e43c9ae48abf90bb700e8d127f6da11fb9f8b8c5bb8a3579f0759af264bc1"
+  }
+ ],
+ "files_total": 17,
+ "bytes_total": 37744216,
+ "run_sha256": "7c9f0d853c79ae64a1c184aec2e20595748827d854a93766eacbe23da1fdffc2",
+ "label": "cohort2-450-v5",
+ "tarball": {
+  "path": "993904d6-40a7-474c-9eac-2b8b198b1fd8.tar.gz",
+  "bytes": 2994263,
+  "sha256": "c96e7159659c0f3036c1ebb0c15838bff40aebd04d6c6b1b1ab56c3a14b3621c"
+ },
+ "excluded_total": 47,
+ "excluded_cases": [
+  "correction-000",
+  "correction-007",
+  "correction-009",
+  "document:office-001",
+  "document:office-002",
+  "document:office-005",
+  "fanout_pick-005",
+  "normalize-000",
+  "normalize-008",
+  "parallel-009",
+  "parallel-047",
+  "rag-004",
+  "rag-006",
+  "rag-013",
+  "rag-019",
+  "rag-030",
+  "rag-033",
+  "retry_same_tool-010",
+  "retry_same_tool-038",
+  "same_tool_other_target-015",
+  "same_tool_other_target-021",
+  "sequential_chain-007",
+  "sequential_chain:assistant-003",
+  "sequential_chain:mail-000",
+  "sequential_chain:mail-003",
+  "sequential_chain:mail-004",
+  "sequential_chain:mail-006",
+  "sequential_chain:mail-007",
+  "sequential_chain:mail-009",
+  "sequential_chain:mail-010",
+  "sequential_chain:mail-011",
+  "sequential_chain:mailfind-001",
+  "sequential_chain:mailfind-002",
+  "sequential_chain:mailfind-003",
+  "sequential_chain:tracker-005",
+  "sequential_chain:tracker-006",
+  "single-013",
+  "single-014",
+  "single-030",
+  "single-038",
+  "single-039",
+  "single-046",
+  "summary-003",
+  "user_in_loop-006",
+  "validate-002",
+  "validate-005",
+  "validate-008"
+ ],
+ "archive_dir": "/Users/igor/pseudex-run-archives/993904d6-40a7-474c-9eac-2b8b198b1fd8",
+ "verified_files": 17,
+ "verify_failures": []
+}

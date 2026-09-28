@@ -1,0 +1,1397 @@
+{
+ "purpose": "Every triple both cohorts refused, deduplicated by case. The parity ones are the engine defects to diagnose and fix; the transport ones (incomplete responses, tool limits, JSON escaping) are provider/harness flakiness and mostly just need a re-run. Re-running this list on the fixed engine is what turns cohort1 + cohort2 + this pass into one complete result.",
+ "cohorts": [
+  {
+   "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+   "excluded_triples": 54
+  },
+  {
+   "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+   "excluded_triples": 47
+  }
+ ],
+ "excluded_triples_total": 101,
+ "unique_cases": 101,
+ "by_class": {
+  "parity_divergence": 58,
+  "connector_incomplete_response": 24,
+  "agent_tool_call_limit": 15,
+  "gateway_json_escaping": 4
+ },
+ "parity_cases": [
+  "correction-000",
+  "correction-007",
+  "correction-009",
+  "fanout_pick-005",
+  "long_bank-038",
+  "long_clinic-002",
+  "long_clinic-004",
+  "long_clinic-010",
+  "long_clinic-013",
+  "long_clinic-031",
+  "long_clinic-034",
+  "long_clinic-035",
+  "long_order-008",
+  "long_order-017",
+  "long_order-026",
+  "long_order-053",
+  "long_order-059",
+  "long_support-005",
+  "long_support-009",
+  "long_support-018",
+  "long_support-032",
+  "long_support-038",
+  "memory_anaphora-020",
+  "memory_anaphora-033",
+  "memory_anaphora-035",
+  "memory_anaphora-045",
+  "memory_anaphora-047",
+  "memory_anaphora-081",
+  "memory_anaphora-099",
+  "memory_anaphora-101",
+  "memory_anaphora-112",
+  "normalize-000",
+  "normalize-008",
+  "parallel-009",
+  "parallel-047",
+  "prompt_rule-012",
+  "rag-013",
+  "rag-019",
+  "rag-030",
+  "rag-033",
+  "retry_same_tool-010",
+  "same_tool_other_target-015",
+  "same_tool_other_target-021",
+  "sequential_chain-007",
+  "sequential_chain:assistant-003",
+  "single-013",
+  "single-014",
+  "single-030",
+  "single-038",
+  "single-039",
+  "single-046",
+  "summary-003",
+  "tool_chain-005",
+  "tool_chain-020",
+  "user_in_loop-006",
+  "validate-002",
+  "validate-005",
+  "validate-008"
+ ],
+ "parity_cases_total": 58,
+ "cases": [
+  {
+   "case_id": "correction-000",
+   "kind": "correction",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: correction-000: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "correction-007",
+   "kind": "correction",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: correction-007: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "correction-009",
+   "kind": "correction",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: correction-009: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "document:office-001",
+   "kind": "container",
+   "behaviour": "document",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "connector_incomplete_response",
+     "reason": "C: harness_error ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "document:office-002",
+   "kind": "container",
+   "behaviour": "document",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "connector_incomplete_response",
+     "reason": "C: harness_error ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "document:office-005",
+   "kind": "container",
+   "behaviour": "document",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "connector_incomplete_response",
+     "reason": "C2: ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "fanout_pick-005",
+   "kind": "lookup_list",
+   "behaviour": "fanout_pick",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: fanout_pick-005: маскирование разошлось — производственный путь '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-1\",\\n      \"last_name\"', счётный '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-1\",\\n      \"last_name\"'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_bank-000",
+   "kind": "long_bank",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "C: harness_error ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "long_bank-014",
+   "kind": "long_bank",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "C: harness_error ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "long_bank-038",
+   "kind": "long_bank",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_bank-038: маскирование разошлось — производственный путь '{\\n  \"id\": \"pay-1\",\\n  \"status\": \"pending\",\\n  \"receipt\": {\\n   ', счётный '{\\n  \"id\": \"pay-1\",\\n  \"status\": \"pending\",\\n  \"receipt\": {\\n   '"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_bank-039",
+   "kind": "long_bank",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "C2: ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "long_clinic-002",
+   "kind": "long_clinic",
+   "behaviour": "user_in_loop",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_clinic-002: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDc03402\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-02\",\\n  \"slo'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_clinic-004",
+   "kind": "long_clinic",
+   "behaviour": "user_in_loop",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_clinic-004: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDc03402\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-02\",\\n  \"slo'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_clinic-010",
+   "kind": "long_clinic",
+   "behaviour": "user_in_loop",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_clinic-010: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDb10ebd\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-03\",\\n  \"slo'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_clinic-013",
+   "kind": "long_clinic",
+   "behaviour": "user_in_loop",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_clinic-013: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDb10ebd\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-03\",\\n  \"slo'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_clinic-031",
+   "kind": "long_clinic",
+   "behaviour": "user_in_loop",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_clinic-031: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDc03402\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-02\",\\n  \"slo'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_clinic-034",
+   "kind": "long_clinic",
+   "behaviour": "user_in_loop",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_clinic-034: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDc03402\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-02\",\\n  \"slo'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_clinic-035",
+   "kind": "long_clinic",
+   "behaviour": "user_in_loop",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_clinic-035: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDb10ebd\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-03\",\\n  \"slo'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_order-008",
+   "kind": "long_order",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_order-008: маскирование разошлось — производственный путь '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": ', счётный '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_order-017",
+   "kind": "long_order",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_order-017: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_order-026",
+   "kind": "long_order",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_order-026: маскирование разошлось — производственный путь '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": ', счётный '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_order-053",
+   "kind": "long_order",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_order-053: маскирование разошлось — производственный путь '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": ', счётный '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_order-059",
+   "kind": "long_order",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_order-059: маскирование разошлось — производственный путь '{\\n  \"uuid\": \"ord-2\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": ', счётный '{\\n  \"uuid\": \"ord-2\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_support-005",
+   "kind": "long_support",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_support-005: маскирование разошлось — производственный путь '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {', счётный '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_support-009",
+   "kind": "long_support",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_support-009: маскирование разошлось — производственный путь '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {', счётный '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_support-018",
+   "kind": "long_support",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_support-018: маскирование разошлось — производственный путь '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-1\",\\n      \"last_name\"', счётный '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-1\",\\n      \"last_name\"'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_support-032",
+   "kind": "long_support",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_support-032: маскирование разошлось — производственный путь '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {', счётный '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "long_support-038",
+   "kind": "long_support",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: long_support-038: маскирование разошлось — производственный путь '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-1\",\\n      \"last_name\"', счётный '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-1\",\\n      \"last_name\"'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "memory_anaphora-002",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "C2: ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "memory_anaphora-004",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "I: ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "memory_anaphora-007",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "I: ConnectorError: DeepSeek response ended incomplete: None · C2: ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "memory_anaphora-013",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "I: ConnectorError: DeepSeek response ended incomplete: None · C2: ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "memory_anaphora-020",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: memory_anaphora-020: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "memory_anaphora-026",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "I: ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "memory_anaphora-028",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "C: harness_error ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "memory_anaphora-031",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "C: harness_error ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "memory_anaphora-033",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: memory_anaphora-033: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac' · C2: Connecto"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "memory_anaphora-035",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: memory_anaphora-035: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "memory_anaphora-037",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "C: harness_error ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "memory_anaphora-040",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "I: ConnectorError: DeepSeek response ended incomplete: None · C2: ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "memory_anaphora-045",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: memory_anaphora-045: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "memory_anaphora-047",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: memory_anaphora-047: маскирование разошлось — производственный путь '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {', счётный '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "memory_anaphora-049",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "I: ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "memory_anaphora-051",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "C2: ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "memory_anaphora-054",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "I: ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "memory_anaphora-066",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "C2: ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "memory_anaphora-073",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "I: ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "memory_anaphora-079",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "C: harness_error ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "memory_anaphora-081",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: memory_anaphora-081: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "memory_anaphora-099",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: memory_anaphora-099: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "memory_anaphora-101",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: memory_anaphora-101: маскирование разошлось — производственный путь '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {', счётный '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "memory_anaphora-112",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: memory_anaphora-112: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac' · C2: Connecto"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "memory_anaphora-121",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "C: harness_error ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "normalize-000",
+   "kind": "normalize",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: normalize-000: маскирование разошлось — производственный путь '{\\n  \"name\": {\\n    \"surname\": \"Рыбаков\",\\n    \"given\": \"Олег\",', счётный '{\\n  \"name\": {\\n    \"surname\": \"Рыбаков\",\\n    \"given\": \"Олег\",'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "normalize-008",
+   "kind": "normalize",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: normalize-008: маскирование разошлось — производственный путь '{\\n  \"address\": {\\n    \"street\": \"барбарисовый\",\\n    \"house\": ', счётный '{\\n  \"address\": {\\n    \"street\": \"барбарисовый\",\\n    \"house\": '"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "parallel-009",
+   "kind": "analytics",
+   "behaviour": "parallel",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: parallel-009: маскирование разошлось — производственный путь '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-2\",\\n      \"last_name\"', счётный '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-2\",\\n      \"last_name\"'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "parallel-047",
+   "kind": "analytics",
+   "behaviour": "parallel",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: parallel-047: маскирование разошлось — производственный путь '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-2\",\\n      \"last_name\"', счётный '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-2\",\\n      \"last_name\"'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "prompt_rule-012",
+   "kind": "prompt_rule",
+   "behaviour": "branching",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: prompt_rule-012: маскирование разошлось — производственный путь '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": ', счётный '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "rag-004",
+   "kind": "search_rank",
+   "behaviour": "rag",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "agent_tool_call_limit",
+     "reason": "I: ConnectorLimit: tool call limit reached"
+    }
+   ],
+   "primary_class": "agent_tool_call_limit"
+  },
+  {
+   "case_id": "rag-006",
+   "kind": "search_rank",
+   "behaviour": "rag",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "agent_tool_call_limit",
+     "reason": "C2: ConnectorLimit: tool call limit reached"
+    }
+   ],
+   "primary_class": "agent_tool_call_limit"
+  },
+  {
+   "case_id": "rag-013",
+   "kind": "search_rank",
+   "behaviour": "rag",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: rag-013: маскирование разошлось — производственный путь '{\\n  \"query\": \"гарантия условия срок\",\\n  \"total\": 5,\\n  \"hits\"', счётный '{\\n  \"query\": \"гарантия условия срок\",\\n  \"total\": 5,\\n  \"hits\"'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "rag-019",
+   "kind": "search_rank",
+   "behaviour": "rag",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: rag-019: маскирование разошлось — производственный путь '{\\n  \"query\": \"заказ 824 REDACTED7409c8\",\\n  \"total\": 5,\\n  \"hi', счётный '{\\n  \"query\": \"заказ 824 Заболотный\",\\n  \"total\": 5,\\n  \"hits\":'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "rag-030",
+   "kind": "search_rank",
+   "behaviour": "rag",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: rag-030: маскирование разошлось — производственный путь '{\\n  \"query\": \"заказ 577 REDACTED3c627aвозврат\",\\n  \"total\": 5', счётный '{\\n  \"query\": \"заказ 577 Кузнецов возврат\",\\n  \"total\": 5,\\n  \"'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "rag-033",
+   "kind": "search_rank",
+   "behaviour": "rag",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: rag-033: маскирование разошлось — производственный путь '{\\n  \"query\": \"проезд 50 рублей Бирюков\",\\n  \"total\": 5,\\n  \"hi', счётный '{\\n  \"query\": \"проезд 50 рублей Бирюков\",\\n  \"total\": 5,\\n  \"hi'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "retry_same_tool-010",
+   "kind": "normalize",
+   "behaviour": "retry_same_tool",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: retry_same_tool-010: маскирование разошлось — производственный путь '{\\n  \"error\": {\\n    \"code\": \"snils_format\",\\n    \"field\": \"sni', счётный '{\\n  \"error\": {\\n    \"code\": \"snils_format\",\\n    \"field\": \"sni'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "retry_same_tool-038",
+   "kind": "normalize",
+   "behaviour": "retry_same_tool",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "connector_incomplete_response",
+     "reason": "C2: ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "same_tool_other_target-015",
+   "kind": "compare",
+   "behaviour": "same_tool_other_target",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: same_tool_other_target-015: маскирование разошлось — производственный путь '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-1\",\\n      \"last_name\"', счётный '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-1\",\\n      \"last_name\"'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "same_tool_other_target-021",
+   "kind": "compare",
+   "behaviour": "same_tool_other_target",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: same_tool_other_target-021: маскирование разошлось — производственный путь '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-2\",\\n      \"last_name\"', счётный '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-2\",\\n      \"last_name\"'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "sequential_chain-007",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: sequential_chain-007: маскирование разошлось — производственный путь '{\\n  \"error\": {\\n    \"code\": \"phone_not_e164\",\\n    \"field\": \"p', счётный '{\\n  \"error\": {\\n    \"code\": \"phone_not_e164\",\\n    \"field\": \"p'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "sequential_chain:assistant-003",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: sequential_chain:assistant-003: маскирование разошлось — производственный путь '{\\n  \"event\": {\\n    \"id\": \"evt-2\",\\n    \"iCalUID\": \"wevuwcfx@e', счётный '{\\n  \"event\": {\\n    \"id\": \"evt-2\",\\n    \"iCalUID\": \"wevuwcfx@e' · C"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "sequential_chain:mail-000",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "agent_tool_call_limit",
+     "reason": "C: harness_error ConnectorLimit: tool call limit reached"
+    }
+   ],
+   "primary_class": "agent_tool_call_limit"
+  },
+  {
+   "case_id": "sequential_chain:mail-003",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "agent_tool_call_limit",
+     "reason": "C: harness_error ConnectorLimit: tool call limit reached"
+    }
+   ],
+   "primary_class": "agent_tool_call_limit"
+  },
+  {
+   "case_id": "sequential_chain:mail-004",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "agent_tool_call_limit",
+     "reason": "I: ConnectorLimit: tool call limit reached"
+    }
+   ],
+   "primary_class": "agent_tool_call_limit"
+  },
+  {
+   "case_id": "sequential_chain:mail-006",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "agent_tool_call_limit",
+     "reason": "C: harness_error ConnectorLimit: tool call limit reached"
+    }
+   ],
+   "primary_class": "agent_tool_call_limit"
+  },
+  {
+   "case_id": "sequential_chain:mail-007",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "agent_tool_call_limit",
+     "reason": "C: harness_error ConnectorLimit: tool call limit reached"
+    }
+   ],
+   "primary_class": "agent_tool_call_limit"
+  },
+  {
+   "case_id": "sequential_chain:mail-009",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "agent_tool_call_limit",
+     "reason": "C: harness_error ConnectorLimit: tool call limit reached"
+    }
+   ],
+   "primary_class": "agent_tool_call_limit"
+  },
+  {
+   "case_id": "sequential_chain:mail-010",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "agent_tool_call_limit",
+     "reason": "C: harness_error ConnectorLimit: tool call limit reached"
+    }
+   ],
+   "primary_class": "agent_tool_call_limit"
+  },
+  {
+   "case_id": "sequential_chain:mail-011",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "agent_tool_call_limit",
+     "reason": "C: harness_error ConnectorLimit: tool call limit reached"
+    }
+   ],
+   "primary_class": "agent_tool_call_limit"
+  },
+  {
+   "case_id": "sequential_chain:mailfind-001",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "agent_tool_call_limit",
+     "reason": "I: ConnectorLimit: tool call limit reached"
+    }
+   ],
+   "primary_class": "agent_tool_call_limit"
+  },
+  {
+   "case_id": "sequential_chain:mailfind-002",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "gateway_json_escaping",
+     "reason": "C: harness_error WriterError: 'Источник: письмо от novikova74@bk.ru (msg-2), тема «Перенос доставки», дата 2026-09-02.\\n\\nКлиент: Новикова Наталья Валентиновна\\nE-mail: novikova74@bk.ru\\nТелефон: +7 (903) 173-74-18\\nАдрес: Калашникова\\nДата"
+    }
+   ],
+   "primary_class": "gateway_json_escaping"
+  },
+  {
+   "case_id": "sequential_chain:mailfind-003",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "gateway_json_escaping",
+     "reason": "C: harness_error WriterError: 'Клиент: Аленчиев Аркадий Аркадьевич (инициалы А. А., лат. Alenchiev Arkady Arkadievich).\\nТелефон для связи: +7 (985) 036-69-25.\\nАдрес доставки: Бибиревская.\\nДата рождения для сверки: 1982-01-21.\\nКабинет: 6"
+    }
+   ],
+   "primary_class": "gateway_json_escaping"
+  },
+  {
+   "case_id": "sequential_chain:tracker-005",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "gateway_json_escaping",
+     "reason": "C: harness_error WriterError: 'Задача по обращению OPS-135.\\n\\nИсполнитель: Битюкова Зинаида (bityukova.crm, bityukova89@mail.ru).\\n\\nДанные клиента:\\n- Телефон: 8-952-566-85-09\\n- 23 километров\\n\\nКлиент оставил телефон 8-952-566-85-09 по "
+    }
+   ],
+   "primary_class": "gateway_json_escaping"
+  },
+  {
+   "case_id": "sequential_chain:tracker-006",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "gateway_json_escaping",
+     "reason": "C: harness_error WriterError: 'Клиент оставил телефон: 89614940469.\\nОбращение связано с SUP-142.\\nОбъём: 22 литра.\\n\\nИсполнитель: Фомин Вячеслав (fomin.sup).' needs JSON escaping, and an escaped value no longer equals its span; tool-resul"
+    }
+   ],
+   "primary_class": "gateway_json_escaping"
+  },
+  {
+   "case_id": "single-013",
+   "kind": "result_feed",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: single-013: маскирование разошлось — производственный путь '{\\n  \"suggestions\": [\\n    {\\n      \"value\": \"г REDACTED228963у', счётный '{\\n  \"suggestions\": [\\n    {\\n      \"value\": \"г Калуга, ул Сосн'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "single-014",
+   "kind": "result_feed",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: single-014: маскирование разошлось — производственный путь '{\\n  \"query\": \"перевыпуск карты\",\\n  \"total\": 1,\\n  \"hits\": [\\n ', счётный '{\\n  \"query\": \"перевыпуск карты\",\\n  \"total\": 1,\\n  \"hits\": [\\n '"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "single-030",
+   "kind": "result_feed",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: single-030: маскирование разошлось — производственный путь '{\\n  \"query\": \"возврат паллеты\",\\n  \"total\": 1,\\n  \"hits\": [\\n  ', счётный '{\\n  \"query\": \"возврат паллеты\",\\n  \"total\": 1,\\n  \"hits\": [\\n  '"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "single-038",
+   "kind": "result_feed",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: single-038: маскирование разошлось — производственный путь '{\\n  \"query\": \"гарантия условия\",\\n  \"total\": 1,\\n  \"hits\": [\\n ', счётный '{\\n  \"query\": \"гарантия условия\",\\n  \"total\": 1,\\n  \"hits\": [\\n '"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "single-039",
+   "kind": "result_feed",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: single-039: маскирование разошлось — производственный путь '{\\n  \"error\": {\\n    \"code\": \"phone_not_e164\",\\n    \"field\": \"p', счётный '{\\n  \"error\": {\\n    \"code\": \"phone_not_e164\",\\n    \"field\": \"p'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "single-046",
+   "kind": "result_feed",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: single-046: маскирование разошлось — производственный путь '{\\n  \"query\": \"доставка\",\\n  \"total\": 1,\\n  \"hits\": [\\n    {\\n   ', счётный '{\\n  \"query\": \"доставка\",\\n  \"total\": 1,\\n  \"hits\": [\\n    {\\n   '"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "summary-003",
+   "kind": "summary",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: summary-003: маскирование разошлось — производственный путь '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": ', счётный '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "tool_chain-005",
+   "kind": "tool_chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: tool_chain-005: маскирование разошлось — производственный путь '{\\n  \"suggestions\": [\\n    {\\n      \"value\": \"г Екатеринбург, у', счётный '{\\n  \"suggestions\": [\\n    {\\n      \"value\": \"г Екатеринбург, у'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "tool_chain-009",
+   "kind": "tool_chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "agent_tool_call_limit",
+     "reason": "I: ConnectorLimit: tool call limit reached"
+    }
+   ],
+   "primary_class": "agent_tool_call_limit"
+  },
+  {
+   "case_id": "tool_chain-013",
+   "kind": "tool_chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "connector_incomplete_response",
+     "reason": "I: ConnectorError: DeepSeek response ended incomplete: None"
+    }
+   ],
+   "primary_class": "connector_incomplete_response"
+  },
+  {
+   "case_id": "tool_chain-015",
+   "kind": "tool_chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "agent_tool_call_limit",
+     "reason": "I: ConnectorLimit: tool call limit reached"
+    }
+   ],
+   "primary_class": "agent_tool_call_limit"
+  },
+  {
+   "case_id": "tool_chain-018",
+   "kind": "tool_chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "agent_tool_call_limit",
+     "reason": "I: ConnectorLimit: tool call limit reached"
+    }
+   ],
+   "primary_class": "agent_tool_call_limit"
+  },
+  {
+   "case_id": "tool_chain-020",
+   "kind": "tool_chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: tool_chain-020: маскирование разошлось — производственный путь '{\\n  \"suggestions\": [\\n    {\\n      \"value\": \"г Ижевск, ул Ивов', счётный '{\\n  \"suggestions\": [\\n    {\\n      \"value\": \"г Ижевск, ул Ивов'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "tool_chain-025",
+   "kind": "tool_chain",
+   "behaviour": "sequential_chain",
+   "runs": [
+    {
+     "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+     "class": "agent_tool_call_limit",
+     "reason": "I: ConnectorLimit: tool call limit reached"
+    }
+   ],
+   "primary_class": "agent_tool_call_limit"
+  },
+  {
+   "case_id": "user_in_loop-006",
+   "kind": "long_clinic",
+   "behaviour": "user_in_loop",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: user_in_loop-006: маскирование разошлось — производственный путь '{\\n  \"id\": \"tpl-1\",\\n  \"status\": \"queued\",\\n  \"text\": \"Здравств', счётный '{\\n  \"id\": \"tpl-1\",\\n  \"status\": \"queued\",\\n  \"text\": \"Здравств'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "validate-002",
+   "kind": "validate",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: validate-002: маскирование разошлось — производственный путь '{\\n  \"error\": {\\n    \"code\": \"snils_checksum\",\\n    \"field\": \"s', счётный '{\\n  \"error\": {\\n    \"code\": \"snils_checksum\",\\n    \"field\": \"s'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "validate-005",
+   "kind": "validate",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: validate-005: маскирование разошлось — производственный путь '{\\n  \"error\": {\\n    \"code\": \"snils_checksum\",\\n    \"field\": \"s', счётный '{\\n  \"error\": {\\n    \"code\": \"snils_checksum\",\\n    \"field\": \"s'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  },
+  {
+   "case_id": "validate-008",
+   "kind": "validate",
+   "behaviour": "single",
+   "runs": [
+    {
+     "run_id": "993904d6-40a7-474c-9eac-2b8b198b1fd8",
+     "class": "parity_divergence",
+     "reason": "I: HarnessError: validate-008: маскирование разошлось — производственный путь '{\\n  \"error\": {\\n    \"code\": \"snils_checksum\",\\n    \"field\": \"s', счётный '{\\n  \"error\": {\\n    \"code\": \"snils_checksum\",\\n    \"field\": \"s'"
+    }
+   ],
+   "primary_class": "parity_divergence"
+  }
+ ]
+}
