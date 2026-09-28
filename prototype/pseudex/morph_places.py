@@ -854,11 +854,29 @@ _SPACED_LITERA_GLUED_RE = re.compile(r"(?i)(\d)\s+([а-яё])(?=(?:кв|к|ст�
 _MARKER_BETWEEN_NUMBERS_RE = re.compile(r"(?i)(\d[а-яё]?)[\s,]+([кс])\.?\s+(\d)")
 
 
+def _settlement_gaz() -> frozenset[str]:
+    """The leased settlements pymorphy reads only as a surname — «одоев», «венёв»,
+    «белёв». Morphology says «surname», but a word on this list is a real town, so
+    `_is_settlement_word` and `_leading_settlement` accept it where an address
+    structure licenses it. Empty without a bundle, so `address_key` and
+    `street_house_key` degrade to morphology-only outside a lease (the same
+    fallback `address._fuzzy_intent` takes)."""
+    from pseudex.assets import ASSETS
+    return ASSETS.get().address.settlement_gaz if ASSETS.is_loaded else frozenset()
+
+
 def _is_settlement_word(word: str) -> bool:
     """`_leading_settlement` for one already-lowered token: a place to
-    morphology and nothing else — no surname, no adjective, no street type."""
+    morphology and nothing else — no surname, no adjective, no street type.
+
+    The dictionary overrides the surname veto: «одоев» carries `Surn` and no
+    `Geox`, yet it names a town, so a word on the leased settlement gazetteer is a
+    settlement even though morphology reads it as a surname. The caller still
+    demands the address structure, so the override cannot promote a bare word."""
     if word in _GENERIC or _GENERIC_STEMS.match(word) or word[:1].isdigit():
         return False
+    if word in _settlement_gaz():
+        return True
     parses = MORPH.parse(word)
     if not any("Geox" in parse.tag.grammemes for parse in parses):
         return False
@@ -1382,7 +1400,14 @@ def _leading_settlement(phrase: str) -> re.Match[str] | None:
                                      + second.group(1)) + r")").match(phrase)
         return None
     parses = MORPH.parse(word)
-    if not any("Geox" in parse.tag.grammemes for parse in parses):
+    # A SURNAME-COLLIDING SETTLEMENT MAY PASS WITHOUT `Geox`. «одоев», «венёв»,
+    # «белёв» are towns pymorphy reads only as a surname, so the Geox gate below
+    # refused them and the city never joined its street. The leased gazetteer
+    # admits them, and the checks BELOW — a street-type word or a comma right
+    # after — are what still keep a bare «одоев» from being read as a place:
+    # without either signal the surname veto at the bottom returns None.
+    if (not any("Geox" in parse.tag.grammemes for parse in parses)
+            and word.lower() not in _settlement_gaz()):
         return None
     # A PREDICTED place reading — the word is not in the dictionary — counts
     # only with the structure a settlement stands in: a comma or a street-type

@@ -177,6 +177,20 @@ STREET_GAZ: tuple[str, ...] = (
     "дружбы", "свободы", "труда", "молодёжи", "юности", "гвардии", "марта", "мая",
     "ленина", "гагарина", "пушкина", "кирова", "жукова",
 )
+# Real settlements pymorphy3 reads ONLY as a surname (no `Geox`). A bare city is
+# detected by the dictionary's `Geox` tag alone, so «самара» and «москва» need no
+# list; but «одоев», «венёв» and «белёв» are towns in Tula oblast that pymorphy
+# knows only as surnames — the same words, in an address, were minted as a PERSON
+# while the street beside them was minted as a LOC, and production parted from the
+# scorer (long_order-*, E01 re-case). The lowercase variant needs a DICTIONARY
+# rather than morphology (detect-change), and this is that dictionary: a word on
+# it is a settlement ONLY when the address structure says so (a street-type word
+# or a settlement marker beside it), never on its own — so «фамилия одоев» stays a
+# person. Kept apart from `FAKE_CITIES` on purpose: that pool is the substitute
+# mint and may change for substitution reasons; this list names what the detector
+# may read as a place.
+SETTLEMENT_GAZ: tuple[str, ...] = ("одоев", "венёв", "белёв")
+
 # A candidate is CORE (can stand alone) or SUPPORT (only counts when merged with
 # a core). City/settlement/apt/index are SUPPORT so lone cities stay unmasked.
 CORE_PART: tuple[str, ...] = (

@@ -247,6 +247,7 @@ def _tuning_payload() -> dict[str, object]:
         },
         "address": {
             "street_gaz": list(assets_source.STREET_GAZ),
+            "settlement_gaz": list(assets_source.SETTLEMENT_GAZ),
             "street_type_nohouse": list(assets_source.STREET_TYPE_NOHOUSE),
             "street_type_house": list(assets_source.STREET_TYPE_HOUSE),
             "core_part": list(assets_source.CORE_PART),

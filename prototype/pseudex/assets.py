@@ -56,6 +56,13 @@ class NameAssets:
 @dataclass(frozen=True)
 class AddressAssets:
     street_gaz: frozenset[str]
+    # Real settlements pymorphy reads only as a surname (no `Geox`) — «одоев»,
+    # «венёв», «белёв». The ONLY evidence the lowercase settlement variant has,
+    # and read only where an address structure (a street-type word or a settlement
+    # marker) licenses it: a word on this list is a settlement in an address and a
+    # surname elsewhere («фамилия одоев» stays a person). Same shape as
+    # `street_gaz`, kept apart because the two lists gate different roles.
+    settlement_gaz: frozenset[str]
     # The ГАР street vocabulary, lower-cased. A SEPARATE field from
     # `street_gaz` and never merged into it: `street_gaz` is nineteen
     # hand-tuned words and is the ONLY evidence the lower-case marker-less arm
@@ -296,6 +303,7 @@ def _build_address(raw: dict[str, object], months: list[str]) -> AddressAssets:
     compiled = {name: re.compile(source) for name, source in raw["patterns"].items()}
     return AddressAssets(
         street_gaz=frozenset(raw["street_gaz"]),
+        settlement_gaz=frozenset(raw["settlement_gaz"]),
         street_names=frozenset(raw["street_names"]),
         street_frequent=frozenset(raw["street_frequent"]),
         street_phrases=frozenset(raw["street_phrases"]),

@@ -1288,6 +1288,15 @@ def _is_toponym(word: str) -> bool:
     # that word, not a town.
     if _names_typo_of_ordinary(word):
         return False
+    # THE SETTLEMENT DICTIONARY HOLDS THE SURNAME-COLLIDING TOWNS. «одоев»,
+    # «венёв», «белёв» are real settlements pymorphy reads only as a surname, so
+    # `_is_toponym_by_morphology` says «no» and the city never joined the street
+    # it stands in front of. A word on the leased list is a toponym — the caller
+    # already demands the address structure (a street beside it), so the list
+    # cannot promote a bare word: «фамилия одоев» never reaches this check as a
+    # place.
+    if word.lower() in ASSETS.get().address.settlement_gaz:
+        return True
     return _is_toponym_by_morphology(word)
 
 

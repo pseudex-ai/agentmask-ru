@@ -27,7 +27,6 @@ harness's parity gate uses.
 """
 
 import json
-import re
 import sys
 from pathlib import Path
 
@@ -36,6 +35,7 @@ sys.path.insert(0, str(_HERE.parents[2]))
 
 from testkit import load_dev_bundle  # noqa: E402
 from bench.agentpii3 import score  # noqa: E402
+from pseudex import morph_places  # noqa: E402
 from pseudex.audit import AuditLog  # noqa: E402
 from pseudex.detect_all import Detector  # noqa: E402
 from pseudex.envelope import MaskContext, mask_messages  # noqa: E402
@@ -73,6 +73,21 @@ def _title(value: str) -> str:
     return " ".join(word.capitalize() for word in value.split())
 
 
+def _address_parts(view: Vault) -> tuple[str, str]:
+    """(city, «улица … д. … кв. …») from the ONE composite LOC substitute.
+
+    «одоев улица солнечная 104 квартира 203» masks as ONE address now — the
+    settlement stays real and the street+house+flat are faked (the long_order-*
+    city-vs-surname closure). The roles are read through `split_roles`, never a
+    substring hunt, exactly as `test_loc_acceptance` does."""
+    full_sub = _substitute(view, "одоев улица солнечная 104 квартира 203")
+    roles = morph_places.split_roles(full_sub)
+    street_name = " ".join(word for word in roles["street"].split()
+                           if not morph_places.is_generic_word(word))
+    address = f"улица {street_name.capitalize()}, д. {roles['house']}, кв. {roles['flat']}"
+    return roles["city"], address
+
+
 def _drive(view: Vault, context: MaskContext, detector: Detector) -> tuple[str, str, str]:
     """Drive the create_order shape; return (production, scorer, phone-E164)."""
     transcript: list[dict[str, object]] = []
@@ -85,15 +100,11 @@ def _drive(view: Vault, context: MaskContext, detector: Detector) -> tuple[str, 
     push({"role": "user", "content": "везите на одоев улица солнечная 104 квартира 203"})
     push({"role": "user", "content": "ой получать будет мкртчян ашот его телефон 8-950-840-78-56"})
 
-    city_sub = _substitute(view, "одоев")
+    city_sub, addr_reformatted = _address_parts(view)
     name_sub = _substitute(view, "мкртчян ашот")
-    addr_sub = _substitute(view, "улица солнечная 104 квартира 203")
     phone_sub = next(shown for shown, original, kind in view.shown_forms()
                      if kind == "PHONE" and shown != original and "950" in original)
     phone_e164 = canonicalize("PHONE", phone_sub)  # the form the schema demands
-    street, house, flat = re.match(r"улица\s+(\S+)\s+(\d+)\s+квартира\s+(\d+)",
-                                   addr_sub).groups()
-    addr_reformatted = f"улица {street.capitalize()}, д. {house}, кв. {flat}"
 
     call = {"recipient": {"name": _title(name_sub), "phones": [{"number": phone_e164}]},
             "to_location": {"postal_code": "301440", "city": _title(city_sub),
