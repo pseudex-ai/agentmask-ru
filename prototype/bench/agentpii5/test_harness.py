@@ -311,25 +311,28 @@ def _handler_calls(function: Callable[..., object], name: str) -> bool:
 
 
 def test_only_harness_imports_pseudex() -> list[str]:
-    """One MODULE of the package imports the engine, and one TEST runs it.
+    """One MODULE of the package imports the engine, and two TESTS run it.
 
     The instrument's modules are the closed list `PSEUDEX_ALLOWED_MODULES`.
     Tests are a separate question with a separate answer: `test_harness_stream`
     must run the real restoration leg in process (that is what it measures),
-    and every other test must stay engine-free or its own `test_no_pseudex`
-    would be a formality. Both halves are asserted, so neither list can grow
-    quietly.
+    and `test_call_scoped_name_consistency` pins the masking leg's call-scoped
+    attribution on the production path — the two halves of one round trip, each
+    exercised where its own defect lived. Every other test must stay engine-free
+    or its own `test_no_pseudex` would be a formality. Both halves are asserted,
+    so neither list can grow quietly.
     """
     here = Path(__file__).resolve().parent
     importers = h.pseudex_importers(here)
     allowed = tuple(name.rsplit(".", 1)[-1] for name in PSEUDEX_ALLOWED_MODULES)
+    engine_tests = ("test_harness_stream", "test_call_scoped_name_consistency")
     failures: list[str] = []
     modules = tuple(name for name in importers if not name.startswith("test_"))
     tests = tuple(name for name in importers if name.startswith("test_"))
     if sorted(modules) != sorted(allowed):
         failures.append(f"движок импортируют модули {modules}, а можно только {allowed}")
-    if sorted(tests) != ["test_harness_stream"]:
-        failures.append(f"движок импортируют тесты {tests}, а можно только test_harness_stream")
+    if sorted(tests) != sorted(engine_tests):
+        failures.append(f"движок импортируют тесты {tests}, а можно только {sorted(engine_tests)}")
     # The walk must be able to FIND one: a checker that returns () on everything
     # would pass this package for ever.
     with tempfile.TemporaryDirectory() as tmp:

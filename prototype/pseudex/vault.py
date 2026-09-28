@@ -4161,10 +4161,45 @@ class Vault:
         resolved = gender if gender in ("masc", "femn") else morph_names.detect_gender(short_token)
         if resolved not in ("masc", "femn"):
             resolved = secrets.choice(("masc", "femn"))
-        token_gender = morph_names.detect_gender(short_token)
-        if token_gender in ("masc", "femn") and gender in ("masc", "femn") and token_gender != gender:
+        # The short substitute's gender is the REAL short name's, not what
+        # morphology re-reads off the fake: a feminine fake surname «уварова»
+        # is also the masculine genitive the dictionary prefers, and reading it
+        # back minted the grown name for a man and refused the reuse. The real
+        # short canonical is unambiguous enough for the joint read.
+        short_gender = morph_names.read_person(short_canonical, ())[0]
+        if short_gender in ("masc", "femn") and gender in ("masc", "femn") and short_gender != gender:
             return None
         known = {w.casefold() for w in short_canonical.split()}
+        # A NEW PART MAY ALREADY HAVE A SUBSTITUTE OF ITS OWN in this
+        # conversation: the CRM card's `middle_name` is a lone patronymic that
+        # minted before the full name arrived. Drawing the patronymic fresh
+        # here would give the same real person TWO patronymics («игоревна» in
+        # the card, «сергеевна» in the grown full name) and the model's
+        # composition of the card's parts would no longer equal the grown token,
+        # so the call leg and the result leg diverge (long_order-003). A single
+        # one-word substitute for exactly this part is reused instead; two
+        # people sharing the same part word stay ambiguous and fall through to
+        # the random draw — merging them would be the one failure this product
+        # treats as unacceptable.
+        single_parts: dict[str, set[str]] = {}
+        new_parts = [w for w in real_parts if w.casefold() not in known and len(w) > 2]
+        if new_parts:
+            # `name_parts` indexes only multi-word names, so a lone patronymic
+            # the card minted is invisible there — ask `tokens` by the folded
+            # canonical, which is exactly the key a single-word name is stored
+            # under (case- and ё-insensitive).
+            placeholders = ",".join("?" * len(new_parts))
+            single_rows = self._conn.execute(
+                "SELECT canonical, token FROM tokens "
+                "WHERE customer=? AND entity_type='NAME' AND minted_in=? "
+                f"AND canonical_fold IN ({placeholders})",
+                (self._customer, self._conversation,
+                 *[fold_key(w) for w in new_parts]),
+            ).fetchall()
+            for other, token in single_rows:
+                words = [w for w in other.split() if len(w) > 2]
+                if len(words) == 1 and len(token.split()) == 1:
+                    single_parts.setdefault(words[0].casefold(), set()).add(token)
         names = ASSETS.get().names
         patronymics = (names.patronymics_masc if resolved == "masc" else names.patronymics_femn)
         for _ in range(12):
@@ -4175,15 +4210,20 @@ class Vault:
                     if word is None:
                         return None
                     built.append(word)
-                elif kind == "patr":
-                    built.append(secrets.choice(patronymics))
-                elif kind == "surn":
-                    surname = secrets.choice(ASSETS.get().fakes.last)
-                    built.append(morph_names.feminine_surname(surname) if resolved == "femn" else surname)
-                elif kind == "init":
-                    built.append(secrets.choice(_INITIAL_LETTERS) + ".")
                 else:
-                    built.append(secrets.choice(_first_names_by_gender(ASSETS.version)[resolved]))
+                    single = single_parts.get(part.casefold())
+                    if single is not None and len(single) == 1:
+                        built.append(next(iter(single)))
+                        continue
+                    if kind == "patr":
+                        built.append(secrets.choice(patronymics))
+                    elif kind == "surn":
+                        surname = secrets.choice(ASSETS.get().fakes.last)
+                        built.append(morph_names.feminine_surname(surname) if resolved == "femn" else surname)
+                    elif kind == "init":
+                        built.append(secrets.choice(_INITIAL_LETTERS) + ".")
+                    else:
+                        built.append(secrets.choice(_first_names_by_gender(ASSETS.version)[resolved]))
             candidate = " ".join(built)
             if len(set(w.casefold() for w in built)) != len(built):
                 continue
@@ -4361,6 +4401,36 @@ class Vault:
                 "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
                 f"WHERE t.customer=? AND k.entity_type='NAME' AND t.part IN ({','.join('?' * len(asked))})",
                 (self._customer, *asked),
+            ).fetchall()
+        found = {row[0] for row in rows}
+        return all(word in found or word.replace("ё", "е") in found for word in words)
+
+    def as_minted_here(self, surface: str) -> bool:
+        """`as_minted` scoped to THIS conversation, for the MASK leg.
+
+        A model that composes several substitutes it was shown into one name —
+        the CRM card's `last_name`/`first_name`/`middle_name` into a full
+        «Фамилия Имя Отчество» — writes a string that is not any single token
+        but is ours word for word. Without this the call leg re-mints it (a
+        fake of a fake), the result leg can no longer equal it, and one person
+        gets two patronymics (long_order-003). Scoped to the conversation the
+        substitutes were minted in, exactly like `is_minted_token`: a real
+        person bearing the same words in another dialogue is a leak, not an
+        echo. `pseudonym_scope=customer` widens it the same way that guard does.
+        """
+        if self._pseudonym_scope == "customer":
+            return self.as_minted(surface)
+        words = [word.casefold() for word in surface.split() if word]
+        if not words:
+            return False
+        asked = sorted({w for word in words for w in (word, word.replace("ё", "е"))})
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT DISTINCT t.part FROM token_parts AS t "
+                "JOIN tokens AS k ON k.customer=t.customer AND k.token=t.token "
+                "WHERE t.customer=? AND k.entity_type='NAME' AND k.minted_in=? "
+                f"AND t.part IN ({','.join('?' * len(asked))})",
+                (self._customer, self._conversation, *asked),
             ).fetchall()
         found = {row[0] for row in rows}
         return all(word in found or word.replace("ё", "е") in found for word in words)

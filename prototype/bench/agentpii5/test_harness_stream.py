@@ -2,9 +2,10 @@
 
     cd prototype && source .venv/bin/activate && python3 -m bench.agentpii5.test_harness_stream
 
-THE ONLY TEST OF THIS PACKAGE THAT TOUCHES THE ENGINE, and it does so entirely
-in process: `testkit.load_dev_bundle()` for the detection assets, an in-memory
-`Vault` for the substitutes, no network, no key, no model. The replies are not
+ONE OF THE TWO TESTS OF THIS PACKAGE THAT TOUCH THE ENGINE (the other,
+`test_call_scoped_name_consistency`, pins the masking leg), and it does so
+entirely in process: `testkit.load_dev_bundle()` for the detection assets, an
+in-memory `Vault` for the substitutes, no network, no key, no model. The replies are not
 asked of a model — they are WRITTEN out of the substitutes the vault just
 minted, because the question here is about the restoration leg and a live model
 would only make the input less controlled.
