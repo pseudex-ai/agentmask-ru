@@ -157,14 +157,14 @@ def _tier_ids(ladder_path: Path, tier: str) -> set[str]:
     return set(tiers[tier])
 
 
-def main(argv: list[str] | None = None) -> int:
+def main() -> int:
     parser = argparse.ArgumentParser(prog="regress_print",
                                      description="offline product-path printer (G4/L9)")
     parser.add_argument("--corpus", default=str(_HERE / "corpus.v5.json"))
     parser.add_argument("--ladder", default=str(_HERE / "ladder.json"))
     parser.add_argument("--tier", default="nano",
                         help="the ladder tier; default nano (the committed one)")
-    args = parser.parse_args(argv)
+    args = parser.parse_args()
 
     _patch_secrets(0)
     load_dev_bundle()

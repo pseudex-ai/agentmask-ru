@@ -39,6 +39,8 @@ NOT_COMMANDS: dict[str, str] = {
     "revise": "шаг сборки корпуса; дверь к нему — команда build",
     "reportjson": "печатается командой report (--public); отдельной командой была бы "
                   "вторая дверь к одному отчёту",
+    "regress_print": "офлайн-принтер пути продукта (G4/L9) — приёмочный инструмент, "
+                     "гоняется напрямую как python3 -m bench.agentpii5.regress_print",
 }
 
 
