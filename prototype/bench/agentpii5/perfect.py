@@ -72,7 +72,7 @@ from pymorphy3.analyzer import Parse
 from bench.agentpii4.compare import ArmRun, ObservedCall
 from bench.agentpii4.parts import name_parts
 from bench.agentpii4.schema import Ladder, PiiItem, tier
-from bench.agentpii5 import contracts, form, metrics, observe
+from bench.agentpii5 import checksum_v6, contracts, form, metrics, observe, pii_types
 from bench.agentpii5.contracts import (ArmRunV5, CaseV5, Line, MentionRecord, RunObservation,
                                        ToolResultRecord)
 from bench.agentpii5.form_tables import NAME_PARTICLES, TRANSLIT_SIGNATURES
@@ -578,6 +578,139 @@ def _shift_digits(text: str, by: int) -> str:
     return "".join(str((int(c) + by) % 10) if c.isdigit() else c for c in text)
 
 
+# --- §6.2 the v6 mint by IDENTIFIER (T8) ---------------------------------------------
+#
+# `_fake_digits`/`_fake_words` mangle a v5 surface word by word and leave the
+# checksum-valid share standing (a +3 digit shift keeps a Luhn-valid body valid
+# ~12 % of the time, §6.3). A v6 identifier is minted from the registry's `mint`
+# rule — `id_digits`, `id_alnum`, `hex` — which changes EVERY alphanumeric
+# character in place, keeps every separator (so the grammar holds), and for a
+# `generated_checksum` type re-mints until the published checksum FAILS (R6-39).
+# This module CALLS `checksum_v6` (the third module may call it, R6-07); it never
+# re-derives the arithmetic.
+_V6_SPECS: dict[str, pii_types.TypeSpec] = {t.id: t for t in pii_types.TYPE_REGISTRY}
+_BANK_ACCOUNT_BIK: str = "049805746"     # the fixed BIK gen_v6 mints accounts against
+
+
+def _shift_text(text: str, shift: int) -> str:
+    """Shift EVERY alphanumeric character by `shift` inside its own class — a
+    digit within 0-9, a Latin letter within a-z/A-Z, a Cyrillic letter within
+    а-я/А-Я — and leave every separator and mark in place. Any shift 1..25 keeps
+    letters disjoint from the source; any shift not divisible by 10 keeps digits
+    disjoint, so no position is shared with the sample (T8)."""
+    out: list[str] = []
+    for ch in text:
+        if ch.isdigit():
+            out.append(str((int(ch) + shift) % 10))
+        elif "A" <= ch <= "Z":
+            out.append(chr((ord(ch) - ord("A") + shift) % 26 + ord("A")))
+        elif "a" <= ch <= "z":
+            out.append(chr((ord(ch) - ord("a") + shift) % 26 + ord("a")))
+        elif "А" <= ch <= "Я":
+            out.append(chr((ord(ch) - ord("А") + shift) % 32 + ord("А")))
+        elif "а" <= ch <= "я":
+            out.append(chr((ord(ch) - ord("а") + shift) % 32 + ord("а")))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _mint_fold(spec: pii_types.TypeSpec, text: str) -> str:
+    """The surface folded the way the grammar regex and the published checksum
+    read it (the same five-way rule `gen_v6._canonical` uses)."""
+    notation = spec.value_notation
+    if notation == "digits":
+        return observe.digits_of(text)
+    if notation == "squeezed":
+        return observe.squeeze(text)
+    if notation == "glyph_fold":
+        return observe.glyph_fold(text)
+    return text
+
+
+def _grammar_pattern(grammar: str) -> str | None:
+    """The regex a grammar card opens with, or None for a prose grammar. A prose
+    grammar («свободная форма», «национальной НЕТ») names the shape in words, so
+    a class-preserving shift cannot break it; a regex grammar carries a character
+    class `[...]` or a digit class `\\d` and must be fullmatched."""
+    head = grammar.split(";", 1)[0].strip()
+    if not head:
+        return None
+    # A card like GIS_ZHKH_ELS writes its alternatives as
+    # `\d{2}[А-Я]{2}\d{6} (10) | …` — the «(10)» is a LENGTH annotation, not a
+    # regex group, and the spaces around «|» are prose; both are dropped before
+    # the head is judged/compiled. Whitespace is safe to strip wholesale: a
+    # regex names an optional space as `\s?`, never as a literal space.
+    head = re.sub(r"\s*\(\d+\)\s*", "", head)
+    head = re.sub(r"\s+", "", head)
+    return head if re.search(r"\\d|\[", head) else None
+
+
+def _grammar_holds(spec: pii_types.TypeSpec, text: str) -> bool:
+    # A digit identifier's grammar is its digit run: the strict POSITIONAL regex
+    # (EPTS's fixed «0», IMEI's TAC) is a format the simulator does not need to
+    # reproduce — `fake_checksum_invalid` validates the CHECKSUM, never the shape
+    # — so a non-empty digit run is the whole grammar for `id_digits`.
+    if spec.mint == "id_digits":
+        return bool(observe.digits_of(text))
+    pattern = _grammar_pattern(spec.grammar)
+    if pattern is None:
+        return True
+    try:
+        # Fullmatch against the SHIFTED SURFACE (separators kept by `_shift_text`),
+        # not the squeezed canonical: a CADASTRAL grammar names its colons. The
+        # regex card is UPPERCASE while the fold lower-cases, so the two meet
+        # under IGNORECASE, which does not widen a VIN-style `[A-HJ-NPR-Z]` class.
+        return re.fullmatch(pattern, text, re.IGNORECASE) is not None
+    except re.error:
+        return True
+
+
+def _v6_checksum_valid(spec: pii_types.TypeSpec, text: str) -> bool:
+    """Does `text` PASS the published checksum (after the notation fold)? A
+    caller of `checksum_v6` only; BANK_ACCOUNT's key is a (account, BIK) pair."""
+    folded = _mint_fold(spec, text)
+    if not folded:
+        return False
+    if spec.id == "BANK_ACCOUNT":
+        return checksum_v6.validate_account(folded, _BANK_ACCOUNT_BIK)
+    try:
+        return checksum_v6.validate(spec.id, folded)
+    except (KeyError, ValueError):
+        return False
+
+
+def mint_v6(spec: pii_types.TypeSpec, texts: Sequence[str]) -> list[str]:
+    """The R6-39 re-mint loop over `texts` (surface, canonical, parts), ONE shift
+    for all of them: grammar preserved, no alphanumeric position shared, and —
+    for a `generated_checksum` type — the checksum BROKEN. A shift that still
+    passes (Luhn's ~12 %) is skipped and the next shift tried, so the substitute
+    always fails its own checksum. Returns the inputs unchanged on a named miss:
+    a shift loop that never lands is better than a fake that violates T8."""
+    for shift in range(1, 26):
+        if shift % 10 == 0:
+            continue
+        made = [_shift_text(text, shift) for text in texts]
+        if not all(_grammar_holds(spec, one) for one in made):
+            continue
+        if spec.generated_checksum and _v6_checksum_valid(spec, made[0]):
+            continue
+        return made
+    # FALLBACK for a STRUCTURAL identifier whose grammar fixes a LITERAL letter
+    # («А31-…», «…-ИП», «60АА…»): shift only the digits — the free part — and
+    # keep every fixed letter in place. The digits still all change, so the
+    # substitute shares no DIGIT position with the sample; the fixed letters are
+    # the type's own structure, not the customer's data.
+    for shift in range(1, 10):
+        made = [_shift_digits(text, shift) for text in texts]
+        if not all(_grammar_holds(spec, one) for one in made):
+            continue
+        if spec.generated_checksum and _v6_checksum_valid(spec, made[0]):
+            continue
+        return made
+    return list(texts)
+
+
 def _fake_digits(text: str, pii_type: str) -> str:
     """Shift every digit, keep the separators — and keep the COUNTRY digit of
     an eleven-digit phone, so the substitute's canonical, its surface and its
@@ -672,6 +805,17 @@ def mint(pii_type: str, surface: str, canonical: str, parts: dict[str, str],
     """(substitute surface, substitute canonical, substitute parts). `fakes` is
     the conversation's NAME assignment (`name_pool_map`) and nothing else reads
     it."""
+    # A v6 type with a mint rule is minted by IDENTIFIER (T8): every alphanumeric
+    # character changes in place and a checksum-carrying type re-mints until the
+    # checksum breaks (R6-39). The ONE shift is chosen over the surface, the
+    # canonical AND every part together, so the substitute is one value, not
+    # three independent re-rolls.
+    spec = _V6_SPECS.get(pii_type)
+    if spec is not None and spec.origin == pii_types.ORIGIN_V6 and spec.mint:
+        keys = list(parts.keys())
+        made = mint_v6(spec, (surface, canonical, *(parts[key] for key in keys)))
+        return (made[0], made[1],
+                {key: made[2 + index] for index, key in enumerate(keys)})
     if pii_type in _DATE_TYPES:
         return (_fake_date(surface), _fake_date(canonical),
                 {role: _fake_date(value) for role, value in parts.items()})

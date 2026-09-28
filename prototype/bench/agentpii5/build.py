@@ -1451,7 +1451,13 @@ SLICE_PREFIX: str = "slice:"
 # vertical=messaging` возьмёт треть из них и разбавит её SMS; `--slice
 # suite=office` берёт ровно их. Ось общая, значение — нет: следующий клиент
 # получает своё имя набора и ту же механику.
-SLICE_AXES: tuple[str, ...] = ("register", "behaviour", "vertical", "pii_type", "suite")
+SLICE_AXES: tuple[str, ...] = ("register", "behaviour", "vertical", "pii_type", "suite",
+                              "industry", "provenance", "type_class")
+# The class a type files under on the `type_class` axis: the registry's own
+# `type_class` for a v6 type, "v5" for a v5 type. Read off the ONE home
+# (`pii_types`) rather than restated, so the slice and the report's `type_class`
+# axis can never disagree about a type's class.
+_TYPE_CLASS: dict[str, str] = {t.id: t.type_class for t in c.pii_types.TYPE_REGISTRY}
 # Значение внутри клаузы разделяется вертикальной чертой: `register=voice_raw|voice_itn`
 # — «любой из». Через запятую идут РАЗНЫЕ оси и они складываются по И.
 SLICE_ANY: str = "|"
@@ -1503,6 +1509,20 @@ def case_slice_values(case: CaseV5, axis: str) -> frozenset[str]:
         return frozenset(
             c.TOOL_SUITE[hop.tool_name] for hop in case.hops
             if hop.tool_name in c.TOOL_SUITE)
+    # --- the v6 axes (TZ §14.2): industry and provenance are ONE per case, read
+    # off `CaseV5.v6` ("" for a v5-authored case, so the axis is empty on the old
+    # corpus); type_class is per HOP, the class of every type that crossed the
+    # gateway — a v5 type files under "v5", a v6 one under C/K/KC.
+    if axis == "industry":
+        return frozenset({case.v6.industry if case.v6 is not None else ""})
+    if axis == "provenance":
+        return frozenset({case.v6.provenance if case.v6 is not None else ""})
+    if axis == "type_class":
+        crossed = {hop.item_id for hop in case.hops}
+        classes = {_TYPE_CLASS.get(item.type, "v5")
+                   for item in case.base.pii if item.id in crossed}
+        classes.discard("")
+        return frozenset(classes)
     raise ValueError(f"case_slice_values: нет оси {axis!r}; есть {SLICE_AXES}")
 
 

@@ -61,7 +61,7 @@ from bench.agentpii4 import stats
 from bench.agentpii4.autopsy import _load_run
 from bench.agentpii4.report import Scored
 from bench.agentpii4.schema import EXCLUDED_TERMINATIONS, Case
-from bench.agentpii5 import build, contracts, records, runinfo
+from bench.agentpii5 import build, checksum_v6, contracts, pii_types, records, runinfo
 from bench.agentpii5.contracts import (
     CalibrationStamp,
     CaseV5,
@@ -74,9 +74,11 @@ from bench.agentpii5.contracts import (
     RunObservation,
     SideBySide,
 )
-from bench.agentpii5.fixtures import FIXTURES
+from bench.agentpii5.fixtures import FIXTURES, V6_FIXTURES
 from bench.agentpii5 import metrics as metric_bodies
-from bench.agentpii5.metrics import AXIS_NOTE, METRIC_FUNCTIONS, by_axis, prints_on_axis
+from bench.agentpii5.metrics import (
+    AXIS_NOTE, METRIC_FUNCTIONS, V6_AXES, V6_METRIC_FUNCTIONS, by_axis, prints_on_axis,
+    survival_excluded)
 from bench.agentpii5.schema import case_v5_from_json
 
 # The v4 half is fenced so a reader — and `test_no_effect_claims_outside_v4_
@@ -787,6 +789,12 @@ def render(side: SideBySide, parts: ReportParts, dump: int) -> list[str]:
         f"дерево: {meta.get('worktree') or 'неизвестно'}",
         f"корпус v5 {side.corpus_digest_v5[:12] or '—'} · корпус v4 {side.corpus_digest_v4[:12] or '—'}",
         ""]
+    # §6.5: the header names which NEW types the calibration stamp saw — printed
+    # only on a v6 run, so an old-corpus header keeps its exact bytes (F7).
+    if has_v6_case(parts.half.observations):
+        new_seen = _calibration_new_types(parts.judge.stamp)
+        out.append("   калибровка видела новые типы: " + (", ".join(new_seen) or "—"))
+        out.append("")
     out += list(parts.cost)
     # §3.3: МУСОР КОРПУСА — В ОТЧЁТЕ, А НЕ ТОЛЬКО В СБОРКЕ. `build --check`
     # видит корпус в дереве; отчёт видит тот, по которому ПРОГНАЛИ, и это
@@ -836,6 +844,15 @@ def render(side: SideBySide, parts: ReportParts, dump: int) -> list[str]:
         if counts:
             out.append(f"   расхождения {pii_type}: " + " · ".join(
                 f"{name} {count}" for name, count in sorted(counts.items(), key=lambda row: -row[1])))
+    # §6.5: the v6 axes and the per-type extras, printed ONLY on a v6 run. The
+    # block is gated so an old-corpus report never gains a single line (F7).
+    if has_v6_case(parts.half.observations):
+        out += ["", "3bis. СРЕЗЫ v6 — отрасль, происхождение, класс типа (§6.5)"]
+        out += v6_axis_rows(parts.half.observations)
+        out += [""]
+        out += v6_type_slice_lines(parts.half.observations)
+        out += [""]
+        out += v6_new_row_lines(parts.half.observations)
 
     out += ["", "4. ЧУВСТВИТЕЛЬНОСТЬ ПО ПОВЕДЕНИЮ — какой эффект семья вообще способна увидеть"]
     for behaviour, rows in sorted(by_axis(parts.half.observations, "behaviour").items()):
@@ -902,6 +919,112 @@ def _axis_rows(side: SideBySide) -> list[str]:
                 f"{bucket} {line.hits}/{line.total}"
                 for bucket, line in sorted(bucket_lines.items())) or "н/п"))
     return out
+
+
+# --- §6.5 the v6 report block (printed ONLY on a run with a v6 case, F7) --------------
+
+_V6_SPECS: dict[str, pii_types.TypeSpec] = {t.id: t for t in pii_types.TYPE_REGISTRY}
+
+
+def has_v6_case(observations: Sequence[RunObservation]) -> bool:
+    """Does any observation of this run carry a v6 case (`CaseV5.v6` set)?"""
+    return any(one.case.v6 is not None for one in observations)
+
+
+def v6_axis_rows(observations: Sequence[RunObservation]) -> list[str]:
+    """The V6_AXES (`industry`/`provenance`/`type_class`) slices, in the shape
+    `_axis_rows` prints the v5 axes. `contracts.AXES` is untouched; these three
+    are printed only here, only on a v6 run, so an old-corpus report has no new
+    line (F7)."""
+    out: list[str] = []
+    for axis in V6_AXES:
+        buckets = by_axis(observations, axis)
+        for name in _printing_order(METRIC_FUNCTIONS):
+            if not prints_on_axis(name, axis):
+                out.append(f"   {name}/{axis}: {AXIS_NOTE}")
+                continue
+            cells = {bucket: METRIC_FUNCTIONS[name](rows)
+                     for bucket, rows in sorted(buckets.items())}
+            out.append(f"   {name}/{axis}: " + (" · ".join(
+                f"{bucket} {line.hits}/{line.total}"
+                for bucket, line in sorted(cells.items())) or "н/п"))
+    return out
+
+
+def _vin_checksum_split(observations: Sequence[RunObservation]) -> tuple[int, int]:
+    """VIN elements by their published checksum: the «КС верна / неверна» split
+    §6.5 prints for VIN alone (OD-62: the Russian-WMI half is deliberately
+    non-ISO-3779, so the split is a real statement, never a constant)."""
+    ok = bad = 0
+    for one in observations:
+        seen: set[str] = set()
+        for item in one.case.base.pii:
+            if item.type != "VIN" or item.id in seen:
+                continue
+            seen.add(item.id)
+            value = item.canonical or item.value
+            try:
+                valid = checksum_v6.validate_vin(value) if value else False
+            except ValueError:
+                valid = False
+            ok += 1 if valid else 0
+            bad += 0 if valid else 1
+    return ok, bad
+
+
+def v6_type_slice_lines(observations: Sequence[RunObservation]) -> list[str]:
+    """Beside every NEW type that crossed a hop in this run: its grammar status,
+    the cases/elements/hops behind its `pii_type` slice, the R-58 survival
+    exclusion, and — for VIN — the «КС верна / неверна» split (TZ §6.5)."""
+    seen: dict[str, dict[str, object]] = {}
+    for one in observations:
+        for hop in one.hops:
+            spec = _V6_SPECS.get(hop.pii_type)
+            if spec is None or spec.origin != pii_types.ORIGIN_V6:
+                continue
+            row = seen.setdefault(hop.pii_type,
+                                  {"cases": set(), "elements": set(), "hops": 0})
+            row["cases"].add(one.case.base.id)           # type: ignore[union-attr]
+            row["elements"].add(hop.hop.item_id)         # type: ignore[union-attr]
+            row["hops"] += 1                             # type: ignore[union-attr]
+    out: list[str] = []
+    for pii_type in sorted(seen):
+        spec = _V6_SPECS[pii_type]
+        row = seen[pii_type]
+        line = (f"   {pii_type}: грамматика {spec.grammar_status} · "
+                f"случаев {len(row['cases'])} · элементов {len(row['elements'])} · "
+                f"хопов {row['hops']} · не оценивается по выживанию: "
+                f"{survival_excluded(observations, pii_type)}")
+        if pii_type == "VIN":
+            valid, invalid = _vin_checksum_split(observations)
+            line += f" · КС верна {valid} / неверна {invalid}"
+        out.append(line)
+    return out
+
+
+def v6_new_row_lines(observations: Sequence[RunObservation]) -> list[str]:
+    """The three OD-54 rows, each gated by its own three fixtures (§6.3: a row
+    without its zero/one/adversarial is NOT printed). `gate` is the same
+    function the v5 lines go through, so the sanction is the same shape."""
+    out: list[str] = []
+    for name in sorted(V6_METRIC_FUNCTIONS):
+        fixtures = V6_FIXTURES.get(name)
+        verdict = (gate(V6_METRIC_FUNCTIONS[name], fixtures) if fixtures
+                   else GateVerdict(name, False, "нет фикстур"))
+        if not verdict.printable:
+            out.append(f"   {name}: НЕ ПЕЧАТАЕТСЯ — {verdict.why}")
+            continue
+        out.append("   " + render_line(V6_METRIC_FUNCTIONS[name](observations)))
+    return out
+
+
+def _calibration_new_types(stamp: CalibrationStamp | None) -> tuple[str, ...]:
+    """The NEW types the calibration stamp computed κ for — the header line
+    «какие новые типы видела калибровка» (§6.5, §9.4)."""
+    if stamp is None:
+        return ()
+    new = frozenset(pii_types.NEW_ITEM_TYPES)
+    return tuple(sorted(t for t in stamp.per_type_kappa if t in new))
 
 
 def _printing_order(named: Iterable[str]) -> list[str]:

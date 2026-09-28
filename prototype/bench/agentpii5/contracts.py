@@ -1532,6 +1532,14 @@ class ArmRunV5:
     # customer saw in turn 2 and not in the final answer was counted nowhere;
     # `residual` now takes `> 0` as a miss of the observation.
     turn_residual: int
+    # OD-76 / TZ §14.3: the MESSAGE-span replacements with the engine's type
+    # label — the IN/user analogue of `ToolResultRecord.pieces`, which carry
+    # the same four fields for a TOOL RESULT's spans. Written ONLY on a run with
+    # a v6 case; empty (and omitted from the record) otherwise, so the
+    # old-corpus replay stays byte-identical and `typed_user` prints «н/п»
+    # (0/0) rather than a fabricated zero. Each entry is
+    # (msg index, start, end, engine_type) in the ORIGINAL message's offsets.
+    message_pieces: tuple[tuple[int, int, int, str], ...] = ()
 
 
 @dataclass(frozen=True)
