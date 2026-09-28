@@ -132,8 +132,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
         <p style="margin:14px 0 0;max-width:52ch;font-size:15px;line-height:1.55;color:var(--dim);text-wrap:pretty">Контейнер стоит внутри вашего периметра. К нам уходят счётчики — ни текстов, ни значений.</p>
         <div style="display:flex;gap:12px;margin-top:26px;flex-wrap:wrap">
           <a href="#start" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:14px 24px;border:1px solid var(--accent);color:var(--accent-2)" class="hv-btn">НАЧАТЬ ЗА 15 МИНУТ</a>
-          <a href="#demo" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:14px 24px;border:1px solid var(--line);color:var(--dim)" class="hv-btn-ghost">ПОСМОТРЕТЬ ПОДМЕНУ →</a>
-          <a href="#video" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:14px 24px;border:1px solid var(--line);color:var(--dim)" class="hv-btn-ghost">▶ 4 МИНУТЫ</a>
+          <a href="#video" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:14px 24px;border:1px solid var(--line);color:var(--dim)" class="hv-btn-ghost">ПОСМОТРЕТЬ КАК РАБОТАЕТ</a>
         </div>
         <div style="display:flex;border:1px solid var(--line);max-width:620px;margin-top:22px">
           <code data-copy="docker run -d -p 8000:8000 -p 127.0.0.1:8081:8081 {{ image }}"
@@ -341,6 +340,84 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
         <div style="font-size:24px;line-height:1.15;letter-spacing:-.025em;color:var(--accent-2);font-weight:700">Ставим ту же подмену</div>
         <p style="margin:0;font-size:15px;line-height:1.65;color:var(--dim);text-wrap:pretty">Функция вернула настоящие данные из CRM, и они снова идут в модель. Для неё это тот же Виктор Шилов — иначе агент за один разговор познакомился бы с клиентом дважды.</p>
       </div>
+    </div>
+  </section>
+
+  <section id="pricing" style="padding:120px 36px 0">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:32px;flex-wrap:wrap;margin-bottom:14px" data-reveal>
+      <h2 style="margin:0;font-size:clamp(28px,3.4vw,42px);font-weight:900;letter-spacing:-.035em">Цены</h2>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">ЦЕНЫ НА САЙТЕ · ENTERPRISE — ПО ДОГОВОРУ</div>
+    </div>
+    <p style="margin:0 0 40px;font-size:16px;line-height:1.6;color:var(--dim);max-width:62ch">Абонплата по числу контейнеров, сверх включённого — по запросам. Запрос виден в логе вашего же шлюза, поэтому наш счёт можно сверить со своей записью.</p>
+    {% comment %}
+ЧИСЛО КОЛОНОК ЗНАЕТ ШАБЛОН, А НЕ ШИРИНА ОКНА. Тарифы — единственная
+       сетка, число карточек в которой меняется; `auto-fit` на пяти тарифах оставлял
+       бы дыру в 995px, потому что дорожки, занятые в первой строке, не схлопываются.
+       Класс по числу тарифов даёт ровный прямоугольник при любом их числе, а
+       `cards--plans-many` остаётся страховкой на семь и больше.
+{% endcomment %}
+    <div class="cards cards--plans-{% if plan_card_count <= 6 %}{{ plan_card_count }}{% else %}many{% endif %}" style="border:1px solid var(--line-3)">
+      {% if free_plan %}
+        {% comment %}
+БЕСПЛАТНЫЙ ТАРИФ — КАРТОЧКА, А НЕ СНОСКА. Он был только числом «14 дней» под
+        формой, и платные карточки подписывались «начать пробу», как будто проба
+        идёт на них. Теперь бесплатный — товар с собственными лимитами, а
+        платные покупаются.
+{% endcomment %}
+        <div style="min-width:0;background:var(--bg);padding:32px 28px;display:flex;flex-direction:column;gap:22px;">
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">{{ free_plan.title|upper }}</div>
+            <div style="font-size:38px;font-weight:900;letter-spacing:-.035em;margin-top:20px">0 ₽</div>
+            <div style="font-size:13.5px;color:var(--dim-2);margin-top:6px">{{ free_plan.trial_days }} {{ free_plan.trial_days|plural:"день,дня,дней" }} · {{ free_plan.max_instances }} {{ free_plan.max_instances|plural:"контейнер,контейнера,контейнеров" }}</div>
+          </div>
+          <div style="display:grid;gap:11px;font-size:14.5px;line-height:1.5;color:var(--text-3)">
+            <div>{{ free_plan.included_requests }} запросов включено</div>
+            <div>дальше — остановка, не счёт</div>
+            <div>{{ free_plan.max_keys }} {{ free_plan.max_keys|plural:"ключ,ключа,ключей" }} доступа</div>
+            <div>карта не спрашивается</div>
+            {% if free_plan.audience %}<div>Подходит: {{ free_plan.audience }}</div>{% endif %}
+          </div>
+          <a href="#start" style="margin-top:auto;display:block;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;padding:14px;border:1px solid var(--line);color:var(--dim)" data-plan="{{ free_plan.code }}" class="hv-btn">НАЧАТЬ БЕСПЛАТНО</a>
+        </div>
+      {% endif %}
+      {% for plan in plans %}
+        <div style="min-width:0;background:{% if plan.code == "work" %}var(--accent-bg){% else %}var(--bg){% endif %};padding:32px 28px;display:flex;flex-direction:column;gap:22px;">
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:{% if plan.code == "work" %}var(--accent-2){% else %}var(--dim-2){% endif %}">{{ plan.title|upper }}</div>
+            <div style="font-size:38px;font-weight:900;letter-spacing:-.035em;margin-top:20px">{{ plan.monthly_price|floatformat:0 }} ₽</div>
+            <div style="font-size:13.5px;color:var(--dim-2);margin-top:6px">в месяц · {{ plan.max_instances }} {{ plan.max_instances|plural:"контейнер,контейнера,контейнеров" }}</div>
+          </div>
+          <div style="display:grid;gap:11px;font-size:14.5px;line-height:1.5;color:var(--text-3)">
+            <div>{{ plan.included_requests }} запросов включено</div>
+            {% if plan.metered_per_1k %}<div>дальше {{ plan.metered_per_1k|floatformat:"-2" }} ₽ за 1000</div>{% endif %}
+            {% if plan.metered_floor %}<div>первые {{ plan.metered_floor }} сверх включённого не начисляются</div>{% endif %}
+            <div>{{ plan.max_keys }} {{ plan.max_keys|plural:"ключ,ключа,ключей" }} доступа</div>
+            {% if plan.audience %}<div>Подходит: {{ plan.audience }}</div>{% endif %}
+            {% if plan.first_payment_bonus_days %}<div style="color:var(--accent-2)">+{{ plan.first_payment_bonus_days }} {{ plan.first_payment_bonus_days|plural:"день,дня,дней" }} в подарок{% if plan.bonus_note %} — {{ plan.bonus_note }}{% endif %}</div>{% endif %}
+          </div>
+          <a href="#start" style="margin-top:auto;display:block;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;padding:14px;border:1px solid {% if plan.code == "work" %}var(--accent){% else %}var(--line){% endif %};color:{% if plan.code == "work" %}var(--accent-2);transition:background .25s,box-shadow .25s{% else %}var(--dim){% endif %}" data-plan="{{ plan.code }}" class="{% if plan.code == "work" %}hv-btn-glow{% else %}hv-btn{% endif %}">КУПИТЬ</a>
+        </div>
+      {% endfor %}
+      {% if enterprise %}
+        <div style="min-width:0;background:var(--bg);padding:32px 28px;display:flex;flex-direction:column;gap:22px;">
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">{{ enterprise.title|upper }}</div>
+            <div style="font-size:28px;font-weight:900;letter-spacing:-.035em;margin-top:24px">по договору</div>
+            <div style="font-size:13.5px;color:var(--dim-2);margin-top:6px">до {{ enterprise.max_instances }} {{ enterprise.max_instances|plural:"контейнер,контейнера,контейнеров" }}</div>
+          </div>
+          <div style="display:grid;gap:11px;font-size:14.5px;line-height:1.5;color:var(--text-3)">
+            <div>объём и лимиты по договору</div>
+            <div>{{ enterprise.max_keys }} {{ enterprise.max_keys|plural:"ключ,ключа,ключей" }} доступа</div>
+            {% if enterprise.audience %}<div>Подходит: {{ enterprise.audience }}</div>{% endif %}
+          </div>
+          <a href="{% if support_email %}mailto:{{ support_email }}?subject=Enterprise{% elif support_bot %}https://t.me/{{ support_bot }}{% else %}/requisites{% endif %}" style="margin-top:auto;display:block;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;padding:14px;border:1px solid var(--line);color:var(--dim)" class="hv-btn">СВЯЗАТЬСЯ</a>
+        </div>
+      {% endif %}
+    </div>
+    <div style="border:1px solid var(--line-3);border-top:0;padding:20px 28px;display:flex;gap:40px;flex-wrap:wrap;font-size:13.5px;line-height:1.6;color:var(--dim-2)">
+      <div style="max-width:46ch">Запрос — один вызов модели через шлюз. В агентском цикле одно сообщение клиента обычно даёт несколько вызовов: считайте по вызовам, а не по диалогам.</div>
+      <div style="max-width:40ch">Ставка убывает с тарифом, поэтому перейти на больший всегда дешевле, чем расти перерасходом. Превышение — это счёт, а не рубильник.</div>
+      <div style="max-width:44ch">Счёт выставляется в конце периода: срок оплаты {{ due_days }} дней, и ещё {{ grace_days }} дня идут запасом — платёж по безналу в пятницу вечером не должен останавливать прод в субботу. Акты и закрывающие — в кабинете.</div>
     </div>
   </section>
 
@@ -633,7 +710,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
           <input type="checkbox" name="terms" value="1" required style="margin-top:2px;flex:none;accent-color:var(--accent)">
           <span>Я принимаю <a href="{% url 'offer' %}" target="_blank">оферту</a> и ознакомлен с <a href="{% url 'policy' %}" target="_blank">политикой обработки</a>.</span>
         </label>
-        <button type="submit" data-label-free="ПОЛУЧИТЬ КЛЮЧ" data-label-paid="ЗАРЕГИСТРИРОВАТЬСЯ И ОПЛАТИТЬ" style="grid-column:1 / -1;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:16px;border:1px solid var(--accent);background:transparent;color:var(--accent-2);cursor:pointer" class="hv-btn">ПОЛУЧИТЬ КЛЮЧ</button>
+        <button type="submit" data-label-free="ПОЛУЧИТЬ КЛЮЧ" data-label-paid="ЗАРЕГИСТРИРОВАТЬСЯ И ОПЛАТИТЬ" style="grid-column:1 / -1;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:16px;border:1px solid var(--accent);color:var(--accent-2);cursor:pointer;transition:background .25s,box-shadow .25s" class="hv-btn-glow">ПОЛУЧИТЬ КЛЮЧ</button>
         <div data-when="free" style="grid-column:1 / -1;font-size:13px;color:var(--dim-3);line-height:1.6">Карта не спрашивается. Ключ работает сразу и {{ trial_days }} дней бесплатно{% if free_plan %} — {{ free_plan.included_requests }} запросов, {{ free_plan.max_instances }} {{ free_plan.max_instances|plural:"контейнер,контейнера,контейнеров" }}{% endif %}. Потом — любой тариф из кабинета.</div>
         <div data-when="paid" hidden style="grid-column:1 / -1;font-size:13px;color:var(--dim-3);line-height:1.6">Ключ выпускается сразу после оплаты — картой или по счёту. К первому оплаченному месяцу добавляются дни в подарок — сколько, написано на карточке тарифа.</div>
       </form>
@@ -645,7 +722,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
               <h3 style="margin:0;font-size:22px;letter-spacing:-.025em;font-weight:700">Пусть агент подключит всё сам</h3>
             </div>
             <span class="claude-prompt" hidden data-copy="{{ claude_prompt }}"></span>
-            <button type="button" data-copy-btn style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:11px 16px;border:1px solid var(--accent);background:transparent;color:var(--accent-2);cursor:pointer" class="hv-btn">СКОПИРОВАТЬ ПРОМПТ</button>
+            <button type="button" data-copy-btn style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:11px 16px;border:1px solid var(--accent);color:var(--accent-2);cursor:pointer" class="hv-btn">СКОПИРОВАТЬ ПРОМПТ</button>
           </div>
           <p style="margin:16px 0 0;font-size:14.5px;line-height:1.6;color:var(--dim)">Он сам найдёт, куда проект ходит за моделью, поднимет контейнер, переключит переменную окружения и проверит, что маскирование сработало. Если нет — остановится и скажет.</p>
         </div>
@@ -653,84 +730,6 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
     </div>
 
     {% include "_setup.html" %}
-  </section>
-
-  <section id="pricing" style="padding:120px 36px 0">
-    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:32px;flex-wrap:wrap;margin-bottom:14px" data-reveal>
-      <h2 style="margin:0;font-size:clamp(28px,3.4vw,42px);font-weight:900;letter-spacing:-.035em">Цены</h2>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">ЦЕНЫ НА САЙТЕ · ENTERPRISE — ПО ДОГОВОРУ</div>
-    </div>
-    <p style="margin:0 0 40px;font-size:16px;line-height:1.6;color:var(--dim);max-width:62ch">Абонплата по числу контейнеров, сверх включённого — по запросам. Запрос виден в логе вашего же шлюза, поэтому наш счёт можно сверить со своей записью.</p>
-    {% comment %}
-ЧИСЛО КОЛОНОК ЗНАЕТ ШАБЛОН, А НЕ ШИРИНА ОКНА. Тарифы — единственная
-       сетка, число карточек в которой меняется; `auto-fit` на пяти тарифах оставлял
-       бы дыру в 995px, потому что дорожки, занятые в первой строке, не схлопываются.
-       Класс по числу тарифов даёт ровный прямоугольник при любом их числе, а
-       `cards--plans-many` остаётся страховкой на семь и больше.
-{% endcomment %}
-    <div class="cards cards--plans-{% if plan_card_count <= 6 %}{{ plan_card_count }}{% else %}many{% endif %}" style="border:1px solid var(--line-3)">
-      {% if free_plan %}
-        {% comment %}
-БЕСПЛАТНЫЙ ТАРИФ — КАРТОЧКА, А НЕ СНОСКА. Он был только числом «14 дней» под
-        формой, и платные карточки подписывались «начать пробу», как будто проба
-        идёт на них. Теперь бесплатный — товар с собственными лимитами, а
-        платные покупаются.
-{% endcomment %}
-        <div style="min-width:0;background:var(--bg);padding:32px 28px;display:flex;flex-direction:column;gap:22px;">
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">{{ free_plan.title|upper }}</div>
-            <div style="font-size:38px;font-weight:900;letter-spacing:-.035em;margin-top:20px">0 ₽</div>
-            <div style="font-size:13.5px;color:var(--dim-2);margin-top:6px">{{ free_plan.trial_days }} {{ free_plan.trial_days|plural:"день,дня,дней" }} · {{ free_plan.max_instances }} {{ free_plan.max_instances|plural:"контейнер,контейнера,контейнеров" }}</div>
-          </div>
-          <div style="display:grid;gap:11px;font-size:14.5px;line-height:1.5;color:var(--text-3)">
-            <div>{{ free_plan.included_requests }} запросов включено</div>
-            <div>дальше — остановка, не счёт</div>
-            <div>{{ free_plan.max_keys }} {{ free_plan.max_keys|plural:"ключ,ключа,ключей" }} доступа</div>
-            <div>карта не спрашивается</div>
-            {% if free_plan.audience %}<div>Подходит: {{ free_plan.audience }}</div>{% endif %}
-          </div>
-          <a href="#start" style="margin-top:auto;display:block;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;padding:14px;border:1px solid var(--line);color:var(--dim)" data-plan="{{ free_plan.code }}" class="hv-btn">НАЧАТЬ БЕСПЛАТНО</a>
-        </div>
-      {% endif %}
-      {% for plan in plans %}
-        <div style="min-width:0;background:{% if plan.code == "work" %}var(--accent-bg){% else %}var(--bg){% endif %};padding:32px 28px;display:flex;flex-direction:column;gap:22px;">
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:{% if plan.code == "work" %}var(--accent-2){% else %}var(--dim-2){% endif %}">{{ plan.title|upper }}</div>
-            <div style="font-size:38px;font-weight:900;letter-spacing:-.035em;margin-top:20px">{{ plan.monthly_price|floatformat:0 }} ₽</div>
-            <div style="font-size:13.5px;color:var(--dim-2);margin-top:6px">в месяц · {{ plan.max_instances }} {{ plan.max_instances|plural:"контейнер,контейнера,контейнеров" }}</div>
-          </div>
-          <div style="display:grid;gap:11px;font-size:14.5px;line-height:1.5;color:var(--text-3)">
-            <div>{{ plan.included_requests }} запросов включено</div>
-            {% if plan.metered_per_1k %}<div>дальше {{ plan.metered_per_1k|floatformat:"-2" }} ₽ за 1000</div>{% endif %}
-            {% if plan.metered_floor %}<div>первые {{ plan.metered_floor }} сверх включённого не начисляются</div>{% endif %}
-            <div>{{ plan.max_keys }} {{ plan.max_keys|plural:"ключ,ключа,ключей" }} доступа</div>
-            {% if plan.audience %}<div>Подходит: {{ plan.audience }}</div>{% endif %}
-            {% if plan.first_payment_bonus_days %}<div style="color:var(--accent-2)">+{{ plan.first_payment_bonus_days }} {{ plan.first_payment_bonus_days|plural:"день,дня,дней" }} в подарок{% if plan.bonus_note %} — {{ plan.bonus_note }}{% endif %}</div>{% endif %}
-          </div>
-          <a href="#start" style="margin-top:auto;display:block;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;padding:14px;border:1px solid {% if plan.code == "work" %}var(--accent){% else %}var(--line){% endif %};color:{% if plan.code == "work" %}var(--accent-2){% else %}var(--dim){% endif %}" data-plan="{{ plan.code }}" class="hv-btn">КУПИТЬ</a>
-        </div>
-      {% endfor %}
-      {% if enterprise %}
-        <div style="min-width:0;background:var(--bg);padding:32px 28px;display:flex;flex-direction:column;gap:22px;">
-          <div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">{{ enterprise.title|upper }}</div>
-            <div style="font-size:28px;font-weight:900;letter-spacing:-.035em;margin-top:24px">по договору</div>
-            <div style="font-size:13.5px;color:var(--dim-2);margin-top:6px">до {{ enterprise.max_instances }} {{ enterprise.max_instances|plural:"контейнер,контейнера,контейнеров" }}</div>
-          </div>
-          <div style="display:grid;gap:11px;font-size:14.5px;line-height:1.5;color:var(--text-3)">
-            <div>объём и лимиты по договору</div>
-            <div>{{ enterprise.max_keys }} {{ enterprise.max_keys|plural:"ключ,ключа,ключей" }} доступа</div>
-            {% if enterprise.audience %}<div>Подходит: {{ enterprise.audience }}</div>{% endif %}
-          </div>
-          <a href="{% if support_email %}mailto:{{ support_email }}?subject=Enterprise{% elif support_bot %}https://t.me/{{ support_bot }}{% else %}/requisites{% endif %}" style="margin-top:auto;display:block;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;padding:14px;border:1px solid var(--line);color:var(--dim)" class="hv-btn">СВЯЗАТЬСЯ</a>
-        </div>
-      {% endif %}
-    </div>
-    <div style="border:1px solid var(--line-3);border-top:0;padding:20px 28px;display:flex;gap:40px;flex-wrap:wrap;font-size:13.5px;line-height:1.6;color:var(--dim-2)">
-      <div style="max-width:46ch">Запрос — один вызов модели через шлюз. В агентском цикле одно сообщение клиента обычно даёт несколько вызовов: считайте по вызовам, а не по диалогам.</div>
-      <div style="max-width:40ch">Ставка убывает с тарифом, поэтому перейти на больший всегда дешевле, чем расти перерасходом. Превышение — это счёт, а не рубильник.</div>
-      <div style="max-width:44ch">Счёт выставляется в конце периода: срок оплаты {{ due_days }} дней, и ещё {{ grace_days }} дня идут запасом — платёж по безналу в пятницу вечером не должен останавливать прод в субботу. Акты и закрывающие — в кабинете.</div>
-    </div>
   </section>
 
   <section id="faq" style="padding:120px 36px 0">

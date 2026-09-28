@@ -1,5 +1,13 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Проверьте почту — pseudex{% endblock %}
+{% comment %}
+     Форма «отправить ещё раз» оформлена как «Быстрый старт» на лендинге, и
+     подсветка кнопки и рамка поля при фокусе берутся оттуда же — классы
+     hv-btn и fc-accent живут в landing.css. Все его правила привязаны к
+     своим классам, так что на этой странице он больше ничего не меняет.
+{% endcomment %}
+{% block head %}<link rel="stylesheet" href="{% static 'landing.css' %}">{% endblock %}
 {% block content %}
 <section>
   <div class="eyebrow"><i></i><span>ОСТАЛСЯ ОДИН ШАГ</span></div>
@@ -33,8 +41,9 @@
     <p style="font-size:14px;color:var(--dim);line-height:1.7">Не пришло за пару минут? Загляните в «Спам» — письмо приходит с адреса <span class="mono">noreply@pseudex.ru</span>. Или отправьте ещё раз:</p>
     <form method="post" action="{% url 'resend' %}" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
       {% csrf_token %}
-      <input type="email" name="email" value="{{ email }}" required style="flex:1;min-width:240px" class="ym-disable-keys">
-      <button class="btn" type="submit">ОТПРАВИТЬ ЕЩЁ РАЗ</button>
+      <input type="email" name="email" value="{{ email }}" required autocomplete="email"
+             style="flex:1;min-width:240px;background:var(--panel);border:1px solid var(--line);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px;padding:15px;outline:none" class="fc-accent ym-disable-keys">
+      <button type="submit" style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;padding:11px 16px;border:1px solid var(--accent);color:var(--accent-2);cursor:pointer" class="hv-btn">ОТПРАВИТЬ ЕЩЁ РАЗ</button>
     </form>
     {% endif %}
   </div>

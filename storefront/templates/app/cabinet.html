@@ -161,13 +161,13 @@
     {% else %}
       <p style="font-size:14px;color:var(--dim);line-height:1.6;margin:0 0 14px">Новый тариф вступает в силу <b style="color:var(--text-3)">после оплаты</b>, а не после нажатия. Лимиты контейнеров и ёмкость меняются в тот же момент.</p>
     {% endif %}
-    <form method="post" action="{% url 'subscribe' %}" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">{% csrf_token %}
+    <form method="post" action="{% url 'subscribe' %}" style="display:flex;gap:10px;flex-wrap:wrap">{% csrf_token %}
       <select name="plan" class="field" style="width:auto;min-width:260px">
         {% for option in paid_plans %}
         <option value="{{ option.code }}"{% if option.code == suggested_plan %} selected{% endif %}>{{ option.title }} — {{ option.monthly_price|floatformat:0 }} ₽/мес · {{ option.included_requests }} запросов · {{ option.max_instances }} {{ option.max_instances|plural:"контейнер,контейнера,контейнеров" }}</option>
         {% endfor %}
       </select>
-      <button class="btn accent" type="submit">{% if card_available %}ОПЛАТИТЬ КАРТОЙ{% else %}ВЫСТАВИТЬ СЧЁТ{% endif %}</button>
+      <button class="btn accent tall" type="submit">{% if card_available %}ОПЛАТИТЬ КАРТОЙ{% else %}ВЫСТАВИТЬ СЧЁТ{% endif %}</button>
     </form>
     <p class="hint">{% if card_available %}Карта не сохраняется, автосписаний нет. Счёт по реквизитам — тоже вариант: он выставится и его видно в списке ниже.{% else %}Оплата картой сейчас выключена — счёт выставится по реквизитам.{% endif %}</p>
   </div>
@@ -186,7 +186,7 @@
     <p class="hint">Оплачивается база на год вперёд. Включённый объём и перерасход остаются <b style="color:var(--text-3)">помесячными</b> — никакого сюрприз-счёта в конце года.</p>
     {% if card_available %}
       <form method="post" action="{% url 'pay_annual' %}" style="margin-top:8px">{% csrf_token %}
-        <button class="btn accent" type="submit">ОПЛАТИТЬ ГОД — {{ annual.total|floatformat:0 }} ₽</button>
+        <button class="btn accent tall" type="submit">ОПЛАТИТЬ ГОД — {{ annual.total|floatformat:0 }} ₽</button>
       </form>
     {% else %}
       <p class="hint">Оплата картой сейчас недоступна — напишите нам, выставим годовой счёт по реквизитам.</p>
@@ -227,7 +227,7 @@
     {% if not keys %}<span style="font-size:14px;color:var(--text-2);flex-basis:100%">{% if subscription.state == 'active' %}Оплачено. {% endif %}Выпустите первый ключ — он покажется один раз, вместе с командой запуска.</span>{% endif %}
     <input class="field" style="width:220px" type="text" name="label" placeholder="название (например, прод)">
     <select class="field" style="width:auto" name="environment"><option value="live">прод</option><option value="test">стенд</option></select>
-    <button class="btn accent" type="submit">ВЫПУСТИТЬ КЛЮЧ</button>
+    <button class="btn accent tall" style="width:220px" type="submit">ВЫПУСТИТЬ КЛЮЧ</button>
     <span style="font-size:13px;color:var(--dim-2)">Новый ключ показывается один раз, сразу после выпуска.
       <b style="color:var(--text-3)">Потеряли — выпустите новый и отзовите старый:</b> у нас лежит только его хеш,
       восстановить прежний не может никто, включая нас.</span>
@@ -254,7 +254,7 @@
     <input class="field" type="text" name="kpp" value="{{ organization.kpp }}" placeholder="КПП (только юрлицо)" inputmode="numeric">
     <input class="field" type="text" name="legal_address" value="{{ organization.legal_address }}" placeholder="юридический адрес" style="grid-column:1 / -1">
     <div style="grid-column:1 / -1;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-      <button class="btn accent" type="submit">СОХРАНИТЬ</button>
+      <button class="btn accent tall" type="submit">СОХРАНИТЬ</button>
       <span style="font-size:13px;color:var(--dim-2)">Юрлицу и ИП это попадает в счёт и в акт. Физлицу реквизиты не нужны — только чек на почту при оплате картой.</span>
     </div>
   </form>

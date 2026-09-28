@@ -52,6 +52,10 @@
 .hv-btn:hover       { background: #242134; }
 .hv-btn-ghost:hover { color: #e8e7ec; border-color: #3d3d45; }
 .hv-btn-glow:hover  { background: #242134; box-shadow: 0 0 22px rgba(179,160,234,.28); }
+/* У <button> свой серый фон, поэтому прозрачный задаётся здесь, а не в style="":
+   инлайновый фон перебивает любой :hover выше, и кнопка не подсвечивалась. */
+button.hv-btn,
+button.hv-btn-glow  { background: transparent; }
 .hv-row:hover       { background: #1c1c20; box-shadow: inset 2px 0 0 #b3a0ea; }
 .hv-cell:hover      { background: #1c1c20; box-shadow: inset 2px 0 0 #b3a0ea, 1px 0 0 #232329, 0 1px 0 #232329; }
 .fc-accent:focus    { border-color: #b3a0ea; }
@@ -69,8 +73,9 @@ body.v2 select:focus-visible { outline: 2px solid #b3a0ea; outline-offset: 2px; 
    сильнее любого селектора, поэтому, пока «невыбранный» вид стоял атрибутом,
    правило для выбранной вкладки не срабатывало никогда: все пять выглядели
    одинаково, и переключение было не видно вовсе. */
-body.v2 [role="tab"] { background: transparent; color: #74737e; }
-body.v2 [role="tab"][aria-selected="true"] { background: #242134; color: #cec0f2; }
+/* Сами правила переехали в site.css: те же вкладки провайдеров (_setup.html)
+   стоят и в кабинете, куда landing.css не подключается, — там они были серыми
+   системными кнопками без видимого выбора. */
 
 /* ── вопросы ────────────────────────────────────────────────────────────── */
 body.v2 summary::-webkit-details-marker { display: none; }

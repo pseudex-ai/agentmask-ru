@@ -1,15 +1,23 @@
 {% extends "base.html" %}
+{% load static %}
+{% comment %}
+     Кнопка «ВОЙТИ И ПОЛУЧИТЬ КЛЮЧ» меняет фон при наведении классом hv-btn
+     из landing.css. Все его правила привязаны к своим классам, так что на
+     этой странице он больше ничего не меняет.
+{% endcomment %}
+{% block head %}<link rel="stylesheet" href="{% static 'landing.css' %}">{% endblock %}
 {% block content %}
-<main class="narrow">
-  <h1>Подтвердите вход</h1>
-  <p>Ссылка пришла на <strong>{{ email }}</strong>. Нажмите кнопку, чтобы
+<section>
+  <div class="eyebrow"><i></i><span>ПОСЛЕДНИЙ ШАГ</span></div>
+  <h2>Подтвердите вход</h2>
+  <p class="sub" style="margin-top:16px">Ссылка пришла на <strong>{{ email }}</strong>. Нажмите кнопку, чтобы
      войти{% if pending %} и оплатить тариф — ключ выпустится сразу после оплаты{% else %} и получить ключ{% endif %}.</p>
   {% comment %} ВХОД ТОЛЬКО POST-ом С CSRF-ТОКЕНОМ: по GET-ссылке чужой сайт мог бы
      подменить сессию клиента своей. {% endcomment %}
-  <form method="post" action="{% url 'activate' %}">
+  <form method="post" action="{% url 'activate' %}" style="margin-top:28px">
     {% csrf_token %}
     <input type="hidden" name="t" value="{{ token }}">
-    <button type="submit" class="primary">{% if pending %}Войти и оплатить{% else %}Войти и получить ключ{% endif %}</button>
+    <button type="submit" style="font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;text-transform:uppercase;padding:16px 24px;border:1px solid var(--accent);color:var(--accent-2);cursor:pointer" class="hv-btn">{% if pending %}Войти и оплатить{% else %}Войти и получить ключ{% endif %}</button>
   </form>
-</main>
+</section>
 {% endblock %}
