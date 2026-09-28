@@ -87,6 +87,43 @@ def manifest_of(run_dir: Path, run_id: str) -> dict[str, object]:
     }
 
 
+def excluded_of(run_dir: Path, run_id: str) -> dict[str, object]:
+    """Every triple the parity check refused, with the harness's own words.
+
+    An excluded triple is not a lost case — it is a case whose production and
+    scoring masks disagreed, i.e. a real defect that has to be fixed and the case
+    re-run. Collecting them per run (with the arm that raised and its message)
+    is what makes that later pass possible without re-reading the whole run, and
+    the union across runs is the re-run list."""
+    rows = []
+    for path in sorted(run_dir.glob("*.triples.jsonl")):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if not line.strip():
+                continue
+            one = json.loads(line)
+            if one.get("status") == "complete":
+                continue
+            arms = one.get("arms") or {}
+            rows.append({
+                "case_id": one.get("case_id"),
+                "status": one.get("status"),
+                "kind": one.get("kind"),
+                "behaviour": one.get("behaviour"),
+                "register": one.get("register"),
+                "cluster": one.get("cluster"),
+                "reason": one.get("reason"),
+                "arm_reasons": {arm: (one_arm or {}).get("reason")
+                                for arm, one_arm in arms.items()
+                                if (one_arm or {}).get("reason")},
+            })
+    return {
+        "run_id": run_id,
+        "excluded_total": len(rows),
+        "excluded_cases": sorted({str(one["case_id"]) for one in rows}),
+        "excluded": rows,
+    }
+
+
 def archive(run_dir: Path, label: str | None) -> dict[str, object]:
     run_dir = run_dir.resolve()
     if not run_dir.is_dir():
@@ -105,6 +142,15 @@ def archive(run_dir: Path, label: str | None) -> dict[str, object]:
     manifest["tarball"] = {"path": tarball.name,
                            "bytes": tarball.stat().st_size,
                            "sha256": sha256_of(tarball)}
+
+    # The excluded list travels with the archive: it is the work queue for the
+    # re-run that turns this run plus the next one into one complete result.
+    excluded = excluded_of(run_dir, run_id)
+    (RUNS_DIR / f"{run_id}.excluded.json").write_text(
+        json.dumps(excluded, ensure_ascii=False, indent=1), encoding="utf-8")
+    manifest["excluded_total"] = excluded["excluded_total"]
+    manifest["excluded_cases"] = excluded["excluded_cases"]
+
     (RUNS_DIR / f"{run_id}.manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=1), encoding="utf-8")
 
@@ -157,6 +203,7 @@ def main() -> int:
           f"({int(manifest['tarball']['bytes']) / 1e6:.1f} MB)")
     print(f"external    : {manifest['archive_dir']}")
     print(f"verified    : {manifest['verified_files']}/{manifest['files_total']} files")
+    print(f"excluded    : {manifest['excluded_total']} triple(s)")
     if manifest["verify_failures"]:
         print(f"FAILED      : {manifest['verify_failures']}")
         return 1
