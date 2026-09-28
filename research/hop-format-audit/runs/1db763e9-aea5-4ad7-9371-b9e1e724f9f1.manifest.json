@@ -1,0 +1,162 @@
+{
+ "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+ "source_dir": "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/runs/2026-09-28/v5-live-rerun450-A-363",
+ "archived_at": "2026-09-28T21:22:55+00:00",
+ "archived_on": "MacBook-Pro-Igor.local",
+ "files": [
+  {
+   "path": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1.agent.usage.jsonl",
+   "bytes": 344680,
+   "sha256": "8b274cd8e5f626300d4dddcf741df4a6a7af141dbaef1e9e369fac3209f1a1f7"
+  },
+  {
+   "path": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1.arms.jsonl",
+   "bytes": 7335898,
+   "sha256": "0805a2f91c7d40816f9a5dcf29258d2cba5de3b5ee19c83616e598ca31a87996"
+  },
+  {
+   "path": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1.arms.v5.jsonl",
+   "bytes": 8703702,
+   "sha256": "aede54c8690b276b9aaa41ebb9b5fb413c39eb0c93bf3299d313499a9cb9a18e"
+  },
+  {
+   "path": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1.canary.jsonl",
+   "bytes": 49781477,
+   "sha256": "48164df03005ddc5ebe293a484afe8d1bff9706085c187d7ca73fef9a628fd84"
+  },
+  {
+   "path": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1.gate.json",
+   "bytes": 1799,
+   "sha256": "d9878839461b14bba6d4c51acaaf04450ec4e9b03eb33dc26c1ee7af7936e1cc"
+  },
+  {
+   "path": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1.hops.jsonl",
+   "bytes": 3608582,
+   "sha256": "271d7199aa1abbef81bf45be3860aaf8ab9b05fffedcced522128c45ff2dc853"
+  },
+  {
+   "path": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1.judge.jsonl",
+   "bytes": 92637,
+   "sha256": "2d1f243f140cea6e578ce1c7d97418830ab66a517dd2a4e11f362cdfab4c7ba3"
+  },
+  {
+   "path": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1.meta.json",
+   "bytes": 3165,
+   "sha256": "73269c53c037582cc62e6b7a03ffac74ed31aae10c165cc20b15111a98a5a698"
+  },
+  {
+   "path": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1.oracle.json",
+   "bytes": 785,
+   "sha256": "f7ab66f9118874e73101f11aeec4e23b7aeb9bac63dae209b2d4d31b88c350c0"
+  },
+  {
+   "path": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1.public.json",
+   "bytes": 2552,
+   "sha256": "dd26437d144f3320931530df723b53419aee5a2c42f571321ac971ed92ac90cf"
+  },
+  {
+   "path": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1.report.json",
+   "bytes": 277944,
+   "sha256": "399d3de1b9b1b8dece2e626f8fa2483097dc873fabe7c38c0d2403eb8136fa7b"
+  },
+  {
+   "path": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1.report.txt",
+   "bytes": 92480,
+   "sha256": "1cad2cf8ae0d9f31e96afcdea0d3982ded955b0e8190b5a094b0da95c2dbeca7"
+  },
+  {
+   "path": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1.spend.tsv",
+   "bytes": 20883,
+   "sha256": "878e1f6668474469d53d840e8eae0592566ecf124930ccf225078d215b82d5ab"
+  },
+  {
+   "path": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1.triples.jsonl",
+   "bytes": 260723,
+   "sha256": "e59d5d9abf65205269a9246e6437c6b33b77b92d22e78ab8afdfea6ca805688e"
+  },
+  {
+   "path": "corpus.json",
+   "bytes": 3817553,
+   "sha256": "2750601e6550199ff2de0cd0981ee53ef8741e413ec01acac4a73336798d94fb"
+  },
+  {
+   "path": "corpus.v5.json",
+   "bytes": 5653426,
+   "sha256": "9c1bcf5c46fcedbc369b06199e7a2fbd19540a149e128ebe80e38d014b129af3"
+  },
+  {
+   "path": "repairs.json",
+   "bytes": 182039,
+   "sha256": "b2bbfd61afaa9e14d933b5b5e8cd3d6221c52afd2d0f6e9c3879b8e24960326f"
+  }
+ ],
+ "files_total": 17,
+ "bytes_total": 80180325,
+ "run_sha256": "e6bd89aa6ed71ef229d4cd75b4ca6e881b5f8349a1152b8b896029d70f4ee561",
+ "label": "rerun-450-A-363-cohort1",
+ "tarball": {
+  "path": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1.tar.gz",
+  "bytes": 3825912,
+  "sha256": "48d09f9b254999bb3565c22f03379bf24d40b06abf46fc5e736ada1857d1dc18"
+ },
+ "excluded_total": 54,
+ "excluded_cases": [
+  "long_bank-000",
+  "long_bank-014",
+  "long_bank-038",
+  "long_bank-039",
+  "long_clinic-002",
+  "long_clinic-004",
+  "long_clinic-010",
+  "long_clinic-013",
+  "long_clinic-031",
+  "long_clinic-034",
+  "long_clinic-035",
+  "long_order-008",
+  "long_order-017",
+  "long_order-026",
+  "long_order-053",
+  "long_order-059",
+  "long_support-005",
+  "long_support-009",
+  "long_support-018",
+  "long_support-032",
+  "long_support-038",
+  "memory_anaphora-002",
+  "memory_anaphora-004",
+  "memory_anaphora-007",
+  "memory_anaphora-013",
+  "memory_anaphora-020",
+  "memory_anaphora-026",
+  "memory_anaphora-028",
+  "memory_anaphora-031",
+  "memory_anaphora-033",
+  "memory_anaphora-035",
+  "memory_anaphora-037",
+  "memory_anaphora-040",
+  "memory_anaphora-045",
+  "memory_anaphora-047",
+  "memory_anaphora-049",
+  "memory_anaphora-051",
+  "memory_anaphora-054",
+  "memory_anaphora-066",
+  "memory_anaphora-073",
+  "memory_anaphora-079",
+  "memory_anaphora-081",
+  "memory_anaphora-099",
+  "memory_anaphora-101",
+  "memory_anaphora-112",
+  "memory_anaphora-121",
+  "prompt_rule-012",
+  "tool_chain-005",
+  "tool_chain-009",
+  "tool_chain-013",
+  "tool_chain-015",
+  "tool_chain-018",
+  "tool_chain-020",
+  "tool_chain-025"
+ ],
+ "archive_dir": "/Users/igor/pseudex-run-archives/1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+ "verified_files": 17,
+ "verify_failures": []
+}
