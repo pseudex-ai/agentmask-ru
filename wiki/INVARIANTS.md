@@ -794,6 +794,18 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   by the engine request counter on the FIRST payment: zero requests →
   `first_payment_bonus_days`; any request → `post_trial_discount_pct`; a second
   payment gets neither. Pins: `storefront/test_paywall.py`.
+- **Paid at the provider means paid here, and the PROVIDER is the only thing
+  asked.** Settlement has three doors — the notification, the customer's return
+  trip and the hourly cycle — and all three go through one
+  `services.settle_payment`, which reads the status back over an authenticated
+  call. A door that depends on a setting in the merchant's own cabinet cannot be
+  the only one: measured 28.09.2026, ЮKassa's notification URL was never
+  configured (0 deliveries against 5 of 5 payments reaching `succeeded`), the
+  return page was a shop window, and 990 ₽ bought nothing. Underpayment never
+  resumes service, a repeated delivery never gifts a second month, and a button
+  never asks for money twice — an invoice that is `issued` locally while
+  `succeeded` at the provider is settled, not charged again. Pins:
+  `storefront/test_payment_return.py`.
 
 ## Surfaces
 

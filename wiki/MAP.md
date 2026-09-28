@@ -721,7 +721,12 @@ Tests (`storefront/test_*.py`): `test_storefront` (against a REAL licensing
 server) · `test_billing_lifecycle` (landing → container on a mock provider;
 asks the server for `window_seconds`; POSTs `/mask` into a live container after
 every state transition; the container-stopping check goes LAST) ·
-`test_billing_e2e` (the REAL ЮKassa test shop) · `test_annual` · `test_hardcap`
+`test_billing_e2e` (the REAL ЮKassa test shop) · `test_payment_return` (the
+THREE doors of the same settlement — the notification, the customer's return
+trip and the hourly cycle — on a faked provider that also models ЮKassa's
+idempotence rule, so the invoice, the subscription and the key are checked
+after a payment the notification never announced) · `test_annual` ·
+`test_hardcap`
 · `test_offers` · `test_paywall` · `test_passwordless` · `test_admin_2fa` ·
 `test_auth_style` · `test_signup_forms` · `test_configurator_renders` and
 `test_ops_renders` (real browser) · `test_engine_release` (the advertised image comes from the registry: override → file → `latest`, reload on replace, the landing shows the same tag) · `test_seo` · `test_crawler_allowlist`
