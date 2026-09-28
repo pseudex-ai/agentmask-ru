@@ -124,7 +124,7 @@ def _case(case_id: str, behaviour: str, texts: tuple[str, ...], items: tuple[Pii
     return CaseV5(base=base, behaviour=behaviour, hops=hops, returns=(), forced=(), memory=(),
                   pick=None, branch=None, loop=None, rag=None, document=None,
                   has_result=any(hop.kind == "IN" and hop.owner == "tool" for hop in hops),
-                  streaming=False, revised_from_v4=False)
+                  streaming=False, revised_from_v4=False, v6=None)
 
 
 def _run(case_id: str) -> ArmRunV5:

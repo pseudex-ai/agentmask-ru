@@ -13,6 +13,7 @@ import pathlib
 import subprocess
 import sys
 
+import bench.agentpii5.contracts as contracts
 import bench.agentpii5.pii_types as pii_types
 
 _PROTOTYPE = str(pathlib.Path(__file__).resolve().parent.parent.parent)
@@ -233,8 +234,30 @@ def test_r02_in_a_fresh_process() -> list[str]:
     return []
 
 
+def test_case_v6_field_is_invisible() -> list[str]:
+    """W0-R13: `CaseV5.v6` is omitted from JSON when None, so the old corpus
+    round-trips byte-for-byte; a v6 case carries the key and round-trips it."""
+    from bench.agentpii5 import schema
+    from bench.agentpii5.test_schema import VALID
+    problems: list[str] = []
+    data = schema.case_v5_to_json(VALID)
+    if "v6" in data:
+        problems.append("v6=None was written into the JSON")
+    if schema.case_v5_from_json(data) != VALID:
+        problems.append("round-trip of a v5 case changed it")
+    meta = contracts.CaseV6Meta(industry="retail", provenance="synthetic",
+                                skeleton_ref="", procedure_ref="")
+    v6_data = schema.case_v5_to_json(dataclasses.replace(VALID, v6=meta))
+    if "v6" not in v6_data:
+        problems.append("a v6 case lost its meta key")
+    if schema.case_v5_from_json(v6_data).v6 != meta:
+        problems.append("a v6 case's meta did not round-trip")
+    return problems
+
+
 CHECKS = (test_v5_tables_reproduced, test_registry_rules, test_no_engine,
-          test_r02_admits_registered_types, test_r02_in_a_fresh_process)
+          test_r02_admits_registered_types, test_r02_in_a_fresh_process,
+          test_case_v6_field_is_invisible)
 
 
 def main() -> int:

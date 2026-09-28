@@ -606,7 +606,7 @@ def _synthetic_corpus() -> list[CaseV5]:
                 memory=memory, pick=None, branch=None, loop=None, rag=None, document=document,
                 has_result=with_result,
                 streaming=index % len(SYNTHETIC_REGISTERS) == 0,
-                revised_from_v4=revised))
+                revised_from_v4=revised, v6=None))
             index += 1
     return cases
 

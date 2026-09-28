@@ -496,7 +496,8 @@ def hand_case() -> CaseV5:
     return CaseV5(base=base, behaviour="retry_same_tool", hops=hops,
                   returns=(ReturnExpectation("crm_find_contact", 1, "list", ("p1", "n1")),),
                   forced=forced, memory=(), pick=None, branch=None, loop=None, rag=None,
-                  document=None, has_result=True, streaming=False, revised_from_v4=False)
+                  document=None, has_result=True, streaming=False, revised_from_v4=False,
+                  v6=None)
 
 
 def test_no_pseudex() -> list[str]:
@@ -978,7 +979,8 @@ def office_case() -> CaseV5:
         returns=(ReturnExpectation("mail_read", 0, "nested", ("m1", "m2")),
                  ReturnExpectation("crm_upsert_card", 0, "nested", ("m2",))),
         forced=(), memory=(), pick=None, branch=None, loop=None, rag=None,
-        document=None, has_result=True, streaming=False, revised_from_v4=False)
+        document=None, has_result=True, streaming=False, revised_from_v4=False,
+        v6=None)
 
 
 def test_the_office_loop_is_provable() -> list[str]:

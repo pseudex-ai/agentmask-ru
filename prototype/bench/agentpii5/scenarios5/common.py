@@ -371,7 +371,7 @@ class CaseBuilderV5:
             returns=tuple(self.returns), forced=tuple(self.forced), memory=tuple(self.memory),
             pick=self.pick, branch=self.branch, loop=self.loop, rag=self.rag,
             document=self.document, has_result=has_result(hops), streaming=self.streaming,
-            revised_from_v4=False)
+            revised_from_v4=False, v6=None)
         problems = validate_v5(case)
         if problems:
             raise InvalidCase(f"{case.base.id} ({behaviour}):\n  " + "\n  ".join(problems))

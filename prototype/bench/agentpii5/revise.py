@@ -183,7 +183,7 @@ def _finish(case: Case, reads: dict[str, list[tuple[PiiItem, str]]], forms: dict
                    returns=declared.returns, forced=(), memory=declared.memory,
                    pick=pick, branch=branch, loop=loop if behaviour == "user_in_loop" else None,
                    rag=None, document=None, has_result=declared.has_result,
-                   streaming=declared.streaming, revised_from_v4=True),
+                   streaming=declared.streaming, revised_from_v4=True, v6=None),
             downgraded, reason)
 
 
@@ -259,7 +259,7 @@ def _declare(case: Case, reads: dict[str, list[tuple[PiiItem, str]]], forms: dic
     return CaseV5(base=case, behaviour=behaviour, hops=tuple(hops), returns=tuple(returns),
                   forced=(), memory=_memory_specs(loop, answered), pick=None, branch=None,
                   loop=loop, rag=None, document=None, has_result=reached,
-                  streaming=streaming and reached, revised_from_v4=True)
+                  streaming=streaming and reached, revised_from_v4=True, v6=None)
 
 
 def _source_of(item: PiiItem, spec: FieldSpec, hops: Sequence[Hop], in_hop: dict[str, int],

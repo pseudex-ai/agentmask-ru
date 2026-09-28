@@ -57,7 +57,7 @@ def _two_turn_case() -> CaseV5:
         trace=(), note="фикстура судьи")
     return CaseV5(base=base, behaviour="memory_anaphora", hops=(), returns=(), forced=(),
                   memory=(), pick=None, branch=None, loop=None, rag=None, document=None,
-                  has_result=True, streaming=False, revised_from_v4=False)
+                  has_result=True, streaming=False, revised_from_v4=False, v6=None)
 
 
 def _run_with_turns(turn_replies: tuple[str, ...]) -> ArmRunV5:

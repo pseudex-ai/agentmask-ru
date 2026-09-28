@@ -900,8 +900,12 @@ def case_v5_to_json(case: CaseV5) -> dict[str, object]:
     """The v5 snapshot of one case. `base` goes through v4's own `to_json`, so
     `corpus.json` (the v4 view every v4 reader opens) and `corpus.v5.json` carry
     the SAME bytes for the v4 half — a baseline written twice is a baseline that
-    can drift from the treatment."""
-    return {
+    can drift from the treatment.
+
+    `v6` is OMITTED when None (CQ-3): a v5-authored case must not grow a
+    `v6: null` key, or the pinned corpus digest would move for a field that
+    carries nothing."""
+    data: dict[str, object] = {
         "base": case.base.to_json(),
         "behaviour": case.behaviour,
         "hops": [asdict(hop) for hop in case.hops],
@@ -917,6 +921,9 @@ def case_v5_to_json(case: CaseV5) -> dict[str, object]:
         "streaming": case.streaming,
         "revised_from_v4": case.revised_from_v4,
     }
+    if case.v6 is not None:
+        data["v6"] = asdict(case.v6)
+    return data
 
 
 def case_v5_from_json(raw: dict[str, object]) -> CaseV5:
@@ -960,7 +967,8 @@ def case_v5_from_json(raw: dict[str, object]) -> CaseV5:
             extracted_item_ids=tuple(document["extracted_item_ids"])),  # type: ignore[index]
         has_result=bool(raw["has_result"]),
         streaming=bool(raw["streaming"]),
-        revised_from_v4=bool(raw["revised_from_v4"]))
+        revised_from_v4=bool(raw["revised_from_v4"]),
+        v6=c.CaseV6Meta(**raw["v6"]) if raw.get("v6") is not None else None)  # type: ignore[arg-type]
 
 
 def corpus_digest_v5(cases: Sequence[CaseV5]) -> str:

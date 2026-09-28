@@ -43,6 +43,7 @@ from bench.agentpii4.schema import (  # noqa: F401 - re-exported on purpose
 from bench.agentpii4.stats import clopper_pearson, zero_failure_floor
 from bench.agentpii4.tools import REGISTRY, FieldSpec, Refusal, ToolSpec  # noqa: F401
 
+from bench.agentpii5 import contracts_v6
 from bench.agentpii5 import pii_types
 
 # --- §0 package rules ------------------------------------------------------------
@@ -65,11 +66,19 @@ TYPES: tuple[str, ...] = v4.TYPES + pii_types.NEW_ITEM_TYPES
 # Re-exported so `schema.R02` and the orchestrator's `reg_types` read the same
 # set from the one home (pii_types), never a copy.
 NEW_ITEM_TYPES: tuple[str, ...] = pii_types.NEW_ITEM_TYPES
+# The v6 tables, re-exported from their home (contracts_v6) — one definition,
+# never a copy. `INDUSTRIES`/`V6_AXES`/`V6_PROVENANCE_KINDS`/`V6_DIR` are the
+# axis vocabulary, `CaseV6Meta`/`ProcedureRecord` the shapes a v6 case carries.
+INDUSTRIES: tuple[str, ...] = contracts_v6.INDUSTRIES
+V6_AXES: tuple[str, ...] = contracts_v6.V6_AXES
+V6_PROVENANCE_KINDS: tuple[str, ...] = contracts_v6.V6_PROVENANCE_KINDS
+V6_DIR: str = contracts_v6.V6_DIR
+CaseV6Meta = contracts_v6.CaseV6Meta
+ProcedureRecord = contracts_v6.ProcedureRecord
 # The v6 negative families (§1.6 of tz-agentpii6-registry.md). R02 admits a
-# v4.validate «negative family … unknown» line for exactly these. Empty until
-# the first v6 case registers one; the list itself lives in `contracts_v6.py`
-# and is merged here once that file lands.
-V6_NEGATIVE_FAMILIES: tuple[str, ...] = ()
+# v4.validate «negative family … unknown» line for exactly these; the list
+# lives in `contracts_v6.py`.
+V6_NEGATIVE_FAMILIES: tuple[str, ...] = contracts_v6.V6_NEGATIVE_FAMILIES
 REGISTERS: tuple[str, ...] = v4.REGISTERS
 SPEECH_REGISTERS: tuple[str, ...] = v4.SPEECH_REGISTERS
 V4_SCENARIO_KINDS: tuple[str, ...] = v4.SCENARIO_KINDS
@@ -505,6 +514,7 @@ class CaseV5:
     has_result: bool
     streaming: bool
     revised_from_v4: bool            # True for the 834; False for a case a v5 generator built
+    v6: CaseV6Meta | None            # v6 industry + provenance; None for every v5-authored case
 
 
 MIN_STREAMING_CASES: int = 60
