@@ -124,30 +124,39 @@ def _with(index: int, **changes) -> tuple[pii_types.TypeSpec, ...]:
     return tuple(registry)
 
 
+def _v5() -> tuple[pii_types.TypeSpec, ...]:
+    """The v5 records only — the baseline the literals below reproduce. The v6
+    records extend the tables, so the v5 repro check runs over the v5 slice."""
+    return tuple(t for t in pii_types.TYPE_REGISTRY if t.origin == pii_types.ORIGIN_V5)
+
+
 def test_v5_tables_reproduced() -> list[str]:
     problems: list[str] = []
-    if pii_types.form_features(pii_types.TYPE_REGISTRY) != _LITERAL_FORM_FEATURES:
+    v5 = _v5()
+    if pii_types.form_features(v5) != _LITERAL_FORM_FEATURES:
         problems.append("FORM_FEATURES differs from the literal")
-    if pii_types.form_types(pii_types.TYPE_REGISTRY) != tuple(_LITERAL_FORM_FEATURES):
+    if pii_types.form_types(v5) != tuple(_LITERAL_FORM_FEATURES):
         problems.append("FORM_TYPES differs from the literal")
-    if pii_types.feature_labels(pii_types.TYPE_REGISTRY) != _LITERAL_FEATURE_LABELS:
+    if pii_types.feature_labels(v5) != _LITERAL_FEATURE_LABELS:
         problems.append("FEATURE_LABELS differs from the literal")
-    if pii_types.form_abstain(pii_types.TYPE_REGISTRY) != _LITERAL_FORM_ABSTAIN:
+    if pii_types.form_abstain(v5) != _LITERAL_FORM_ABSTAIN:
         problems.append("FORM_ABSTAIN differs from the literal")
-    if pii_types.identifying_roles(pii_types.TYPE_REGISTRY) != _LITERAL_IDENTIFYING_ROLES:
+    if pii_types.identifying_roles(v5) != _LITERAL_IDENTIFYING_ROLES:
         problems.append("IDENTIFYING_ROLES differs from the literal")
-    if pii_types.digit_piece_types(pii_types.TYPE_REGISTRY) != _LITERAL_DIGIT_PIECE_TYPES:
+    if pii_types.digit_piece_types(v5) != _LITERAL_DIGIT_PIECE_TYPES:
         problems.append("DIGIT_PIECE_TYPES differs from the literal")
-    if pii_types.date_piece_types(pii_types.TYPE_REGISTRY) != _LITERAL_DATE_PIECE_TYPES:
+    if pii_types.date_piece_types(v5) != _LITERAL_DATE_PIECE_TYPES:
         problems.append("DATE_PIECE_TYPES differs from the literal")
-    if pii_types.derived_piece_types(pii_types.TYPE_REGISTRY) != _LITERAL_DERIVED_PIECE_TYPES:
+    if pii_types.derived_piece_types(v5) != _LITERAL_DERIVED_PIECE_TYPES:
         problems.append("DERIVED_PIECE_TYPES differs from the literal")
-    if pii_types.squeezed_types(pii_types.TYPE_REGISTRY) != _LITERAL_SQUEEZED_TYPES:
+    if pii_types.squeezed_types(v5) != _LITERAL_SQUEEZED_TYPES:
         problems.append("SQUEEZED_TYPES differs from the literal")
-    if pii_types.NEEDLE_KINDS != _LITERAL_NEEDLE_KINDS:
-        problems.append("NEEDLE_KINDS differs from the literal")
-    if pii_types.NEW_ITEM_TYPES != ():
-        problems.append("NEW_ITEM_TYPES must be empty before any v6 case is admitted")
+    if pii_types.NEEDLE_KINDS[:len(_LITERAL_NEEDLE_KINDS)] != _LITERAL_NEEDLE_KINDS:
+        problems.append("the v5 NEEDLE_KINDS prefix differs from the literal")
+    if pii_types.NEEDLE_KINDS[len(_LITERAL_NEEDLE_KINDS):] != ("glyph", "octets", "ipv6"):
+        problems.append("the CQ-8 needle kinds (glyph/octets/ipv6) are missing")
+    if len(pii_types.NEW_ITEM_TYPES) != 55:
+        problems.append(f"NEW_ITEM_TYPES has {len(pii_types.NEW_ITEM_TYPES)}, expected 55")
     return problems
 
 

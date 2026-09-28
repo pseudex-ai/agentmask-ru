@@ -21,7 +21,11 @@ from dataclasses import dataclass
 # The shapes a value survives being rewritten in (contracts §4bis). Closed,
 # because a metric that could not name the shape it matched on could not be
 # argued with. Moved here so the registry can own the closed list (§8.1 CQ-2).
-NEEDLE_KINDS: tuple[str, ...] = ("whole", "stem", "digits", "date", "initials", "squeezed")
+# The three v6 kinds (glyph/octets/ipv6) join in the SAME change that admits the
+# v6 records (CQ-8): a record names a kind the closed list must then hold.
+NEEDLE_KINDS: tuple[str, ...] = (
+    "whole", "stem", "digits", "date", "initials", "squeezed",
+    "glyph", "octets", "ipv6")
 
 # The two origins a record may carry. A v5 record reproduces today's tables
 # byte-for-byte; a v6 record adds a new item type.
@@ -252,6 +256,20 @@ TYPE_REGISTRY: tuple[TypeSpec, ...] = (
         needle_kinds=("whole", "squeezed"), squeeze_separators="", signature_tail=0, value_notation="squeezed",
         engine_labels=(), mint="", hunt="", sample="А123БВ 77",
     ),
+)
+
+# The v6 records. They are AUTHORED in the group files `pii_types_a/b/c.py`
+# (one per registry card group, reviewed separately) and folded here so
+# `TYPE_REGISTRY` remains the single home every derivative and consumer reads.
+# The import sits AFTER `TypeSpec` and the class/origin constants, and the group
+# files import only those names, so there is no cycle.
+from bench.agentpii5 import pii_types_a, pii_types_b, pii_types_c  # noqa: E402
+
+TYPE_REGISTRY = (
+    TYPE_REGISTRY
+    + pii_types_a.GROUP_A
+    + pii_types_b.GROUP_B
+    + pii_types_c.GROUP_C
 )
 
 
