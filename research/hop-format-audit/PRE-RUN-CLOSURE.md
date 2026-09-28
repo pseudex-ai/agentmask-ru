@@ -135,3 +135,39 @@ EMAIL; NAME полное↔части (починено `5ebc4b2`); LOC разд
 
 Финальный прогон 363 (не-холдаут), DeepSeek Flash, $30, concurrency 10, без судьи,
 `live --web` — ссылка владельцу.
+
+---
+
+## Статус закрытия (обновляется по мере работы)
+
+| Пункт | Статус | Доказательство / коммит |
+|---|---|---|
+| A1 NAME инициалы | ✅ закрыт | `test_mint_consistency` 4/4 · `2f4a73c` |
+| A2 LOC родовое слово | ✅ закрыт | `test_mint_consistency` + `test_loc_acceptance` · `2f4a73c` |
+| A3 PLATE разделители | ✅ закрыт | `test_mint_consistency` · `2f4a73c` |
+| B1 S01 имя tool-result | ✅ закрыт | `test_call_scoped_name_consistency` · `5ebc4b2` |
+| B2 S0 error echo | ✅ закрыт | `test_error_echo_privacy` 311/311 + `test_error_payload_coverage` 21/21 |
+| F1 E07 load_dev_bundle | ✅ закрыт | `test_harness_stream` standalone · `2f4a73c` |
+| F2 E07 уникальный pin | ✅ закрыт | мутации дают RED · `2f4a73c` |
+| C1 LOC приёмка | ✅ закрыт | `test_loc_acceptance` 20/20 + offline реплей 105 кейсов · `5e46183` |
+| C2 error-payload coverage | ✅ закрыт | `test_error_payload_coverage` 21/21 · `5e46183` |
+| C3 performance | ✅ закрыт (baseline) | `test_perf_masking` + `profile_latency` part1 exit 0, регресса нет |
+| D1 whole-loop | ✅ закрыт | `test_harness_stream` full-triple PASS · `5e46183` |
+| E1 C06 production | ⏭️ отдельный rollout | не блокирует прогон |
+
+### Регрессия (найдена и починена в цикле)
+
+`5ebc4b2` положил распознавание композиции имени в evidence-независимый
+`is_own_substitute`, из-за чего публичный evidence-free `mask_one` перестал
+пере-чеканить перерегистренное собственное имя (cache-key политика,
+`test_error_echo_privacy` 309/311). Перенесено в evidence-зависимый
+`envelope._is_own_composition`; имя и cache-key оба зелёные (`2f4a73c`).
+
+### Находки, НЕ чинимые в этом цикле (пре-существующие флейки, зафиксированы)
+
+1. `test_error_echo_privacy` флейк: при случайно отчеканенной фейк-фамилии
+   длиннее 7 символов (реальная «Битюков»=7) `_project_echo` режет её до длины
+   реального → 309/311 вместо 311/311. Потенциально реальный дефект проекции
+   длинного фейка в error echo — требует отдельного решения.
+2. `test_derived_forms` флейк: вероятностный поиск «colliding initials» в 9000
+   вытяжках изредка не находит. Тест-флейк, не движок.
