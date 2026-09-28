@@ -14,6 +14,7 @@ call fails, the exception propagates and the customer sees an honest error.
 
 import hashlib
 import logging
+from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -23,7 +24,7 @@ from django.db.models import F, Q
 from django.utils import timezone
 
 from accounts.models import Membership, Organization, User
-from billing import licensing
+from billing import licensing, payments
 from billing.models import Invoice, LicenseKey, Offer, Plan, Subscription
 
 _log = logging.getLogger("billing.services")
@@ -625,6 +626,97 @@ def mark_paid(invoice: Invoice, payment_ref: str = "") -> None:
             service_resumed_at=timezone.now())
     funnel("paid", organization_id, str(invoice.total))
     invoice.refresh_from_db()
+
+
+# ЧТО ПРОВАЙДЕР СКАЗАЛ О ПЛАТЕЖЕ, СЛОВАМИ, А НЕ КОДОМ HTTP.
+#
+# `settle_payment` зовут ДВЕ ДВЕРИ, и у них разные ответы наружу: уведомление
+# отвечает кодами (200 принято / 502 переспроси), а вернувшийся с оплаты клиент
+# — страницей. Общий разбор поэтому возвращает вердикт, а не статус, и каждая
+# дверь переводит его в своё.
+PAID = "paid"                    # деньги пришли и записаны
+UNRESUMED = "unresumed"          # деньги записаны, обслуживание не поднялось
+PENDING = "pending"              # платёж ещё идёт
+DECLINED = "declined"            # провайдер закрыл платёж без денег
+UNDERPAID = "underpaid"          # денег меньше счёта
+UNREADABLE = "unreadable"        # спросить провайдера не удалось
+UNKNOWN_PAYMENT = "unknown_payment"  # провайдер такого платежа не знает
+UNKNOWN_INVOICE = "unknown_invoice"
+NOTHING = "nothing"              # у счёта нет ни одной попытки оплаты
+
+_OWED = (PAID, UNRESUMED)
+
+
+@dataclass(frozen=True)
+class Settlement:
+    """Вердикт по одному платежу: что с ним стало и почему."""
+
+    verdict: str
+    payment_id: str = ""
+    detail: str = ""
+
+    @property
+    def paid(self) -> bool:
+        return self.verdict in _OWED
+
+
+def settle_payment(invoice: Invoice | None = None, payment_id: str = "") -> Settlement:
+    """Прочитать платёж у провайдера и, если он прошёл, записать оплату.
+
+    ЗАЧЕМ ВТОРАЯ ДВЕРЬ. Уведомление — то, что ДОЛЖНО приходить, и до
+    28.09.2026 оно не приходило НИ РАЗУ: у магазина в кабинете ЮKassa не
+    настроен URL уведомлений (это настройка чужого кабинета, и её нельзя
+    выставить нашим ключом — ручка `/v3/webhooks` требует OAuth и отвечает 401
+    на Basic). За это время пять наших платежей из пяти дошли до `succeeded` у
+    провайдера и остались неоплаченными у нас: счёт `issued`, подписка
+    `pending`, ключ не выпущен, а клиент только что отдал деньги и смотрит на
+    «ЖДЁТ ОПЛАТЫ».
+
+    Дверь, зависящая от настройки в чужом кабинете, не может быть единственной.
+    Поэтому тем же правилом, что и уведомление — «тело не доверяем, статус
+    читаем обратно по authenticated-соединению», — пользуется и возврат клиента
+    с оплаты, и часовой обход биллинга. Правило одно, дверей три.
+
+    ИДЕМПОТЕНТНО: `mark_paid` сам перечитывает строку под блокировкой и
+    возвращается сразу, если деньги уже записаны и обслуживание поднято.
+    """
+    payment_id = payment_id or (invoice.payment_ref if invoice is not None else "")
+    if not payment_id:
+        return Settlement(NOTHING)
+    try:
+        status, amount, number = payments.fetch_status(payment_id)
+    except payments.PaymentNotKnown as error:
+        # 404 у провайдера — это ответ, а не авария: такого платежа нет.
+        return Settlement(UNKNOWN_PAYMENT, payment_id, str(error))
+    except payments.PaymentError as error:
+        return Settlement(UNREADABLE, payment_id, str(error))
+
+    if invoice is None:
+        invoice = Invoice.objects.filter(number=number).first()
+        if invoice is None:
+            return Settlement(UNKNOWN_INVOICE, payment_id, number)
+
+    if status != "succeeded":
+        # Идущий платёж и закрытый — разные ответы: первого ждут, второго нет.
+        going = status in ("pending", "waiting_for_capture")
+        return Settlement(PENDING if going else DECLINED, payment_id, status)
+
+    if invoice.state == Invoice.PAID and invoice.service_resumed_at is not None:
+        return Settlement(PAID, payment_id)
+
+    # НЕДОПЛАТА НЕ ВОЗОБНОВЛЯЕТ ОБСЛУЖИВАНИЕ. Сравнение точное: с обеих сторон
+    # Decimal, а не float, — расхождение в копейку здесь стоило бы клиенту
+    # месяца, за который он заплатил меньше.
+    if amount < invoice.total:
+        return Settlement(UNDERPAID, payment_id, f"{amount} < {invoice.total}")
+
+    try:
+        mark_paid(invoice, payment_ref=payment_id)
+    except ServiceNotResumed as error:
+        # Деньги записаны и не откатятся; не доехало только возобновление, и
+        # повторный вызов — единственное, что его дочинит.
+        return Settlement(UNRESUMED, payment_id, str(error))
+    return Settlement(PAID, payment_id)
 
 
 def mark_unpaid(organization: Organization) -> None:

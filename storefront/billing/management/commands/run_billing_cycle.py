@@ -38,7 +38,7 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
-from billing import licensing, services
+from billing import licensing, payments, services
 
 _log = logging.getLogger("billing.cycle")
 from billing.services import _int_or_zero
@@ -47,6 +47,12 @@ from billing.models import Invoice, Subscription
 # Из `services`, а не отсюда: это же число печатается на лендинге, и три копии
 # одного срока разъезжаются молча.
 GRACE_DAYS = services.GRACE_DAYS
+
+# ОКНО И ПАЧКА СВЕРКИ ПЛАТЕЖЕЙ. Четырнадцать дней — потому что платёж, который
+# провайдер ещё может подтвердить, живёт днями, а не месяцами; двадцать пять
+# счетов за проход — потому что это двадцать пять чужих сетевых вызовов в час.
+_SETTLE_WINDOW_DAYS = 14
+_SETTLE_BATCH = 25
 
 
 def _period_volume(organization, reported: dict) -> int:
@@ -85,6 +91,10 @@ class Command(BaseCommand):
         self._warn_about_volume()
         self._issue_for_ended_trials(now)
         self._issue_for_ended_periods(now)
+        # ПЕРЕД ОСТАНОВКОЙ, А НЕ ПОСЛЕ. Счёт, оплаченный и не отмеченный, — это
+        # `issued` с просроченным сроком; останови мы его первым, клиент узнал бы
+        # о нашей невежливости от своего шлюза.
+        self._settle_unpaid_payments(now)
         self._stop_overdue(now)
         self._resume_stuck()
 
@@ -571,6 +581,54 @@ class Command(BaseCommand):
             recipient_list=[address],
             fail_silently=True,
         )
+
+    # --- 3б: спросить провайдера о том, о чём он не сказал -----------------
+
+    def _settle_unpaid_payments(self, now) -> None:
+        """Проверить у провайдера счета, по которым есть платёж, а оплаты нет.
+
+        ЗАЧЕМ, ЕСЛИ У НАС ЕСТЬ УВЕДОМЛЕНИЕ. Потому что уведомление — это
+        настройка в ЧУЖОМ кабинете. 28.09.2026 выяснилось, что она не сделана:
+        у магазина не выставлен URL уведомлений (ручка `/v3/webhooks` требует
+        OAuth и нашим ключом отвечает 401), и за всё время ни одно уведомление
+        не пришло — при пяти платежах из пяти, дошедших у провайдера до
+        `succeeded`. Клиент, который заплатил и закрыл вкладку, на страницу
+        возврата не придёт, и дочиняет его только этот обход.
+
+        ОКНО И ПАЧКА КОНЕЧНЫ, И ЭТО ПРО ГРАНИЦУ, А НЕ ПРО ЭКОНОМИЮ. Каждый
+        кандидат — это один authenticated-запрос к провайдеру; счёт, который
+        клиент бросил полгода назад, не станет оплаченным от сотого вопроса, а
+        квота общая со всеми живыми оплатами.
+        """
+        if not payments.is_available():
+            return
+        since = now - timedelta(days=_SETTLE_WINDOW_DAYS)
+        candidates = (Invoice.objects
+                      .select_related("organization")
+                      .filter(state=Invoice.ISSUED, issued_at__gte=since)
+                      .exclude(payment_ref="")
+                      .order_by("-issued_at")[:_SETTLE_BATCH])
+        for invoice in candidates:
+            if self.dry:
+                self.done.append(f"{invoice.organization_id}: счёт {invoice.number} "
+                                 f"с платежом без оплаты — спрошу провайдера и закрою")
+                continue
+            settlement = services.settle_payment(invoice=invoice)
+            if settlement.paid:
+                self.done.append(
+                    f"{invoice.organization_id}: оплата {invoice.number} подтверждена "
+                    f"у провайдера, счёт закрыт")
+            elif settlement.verdict == services.UNRESUMED:
+                # Деньги записаны, обслуживание не встало. Повторит через час —
+                # тем же путём, что и `_resume_stuck` ниже.
+                self.stderr.write(f"{invoice.organization_id}: счёт {invoice.number} "
+                                  f"оплачен, обслуживание не поднялось: "
+                                  f"{settlement.detail}")
+            elif settlement.verdict == services.UNREADABLE:
+                # Провайдер недоступен — это НАША авария, и она не имеет права
+                # уронить цикл: счета за периоды важнее одного недочитанного.
+                self.stderr.write(f"{invoice.organization_id}: провайдер не ответил "
+                                  f"про {invoice.payment_ref}: {settlement.detail}")
 
     # --- 3: остановка ------------------------------------------------------
 

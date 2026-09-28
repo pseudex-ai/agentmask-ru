@@ -28,6 +28,18 @@ class PaymentError(RuntimeError):
     resume."""
 
 
+class PaymentNotKnown(PaymentError):
+    """Провайдер не знает такого платежа — ответ 404.
+
+    ЭТО ОТВЕТ, А НЕ АВАРИЯ, И РАЗНИЦА НЕСУЩАЯ. Уведомление приходит на
+    публичный адрес, и ЮKassa шлёт на него проверочные и чужие события; 502
+    «не смогли выяснить» на платеже, которого нет, — это ложь в сторону
+    «переспроси», а кабинет ЮKassa считает такой ответ поломкой адреса и
+    настройку не сохраняет. Отдельный класс здесь существует ровно затем, чтобы
+    вебхук отвечал 200 на «такого платежа нет» и 502 — на «не дозвонились».
+    """
+
+
 def _configured() -> bool:
     return bool(settings.YOOKASSA_SHOP_ID and settings.YOOKASSA_SECRET_KEY)
 
@@ -106,6 +118,27 @@ def _receipt(invoice, email: str) -> dict[str, object]:
     }
 
 
+def confirmation_url(payment) -> str:
+    """Ссылка, на которую отправляют клиента. Пустая строка — если её нет.
+
+    У ЗАВЕРШЁННОГО И У ОТМЕНЁННОГО ПЛАТЕЖА ПОДТВЕРЖДЕНИЯ НЕТ ВООБЩЕ:
+    `payment.confirmation` у них `None`, а не объект с пустым `url`. Код,
+    читавший `payment.confirmation.confirmation_url` без проверки, падал на
+    AttributeError — пятисоткой на кнопке «оплатить картой», ровно тогда, когда
+    этой кнопкой платить уже нечего. Проверено на живом магазине 28.09.2026:
+    четыре из пяти наших платежей отменены провайдером по истечении страницы
+    (`expired_on_confirmation`), и у каждого `confirmation is None`.
+    """
+    confirmation = getattr(payment, "confirmation", None)
+    return getattr(confirmation, "confirmation_url", "") or ""
+
+
+# СКОЛЬКО СТУПЕНЕЙ ЦЕПОЧКИ ПРОБУЕМ ЗА ОДИН КЛИК. Больше четырёх не бывает
+# даже у счёта, который клиент пытается оплатить месяцами: каждая ступень — это
+# уже созданный платёж, чей идентификатор уточняет ключ идемпотентности.
+_MAX_PAYMENT_ATTEMPTS = 4
+
+
 def create_payment(invoice, return_url: str, email: str) -> tuple[str, str]:
     """Start a payment for an invoice. Returns (payment_id, confirmation_url).
 
@@ -113,6 +146,13 @@ def create_payment(invoice, return_url: str, email: str) -> tuple[str, str]:
     double-clicks, or a retry after a timeout we never saw the answer to, must
     not produce two payments for one invoice — and the provider can only prevent
     that if we give it the same key both times.
+
+    НО КЛЮЧ НЕ МОЖЕТ БЫТЬ ОДНИМ И ТЕМ ЖЕ НАВСЕГДА, И ЭТО ПРОДОЛЖАЕТ ПРАВИЛО
+    ВЫШЕ, А НЕ ОТМЕНЯЕТ ЕГО. У провайдера ключ разрешается в результат ПЕРВОГО
+    запроса, и «не создавать второй платёж» превращается в «вернуть мёртвый»,
+    как только первая попытка истекла: клиент нажимает кнопку, получает
+    отменённый платёж, и ссылки на оплату в нём нет ни у нас, ни у него. Кнопка
+    после этого не работает НИКАК, сколько по ней ни жми.
     """
     Payment = _client()
     body: dict[str, object] = {
@@ -127,11 +167,40 @@ def create_payment(invoice, return_url: str, email: str) -> tuple[str, str]:
         "metadata": {"invoice": invoice.number, "org": invoice.organization_id},
     }
     body["receipt"] = _receipt(invoice, email)
-    try:
-        payment = Payment.create(body, f"pseudex-{invoice.number}")
-    except Exception as error:  # the SDK raises provider-specific types
-        raise PaymentError(f"ЮKassa refused the payment for {invoice.number}: {error}") from error
-    return payment.id, payment.confirmation.confirmation_url
+
+    # ЦЕПОЧКА КЛЮЧЕЙ, А НЕ ОДИН КЛЮЧ НАВСЕГДА. Первая ступень — прежний ключ по
+    # номеру счёта: он и защищает от двойного платежа. Если провайдер вернул по
+    # нему запись, которой больше нельзя заплатить, следующая ступень строится
+    # на ЕЁ идентификаторе — `pseudex-<номер>-<id прошлого платежа>`. Цепочка
+    # детерминирована: тот же счёт в том же состоянии даёт тот же ключ, поэтому
+    # второе нажатие повторяет путь первого и второго платежа не чеканит.
+    key = f"pseudex-{invoice.number}"
+    seen: set[str] = set()
+    for _ in range(_MAX_PAYMENT_ATTEMPTS):
+        try:
+            payment = Payment.create(body, key)
+        except Exception as error:  # the SDK raises provider-specific types
+            raise PaymentError(
+                f"ЮKassa refused the payment for {invoice.number}: {error}") from error
+        url = confirmation_url(payment)
+        if url:
+            return payment.id, url
+        # Ссылки нет. Завершённый платёж — деньги уже взяты, просить их второй
+        # раз нельзя ничем; идущий — ссылки не дал сам провайдер, и выдумать её
+        # нечем. Обе двери закрыты честной ошибкой, а не новой попыткой списать.
+        status = str(getattr(payment, "status", ""))
+        if status in ("pending", "waiting_for_capture", "succeeded"):
+            raise PaymentError(
+                f"payment {payment.id} for {invoice.number} is {status} and the "
+                f"provider returned no confirmation url")
+        payment_id = str(getattr(payment, "id", ""))
+        if not payment_id or payment_id in seen:
+            break
+        seen.add(payment_id)
+        key = f"pseudex-{invoice.number}-{payment_id}"
+    raise PaymentError(
+        f"ЮKassa returned no payable page for {invoice.number} after "
+        f"{_MAX_PAYMENT_ATTEMPTS} attempts")
 
 
 def fetch_status(payment_id: str) -> tuple[str, Decimal, str]:
@@ -143,8 +212,14 @@ def fetch_status(payment_id: str) -> tuple[str, Decimal, str]:
     whatever ЮKassa actually says, which is "no such payment".
     """
     Payment = _client()
+    # Импорт рядом с вызовом, как и `_client()`: SDK настраивает себя
+    # module-level глобалами, и тянуть его в команду, которой платить нечем,
+    # незачем.
+    from yookassa.domain.exceptions.not_found_error import NotFoundError
     try:
         payment = Payment.find_one(payment_id)
+    except NotFoundError as error:
+        raise PaymentNotKnown(f"provider has no payment {payment_id}") from error
     except Exception as error:
         raise PaymentError(f"could not read payment {payment_id}: {error}") from error
     return (

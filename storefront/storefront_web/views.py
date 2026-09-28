@@ -1143,10 +1143,40 @@ def update_payer(request):
 
 @login_required
 def invoice_detail(request, number: str):
+    """Счёт — и, по совпадению, ТА САМАЯ СТРАНИЦА, КУДА ПРОВАЙДЕР ВОЗВРАЩАЕТ
+    КЛИЕНТА С ОПЛАТЫ (`return_url`).
+
+    ПОЭТОМУ ОНА ОБЯЗАНА СПРАШИВАТЬ, А НЕ ЖДАТЬ. ЮKassa возвращает человека
+    сюда сразу после денег, и до 28.09.2026 страница просто рисовала счёт: если
+    уведомление не приходило, клиент видел «ЖДЁТ ОПЛАТЫ» и тот же счёт, только
+    что оплаченный. Ровно это и случилось: платёж `succeeded`, счёт `issued`,
+    подписка `pending`, ключ не выпущен. Правило у нас уже было сформулировано
+    для уведомления — «тело не доверяем, статус читаем обратно»; здесь оно
+    применено к возврату, где тело вообще ни при чём, а есть только факт
+    «человек вернулся от провайдера».
+    """
     organization = _organization(request)
     invoice = organization.invoices.filter(number=number).first()
     if invoice is None:
         raise Http404("счёт не найден")
+    # Спрашиваем провайдера ТОЛЬКО когда есть о чём: без `payment_ref` вопроса
+    # нет вовсе, а у закрытого и возобновлённого счёта ответ уже записан.
+    if invoice.payment_ref and (invoice.state != Invoice.PAID
+                                or invoice.service_resumed_at is None):
+        settlement = services.settle_payment(invoice=invoice)
+        if settlement.paid:
+            invoice.refresh_from_db()
+            _log.info("invoice %s settled on the return trip from the provider",
+                      invoice.number)
+            # Ключ показывается один раз, поэтому его выпуск остаётся отдельным
+            # осознанным действием (`new_key`, POST с CSRF) — как и у пробы.
+            # Здесь убирается то, что мешало ему выпуститься: состояние оплаты.
+            if not organization.keys.filter(revoked_at__isnull=True).exists():
+                messages.success(request, "Оплата получена — счёт закрыт. "
+                                          "Выпустите ключ: он показывается один раз.")
+            else:
+                messages.success(request, "Оплата получена — счёт закрыт.")
+            return redirect("cabinet")
     return render(request, "app/invoice.html", {
         "invoice": invoice,
         "organization": organization,
@@ -1167,6 +1197,15 @@ def pay_invoice(request, number: str):
         raise Http404("счёт не найден")
     if invoice.state == Invoice.PAID:
         messages.info(request, "Этот счёт уже оплачен.")
+        return redirect("invoice_detail", number=number)
+    # СПЕРВА СПРОСИТЬ, ЧЕМ ПРОСИТЬ ДЕНЬГИ ВТОРОЙ РАЗ. Кнопка «оплатить картой»
+    # на счёте, который уже оплачен, но не отмечен (уведомление не доехало),
+    # вела прямиком ко второму списанию за один и тот же месяц: счёт в базе
+    # `issued`, значит проверка выше пропускала, а провайдер про деньги не
+    # спрашивался ни разу.
+    if invoice.payment_ref and services.settle_payment(invoice=invoice).paid:
+        invoice.refresh_from_db()
+        messages.success(request, "Оплата уже прошла — счёт закрыт.")
         return redirect("invoice_detail", number=number)
     try:
         payment_id, confirmation = payments.create_payment(
@@ -1303,45 +1342,43 @@ def yookassa_webhook(request):
     if _too_many_webhooks(request):
         return HttpResponse("slow down", status=429)
 
-    try:
-        status, amount, number = payments.fetch_status(payment_id)
-    except payments.PaymentError as error:
+    # СВЕРКА ОДНА НА ТРИ ДВЕРИ. Разбор платежа живёт в `services.settle_payment`,
+    # а не здесь: тем же кодом пользуются возврат клиента с оплаты и часовой
+    # обход биллинга. Здесь от него остаётся только перевод вердикта в код HTTP —
+    # единственное, что у этой двери своё.
+    settlement = services.settle_payment(payment_id=payment_id)
+    if settlement.verdict == services.UNREADABLE:
         # 502 rather than 200: we could not establish the truth, so the provider
         # SHOULD retry. This is the one case where a retry is what we want.
-        _log.error("could not verify payment %s: %s", payment_id, error)
+        _log.error("could not verify payment %s: %s", payment_id, settlement.detail)
         return HttpResponse("could not verify", status=502)
-
-    if status != "succeeded":
-        return HttpResponse("ignored", status=200)
-
-    invoice = Invoice.objects.filter(number=number).first()
-    if invoice is None:
-        _log.error("payment %s references unknown invoice %r", payment_id, number)
-        return HttpResponse("unknown invoice", status=200)
-    if invoice.state == Invoice.PAID and invoice.service_resumed_at is not None:
-        return HttpResponse("already paid", status=200)
-    # Underpayment must not resume service. Amounts come back as Decimal from
-    # both sides, so this is an exact comparison and not a float near-miss.
-    if amount < invoice.total:
-        _log.error("payment %s underpays %s: %s < %s",
-                   payment_id, number, amount, invoice.total)
-        return HttpResponse("amount mismatch", status=200)
-
-    # `payment_ref` едет ВНУТРЬ `mark_paid` и пишется тем же коммитом, что и
-    # оплата. Раньше он записывался здесь, до вызова, и откат внутри `mark_paid`
-    # оставлял счёт с проставленным `payment_ref` в состоянии `draft` — при
-    # уникальном поле это ещё и упирало повторную доставку в конфликт.
-    try:
-        services.mark_paid(invoice, payment_ref=payment_id)
-    except services.ServiceNotResumed as error:
+    if settlement.verdict == services.UNRESUMED:
         # 502, а не 500 из необработанного исключения: деньги записаны и не
         # откатятся, не доехало только возобновление, и провайдер ДОЛЖЕН
         # повторить — повтор его и дочинит. Та же дверь, что у
         # `payments.PaymentError` выше, и по той же причине.
-        _log.error("invoice %s paid but service not resumed: %s", number, error)
+        _log.error("invoice paid but service not resumed: %s", settlement.detail)
         return HttpResponse("paid, service not resumed", status=502)
-    _log.info("invoice %s paid via %s", number, payment_id)
-    return HttpResponse("ok", status=200)
+    if settlement.verdict == services.UNKNOWN_PAYMENT:
+        # 200, А НЕ 502: провайдер такого платежа не знает — это установленная
+        # истина, а не «не смогли выяснить». На этот адрес шлют проверочные и
+        # чужие события, и 502 на них кабинет ЮKassa читает как поломку адреса.
+        _log.info("notification about a payment the provider does not know: %s",
+                  payment_id)
+        return HttpResponse("unknown payment", status=200)
+    if settlement.verdict == services.UNKNOWN_INVOICE:
+        _log.error("payment %s references unknown invoice %r",
+                   payment_id, settlement.detail)
+        return HttpResponse("unknown invoice", status=200)
+    if settlement.verdict == services.UNDERPAID:
+        _log.error("payment %s underpays: %s", payment_id, settlement.detail)
+        return HttpResponse("amount mismatch", status=200)
+    if settlement.verdict == services.PAID:
+        _log.info("invoice paid via %s", payment_id)
+        return HttpResponse("ok", status=200)
+    # Идущий платёж, закрытый провайдером или уведомление о чужом платеже:
+    # повторять нечего.
+    return HttpResponse("ignored", status=200)
 
 
 @login_required
