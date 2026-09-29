@@ -148,11 +148,17 @@ class RealGateway:
 
     def _push(self, wire: dict[str, object], text: str, index: int | None) -> str:
         self._transcript.append(wire)
+        # The scorer reads the SAME frozen record production's `mask_messages`
+        # snapshots at the start of its pass. Observing BEFORE the production
+        # mask keeps the scorer's `shown_forms` read free of the values THIS
+        # message is about to mint; the scorer only mints tokens (idempotent),
+        # so the production pass below sees the same pre-pass record.
+        observed = score._mask_message(text, self._detector, self._view,
+                                       wire.get("role", ""))
         masked = mask_messages([dict(one) for one in self._transcript], self._context, False)
         content = masked[-1].get("content")
         if not isinstance(content, str):
             raise HarnessError(f"{self._case.id}: mask_messages вернул не строку")
-        observed = score._mask_message(text, self._detector, self._view)
         if observed.masked != content:
             raise HarnessError(
                 f"{self._case.id}: маскирование разошлось — производственный путь "

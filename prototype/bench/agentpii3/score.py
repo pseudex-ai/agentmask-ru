@@ -98,7 +98,15 @@ sys.path.insert(0, str(_HERE.parents[2]))
 
 from pseudex.audit import AuditLog  # noqa: E402
 from pseudex.detect_all import Detector  # noqa: E402
-from pseudex.envelope import MaskContext, conversation_key, mask_tools  # noqa: E402
+from pseudex.envelope import (  # noqa: E402
+    MaskContext,
+    _InjectedValue,
+    _echo_targets,
+    _identity_key,
+    _replace_echoes,
+    conversation_key,
+    mask_tools,
+)
 from pseudex.maskcache import MaskCache  # noqa: E402
 # `_splice` and `_token_for_text` are private and imported ANYWAY, deliberately.
 # The substitute the model copies is the token INFLECTED INTO THE SENTENCE —
@@ -328,7 +336,36 @@ def _model_writes(seen: str, expected: str, argument: str, how: str,
     return seen
 
 
-def _mask_message(text: str, detector: Detector, vault: Vault) -> Masked:
+def _recorded_values(vault: Vault) -> tuple[_InjectedValue, ...]:
+    """This conversation's recorded values, as the echo leg consumes them.
+
+    `envelope._Provenance.recorded_values` collapses `shown_forms` to one value
+    per typed identity, keeping the LONGEST literal; the scorer reads the same
+    rows the same way so the shared echo pass (`_replace_echoes`) sees the same
+    input. `substitute` is unused by the conservative leg and left empty — it
+    redacts, it never names a person.
+    """
+    longest: dict[tuple[str, str], str] = {}
+    for rendering, literal, entity_type in vault.shown_forms():
+        if not rendering or rendering == literal:
+            continue
+        identity = _identity_key(entity_type, literal)
+        if len(literal) > len(longest.get(identity, "")):
+            longest[identity] = literal
+    return tuple(
+        _InjectedValue(real=literal, entity_type=identity[0], substitute="")
+        for identity, literal in longest.items())
+
+
+def _own_renderings(vault: Vault) -> tuple[str, ...]:
+    """The substitute strings this conversation showed, for the echo pass's
+    own-rendering guard — the exact rows `_Provenance.renderings` returns."""
+    return tuple(rendering for rendering, literal, _ in vault.shown_forms()
+                 if rendering and rendering != literal)
+
+
+def _mask_message(text: str, detector: Detector, vault: Vault,
+                  role: str = "tool") -> Masked:
     """The production masking of one message, with the pieces kept.
 
     This is `envelope.mask_one`'s `_compute` minus the cache and the audit —
@@ -337,6 +374,15 @@ def _mask_message(text: str, detector: Detector, vault: Vault) -> Masked:
     dropped first, exactly as `mask_text` drops them, because the model echoes
     its own substitutes back constantly and masking one a second time makes the
     person's identity change every turn.
+
+    THEN THE SAME PRIVACY LEG AS PRODUCTION, for tool messages only. A tool
+    result whose echo of a value the dialogue already restored survives
+    detection (a lone surname, a truncated phone) is redacted with a neutral,
+    identity-free stand-in by `envelope._replace_echoes` — the same function the
+    production result leg composes, and only the message types production offers
+    it to (`role == "tool"`). `role` defaults to `"tool"` because the scorer is
+    compared against the production result leg; callers masking prose pass the
+    message's own role.
     """
     spans = [span for span in detector.detect(text)
              if not is_own_substitute(span, vault)]
@@ -346,6 +392,10 @@ def _mask_message(text: str, detector: Detector, vault: Vault) -> Masked:
               engine_type=span.entity_type)
         for span in spans)
     masked = _splice(text, [(p.start, p.end, p.substitute) for p in pieces])
+    if role == "tool":
+        recorded = _echo_targets(_recorded_values(vault))
+        if recorded:
+            masked = _replace_echoes(masked, (), recorded, _own_renderings(vault))
     return Masked(text=text, masked=masked, pieces=pieces)
 
 
@@ -1138,7 +1188,8 @@ def _score_case(case: schema.Case, detector: Detector, vault: Vault,
                           conversation_id=conversation)
 
     messages = tuple(
-        _mask_message(schema.message_text(case, index), detector, scoped)
+        _mask_message(schema.message_text(case, index), detector, scoped,
+                      case.messages[index].role)
         for index in range(len(case.messages)))
     # Masked AFTER the messages, as `proxy._mask_request` does: a value first
     # seen in a tool description must get the substitute the conversation

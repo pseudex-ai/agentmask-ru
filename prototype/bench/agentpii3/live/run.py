@@ -327,7 +327,10 @@ class LiveGateway:
             raise HarnessError("mask_tools вернул не список — контракт изменён")
         for schema_ in self._case.tools:
             for text in _descriptions(schema_):
-                self._tool_pieces.extend(self._observe(text).pieces)
+                # Tool descriptions are masked by `mask_tools` (detection only),
+                # never by the recorded result leg; the role is "" and only the
+                # pieces are read here.
+                self._tool_pieces.extend(self._observe(text, "").pieces)
         self._tools = [one for one in masked if isinstance(one, dict)]
         return self._tools
 
@@ -352,7 +355,7 @@ class LiveGateway:
         if not isinstance(content, str):
             raise HarnessError(f"{self._case.id}: сообщение {index} вернулось "
                                f"не строкой из mask_messages")
-        observed = self._observe(text)
+        observed = self._observe(text, message.role)
         if observed.masked != content:
             # FAIL CLOSED. The arithmetic pass and the production pass disagree
             # about this message, so every offset axis 1 is about to count
@@ -388,7 +391,8 @@ class LiveGateway:
         for index in range(len(self._case.messages)):
             if index not in self._masked:
                 self._masked[index] = self._observe(
-                    schema.message_text(self._case, index))
+                    schema.message_text(self._case, index),
+                    self._case.messages[index].role)
 
     def messages(self) -> tuple[score.Masked, ...]:
         missing = [index for index in range(len(self._case.messages))
@@ -458,8 +462,8 @@ class LiveGateway:
     def fault(self, why: str) -> None:
         self._faults.append(why)
 
-    def _observe(self, text: str) -> score.Masked:
-        return score._mask_message(text, self._detector, self._view)
+    def _observe(self, text: str, role: str = "tool") -> score.Masked:
+        return score._mask_message(text, self._detector, self._view, role)
 
 
 def _flat(value: object) -> str:

@@ -330,6 +330,11 @@ def test_only_harness_imports_pseudex() -> list[str]:
     `test_loc_settlement_echo` (C1) pins the same masking path's PRIVACY leg — a
     bare settlement a tool result echoes stays real while the address stays
     masked, which is the over-masking half of the LOC closure.
+    `test_recorded_echo_privacy` pins the same PRIVACY leg's conservative half: a
+    value the dialogue restored (a lone surname, a truncated phone) echoed by an
+    UNBOUND tool result is redacted, and the scorer `_mask_message` agrees with
+    the production path byte for byte — the parity the harness's fail-closed gate
+    checks.
     `test_echo_marker_survives` pins the E01 precedence the long_order-002
     recipient leg tripped on: a reserved-echo marker standing in a numeric key's
     value must survive the structured-KV layer and keep the call's substitute.
@@ -346,7 +351,8 @@ def test_only_harness_imports_pseudex() -> list[str]:
     engine_tests = ("test_harness_stream", "test_call_scoped_name_consistency",
                     "test_mint_consistency", "test_loc_acceptance",
                     "test_error_payload_coverage", "test_loc_settlement_echo",
-                    "test_echo_marker_survives", "test_city_vs_surname")
+                    "test_echo_marker_survives", "test_city_vs_surname",
+                    "test_recorded_echo_privacy")
     failures: list[str] = []
     modules = tuple(name for name in importers if not name.startswith("test_"))
     tests = tuple(name for name in importers if name.startswith("test_"))
