@@ -1,4 +1,4 @@
-"""The v6 tool registry under test: 47 grounded specs, 9 unschemed names.
+"""The v6 tool registry under test: 78 grounded specs, 3 unschemed names.
 
 THE WELLFORMED CHECK IS PER-SPEC, NOT THE WHOLE `registry_problems`. v5's
 `registry_problems` also enforces V01/V02/V03 — the VERTICAL-WIDE rules — and the
@@ -51,6 +51,18 @@ RESULT_PII_APPROX: dict[str, str] = {
     "web_visits_export": "$tsv[col] -> free_text text leaf",
     "diploma_registry_check": "error.subject declared for retry_same_tool; apis.json has no error form",
     "hr_employee_get": "error.subject declared for retry_same_tool; apis.json has no error form",
+    "traffic_fines_check": "STS_NUMBER result side added (fines[].sts) — apis.json has no result path for it",
+    "audience_segment_upload": "CDP_CUSTOMER_ID result side added (segment.ids[].external_id) — apis.json has no result path for it",
+}
+
+# The four tools that gained their MISSING argument side in place (the 22 both-ways
+# upgrade): apis.json carries no request path for these keys, so the exact
+# `request[].path == FieldSpec.path` cross-check cannot hold verbatim for them.
+FIELD_PATH_APPROX: dict[str, str] = {
+    "credit_report_request": "LOAN_UID arg side added (uid) — apis.json has no request path for it",
+    "fssp_proceedings_search": "FSSP_IP_NO arg side added (ip_number) — apis.json has no request path for it",
+    "subscriber_profile_get": "SUBSCRIBER_ACCOUNT arg side added (personal_account) — apis.json has no request path for it",
+    "e_prescription_create": "PRESCRIPTION_NUMBER arg side added (prescription_id) — apis.json has no request path for it",
 }
 
 
@@ -168,7 +180,9 @@ def test_exact_paths_from_discovery() -> list[str]:
         spec = by_name[name]
         req_paths = [r["path"] for r in tool["request"]]
         fs_paths = [f.path for f in spec.base.fields]
-        if req_paths != fs_paths:
+        if name in FIELD_PATH_APPROX:
+            pass  # the missing argument side was added in place; exact equality cannot hold
+        elif req_paths != fs_paths:
             problems.append(f"{name}: FieldSpec paths {fs_paths} != request paths {req_paths}")
         union = tuple(p for r in tool["returns"] for p in r["pii_paths"])
         if name in RESULT_PII_APPROX:
@@ -270,12 +284,14 @@ def test_parsers_good_bad() -> list[str]:
         "credit_report_request": (
             ({"subject": {"last_name": "Громова", "first_name": "Марина",
                           "birth_date": "1987-03-14", "passport": "4507 443564"},
-              "consent_id": "c-1"},),
+              "consent_id": "c-1"},
+             {"uid": "1dcf884c-5f2a-4b3e-9d7a-6c5b4e3f2a1d-c", "consent_id": "c-1"}),
             (({}, "missing_required"),
              ({"subject": {"last_name": "Громова", "first_name": "Марина",
                            "birth_date": "1987-03-14", "passport": "4507 443564",
                            "snils": "123-456-789 00"}, "consent_id": "c-1"},
-              "snils_checksum")),
+              "snils_checksum"),
+             ({"uid": "not-a-uid", "consent_id": "c-1"}, "loan_uid_format")),
         ),
         "debtor_card_get": (
             ({"contract_number": "12-345678/2025"},),
@@ -300,10 +316,16 @@ def test_parsers_good_bad() -> list[str]:
         ),
         "e_prescription_create": (
             ({"patient": {"fio": "Иванов Пётр", "birth_date": "1987-03-14"},
-              "drug": "Амоксициллин", "dosage": "500 мг"},),
+              "drug": "Амоксициллин", "dosage": "500 мг"},
+             {"patient": {"fio": "Иванов Пётр", "birth_date": "1987-03-14"},
+              "drug": "Амоксициллин", "dosage": "500 мг",
+              "prescription_id": "45 0012345678"}),
             (({}, "missing_required"),
              ({"patient": {"fio": "Иванов Пётр", "birth_date": "14.03.1987"},
-               "drug": "Амоксициллин", "dosage": "500 мг"}, "date_format")),
+               "drug": "Амоксициллин", "dosage": "500 мг"}, "date_format"),
+             ({"patient": {"fio": "Иванов Пётр", "birth_date": "1987-03-14"},
+               "drug": "Амоксициллин", "dosage": "500 мг",
+               "prescription_id": "45"}, "prescription_format")),
         ),
         "marketplace_order_get": (
             ({"posting_number": "0123456789-0001-1"},),
@@ -358,9 +380,10 @@ def test_parsers_good_bad() -> list[str]:
               "license_format"),),
         ),
         "subscriber_profile_get": (
-            ({"msisdn": "79164021187"},),
+            ({"msisdn": "79164021187"}, {"personal_account": "418000123456"}),
             (({}, "missing_required"),
-             ({"msisdn": "+79164021187"}, "phone_format")),
+             ({"msisdn": "+79164021187"}, "phone_format"),
+             ({"personal_account": "123"}, "account_format")),
         ),
         "sim_replace_request": (
             ({"msisdn": "79164021187", "fio": "Иванов Пётр", "passport": "4507 443564",
@@ -479,10 +502,12 @@ def test_parsers_good_bad() -> list[str]:
         ),
         "fssp_proceedings_search": (
             ({"region": "18", "last_name": "Фомина", "first_name": "Анна",
-              "middle_name": "Петровна", "birth_date": "14.03.1987"},),
+              "middle_name": "Петровна", "birth_date": "14.03.1987"},
+             {"ip_number": "123456/24/18017-ИП"}),
             (({"region": "18", "last_name": "Фомина"}, "missing_required"),
              ({"region": "18", "last_name": "Фомина", "first_name": "Анна",
-               "birth_date": "1987-03-14"}, "date_format")),
+               "birth_date": "1987-03-14"}, "date_format"),
+             ({"ip_number": "123"}, "ip_number_format")),
         ),
         "court_document_fetch": (
             ({"court": "Индустриальный районный суд", "case_number": "2-13/2015"},),
@@ -559,6 +584,87 @@ def test_parsers_good_bad() -> list[str]:
             ({"cardNumber": "1417776317"},),
             (({}, "missing_required"),
              ({"cardNumber": "141"}, "card_format")),
+        ),
+        # --- the 16 final both-ways documented-procedure tools -----------------
+        "birth_cert_fetch": (
+            ({"birth_cert_number": "IV-МЮ 320819"},),
+            (({}, "missing_required"),
+             ({"birth_cert_number": "320819"}, "cert_format")),
+        ),
+        "civil_act_fetch": (
+            ({"certificate_number": "I-АГ 672731"},),
+            (({}, "missing_required"),
+             ({"certificate_number": "672731"}, "cert_format")),
+        ),
+        "residence_permit_check": (
+            ({"residence_permit": "82 1234567"},),
+            (({}, "missing_required"),
+             ({"residence_permit": "82 12345"}, "permit_format")),
+        ),
+        "military_id_register": (
+            ({"military_id": "АК 1234567"},),
+            (({}, "missing_required"),
+             ({"military_id": "АК 123456"}, "military_id_format")),
+        ),
+        "credit_subject_check": (
+            ({"subject_code": "Qw7rT2"},),
+            (({}, "missing_required"),
+             ({"subject_code": "abc"}, "subject_code_format")),
+        ),
+        "dms_policy_find": (
+            ({"dms_policy": "001SB12345678"},),
+            (({}, "missing_required"),
+             ({"dms_policy": "!"}, "policy_format")),
+        ),
+        "kasko_policy_find": (
+            ({"kasko_policy": "AI123456789"},),
+            (({}, "missing_required"),
+             ({"kasko_policy": "!"}, "policy_format")),
+        ),
+        "insurance_claim_status": (
+            ({"claim_number": "У-671-475136/25"},),
+            (({}, "missing_required"),
+             ({"claim_number": "123"}, "claim_format")),
+        ),
+        "court_case_fetch": (
+            ({"case_uid": "77RS0000-02-2026-000001-52"},),
+            (({}, "missing_required"),
+             ({"case_uid": "77RS0000"}, "uid_format")),
+        ),
+        "exec_doc_check": (
+            ({"writ_number": "ФС 012345678"},),
+            (({}, "missing_required"),
+             ({"writ_number": "ФС 01234567"}, "exec_doc_format")),
+        ),
+        "pts_vehicle_get": (
+            ({"pts_number": "77 УК 123456"},),
+            (({}, "missing_required"),
+             ({"pts_number": "77 123456"}, "pts_format")),
+        ),
+        "medcard_lookup": (
+            ({"med_card_number": "12345/2024"},),
+            (({}, "missing_required"),
+             ({"med_card_number": "!"}, "medcard_format")),
+        ),
+        "referral_find": (
+            ({"referral_id": "057-1234-123456"},),
+            (({}, "missing_required"),
+             ({"referral_id": "057"}, "referral_format")),
+        ),
+        "school_cert_verify": (
+            ({"attestat_number": "07705000012345"},),
+            (({}, "missing_required"),
+             ({"attestat_number": "0770500001234"}, "cert_number_format")),
+        ),
+        "employment_contract_get": (
+            ({"employment_contract_number": "145-ТД"},),
+            (({}, "missing_required"),
+             ({"employment_contract_number": "!"}, "contract_format")),
+        ),
+        "e_ticket_issue": (
+            ({"ticket_number": "5552412345678"},),
+            (({}, "missing_required"),
+             ({"ticket_number": "555241234567"}, "ticket_format")),
         ),
     }
     by_name = {spec.base.name: spec for spec in TOOLS_V6}

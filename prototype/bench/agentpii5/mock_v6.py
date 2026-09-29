@@ -1,9 +1,9 @@
-"""The v6 mock backend: the 47 §2.3 tools, in the v5 style, on item-id state.
+"""The v6 mock backend: the 78 tools (62 prior + 16 final both-ways), in the v5 style, on item-id state.
 
 WHAT THIS ADDS TO v5's `BackendV5`, and where the two agree.
 
 The v5 mock renders a tool's result from SEEDED TABLES keyed `(table, record
-id, path)`. v6 has no table inventory — the 47 specs are a registry of API
+id, path)`. v6 has no table inventory — the 78 specs are a registry of API
 mirrors across fifteen industries, and a case seeds a handful of `PiiItem`s
 rather than rows of a shared store. So the v6 state is keyed by ITEM ID and by
 IDENTITY, the two keys the case already carries on every datum:
@@ -22,9 +22,9 @@ IDENTITY, the two keys the case already carries on every datum:
                                     the field and tags it with the item id, no
                                     by-value guess (the v5 ambiguity lesson).
 
-The 47 tools split exactly on `base.mutating`: 14 WRITE tools echo the PARSED
+The 78 tools split exactly on `base.mutating`: 15 WRITE tools echo the PARSED
 arguments back (the parser already applied the tool's notation — «79164021187»
-for the fiscal API, E.164 for SMS), tagged by value; 33 READ tools render the
+for the fiscal API, E.164 for SMS), tagged by value; 63 READ tools render the
 seeded record's fields, tagged by the exact `(record id, path)` binding. A
 read tool not finding its record answers the form its registry declares —
 `empty` where the API answers an empty set, `error_with_value` where it faults
@@ -54,7 +54,7 @@ from bench.agentpii5.tools_v6 import TOOLS_V6, UNSCHEMED_TOOLS
 
 V6_SPECS: dict[str, object] = {spec.base.name: spec for spec in TOOLS_V6}
 V6_NAMES: frozenset[str] = frozenset(V6_SPECS)
-# The 9 names D-069 left unschemed (closed/synthetic mirrors). NO HANDLER: they
+# The 3 names D-069 left unschemed (closed/synthetic mirrors). NO HANDLER: they
 # have no ToolSpecV5, so there is nothing to parse or to render, and this module
 # asserts nothing about them — a call to one is a caller bug, not a mock one.
 UNSCHEMED_NAMES: frozenset[str] = frozenset(
@@ -346,13 +346,19 @@ class BackendV6(BackendV5):
     def _v6_e_prescription_create(self, parsed: dict[str, object]) -> tuple[object, str]:
         # The recipe number is MINTED by the tool, not echoed: it is the seeded
         # PRESCRIPTION_NUMBER item, keyed by the patient's (or policy's) identity.
+        # When the caller re-dispenses against an existing prescription_id, that
+        # number is echoed instead (C-10).
         patient = parsed["patient"]                                     # type: ignore[index]
-        identity = self._identity_for(str(patient["fio"]))              # type: ignore[index]
-        if not identity:
-            identity = self._identity_for(str(patient.get("oms_policy", "")))  # type: ignore[union-attr]
-        number_item = self._type_item(identity, "PRESCRIPTION_NUMBER")
+        if parsed.get("prescription_id"):
+            number = self._slot(str(parsed["prescription_id"]))
+        else:
+            identity = self._identity_for(str(patient["fio"]))          # type: ignore[index]
+            if not identity:
+                identity = self._identity_for(str(patient.get("oms_policy", "")))  # type: ignore[union-attr]
+            number_item = self._type_item(identity, "PRESCRIPTION_NUMBER")
+            number = self._slot_item(number_item, self._real(number_item))
         return {"prescription": {
-            "number": self._slot_item(number_item, self._real(number_item)),
+            "number": number,
             "patient": {
                 "fio": self._slot(str(patient["fio"])),                 # type: ignore[index]
                 "birth_date": self._slot(str(patient["birth_date"])),   # type: ignore[index]
@@ -401,9 +407,15 @@ class BackendV6(BackendV5):
         return {"rows": rows}, "list"
 
     def _v6_audience_segment_upload(self, parsed: dict[str, object]) -> tuple[object, str]:
+        # The uploaded customer ids (CDP_CUSTOMER_ID) are echoed back as the
+        # segment's resolved ids — the CDP write-echo (C-26), tagged like any hop.
+        ids = [{"external_id": self._slot(str(row.get("external_id", "")))}
+               for row in parsed["file"]["rows"]                        # type: ignore[index]
+               if row.get("external_id")]                               # type: ignore[union-attr]
         return {"segment": {"id": 12345, "name": str(parsed["segment_name"]),
                             "type": "uploading", "status": "uploaded",
-                            "hashed": bool(parsed["hashed"])}}, "single"
+                            "hashed": bool(parsed["hashed"]),
+                            "ids": ids}}, "single"
 
     # --- the READ tools: the stored record, tagged by the exact binding ----------
 
@@ -433,9 +445,12 @@ class BackendV6(BackendV5):
         }]}}, "list"
 
     def _v6_credit_report_request(self, parsed: dict[str, object]) -> tuple[object, str]:
-        subject = parsed["subject"]                                     # type: ignore[index]
-        key = str(subject.get("snils", "") or subject.get("inn", "") or subject.get("passport", ""))  # type: ignore[union-attr]
-        rid = self._find_record_by_value(key)
+        if "uid" in parsed:
+            rid = self._find_record_by_value(str(parsed["uid"]))
+        else:
+            subject = parsed["subject"]                                     # type: ignore[index]
+            key = str(subject.get("snils", "") or subject.get("inn", "") or subject.get("passport", ""))  # type: ignore[union-attr]
+            rid = self._find_record_by_value(key)
         if not rid:
             return {"subject": None, "contracts": []}, "empty"
         return {"subject": {
@@ -571,7 +586,8 @@ class BackendV6(BackendV5):
         if not rid:
             return {"fines": []}, "empty"
         return {"fines": [{"uin": self._field(rid, "uin"),
-                           "vehicle": self._field(rid, "plate")}]}, "list"
+                           "vehicle": self._field(rid, "plate"),
+                           "sts": self._field(rid, "sts")}]}, "list"
 
     def _v6_epts_status_get(self, parsed: dict[str, object]) -> tuple[object, str]:
         key = "epts_number" if "epts_number" in parsed else "vin"
@@ -591,7 +607,10 @@ class BackendV6(BackendV5):
                 "categories": "B, B1, M", "deprivation": []}, "single"
 
     def _v6_subscriber_profile_get(self, parsed: dict[str, object]) -> tuple[object, str]:
-        rid = self._find_record_by_value(str(parsed["msisdn"]))
+        if "personal_account" in parsed:
+            rid = self._find_record_by_value(str(parsed["personal_account"]))
+        else:
+            rid = self._find_record_by_value(str(parsed["msisdn"]))
         if not rid:
             return {"individual": None}, "empty"
         return {"individual": {
@@ -845,8 +864,11 @@ class BackendV6(BackendV5):
         }]}, "canon"
 
     def _v6_fssp_proceedings_search(self, parsed: dict[str, object]) -> tuple[object, str]:
-        key = str(parsed["last_name"]) or str(parsed["first_name"])
-        rid = self._find_record_by_value(key)
+        if "ip_number" in parsed:
+            rid = self._find_record_by_value(str(parsed["ip_number"]))
+        else:
+            key = str(parsed["last_name"]) or str(parsed["first_name"])
+            rid = self._find_record_by_value(key)
         if not rid:
             return {"result": []}, "empty"
         return {"result": [{
@@ -950,6 +972,104 @@ class BackendV6(BackendV5):
         if not rid:
             return {"cardNumber": None}, "empty"
         return {"cardNumber": self._field(rid, "card_number")}, "single"
+
+    # --- the 16 final both-ways documented-procedure tools ----------------------
+
+    def _v6_birth_cert_fetch(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["birth_cert_number"]))
+        if not rid:
+            return {"record": None}, "empty"
+        return {"record": {"birth_cert_number": self._field(rid, "birth_cert_number")}}, "single"
+
+    def _v6_civil_act_fetch(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["certificate_number"]))
+        if not rid:
+            return {"record": None}, "empty"
+        return {"record": {"certificate_number": self._field(rid, "certificate_number")}}, "single"
+
+    def _v6_residence_permit_check(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["residence_permit"]))
+        if not rid:
+            return {"record": None}, "empty"
+        return {"record": {"residence_permit": self._field(rid, "residence_permit")}}, "single"
+
+    def _v6_military_id_register(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["military_id"]))
+        if not rid:
+            return {"record": None}, "empty"
+        return {"record": {"military_id": self._field(rid, "military_id")}}, "single"
+
+    def _v6_credit_subject_check(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["subject_code"]))
+        if not rid:
+            return {"record": None}, "empty"
+        return {"record": {"subject_code": self._field(rid, "subject_code")}}, "single"
+
+    def _v6_dms_policy_find(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["dms_policy"]))
+        if not rid:
+            return {"policy": None}, "empty"
+        return {"policy": {"dms_policy": self._field(rid, "dms_policy")}}, "single"
+
+    def _v6_kasko_policy_find(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["kasko_policy"]))
+        if not rid:
+            return {"policy": None}, "empty"
+        return {"policy": {"kasko_policy": self._field(rid, "kasko_policy")}}, "single"
+
+    def _v6_insurance_claim_status(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["claim_number"]))
+        if not rid:
+            return {"claim": None}, "empty"
+        return {"claim": {"claim_number": self._field(rid, "claim_number")}}, "single"
+
+    def _v6_court_case_fetch(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["case_uid"]))
+        if not rid:
+            return {"case": None}, "empty"
+        return {"case": {"case_uid": self._field(rid, "case_uid")}}, "single"
+
+    def _v6_exec_doc_check(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["writ_number"]))
+        if not rid:
+            return {"writ": None}, "empty"
+        return {"writ": {"writ_number": self._field(rid, "writ_number")}}, "single"
+
+    def _v6_pts_vehicle_get(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["pts_number"]))
+        if not rid:
+            return {"vehicle": None}, "empty"
+        return {"vehicle": {"pts_number": self._field(rid, "pts_number")}}, "single"
+
+    def _v6_medcard_lookup(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["med_card_number"]))
+        if not rid:
+            return {"card": None}, "empty"
+        return {"card": {"med_card_number": self._field(rid, "med_card_number")}}, "single"
+
+    def _v6_referral_find(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["referral_id"]))
+        if not rid:
+            return {"referral": None}, "empty"
+        return {"referral": {"referral_id": self._field(rid, "referral_id")}}, "single"
+
+    def _v6_school_cert_verify(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["attestat_number"]))
+        if not rid:
+            return {"document": None}, "empty"
+        return {"document": {"attestat_number": self._field(rid, "attestat_number")}}, "single"
+
+    def _v6_employment_contract_get(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["employment_contract_number"]))
+        if not rid:
+            return {"contract": None}, "empty"
+        return {"contract": {"employment_contract_number": self._field(rid, "employment_contract_number")}}, "single"
+
+    def _v6_e_ticket_issue(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["ticket_number"]))
+        if not rid:
+            return {"ticket": None}, "empty"
+        return {"ticket": {"ticket_number": self._field(rid, "ticket_number")}}, "single"
 
 
 def seed_backend_v6(case: object) -> BackendV6:

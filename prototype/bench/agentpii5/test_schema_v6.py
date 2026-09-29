@@ -9,7 +9,7 @@ the report names and that the clean corpus does not name it. A rule that cannot
 be shown to fail, and a baseline already full of problems that hides the failure,
 are the two ways an instrument stops being an instrument (CLAUDE.md).
 
-A TINY TOOL REGISTRY, PATCHED IN PER PHASE. The real `TOOLS_V6` is 47 tools, and
+A TINY TOOL REGISTRY, PATCHED IN PER PHASE. The real `TOOLS_V6` is 78 tools, and
 the floors (K6-14 reachability, K6-15 reading verticals, K6-18 per-industry
 readers) would force the fixture to offer all of them and read every vertical
 back. The fixture replaces `schema_v6.TOOLS_V6` / `schema_v6.V6_META` with one

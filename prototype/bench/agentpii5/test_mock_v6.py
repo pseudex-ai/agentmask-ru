@@ -1,4 +1,4 @@
-"""The v6 mock backend under test: 47 tools, item-id tags, refusals, R-20/R-21.
+"""The v6 mock backend under test: 78 tools, item-id tags, refusals, R-20/R-21.
 
 The same discipline as `test_mock.py`: every check is shown a RIGHT input and,
 where the rule is a refusal or a writer constraint, a WRONG one too. The seeded
@@ -102,6 +102,25 @@ MOBILE_AD_IFA = _v6("MOBILE_AD_ID")
 APP_DEV = _v6("APP_DEVICE_ID")
 MAC_DHCP = _v6("MAC")
 ACCESS_PASS = _v6("ACCESS_PASS_NUMBER")
+# --- the 16 final both-ways documented-procedure tools -------------------------
+BIRTH_CERT_READ = _v6("BIRTH_CERT")
+CIVIL_ACT_READ = _v6("CIVIL_ACT_CERT")
+RESIDENCE_READ = _v6("RESIDENCE_PERMIT")
+MILITARY_READ = _v6("MILITARY_ID")
+CREDIT_CODE_READ = _v6("CREDIT_SUBJECT_CODE")
+DMS_READ = _v6("DMS_POLICY")
+KASKO_READ = _v6("KASKO_POLICY")
+CLAIM_READ = _v6("INSURANCE_CLAIM_NUMBER")
+COURT_UID_READ = _v6("COURT_CASE_UID")
+EXEC_DOC_READ = _v6("EXEC_DOC_NO")
+PTS_READ = _v6("PTS_NUMBER")
+MEDCARD_READ = _v6("MEDCARD_NUMBER")
+REFERRAL_READ = _v6("REFERRAL_NUMBER")
+SCHOOL_CERT_READ = _v6("SCHOOL_CERT_NUMBER")
+CONTRACT_READ = _v6("EMPLOYMENT_CONTRACT_NUMBER")
+ETICKET_READ = _v6("E_TICKET_NUMBER")
+# The audience_segment_upload result side echoes the uploaded customer id.
+CDP_CID_ARG = "c-000184523"                               # == w_cdp (write record)
 
 # The rubric account/bik pair is the tool's documented acceptance (`test_tools_v6`).
 RUBLE_ACCOUNT = "40602810700000000025"
@@ -462,6 +481,54 @@ RECORDS: tuple[tuple[str, dict[str, object], tuple[tuple[str, str, str, str, str
     ("uhppote-1", {"card_number": ACCESS_PASS}, (
         ("uh_card", "ACCESS_PASS_NUMBER", "grom", ACCESS_PASS, "card_number"),
     )),
+    ("birth-cert-1", {"birth_cert_number": BIRTH_CERT_READ}, (
+        ("bc_cert", "BIRTH_CERT", "grom", BIRTH_CERT_READ, "birth_cert_number"),
+    )),
+    ("civil-1", {"certificate_number": CIVIL_ACT_READ}, (
+        ("ca_cert", "CIVIL_ACT_CERT", "grom", CIVIL_ACT_READ, "certificate_number"),
+    )),
+    ("rp-1", {"residence_permit": RESIDENCE_READ}, (
+        ("rp_permit", "RESIDENCE_PERMIT", "grom", RESIDENCE_READ, "residence_permit"),
+    )),
+    ("mil-1", {"military_id": MILITARY_READ}, (
+        ("ml_id", "MILITARY_ID", "grom", MILITARY_READ, "military_id"),
+    )),
+    ("csc-1", {"subject_code": CREDIT_CODE_READ}, (
+        ("cs_code", "CREDIT_SUBJECT_CODE", "grom", CREDIT_CODE_READ, "subject_code"),
+    )),
+    ("dms-1", {"dms_policy": DMS_READ}, (
+        ("dm_policy", "DMS_POLICY", "grom", DMS_READ, "dms_policy"),
+    )),
+    ("kasko-1", {"kasko_policy": KASKO_READ}, (
+        ("ka_policy", "KASKO_POLICY", "grom", KASKO_READ, "kasko_policy"),
+    )),
+    ("claim-1", {"claim_number": CLAIM_READ}, (
+        ("cl_claim", "INSURANCE_CLAIM_NUMBER", "grom", CLAIM_READ, "claim_number"),
+    )),
+    ("cuid-1", {"case_uid": COURT_UID_READ}, (
+        ("cu_uid", "COURT_CASE_UID", "grom", COURT_UID_READ, "case_uid"),
+    )),
+    ("execdoc-1", {"writ_number": EXEC_DOC_READ}, (
+        ("ed_writ", "EXEC_DOC_NO", "grom", EXEC_DOC_READ, "writ_number"),
+    )),
+    ("pts-1", {"pts_number": PTS_READ}, (
+        ("pt_pts", "PTS_NUMBER", "grom", PTS_READ, "pts_number"),
+    )),
+    ("medcard-1", {"med_card_number": MEDCARD_READ}, (
+        ("mc_card", "MEDCARD_NUMBER", "grom", MEDCARD_READ, "med_card_number"),
+    )),
+    ("referral-1", {"referral_id": REFERRAL_READ}, (
+        ("rf_ref", "REFERRAL_NUMBER", "grom", REFERRAL_READ, "referral_id"),
+    )),
+    ("school-1", {"attestat_number": SCHOOL_CERT_READ}, (
+        ("sc_cert", "SCHOOL_CERT_NUMBER", "grom", SCHOOL_CERT_READ, "attestat_number"),
+    )),
+    ("contract-1", {"employment_contract_number": CONTRACT_READ}, (
+        ("ct_contract", "EMPLOYMENT_CONTRACT_NUMBER", "grom", CONTRACT_READ, "employment_contract_number"),
+    )),
+    ("eticket-1", {"ticket_number": ETICKET_READ}, (
+        ("et_ticket", "E_TICKET_NUMBER", "grom", ETICKET_READ, "ticket_number"),
+    )),
 )
 
 
@@ -516,7 +583,8 @@ RENDERS: tuple[tuple[str, dict[str, object], str], ...] = (
                                               "passport": "4507 443564",
                                               "tab_number": "004512"}]}, "list"),
     ("audience_segment_upload", {"segment_name": "Отток сентябрь",
-                                 "file": {"rows": [{"phone": "79164021187"}] * 100},
+                                 "file": {"rows": [{"phone": "79164021187",
+                                                    "external_id": CDP_CID_ARG}] * 100},
                                  "hashed": "false"}, "single"),
     ("crm_requisite_get", {"inn": INN_REQ}, "single"),
     ("bank_accounts_list", {"client_id": "bc-1"}, "list"),
@@ -576,6 +644,22 @@ RENDERS: tuple[tuple[str, dict[str, object], str], ...] = (
     ("appmetrica_device_id_lookup", {"appmetrica_device_id": APP_DEV}, "single"),
     ("mikrotik_dhcp_lease_get", {"mac-address": MAC_DHCP}, "single"),
     ("uhppote_card_get", {"cardNumber": ACCESS_PASS}, "single"),
+    ("birth_cert_fetch", {"birth_cert_number": BIRTH_CERT_READ}, "single"),
+    ("civil_act_fetch", {"certificate_number": CIVIL_ACT_READ}, "single"),
+    ("residence_permit_check", {"residence_permit": RESIDENCE_READ}, "single"),
+    ("military_id_register", {"military_id": MILITARY_READ}, "single"),
+    ("credit_subject_check", {"subject_code": CREDIT_CODE_READ}, "single"),
+    ("dms_policy_find", {"dms_policy": DMS_READ}, "single"),
+    ("kasko_policy_find", {"kasko_policy": KASKO_READ}, "single"),
+    ("insurance_claim_status", {"claim_number": CLAIM_READ}, "single"),
+    ("court_case_fetch", {"case_uid": COURT_UID_READ}, "single"),
+    ("exec_doc_check", {"writ_number": EXEC_DOC_READ}, "single"),
+    ("pts_vehicle_get", {"pts_number": PTS_READ}, "single"),
+    ("medcard_lookup", {"med_card_number": MEDCARD_READ}, "single"),
+    ("referral_find", {"referral_id": REFERRAL_READ}, "single"),
+    ("school_cert_verify", {"attestat_number": SCHOOL_CERT_READ}, "single"),
+    ("employment_contract_get", {"employment_contract_number": CONTRACT_READ}, "single"),
+    ("e_ticket_issue", {"ticket_number": ETICKET_READ}, "single"),
 )
 
 
@@ -644,7 +728,7 @@ def test_every_v6_tool_renders() -> list[str]:
     rendered = {tool: form for tool, _args, form in RENDERS}
     by_name = {spec.base.name: spec for spec in TOOLS_V6}
     if set(rendered) != V6_NAMES:
-        problems.append(f"RENDERS covers {sorted(V6_NAMES - set(rendered))} of the 47 tools? "
+        problems.append(f"RENDERS covers {sorted(V6_NAMES - set(rendered))} of the 78 tools? "
                         f"extra {sorted(set(rendered) - V6_NAMES)}")
     for tool, arguments, form in RENDERS:
         spec = by_name[tool]

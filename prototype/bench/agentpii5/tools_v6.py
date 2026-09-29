@@ -706,9 +706,19 @@ RUBLE_TRANSFER_CREATE = ToolSpec(
 # --- credit_report_request (bank, banks_mfo_collectors, evidence=secondary, mutating=False) ---
 def _credit_report_request_parse(args):
     tool = "credit_report_request"
-    miss = _required(args, tool, "", ("subject", "consent_id"))
+    miss = _required(args, tool, "", ("consent_id",))
     if miss:
         return miss
+    consent = _parse_opaque_id(args["consent_id"], tool, "consent_id")
+    if isinstance(consent, Refusal):
+        return consent
+    # LOAN_UID as an alternative subject key: the borrower disputes one record
+    # of the report by its УИд (758-П), so a consent + УИд is enough.
+    if args.get("uid") not in (None, ""):
+        uid = _parse_loan_uid(args["uid"], tool, "uid")
+        if isinstance(uid, Refusal):
+            return uid
+        return {"consent_id": consent, "uid": uid}
     subject = _obj(args["subject"], tool, "subject")
     if isinstance(subject, Refusal):
         return subject
@@ -722,9 +732,6 @@ def _credit_report_request_parse(args):
     bad = _first(last, first, birth, passport)
     if bad:
         return bad
-    consent = _parse_opaque_id(args["consent_id"], tool, "consent_id")
-    if isinstance(consent, Refusal):
-        return consent
     out = {"subject": {"last_name": last, "first_name": first, "birth_date": birth,
                        "passport": passport}, "consent_id": consent}
     if subject.get("middle_name") not in (None, ""):
@@ -748,16 +755,17 @@ CREDIT_REPORT_REQUEST = ToolSpec(
     name='credit_report_request',
     source='https://github.com/diev/Api5704',
     schema=_schema('credit_report_request', 'НБКИ / ОКБ / Скоринг Бюро — кредитный отчёт субъекта и сведения о среднемесячных платежах (ССП) и самозапрете по Указанию Банка России 6775-У (ранее 5704-У)',
-        {'subject.last_name': {'type': 'string', 'description': 'NAME (surname)'}, 'subject.first_name': {'type': 'string', 'description': 'NAME (given)'}, 'subject.middle_name': {'type': 'string', 'description': 'NAME (patronymic)'}, 'subject.birth_date': {'type': 'string', 'description': 'DOB — ISO'}, 'subject.passport': {'type': 'string', 'description': 'PASSPORT'}, 'subject.snils': {'type': 'string', 'description': 'SNILS — XXX-XXX-XXX YY'}, 'subject.inn': {'type': 'string', 'description': 'INN'}, 'consent_id': {'type': 'string', 'description': 'строка'}},
-        ('subject.last_name', 'subject.first_name', 'subject.birth_date', 'subject.passport', 'consent_id')),
+        {'subject.last_name': {'type': 'string', 'description': 'NAME (surname)'}, 'subject.first_name': {'type': 'string', 'description': 'NAME (given)'}, 'subject.middle_name': {'type': 'string', 'description': 'NAME (patronymic)'}, 'subject.birth_date': {'type': 'string', 'description': 'DOB — ISO'}, 'subject.passport': {'type': 'string', 'description': 'PASSPORT'}, 'subject.snils': {'type': 'string', 'description': 'SNILS — XXX-XXX-XXX YY'}, 'subject.inn': {'type': 'string', 'description': 'INN'}, 'uid': {'type': 'string', 'description': 'LOAN_UID — УИд договора'}, 'consent_id': {'type': 'string', 'description': 'строка'}},
+        ('consent_id',)),
     fields=(
-            FieldSpec('subject.last_name', "identity", 'NAME', 'surname', required=True),
-            FieldSpec('subject.first_name', "identity", 'NAME', 'given', required=True),
+            FieldSpec('subject.last_name', "identity", 'NAME', 'surname', required=False),
+            FieldSpec('subject.first_name', "identity", 'NAME', 'given', required=False),
             FieldSpec('subject.middle_name', "identity", 'NAME', 'patronymic', required=False),
-            FieldSpec('subject.birth_date', "identity", 'DOB', '', required=True),
-            FieldSpec('subject.passport', "identity", 'PASSPORT', '', required=True),
+            FieldSpec('subject.birth_date', "identity", 'DOB', '', required=False),
+            FieldSpec('subject.passport', "identity", 'PASSPORT', '', required=False),
             FieldSpec('subject.snils', "identity", 'SNILS', '', required=False),
             FieldSpec('subject.inn', "identity", 'INN', '', required=False),
+            FieldSpec('uid', "identity", 'LOAN_UID', '', required=False),
             FieldSpec('consent_id', 'plain', required=True),
     ),
     parse=_credit_report_request_parse, mutating=False,
@@ -917,6 +925,13 @@ def _e_prescription_create_parse(args):
         return bad
     out = {"patient": {"fio": str(fio).strip(), "birth_date": birth},
            "drug": str(drug).strip(), "dosage": str(dosage).strip()}
+    # PRESCRIPTION_NUMBER as the reference key: the pharmacy re-dispenses /
+    # re-issues against an existing e-prescription's unique number (C-10).
+    if args.get("prescription_id") not in (None, ""):
+        prescription_id = _parse_prescription(args["prescription_id"], tool, "prescription_id")
+        if isinstance(prescription_id, Refusal):
+            return prescription_id
+        out["prescription_id"] = prescription_id
     if patient.get("snils") not in (None, ""):
         snils = parse_snils(patient["snils"], tool, "patient.snils")
         if isinstance(snils, Refusal):
@@ -933,7 +948,7 @@ E_PRESCRIPTION_CREATE = ToolSpec(
     name='e_prescription_create',
     source='https://www.consultant.ru/document/cons_doc_LAW_401865/af42dc5917c97680f33eaf2d8c74214b0e285cb6/',
     schema=_schema('e_prescription_create', 'МИС → ЕГИСЗ: СЭМД «Рецепт на лекарственный препарат» (электронный аналог формы 107-1/у / 148-1/у-88)',
-        {'patient.fio': {'type': 'string', 'description': 'NAME'}, 'patient.birth_date': {'type': 'string', 'description': 'DOB'}, 'patient.snils': {'type': 'string', 'description': 'SNILS'}, 'patient.oms_policy': {'type': 'string', 'description': 'OMS_POLICY'}, 'drug': {'type': 'string', 'description': 'свободный текст'}, 'dosage': {'type': 'string', 'description': 'свободный текст'}},
+        {'patient.fio': {'type': 'string', 'description': 'NAME'}, 'patient.birth_date': {'type': 'string', 'description': 'DOB'}, 'patient.snils': {'type': 'string', 'description': 'SNILS'}, 'patient.oms_policy': {'type': 'string', 'description': 'OMS_POLICY'}, 'drug': {'type': 'string', 'description': 'свободный текст'}, 'dosage': {'type': 'string', 'description': 'свободный текст'}, 'prescription_id': {'type': 'string', 'description': 'PRESCRIPTION_NUMBER — «45 0012345678»'}},
         ('patient.fio', 'patient.birth_date', 'drug', 'dosage')),
     fields=(
             FieldSpec('patient.fio', "identity", 'NAME', '', required=True),
@@ -942,6 +957,7 @@ E_PRESCRIPTION_CREATE = ToolSpec(
             FieldSpec('patient.oms_policy', "identity", 'OMS_ENP', '', required=False),
             FieldSpec('drug', 'free', required=True),
             FieldSpec('dosage', 'free', required=True),
+            FieldSpec('prescription_id', "identity", 'PRESCRIPTION_NUMBER', '', required=False),
     ),
     parse=_e_prescription_create_parse, mutating=True,
     result_pii=('prescription.number', 'prescription.patient.fio', 'prescription.patient.birth_date', 'prescription.patient.oms_policy', 'message'))
@@ -1294,7 +1310,7 @@ TRAFFIC_FINES_CHECK = ToolSpec(
             FieldSpec('sts', "identity", 'STS_NUMBER', '', required=True),
     ),
     parse=_traffic_fines_check_parse, mutating=False,
-    result_pii=('fines[].uin', 'fines[].vehicle'))
+    result_pii=('fines[].uin', 'fines[].vehicle', 'fines[].sts'))
 
 
 # --- epts_status_get (government, auto, evidence=summary, mutating=False) ---
@@ -1357,6 +1373,13 @@ DRIVER_LICENSE_CHECK = ToolSpec(
 # --- subscriber_profile_get (crm, telecom, evidence=secondary, mutating=False) ---
 def _subscriber_profile_get_parse(args):
     tool = "subscriber_profile_get"
+    # SUBSCRIBER_ACCOUNT as the direct key: support/call-centre looks the profile
+    # up by «лицевой счёт абонента», not by MSISDN (C-06).
+    if args.get("personal_account") not in (None, ""):
+        account = _parse_subscriber_account(args["personal_account"], tool, "personal_account")
+        if isinstance(account, Refusal):
+            return account
+        return {"personal_account": account}
     miss = _required(args, tool, "", ("msisdn",))
     if miss:
         return miss
@@ -1369,10 +1392,11 @@ SUBSCRIBER_PROFILE_GET = ToolSpec(
     name='subscriber_profile_get',
     source='https://github.com/poing/tmf632-server/blob/master/docs/Model/Individual.md',
     schema=_schema('subscriber_profile_get', 'BSS оператора связи — TM Forum Open API TMF632 Party Management (Individual) / TMF637 Product Inventory; в РФ — АСР «Гидра», Nexign BSS',
-        {'msisdn': {'type': 'string', 'description': 'PHONE (digits)'}},
-        ('msisdn',)),
+        {'msisdn': {'type': 'string', 'description': 'PHONE (digits)'}, 'personal_account': {'type': 'string', 'description': 'SUBSCRIBER_ACCOUNT — 8–12 digits'}},
+        ()),
     fields=(
-            FieldSpec('msisdn', "identity", 'PHONE', 'digits', required=True),
+            FieldSpec('msisdn', "identity", 'PHONE', 'digits', required=False),
+            FieldSpec('personal_account', "identity", 'SUBSCRIBER_ACCOUNT', '', required=False),
     ),
     parse=_subscriber_profile_get_parse, mutating=False,
     result_pii=('individual.familyName', 'individual.givenName', 'individual.middleName', 'individual.birthDate', 'individual.individualIdentification[].identificationId', 'contract.number', 'contract.personalAccount', 'sim.msisdn', 'sim.iccid', 'sim.imsi', 'device.imei'))
@@ -2125,7 +2149,7 @@ AUDIENCE_SEGMENT_UPLOAD = ToolSpec(
             FieldSpec('hashed', 'enum', required=True),
     ),
     parse=_audience_segment_upload_parse, mutating=True,
-    result_pii=('errors[].message',))
+    result_pii=('segment.ids[].external_id', 'errors[].message'))
 
 
 # --- email_contacts_import (messaging, marketing_cdp, evidence=primary, mutating=True) ---
@@ -2211,6 +2235,13 @@ WEB_VISITS_EXPORT = ToolSpec(
 # --- fssp_proceedings_search (banks_mfo_collectors, evidence=secondary, api closed) ---
 def _fssp_proceedings_search_parse(args):
     tool = "fssp_proceedings_search"
+    # FSSP_IP_NO as the direct key: a bank/collector docket is looked up by the
+    # исполнительное производство number, not by the debtor's name (B-07).
+    if args.get("ip_number") not in (None, ""):
+        ip_number = _parse_fssp_ip(args["ip_number"], tool, "ip_number")
+        if isinstance(ip_number, Refusal):
+            return ip_number
+        return {"ip_number": ip_number}
     miss = _required(args, tool, "", ("region", "last_name", "first_name"))
     if miss:
         return miss
@@ -2239,14 +2270,15 @@ FSSP_PROCEEDINGS_SEARCH = ToolSpec(
     name='fssp_proceedings_search',
     source='https://habr.com/ru/articles/648321/ (api-ip.fssp.gov.ru/about — HTTP 410 Gone 2026-09-24)',
     schema=_schema('fssp_proceedings_search', 'ФССП «Банк данных исполнительных производств» — search/physical (api-ip.fssp.gov.ru, ЗАКРЫТ); живые пути: веб-форма fssp.gov.ru/iss/ip и межведомственный обмен ФССП↔банки',
-        {'region': {'type': 'string', 'description': 'строка'}, 'last_name': {'type': 'string', 'description': 'NAME (surname)'}, 'first_name': {'type': 'string', 'description': 'NAME (given)'}, 'middle_name': {'type': 'string', 'description': 'NAME (patronymic)'}, 'birth_date': {'type': 'string', 'description': 'DOB — DD.MM.YYYY'}},
-        ('region', 'last_name', 'first_name')),
+        {'region': {'type': 'string', 'description': 'строка'}, 'last_name': {'type': 'string', 'description': 'NAME (surname)'}, 'first_name': {'type': 'string', 'description': 'NAME (given)'}, 'middle_name': {'type': 'string', 'description': 'NAME (patronymic)'}, 'birth_date': {'type': 'string', 'description': 'DOB — DD.MM.YYYY'}, 'ip_number': {'type': 'string', 'description': 'FSSP_IP_NO — «123456/24/18017-ИП»'}},
+        ()),
     fields=(
-            FieldSpec('region', 'plain', required=True),
-            FieldSpec('last_name', "identity", 'NAME', 'surname', required=True),
-            FieldSpec('first_name', "identity", 'NAME', 'given', required=True),
+            FieldSpec('region', 'plain', required=False),
+            FieldSpec('last_name', "identity", 'NAME', 'surname', required=False),
+            FieldSpec('first_name', "identity", 'NAME', 'given', required=False),
             FieldSpec('middle_name', "identity", 'NAME', 'patronymic', required=False),
             FieldSpec('birth_date', "identity", 'DOB', '', required=False),
+            FieldSpec('ip_number', "identity", 'FSSP_IP_NO', '', required=False),
     ),
     parse=_fssp_proceedings_search_parse, mutating=False,
     result_pii=('result[].name', 'result[].exe_production', 'result[].details'))
@@ -2638,6 +2670,505 @@ UHPPOTE_CARD_GET = ToolSpec(
     result_pii=('cardNumber',))
 
 
+# --- the 22 final both-ways types as documented-procedure tools ----------------
+# Six of the 22 already carry one side in an existing tool (LOAN_UID, FSSP_IP_NO,
+# SUBSCRIBER_ACCOUNT, PRESCRIPTION_NUMBER, STS_NUMBER, CDP_CUSTOMER_ID) and get
+# their missing side in place; the other sixteen get a NEW tool here. Every
+# `result_pii` path below is DERIVED — a plausible dotted path over the card's
+# `field_keys` (tz-agentpii6-registry.md §1.2–1.4), never a verbatim API field,
+# because these are documented PROCEDURES (evidence=summary), not public REST
+# mirrors.
+
+def _parse_birth_cert(raw, tool, path):
+    """«IV-МЮ № 320819» — римская серия + две кириллические + № + 6 цифр (A-02)."""
+    if not isinstance(raw, str) or not re.fullmatch(r"[IVX]{1,4}-[А-ЯЁ]{2}\s*№?\s*\d{6}", raw.strip()):
+        return Refusal(tool, path, "cert_format", str(raw))
+    return raw.strip()
+
+
+def _parse_residence_permit(raw, tool, path):
+    """«82 1234567» / «821234567» — серия 82/83 + 7 цифр (A-04)."""
+    if not isinstance(raw, str):
+        return Refusal(tool, path, "permit_format", str(raw))
+    value = re.sub(r"\s", "", raw.strip())
+    if not re.fullmatch(r"8[23]\d{7}", value):
+        return Refusal(tool, path, "permit_format", str(raw))
+    return value
+
+
+def _parse_military_id(raw, tool, path):
+    """«АК № 1234567» — две кириллические + № + 7 цифр (A-06)."""
+    if not isinstance(raw, str) or not re.fullmatch(r"[А-ЯЁ]{2}\s*№?\s*\d{7}", raw.strip()):
+        return Refusal(tool, path, "military_id_format", str(raw))
+    return raw.strip()
+
+
+def _parse_credit_subject_code(raw, tool, path):
+    """4–15 знаков одного алфавита + цифры, регистр не учитывается (A-12)."""
+    if not isinstance(raw, str) or not re.fullmatch(r"(?:[A-Za-z0-9]{4,15}|[А-ЯЁа-яё0-9]{4,15})", raw.strip()):
+        return Refusal(tool, path, "subject_code_format", str(raw))
+    return raw.strip()
+
+
+def _parse_dms_policy(raw, tool, path):
+    """Полис ДМС — свободная форма страховщика «001SB12345678» (A-14)."""
+    if not isinstance(raw, str) or not re.fullmatch(r"[0-9A-Za-z\-/]{4,40}", raw.strip()):
+        return Refusal(tool, path, "policy_format", str(raw))
+    return raw.strip()
+
+
+def _parse_kasko_policy(raw, tool, path):
+    """Полис КАСКО — свободная форма страховщика «AI123456789» (A-16)."""
+    if not isinstance(raw, str) or not re.fullmatch(r"[0-9A-Za-z\-/]{4,40}", raw.strip()):
+        return Refusal(tool, path, "policy_format", str(raw))
+    return raw.strip()
+
+
+def _parse_insurance_claim(raw, tool, path):
+    """«У-671-475136/25» — номер убытка страховщика (A-17)."""
+    if not isinstance(raw, str) or not re.fullmatch(r"[А-ЯЁA-Z]\d{0,4}-\d{1,6}(?:-\d{1,6})?(?:/\d{1,2})?", raw.strip()):
+        return Refusal(tool, path, "claim_format", str(raw))
+    return raw.strip()
+
+
+def _parse_court_case_uid(raw, tool, path):
+    """«77RS0000-02-2026-000001-52» — УИД суда общей юрисдикции (B-04)."""
+    if not isinstance(raw, str):
+        return Refusal(tool, path, "uid_format", str(raw))
+    value = raw.strip().upper()
+    if not re.fullmatch(r"\d{2}[A-Z]{2}\d{4}-\d{2}-\d{4}-\d{6}-\d{2}", value):
+        return Refusal(tool, path, "uid_format", str(raw))
+    return value
+
+
+def _parse_exec_doc(raw, tool, path):
+    """«ФС 012345678» — серия исполнительного листа + 9 цифр (B-08)."""
+    if not isinstance(raw, str) or not re.fullmatch(r"[А-ЯЁ]{2}\s*№?\s*\d{9}", raw.strip()):
+        return Refusal(tool, path, "exec_doc_format", str(raw))
+    return raw.strip()
+
+
+def _parse_pts(raw, tool, path):
+    """«77 УК 123456» — 2 цифры + 2 кириллические + 6 цифр (B-10)."""
+    if not isinstance(raw, str):
+        return Refusal(tool, path, "pts_format", str(raw))
+    value = re.sub(r"\s", "", raw.strip())
+    if not re.fullmatch(r"\d{2}[А-ЯЁ]{2}\d{6}", value):
+        return Refusal(tool, path, "pts_format", str(raw))
+    return value
+
+
+def _parse_medcard(raw, tool, path):
+    """«12345/2024» — номер медкарты медорганизации, свободная форма (C-08)."""
+    if not isinstance(raw, str) or not re.fullmatch(r"[0-9A-Za-zА-ЯЁа-яё\-/]{2,30}", raw.strip()):
+        return Refusal(tool, path, "medcard_format", str(raw))
+    return raw.strip()
+
+
+def _parse_referral(raw, tool, path):
+    """«057-1234-123456» — номер направления 057/у-04 (C-11)."""
+    if not isinstance(raw, str) or not re.fullmatch(r"\d{3}-\d{1,6}-\d{1,8}", raw.strip()):
+        return Refusal(tool, path, "referral_format", str(raw))
+    return raw.strip()
+
+
+def _parse_school_cert(raw, tool, path):
+    """14 цифр (C-13)."""
+    if not isinstance(raw, str) or not re.fullmatch(r"\d{14}", raw.strip()):
+        return Refusal(tool, path, "cert_number_format", str(raw))
+    return raw.strip()
+
+
+def _parse_employment_contract(raw, tool, path):
+    """«145-ТД» / «ТД-2024/017» — номер трудового договора, свободная форма (C-17)."""
+    if not isinstance(raw, str) or not re.fullmatch(r"[0-9A-Za-zА-ЯЁа-яё\-/]{2,40}", raw.strip()):
+        return Refusal(tool, path, "contract_format", str(raw))
+    return raw.strip()
+
+
+def _parse_e_ticket(raw, tool, path):
+    """13 цифр (C-20)."""
+    if not isinstance(raw, str) or not re.fullmatch(r"\d{13}", raw.strip()):
+        return Refusal(tool, path, "ticket_format", str(raw))
+    return raw.strip()
+
+
+def _parse_fssp_ip(raw, tool, path):
+    """«123456/24/18017-ИП» / «…/СД» — номер исполнительного производства (B-07)."""
+    if not isinstance(raw, str):
+        return Refusal(tool, path, "ip_number_format", str(raw))
+    value = raw.strip()
+    if not re.fullmatch(r"\d{1,7}/\d{2}/\d{5}-(?:ИП|СД)|\d{1,7}/\d{2}/\d{2}/\d{2}", value):
+        return Refusal(tool, path, "ip_number_format", str(raw))
+    return value
+
+
+def _parse_subscriber_account(raw, tool, path):
+    """8–12 цифр — лицевой счёт абонента связи (C-06)."""
+    if not isinstance(raw, str) or not re.fullmatch(r"\d{8,12}", raw.strip()):
+        return Refusal(tool, path, "account_format", str(raw))
+    return raw.strip()
+
+
+def _parse_prescription(raw, tool, path):
+    """«45 0012345678» — серия + номер рецепта (C-10)."""
+    if not isinstance(raw, str) or not re.fullmatch(r"\d{1,4}\s*\d{4,12}", raw.strip()):
+        return Refusal(tool, path, "prescription_format", str(raw))
+    return raw.strip()
+
+
+# --- birth_cert_fetch (government, government_services, evidence=summary) -------
+def _birth_cert_fetch_parse(args):
+    tool = "birth_cert_fetch"
+    miss = _required(args, tool, "", ("birth_cert_number",))
+    if miss:
+        return miss
+    cert = _parse_birth_cert(args["birth_cert_number"], tool, "birth_cert_number")
+    if isinstance(cert, Refusal):
+        return cert
+    return {"birth_cert_number": cert}
+
+BIRTH_CERT_FETCH = ToolSpec(
+    name='birth_cert_fetch',
+    source='https://zags.nalog.gov.ru/Poryadok_polucheniya_svedeniy_ob_aktah_grazhdanskogo_sostoyaniya_iz_EGR_ZAGS_s_ispolzovaniem_SMEHV.docx',
+    schema=_schema('birth_cert_fetch', 'ЕГР ЗАГС (СМЭВ) / ЗАГС — сведения о записи акта о рождении по серии и номеру свидетельства',
+        {'birth_cert_number': {'type': 'string', 'description': 'BIRTH_CERT — «IV-МЮ 320819»'}},
+        ('birth_cert_number',)),
+    fields=(FieldSpec('birth_cert_number', "identity", 'BIRTH_CERT', '', required=True),),
+    parse=_birth_cert_fetch_parse, mutating=False,
+    result_pii=('record.birth_cert_number',))
+
+
+# --- civil_act_fetch (government, government_services, evidence=summary) --------
+def _civil_act_fetch_parse(args):
+    tool = "civil_act_fetch"
+    miss = _required(args, tool, "", ("certificate_number",))
+    if miss:
+        return miss
+    cert = _parse_birth_cert(args["certificate_number"], tool, "certificate_number")
+    if isinstance(cert, Refusal):
+        return cert
+    return {"certificate_number": cert}
+
+CIVIL_ACT_FETCH = ToolSpec(
+    name='civil_act_fetch',
+    source='https://zags.nalog.gov.ru/Poryadok_polucheniya_svedeniy_ob_aktah_grazhdanskogo_sostoyaniya_iz_EGR_ZAGS_s_ispolzovaniem_SMEHV.docx',
+    schema=_schema('civil_act_fetch', 'ЕГР ЗАГС (СМЭВ) — сведения о записи акта гражданского состояния (брак, расторжение, смерть, перемена имени) по серии и номеру свидетельства',
+        {'certificate_number': {'type': 'string', 'description': 'CIVIL_ACT_CERT — «I-АГ 672731»'}},
+        ('certificate_number',)),
+    fields=(FieldSpec('certificate_number', "identity", 'CIVIL_ACT_CERT', '', required=True),),
+    parse=_civil_act_fetch_parse, mutating=False,
+    result_pii=('record.certificate_number',))
+
+
+# --- residence_permit_check (government, banks_mfo_collectors, evidence=summary) --
+def _residence_permit_check_parse(args):
+    tool = "residence_permit_check"
+    miss = _required(args, tool, "", ("residence_permit",))
+    if miss:
+        return miss
+    permit = _parse_residence_permit(args["residence_permit"], tool, "residence_permit")
+    if isinstance(permit, Refusal):
+        return permit
+    return {"residence_permit": permit}
+
+RESIDENCE_PERMIT_CHECK = ToolSpec(
+    name='residence_permit_check',
+    source='https://apidocs.bitrix24.com/api-reference/crm/requisites/presets/',
+    schema=_schema('residence_permit_check', 'Bitrix24 crm.requisite (RQ_IDENT_DOC_NUM с видом документа ВНЖ) / ГУВМ МВД — проверка вида на жительство по серии и номеру',
+        {'residence_permit': {'type': 'string', 'description': 'RESIDENCE_PERMIT — «82 1234567»'}},
+        ('residence_permit',)),
+    fields=(FieldSpec('residence_permit', "identity", 'RESIDENCE_PERMIT', '', required=True),),
+    parse=_residence_permit_check_parse, mutating=False,
+    result_pii=('record.residence_permit',))
+
+
+# --- military_id_register (crm, hr, evidence=summary) ---------------------------
+def _military_id_register_parse(args):
+    tool = "military_id_register"
+    miss = _required(args, tool, "", ("military_id",))
+    if miss:
+        return miss
+    mid = _parse_military_id(args["military_id"], tool, "military_id")
+    if isinstance(mid, Refusal):
+        return mid
+    return {"military_id": mid}
+
+MILITARY_ID_REGISTER = ToolSpec(
+    name='military_id_register',
+    source='Приказ МО РФ № 700 Прил. 4 (форма № 1 военного билета «НЛ N 0000000»); 1С:ЗУП воинский учёт, личная карточка Т-2',
+    schema=_schema('military_id_register', '1С:ЗУП / HR — воинский учёт сотрудника: регистрация серии и номера военного билета',
+        {'military_id': {'type': 'string', 'description': 'MILITARY_ID — «АК 1234567»'}},
+        ('military_id',)),
+    fields=(FieldSpec('military_id', "identity", 'MILITARY_ID', '', required=True),),
+    parse=_military_id_register_parse, mutating=False,
+    result_pii=('record.military_id',))
+
+
+# --- credit_subject_check (bank, banks_mfo_collectors, evidence=summary) --------
+def _credit_subject_check_parse(args):
+    tool = "credit_subject_check"
+    miss = _required(args, tool, "", ("subject_code",))
+    if miss:
+        return miss
+    code = _parse_credit_subject_code(args["subject_code"], tool, "subject_code")
+    if isinstance(code, Refusal):
+        return code
+    return {"subject_code": code}
+
+CREDIT_SUBJECT_CHECK = ToolSpec(
+    name='credit_subject_check',
+    source='https://bazanpa.ru/download/pdf/?target_url=/bank-rossii-poriadok-ot29032016-h2719781/',
+    schema=_schema('credit_subject_check', 'ЦККИ / БКИ — запрос кредитной истории по коду субъекта кредитной истории (SubjectCode)',
+        {'subject_code': {'type': 'string', 'description': 'CREDIT_SUBJECT_CODE — 4–15 знаков'}},
+        ('subject_code',)),
+    fields=(FieldSpec('subject_code', "identity", 'CREDIT_SUBJECT_CODE', '', required=True),),
+    parse=_credit_subject_check_parse, mutating=False,
+    result_pii=('record.subject_code',))
+
+
+# --- dms_policy_find (clinic, medicine, evidence=summary) ----------------------
+def _dms_policy_find_parse(args):
+    tool = "dms_policy_find"
+    miss = _required(args, tool, "", ("dms_policy",))
+    if miss:
+        return miss
+    policy = _parse_dms_policy(args["dms_policy"], tool, "dms_policy")
+    if isinstance(policy, Refusal):
+        return policy
+    return {"dms_policy": policy}
+
+DMS_POLICY_FIND = ToolSpec(
+    name='dms_policy_find',
+    source='ГК РФ гл. 48; Закон РФ 4015-1 — полис ДМС (свободная форма страховщика)',
+    schema=_schema('dms_policy_find', 'МИС / страховая — поиск полиса ДМС по номеру (запись в клинику, гарантийное письмо)',
+        {'dms_policy': {'type': 'string', 'description': 'DMS_POLICY — «001SB12345678»'}},
+        ('dms_policy',)),
+    fields=(FieldSpec('dms_policy', "identity", 'DMS_POLICY', '', required=True),),
+    parse=_dms_policy_find_parse, mutating=False,
+    result_pii=('policy.dms_policy',))
+
+
+# --- kasko_policy_find (bank, insurance, evidence=summary) ---------------------
+def _kasko_policy_find_parse(args):
+    tool = "kasko_policy_find"
+    miss = _required(args, tool, "", ("kasko_policy",))
+    if miss:
+        return miss
+    policy = _parse_kasko_policy(args["kasko_policy"], tool, "kasko_policy")
+    if isinstance(policy, Refusal):
+        return policy
+    return {"kasko_policy": policy}
+
+KASKO_POLICY_FIND = ToolSpec(
+    name='kasko_policy_find',
+    source='ГК РФ гл. 48; Закон РФ 4015-1 — полис КАСКО (свободная форма страховщика)',
+    schema=_schema('kasko_policy_find', 'страховая / банк (автокредит) — поиск полиса КАСКО по номеру',
+        {'kasko_policy': {'type': 'string', 'description': 'KASKO_POLICY — «AI123456789»'}},
+        ('kasko_policy',)),
+    fields=(FieldSpec('kasko_policy', "identity", 'KASKO_POLICY', '', required=True),),
+    parse=_kasko_policy_find_parse, mutating=False,
+    result_pii=('policy.kasko_policy',))
+
+
+# --- insurance_claim_status (bank, insurance, evidence=summary) ----------------
+def _insurance_claim_status_parse(args):
+    tool = "insurance_claim_status"
+    miss = _required(args, tool, "", ("claim_number",))
+    if miss:
+        return miss
+    claim = _parse_insurance_claim(args["claim_number"], tool, "claim_number")
+    if isinstance(claim, Refusal):
+        return claim
+    return {"claim_number": claim}
+
+INSURANCE_CLAIM_STATUS = ToolSpec(
+    name='insurance_claim_status',
+    source='Закон РФ 4015-1 — урегулирование убытка (номер страхового дела страховщика)',
+    schema=_schema('insurance_claim_status', 'страховая / урегулирование — статус страхового дела по номеру убытка',
+        {'claim_number': {'type': 'string', 'description': 'INSURANCE_CLAIM_NUMBER — «У-671-475136/25»'}},
+        ('claim_number',)),
+    fields=(FieldSpec('claim_number', "identity", 'INSURANCE_CLAIM_NUMBER', '', required=True),),
+    parse=_insurance_claim_status_parse, mutating=False,
+    result_pii=('claim.claim_number',))
+
+
+# --- court_case_fetch (search, legal, evidence=summary) ------------------------
+def _court_case_fetch_parse(args):
+    tool = "court_case_fetch"
+    miss = _required(args, tool, "", ("case_uid",))
+    if miss:
+        return miss
+    uid = _parse_court_case_uid(args["case_uid"], tool, "case_uid")
+    if isinstance(uid, Refusal):
+        return uid
+    return {"case_uid": uid}
+
+COURT_CASE_FETCH = ToolSpec(
+    name='court_case_fetch',
+    source='https://sudrf.ru/',
+    schema=_schema('court_case_fetch', 'ГАС «Правосудие» / sudrf — карточка судебного дела по уникальному идентификатору дела (УИД)',
+        {'case_uid': {'type': 'string', 'description': 'COURT_CASE_UID — «77RS0000-02-2026-000001-52»'}},
+        ('case_uid',)),
+    fields=(FieldSpec('case_uid', "identity", 'COURT_CASE_UID', '', required=True),),
+    parse=_court_case_fetch_parse, mutating=False,
+    result_pii=('case.case_uid',))
+
+
+# --- exec_doc_check (government, government_services, evidence=summary) --------
+def _exec_doc_check_parse(args):
+    tool = "exec_doc_check"
+    miss = _required(args, tool, "", ("writ_number",))
+    if miss:
+        return miss
+    writ = _parse_exec_doc(args["writ_number"], tool, "writ_number")
+    if isinstance(writ, Refusal):
+        return writ
+    return {"writ_number": writ}
+
+EXEC_DOC_CHECK = ToolSpec(
+    name='exec_doc_check',
+    source='ПП от 31.07.2008 № 579 «О бланках исполнительных листов» (garant)',
+    schema=_schema('exec_doc_check', 'ФССП / банк / коллектор — проверка исполнительного листа по серии и номеру бланка',
+        {'writ_number': {'type': 'string', 'description': 'EXEC_DOC_NO — «ФС 012345678»'}},
+        ('writ_number',)),
+    fields=(FieldSpec('writ_number', "identity", 'EXEC_DOC_NO', '', required=True),),
+    parse=_exec_doc_check_parse, mutating=False,
+    result_pii=('writ.writ_number',))
+
+
+# --- pts_vehicle_get (government, auto, evidence=summary) ----------------------
+def _pts_vehicle_get_parse(args):
+    tool = "pts_vehicle_get"
+    miss = _required(args, tool, "", ("pts_number",))
+    if miss:
+        return miss
+    pts = _parse_pts(args["pts_number"], tool, "pts_number")
+    if isinstance(pts, Refusal):
+        return pts
+    return {"pts_number": pts}
+
+PTS_VEHICLE_GET = ToolSpec(
+    name='pts_vehicle_get',
+    source='Приказ МВД/Минпромэнерго/МЭР от 23.06.2005 № 496/192/134, Прил. 2 (образец ПТС)',
+    schema=_schema('pts_vehicle_get', 'банк (реестр залогов автокредита) / ГИБДД — сведения о транспортном средстве по серии и номеру ПТС',
+        {'pts_number': {'type': 'string', 'description': 'PTS_NUMBER — «77 УК 123456»'}},
+        ('pts_number',)),
+    fields=(FieldSpec('pts_number', "identity", 'PTS_NUMBER', '', required=True),),
+    parse=_pts_vehicle_get_parse, mutating=False,
+    result_pii=('vehicle.pts_number',))
+
+
+# --- medcard_lookup (clinic, medicine, evidence=summary) -----------------------
+def _medcard_lookup_parse(args):
+    tool = "medcard_lookup"
+    miss = _required(args, tool, "", ("med_card_number",))
+    if miss:
+        return miss
+    card = _parse_medcard(args["med_card_number"], tool, "med_card_number")
+    if isinstance(card, Refusal):
+        return card
+    return {"med_card_number": card}
+
+MEDCARD_LOOKUP = ToolSpec(
+    name='medcard_lookup',
+    source='Приказ Минздрава 1094н (реквизит «Номер медицинской карты»); МИС / ЭМК',
+    schema=_schema('medcard_lookup', 'МИС — поиск медицинской карты пациента по номеру (амбулаторная карта / ЭМК)',
+        {'med_card_number': {'type': 'string', 'description': 'MEDCARD_NUMBER — «12345/2024»'}},
+        ('med_card_number',)),
+    fields=(FieldSpec('med_card_number', "identity", 'MEDCARD_NUMBER', '', required=True),),
+    parse=_medcard_lookup_parse, mutating=False,
+    result_pii=('card.med_card_number',))
+
+
+# --- referral_find (clinic, medicine, evidence=summary) ------------------------
+def _referral_find_parse(args):
+    tool = "referral_find"
+    miss = _required(args, tool, "", ("referral_id",))
+    if miss:
+        return miss
+    ref = _parse_referral(args["referral_id"], tool, "referral_id")
+    if isinstance(ref, Refusal):
+        return ref
+    return {"referral_id": ref}
+
+REFERRAL_FIND = ToolSpec(
+    name='referral_find',
+    source='форма 057/у-04 (направление на обследование/госпитализацию); ЕГИСЗ СЭМД «Направление»',
+    schema=_schema('referral_find', 'МИС / РЕГИЗ — поиск направления на диагностику/госпитализацию по номеру',
+        {'referral_id': {'type': 'string', 'description': 'REFERRAL_NUMBER — «057-1234-123456»'}},
+        ('referral_id',)),
+    fields=(FieldSpec('referral_id', "identity", 'REFERRAL_NUMBER', '', required=True),),
+    parse=_referral_find_parse, mutating=False,
+    result_pii=('referral.referral_id',))
+
+
+# --- school_cert_verify (government, education, evidence=summary) --------------
+def _school_cert_verify_parse(args):
+    tool = "school_cert_verify"
+    miss = _required(args, tool, "", ("attestat_number",))
+    if miss:
+        return miss
+    cert = _parse_school_cert(args["attestat_number"], tool, "attestat_number")
+    if isinstance(cert, Refusal):
+        return cert
+    return {"attestat_number": cert}
+
+SCHOOL_CERT_VERIFY = ToolSpec(
+    name='school_cert_verify',
+    source='https://obrnadzor.gov.ru/ (ФИС ФРДО — федеральный реестр документов об образовании)',
+    schema=_schema('school_cert_verify', 'ФИС ФРДО (Рособрнадзор) — проверка аттестата о среднем общем образовании по номеру бланка',
+        {'attestat_number': {'type': 'string', 'description': 'SCHOOL_CERT_NUMBER — 14 цифр'}},
+        ('attestat_number',)),
+    fields=(FieldSpec('attestat_number', "identity", 'SCHOOL_CERT_NUMBER', '', required=True),),
+    parse=_school_cert_verify_parse, mutating=False,
+    result_pii=('document.attestat_number',))
+
+
+# --- employment_contract_get (crm, hr, evidence=summary) -----------------------
+def _employment_contract_get_parse(args):
+    tool = "employment_contract_get"
+    miss = _required(args, tool, "", ("employment_contract_number",))
+    if miss:
+        return miss
+    contract = _parse_employment_contract(args["employment_contract_number"], tool, "employment_contract_number")
+    if isinstance(contract, Refusal):
+        return contract
+    return {"employment_contract_number": contract}
+
+EMPLOYMENT_CONTRACT_GET = ToolSpec(
+    name='employment_contract_get',
+    source='ТК РФ ст. 57; 1С:ЗУП — реквизиты трудового договора',
+    schema=_schema('employment_contract_get', '1С:ЗУП / HR — сведения о трудовом договоре по его номеру',
+        {'employment_contract_number': {'type': 'string', 'description': 'EMPLOYMENT_CONTRACT_NUMBER — «145-ТД»'}},
+        ('employment_contract_number',)),
+    fields=(FieldSpec('employment_contract_number', "identity", 'EMPLOYMENT_CONTRACT_NUMBER', '', required=True),),
+    parse=_employment_contract_get_parse, mutating=False,
+    result_pii=('contract.employment_contract_number',))
+
+
+# --- e_ticket_issue (calendar, hospitality, evidence=summary) ------------------
+def _e_ticket_issue_parse(args):
+    tool = "e_ticket_issue"
+    miss = _required(args, tool, "", ("ticket_number",))
+    if miss:
+        return miss
+    ticket = _parse_e_ticket(args["ticket_number"], tool, "ticket_number")
+    if isinstance(ticket, Refusal):
+        return ticket
+    return {"ticket_number": ticket}
+
+E_TICKET_ISSUE = ToolSpec(
+    name='e_ticket_issue',
+    source='резолюции IATA (электронный билет, 13 цифр); Amadeus PoweredTicket',
+    schema=_schema('e_ticket_issue', 'OTA / авиакомпания — выписка электронного билета по номеру (возврат/обмен)',
+        {'ticket_number': {'type': 'string', 'description': 'E_TICKET_NUMBER — 13 цифр'}},
+        ('ticket_number',)),
+    fields=(FieldSpec('ticket_number', "identity", 'E_TICKET_NUMBER', '', required=True),),
+    parse=_e_ticket_issue_parse, mutating=False,
+    result_pii=('ticket.ticket_number',))
+
+
 TOOLS_V6: tuple[ToolSpecV5, ...] = (
     ToolSpecV5(base=CRM_REQUISITE_GET, vertical='crm',
                return_forms=(
@@ -2822,8 +3353,8 @@ TOOLS_V6: tuple[ToolSpecV5, ...] = (
     ToolSpecV5(base=TRAFFIC_FINES_CHECK, vertical='government',
                return_forms=(
                    _form('list',
-                         '{"fines":[{"uin":"18810018260000123456","decision_date":"2026-08-14","amount":"500","koap":"12.9 ч.2","vehicle":"Р777ТТ18"}]}',
-                         ('fines[].uin', 'fines[].vehicle')),
+                         '{"fines":[{"uin":"18810018260000123456","decision_date":"2026-08-14","amount":"500","koap":"12.9 ч.2","vehicle":"Р777ТТ18","sts":"77 12 345678"}]}',
+                         ('fines[].uin', 'fines[].vehicle', 'fines[].sts')),
                    _form('empty',
                          '{"fines":[]}',
                          ()),
@@ -3058,8 +3589,8 @@ TOOLS_V6: tuple[ToolSpecV5, ...] = (
     ToolSpecV5(base=AUDIENCE_SEGMENT_UPLOAD, vertical='crm',
                return_forms=(
                    _form('single',
-                         '{"segment":{"id":12345,"name":"Отток сентябрь","type":"uploading","status":"uploaded","hashed":false}}',
-                         ()),
+                         '{"segment":{"id":12345,"name":"Отток сентябрь","type":"uploading","status":"uploaded","hashed":false,"ids":[{"external_id":"c-000184523"}]}}',
+                         ('segment.ids[].external_id',)),
                    _form('error_with_value',
                          '{"errors":[{"error_type":"invalid_parameter","message":"Invalid phone in line 3: +7 (916) 402-11-87"}]}',
                          ('errors[].message',)),
@@ -3223,6 +3754,166 @@ TOOLS_V6: tuple[ToolSpecV5, ...] = (
                          ()),
                ),
                differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=BIRTH_CERT_FETCH, vertical='government',
+               return_forms=(
+                   _form('single',
+                         '{"record":{"birth_cert_number":"IV-МЮ 320819"}}',
+                         ('record.birth_cert_number',)),
+                   _form('empty',
+                         '{"record":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=CIVIL_ACT_FETCH, vertical='government',
+               return_forms=(
+                   _form('single',
+                         '{"record":{"certificate_number":"I-АГ 672731"}}',
+                         ('record.certificate_number',)),
+                   _form('empty',
+                         '{"record":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=RESIDENCE_PERMIT_CHECK, vertical='government',
+               return_forms=(
+                   _form('single',
+                         '{"record":{"residence_permit":"82 1234567"}}',
+                         ('record.residence_permit',)),
+                   _form('empty',
+                         '{"record":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=MILITARY_ID_REGISTER, vertical='crm',
+               return_forms=(
+                   _form('single',
+                         '{"record":{"military_id":"АК 1234567"}}',
+                         ('record.military_id',)),
+                   _form('empty',
+                         '{"record":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=CREDIT_SUBJECT_CHECK, vertical='bank',
+               return_forms=(
+                   _form('single',
+                         '{"record":{"subject_code":"Qw7rT2"}}',
+                         ('record.subject_code',)),
+                   _form('empty',
+                         '{"record":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=DMS_POLICY_FIND, vertical='clinic',
+               return_forms=(
+                   _form('single',
+                         '{"policy":{"dms_policy":"001SB12345678"}}',
+                         ('policy.dms_policy',)),
+                   _form('empty',
+                         '{"policy":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=KASKO_POLICY_FIND, vertical='bank',
+               return_forms=(
+                   _form('single',
+                         '{"policy":{"kasko_policy":"AI123456789"}}',
+                         ('policy.kasko_policy',)),
+                   _form('empty',
+                         '{"policy":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=INSURANCE_CLAIM_STATUS, vertical='bank',
+               return_forms=(
+                   _form('single',
+                         '{"claim":{"claim_number":"У-671-475136/25"}}',
+                         ('claim.claim_number',)),
+                   _form('empty',
+                         '{"claim":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=COURT_CASE_FETCH, vertical='search',
+               return_forms=(
+                   _form('single',
+                         '{"case":{"case_uid":"77RS0000-02-2026-000001-52"}}',
+                         ('case.case_uid',)),
+                   _form('empty',
+                         '{"case":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=EXEC_DOC_CHECK, vertical='government',
+               return_forms=(
+                   _form('single',
+                         '{"writ":{"writ_number":"ФС 012345678"}}',
+                         ('writ.writ_number',)),
+                   _form('empty',
+                         '{"writ":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=PTS_VEHICLE_GET, vertical='government',
+               return_forms=(
+                   _form('single',
+                         '{"vehicle":{"pts_number":"77 УК 123456"}}',
+                         ('vehicle.pts_number',)),
+                   _form('empty',
+                         '{"vehicle":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=MEDCARD_LOOKUP, vertical='clinic',
+               return_forms=(
+                   _form('single',
+                         '{"card":{"med_card_number":"12345/2024"}}',
+                         ('card.med_card_number',)),
+                   _form('empty',
+                         '{"card":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=REFERRAL_FIND, vertical='clinic',
+               return_forms=(
+                   _form('single',
+                         '{"referral":{"referral_id":"057-1234-123456"}}',
+                         ('referral.referral_id',)),
+                   _form('empty',
+                         '{"referral":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=SCHOOL_CERT_VERIFY, vertical='government',
+               return_forms=(
+                   _form('single',
+                         '{"document":{"attestat_number":"07705000012345"}}',
+                         ('document.attestat_number',)),
+                   _form('empty',
+                         '{"document":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=EMPLOYMENT_CONTRACT_GET, vertical='crm',
+               return_forms=(
+                   _form('single',
+                         '{"contract":{"employment_contract_number":"145-ТД"}}',
+                         ('contract.employment_contract_number',)),
+                   _form('empty',
+                         '{"contract":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=E_TICKET_ISSUE, vertical='calendar',
+               return_forms=(
+                   _form('single',
+                         '{"ticket":{"ticket_number":"5552412345678"}}',
+                         ('ticket.ticket_number',)),
+                   _form('empty',
+                         '{"ticket":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
 )
 
 
@@ -3248,7 +3939,7 @@ V6_RESULT_TYPES: dict[str, tuple[str, ...]] = {
     'cdek_order_info': ('NAME', 'PASSPORT', 'DOB', 'INN', 'PHONE', 'LOC'),
     'osago_policy_check': ('OSAGO_POLICY', 'PLATE', 'VIN'),
     'insurance_claim_create': ('NAME', 'OSAGO_POLICY'),
-    'traffic_fines_check': ('UIN', 'PLATE'),
+    'traffic_fines_check': ('UIN', 'PLATE', 'STS_NUMBER'),
     'epts_status_get': ('EPTS_NUMBER', 'VIN'),
     'driver_license_check': ('DRIVER_LICENSE',),
     'subscriber_profile_get': ('NAME', 'DOB', 'PASSPORT', 'LOAN_CONTRACT_NUMBER', 'SUBSCRIBER_ACCOUNT', 'PHONE', 'ICCID', 'IMSI', 'IMEI'),
@@ -3271,7 +3962,7 @@ V6_RESULT_TYPES: dict[str, tuple[str, ...]] = {
     'lms_user_get': ('NAME', 'EMAIL', 'STUDENT_ID_NUMBER', 'PHONE', 'LOGIN'),
     'dwh_sql_query': ('NAME', 'PHONE', 'INN'),
     'bi_chart_export': ('NAME', 'PHONE'),
-    'audience_segment_upload': (),
+    'audience_segment_upload': ('CDP_CUSTOMER_ID',),
     'email_contacts_import': ('EMAIL', 'PHONE', 'NAME'),
     'web_visits_export': ('METRICA_CLIENT_ID', 'IP_ADDRESS', 'EMAIL'),
     'fssp_proceedings_search': ('NAME', 'DOB', 'FSSP_IP_NO', 'COURT_CASE_NO_SOU'),
@@ -3289,6 +3980,22 @@ V6_RESULT_TYPES: dict[str, tuple[str, ...]] = {
     'appmetrica_device_id_lookup': ('APP_DEVICE_ID',),
     'mikrotik_dhcp_lease_get': ('MAC',),
     'uhppote_card_get': ('ACCESS_PASS_NUMBER',),
+    'birth_cert_fetch': ('BIRTH_CERT',),
+    'civil_act_fetch': ('CIVIL_ACT_CERT',),
+    'residence_permit_check': ('RESIDENCE_PERMIT',),
+    'military_id_register': ('MILITARY_ID',),
+    'credit_subject_check': ('CREDIT_SUBJECT_CODE',),
+    'dms_policy_find': ('DMS_POLICY',),
+    'kasko_policy_find': ('KASKO_POLICY',),
+    'insurance_claim_status': ('INSURANCE_CLAIM_NUMBER',),
+    'court_case_fetch': ('COURT_CASE_UID',),
+    'exec_doc_check': ('EXEC_DOC_NO',),
+    'pts_vehicle_get': ('PTS_NUMBER',),
+    'medcard_lookup': ('MEDCARD_NUMBER',),
+    'referral_find': ('REFERRAL_NUMBER',),
+    'school_cert_verify': ('SCHOOL_CERT_NUMBER',),
+    'employment_contract_get': ('EMPLOYMENT_CONTRACT_NUMBER',),
+    'e_ticket_issue': ('E_TICKET_NUMBER',),
 }
 
 
@@ -3355,16 +4062,32 @@ V6_META: dict[str, V6ToolMeta] = {
     'appmetrica_device_id_lookup': V6ToolMeta('primary', 'official', 'marketing_cdp'),
     'mikrotik_dhcp_lease_get': V6ToolMeta('secondary', 'official', 'telecom'),
     'uhppote_card_get': V6ToolMeta('secondary', 'official', 'hr'),
+    'birth_cert_fetch': V6ToolMeta('summary', 'official', 'government_services'),
+    'civil_act_fetch': V6ToolMeta('summary', 'official', 'government_services'),
+    'residence_permit_check': V6ToolMeta('summary', 'official', 'banks_mfo_collectors'),
+    'military_id_register': V6ToolMeta('summary', 'official', 'hr'),
+    'credit_subject_check': V6ToolMeta('summary', 'official', 'banks_mfo_collectors'),
+    'dms_policy_find': V6ToolMeta('summary', 'official', 'medicine'),
+    'kasko_policy_find': V6ToolMeta('summary', 'official', 'insurance'),
+    'insurance_claim_status': V6ToolMeta('summary', 'official', 'insurance'),
+    'court_case_fetch': V6ToolMeta('summary', 'official', 'legal'),
+    'exec_doc_check': V6ToolMeta('summary', 'official', 'government_services'),
+    'pts_vehicle_get': V6ToolMeta('summary', 'official', 'auto'),
+    'medcard_lookup': V6ToolMeta('summary', 'official', 'medicine'),
+    'referral_find': V6ToolMeta('summary', 'official', 'medicine'),
+    'school_cert_verify': V6ToolMeta('summary', 'official', 'education'),
+    'employment_contract_get': V6ToolMeta('summary', 'official', 'hr'),
+    'e_ticket_issue': V6ToolMeta('summary', 'official', 'hospitality'),
 }
 
 
 UNSCHEMED_TOOLS: tuple[str, ...] = (
     "call_detail_records: result_set with synthetic provenance, no exact fields",
     "post_tracking_history: the track is a NEGATIVE (OD-27), result is a movement history with no PII (V04)",
-    # The §2.4 gap families the research did not open as a real API mirror.
-    "kyc_questionnaire: 115-ФЗ KYC form (BIRTH_CERT/RESIDENCE_PERMIT/CREDIT_SUBJECT_CODE) has no exact producer→consumer fields",
-    "collection_dossier: взыскание docket with EXEC_DOC_NO, no exact fields",
-    "dms_guarantee_letter: ДМС guarantee letter (MEDCARD_NUMBER/REFERRAL_NUMBER), no exact fields",
+    # The §2.4 gap families the research did not open as a real API mirror. The
+    # KYC-анкета / взыскание / ДМС / CDP families below are NO LONGER here: their
+    # types (BIRTH_CERT, RESIDENCE_PERMIT, CREDIT_SUBJECT_CODE, EXEC_DOC_NO,
+    # MEDCARD_NUMBER, REFERRAL_NUMBER, CDP_CUSTOMER_ID) are now grounded by the
+    # 22 both-ways tools above.
     "device_service_request: service request with IMEI, no exact fields",
-    "cdp_profile: CDP profile (METRICA_CLIENT_ID/CDP_CUSTOMER_ID/LOGIN), no exact fields",
 )
