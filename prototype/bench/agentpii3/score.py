@@ -103,6 +103,9 @@ from pseudex.envelope import (  # noqa: E402
     _InjectedValue,
     _echo_targets,
     _identity_key,
+    _is_own_composition,
+    _is_own_rendering,
+    _relevant_own_renderings,
     _replace_echoes,
     conversation_key,
     mask_tools,
@@ -364,6 +367,26 @@ def _own_renderings(vault: Vault) -> tuple[str, ...]:
                  if rendering and rendering != literal)
 
 
+def _own_rendering_set(vault: Vault) -> frozenset[str]:
+    """The conversation's own renderings, exact and case-folded.
+
+    `_mask_one`'s detection refuses to re-mint a NAME that is a rendering this
+    dialogue already showed, read in another case, or composed of such renderings
+    (`_is_own_rendering` / `_is_own_composition`). Production builds the set in
+    `_Provenance._index` — every rendering plus its case fold. The scorer reads
+    the same `shown_forms` rows, so it must build the same set or it re-mints a
+    composed substitute (the model joined «Лебедева» + «Майя» + «Романовна» it
+    was shown apart) into a NEW person — the divergence that excluded
+    `long_support-038`.
+    """
+    own: set[str] = set()
+    for rendering, literal, _ in vault.shown_forms():
+        if rendering and rendering != literal:
+            own.add(rendering)
+            own.add(rendering.casefold())
+    return frozenset(own)
+
+
 def _mask_message(text: str, detector: Detector, vault: Vault,
                   role: str = "tool") -> Masked:
     """The production masking of one message, with the pieces kept.
@@ -373,7 +396,10 @@ def _mask_message(text: str, detector: Detector, vault: Vault,
     functions production composes it from. The spans a minted token sits on are
     dropped first, exactly as `mask_text` drops them, because the model echoes
     its own substitutes back constantly and masking one a second time makes the
-    person's identity change every turn.
+    person's identity change every turn. The same own-rendering and
+    own-composition guards production's `_mask_one` applies ride along: a NAME
+    that is this dialogue's own substitute — retyped in another case or composed
+    from the parts it was shown — is left standing, never re-minted.
 
     THEN THE SAME PRIVACY LEG AS PRODUCTION, for tool messages only. A tool
     result whose echo of a value the dialogue already restored survives
@@ -384,8 +410,12 @@ def _mask_message(text: str, detector: Detector, vault: Vault,
     compared against the production result leg; callers masking prose pass the
     message's own role.
     """
+    own = _own_rendering_set(vault)
+    relevant = _relevant_own_renderings(text, own)
     spans = [span for span in detector.detect(text)
-             if not is_own_substitute(span, vault)]
+             if not is_own_substitute(span, vault)
+             and not _is_own_rendering(span, relevant)
+             and not _is_own_composition(span, relevant)]
     pieces = tuple(
         Piece(start=span.start, end=span.end,
               substitute=_token_for_text(span, vault),

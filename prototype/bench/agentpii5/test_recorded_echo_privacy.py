@@ -120,11 +120,42 @@ def _check_plain_result_untouched() -> None:
           f"prod={prod!r} scorer={observed.masked!r}")
 
 
+def _check_composed_own_name_echo() -> None:
+    """A NAME the model composed from its own substitutes is left, not re-minted.
+
+    Production's detection drops a NAME every word of which is a substitute this
+    dialogue showed apart (surname / given / patronymic joined back together),
+    so the composed fake is NOT masked a second time — a second mask would turn
+    the person into a new one. The scorer must apply the same own-composition
+    guard, or the harness parity gate drops the case (`long_support-038`).
+    """
+    view, context, detector = _session("composed")
+    mask_messages([{"role": "user", "content": "клиент боженова милана"}],
+                  context, False)
+    mask_messages([{"role": "tool",
+                    "content": '{"last_name": "боженова", "first_name": "милана",'
+                               ' "middle_name": "аркадьевна"}'}],
+                  context, False)
+    parts = {literal: rendering for rendering, literal, entity_type in view.shown_forms()
+             if entity_type == "NAME"}
+    composed = (f"{parts['боженова']} {parts['милана']} {parts['аркадьевна']}")
+    result_text = f'{{"name": "{composed}"}}'
+    prod = _prod_tool(view, context, result_text)
+    observed = score._mask_message(result_text, detector, view)
+    check(prod == observed.masked,
+          "a composed own substitute is left standing, scorer agrees",
+          f"prod={prod!r} scorer={observed.masked!r}")
+    check(composed in prod,
+          "the composed substitute survives, not re-minted into a new person",
+          prod)
+
+
 def main() -> int:
     load_dev_bundle()
     _check_lone_surname_echo()
     _check_truncated_phone_echo()
     _check_plain_result_untouched()
+    _check_composed_own_name_echo()
     failures = [name for ok, name, _ in RESULTS if not ok]
     print()
     print("=" * 72)
