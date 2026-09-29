@@ -244,6 +244,10 @@ def _tuning_payload() -> dict[str, object]:
             "bio_cues": list(assets_source.BIO_CUES),
             "never_cues": list(assets_source.NAME_NEVER_CUES),
             "stopwords": list(assets_source.STOPWORDS),
+            # ПРЕДЛОГИ-ЯКОРИ ЧЕЛОВЕКА. Настраиваемые, как всякий cue, и потому
+            # едут в лизинг, а не в бинарник: «от аленчиев» — то же правило, что
+            # «перезвоните морозову», и материал у него тот же.
+            "anchor_preps": list(assets_source.NAME_ANCHOR_PREPS),
         },
         "address": {
             "street_gaz": list(assets_source.STREET_GAZ),
@@ -282,7 +286,12 @@ def _tuning_payload() -> dict[str, object]:
         # dict would hand that order to `json.dumps(sort_keys=True)`, i.e. to the
         # alphabet — a silent semantic change with no test that would notice.
         # JSON arrays preserve order; sort_keys does not touch their contents.
-        "structured": {"key_type": [[key, value] for key, value in assets_source.KEY_TYPE.items()]},
+        "structured": {"key_type": [[key, value] for key, value in assets_source.KEY_TYPE.items()],
+                       # КАРТА «ТИП → РОЛИ» для композитных объектов. Арендуется
+                       # целиком: это tuned-словарь частей документа (series /
+                       # number / серия / номер), а не алгоритм, и в бинарник он
+                       # не едет — ровно как `key_type`.
+                       "composite_types": assets_source.COMPOSITE_TYPES},
         "ru_pii": {
             "ctx_types": [list(entry) for entry in assets_source.CTX_TYPES],
             "inn_context": list(assets_source.INN_CONTEXT),
