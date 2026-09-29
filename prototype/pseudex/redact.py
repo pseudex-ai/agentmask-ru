@@ -241,6 +241,12 @@ def _place_values(phrase: str) -> dict[str, str]:
     with, so the guard cannot drift from what it guards."""
     values: dict[str, str] = {}
     for role, part in morph_places.split_roles(phrase).items():
+        # ПОД-РОЛИ УЛИЦЫ НЕ СРАВНИВАЮТСЯ ЗДЕСЬ: тип — оформление, которое
+        # зеркало ВПРАВЕ менять (клиент написал «ул.», подмена — «улица»), и
+        # сравнение написаний отказывало бы безупречное зеркало ровно за то, что
+        # оно зеркало. Содержимое улицы уже сравнивается сигнатурой ниже.
+        if role in morph_places._STREET_SUB_ROLES:
+            continue
         values[role] = (morph_places.match_signature(part)
                         if role in ("street", "city")
                         else _fold_word(morph_places.house_digits(part)))
@@ -319,16 +325,17 @@ def _token_for_text(span: Span, vault: Vault) -> str:
             # THE FORM IS THE CUSTOMER'S ON THE WAY IN. `in_form_of` lays the
             # fake into the customer's own surface — lower case where he wrote
             # lower case, «д69» glued where he glued it, no comma where he
-            # wrote none — the mirror of laying the real value into the agent's
-            # form on the way out. Shown a clean, capitalised, spaced fake, a
-            # rewriting model has nothing to normalise and copies it, so the
-            # tool receives the customer's raw string, never the model's own
-            # form; shown the customer's messy form, the model reformats it
-            # exactly as it would the real value, and the real value comes back
-            # in THAT form. This is the base positioning — we make the same
-            # presentation the customer did. Measured on the public rewriter
-            # agent (26 of 39 address round-trips). Oblique mentions keep the
-            # grammatical inflection below, prose reads on their agreement.
+            # wrote none, his type word or none — the mirror of laying the real
+            # value into the agent's form on the way out. Shown a clean,
+            # capitalised, spaced fake, a rewriting model has nothing to
+            # normalise and copies it, so the tool receives the customer's raw
+            # string, never the model's own form; shown the customer's messy
+            # form, the model reformats it exactly as it would the real value,
+            # and the real value comes back in THAT form. This is the base
+            # positioning — we make the same presentation the customer did.
+            # Measured on the public rewriter agent (26 of 39 address
+            # round-trips). Oblique mentions keep the grammatical inflection
+            # below, prose reads on their agreement.
             #
             # FAIL-SAFE: the mirror must preserve the FAKE's identity. A
             # numbered or two-word street («4-й Вешняковский», «Ольгина пруда»)
@@ -344,6 +351,15 @@ def _token_for_text(span: Span, vault: Vault) -> str:
             if shown and _mirror_leaks_nothing(shown, agreed):
                 return shown
             return agreed
+        # КОСВЕННЫЙ ПАДЕЖ ПОЛУЧАЕТ СКЛОНЁННУЮ ФРАЗУ ЦЕЛИКОМ, А НЕ ГОЛОЕ
+        # НАЗВАНИЕ. Зеркало отправителя («Встретимся на Тверской 7» → «…на
+        # Луговой 2») оставляло подмену БЕЗ родового слова, и `detect_case`
+        # читает голое «Луговой» как именительный — то есть подмена в косвенном
+        # слоте, ровно то, от чего этот путь и заведён (test_hard_cases). Форма
+        # при этом не наша: падеж, число и маркер берутся у отправителя, а
+        # родовое слово — из записи (см. `_compose_head`: голова, пришедшая от
+        # ДРУГОГО упоминания, пересобирается в форме этого, поэтому чужое «ул.»
+        # сюда не просачивается).
         return morph_places.inflect_place(token, case)
     if span.entity_type != "NAME":
         return token
@@ -769,6 +785,38 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True,
                    inflect, for_tool)
 
 
+def _address_clauses(text: str) -> list[tuple[int, int]]:
+    """Куски между границами предложений, в которых есть АДРЕСНАЯ ПОДСКАЗКА.
+
+    ЗАЧЕМ ЭТО ВТОРОЙ ВИД ОКНА. `_PLACE_RUN` ищет адрес по РОДОВОМУ слову, а
+    подмена зеркалит отправителя: клиент, написавший «казань зацепская 7 кв 31»
+    без типа, видит свою подмену тоже без типа («казань речная 4 кв 229»).
+    Скрестив её с чужим номером — «г казань, речной, д 4, кв 78», — получаем
+    текст, в котором родового слова нет вовсе: прогон его не находит,
+    противоречие не замечается, и каждая часть разрешается СВОИМ владельцем —
+    настоящий дом одного адреса и настоящая квартира другого
+    (test_location_form_adversarial F/two). Клауза с адресной подсказкой —
+    минимальное окно, которое ещё видит целое.
+    """
+    out: list[tuple[int, int]] = []
+    for match in re.finditer(r"[^;\n]+", text):
+        piece = match.group()
+        # КЛАУЗА С РОДОВЫМ СЛОВОМ УЖЕ ЕСТЬ У ПРОГОНА — второй раз её спрашивать
+        # нечем, и вредно: роль улицы у такого окна начинается с ПРОЗЫ («Офис на
+        # Вязовом проспекте»), её лист не находит владельца вовсе, и один
+        # найденный корпус уже даёт «двух владельцев» — окно объявлялось
+        # противоречивым и блокировало верный адрес (test_hard_cases: «Офис на
+        # Ленинском проспекте, дом 10, корпус 3» не возвращался).
+        # СЛОВО, А НЕ СТРОКА: `_STREET_TYPE_WORD` якорный, и им проверяется один
+        # токен, а не вся клауза.
+        if any(_STREET_TYPE_WORD.match(word.strip(" .,"))
+               for word in re.findall(r"[А-Яа-яЁё.-]+", piece)):
+            continue
+        if re.search(r"(?i)\b(?:дом|д|кв|квартир\w*|корп\w*|стр|под[ъь]езд\w*)\.?\s*\d", piece):
+            out.append((match.start(), match.end()))
+    return out
+
+
 def _conflicting_place_spans(text: str, vault: Vault,
                              exact: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
     """Keep contradictory address mentions unresolved, not partly real.
@@ -782,13 +830,14 @@ def _conflicting_place_spans(text: str, vault: Vault,
         framing
         for match in _PLACE_RUN_ANY_CASE.finditer(text)
         for framing in _place_windows(text, match.start(), match.end())}
+    windows.update(_address_clauses(text))
     blocked: list[tuple[int, int, str]] = []
     for start, end in sorted(windows, key=lambda pair: pair[1] - pair[0], reverse=True):
         if any(low <= start and end <= high for low, high, _ in exact + blocked):
             continue
         surface: str = text[start:end]
         roles: dict[str, str] = morph_places.split_roles(surface)
-        if len(_address_owners(roles, vault)) > 1:
+        if len(_role_owners(roles, vault)) > 1:
             blocked.append((start, end, surface))
     return blocked
 
@@ -1686,6 +1735,26 @@ def _place_windows(text: str, start: int, end: int) -> list[tuple[int, int]]:
     if lead is not None and lead.end() < end:
         for stop in ends:
             candidates.add((lead.end(), stop))
+    # …AND ЛЮБАЯ ВЕДУЩАЯ КЛАУЗА, А НЕ ТОЛЬКО ЗАГЛАВНАЯ. Подмена наследует
+    # регистр клиента, и «сортавала, улица абрикосовая, 66», написанное
+    # строчными, разбирается прогоном с ЛЮБЫМ первым словом:
+    # `_PLACE_RUN_ANY_CASE` теряет `(?-i)` на имени, и «адрес сортавала» само
+    # читается как город из двух слов. Ни `_CITY_HEAD`, ни `_CITY_LEAD` не
+    # срабатывают (обе требуют заглавной), фрейма без ведущей клаузы не было
+    # вовсе — и целая фраза не разрешалась, разрешалось окно покороче, УЛИЦА, а
+    # дом оставался подменой: инструмент получал смесь настоящей улицы с
+    # фальшивым домом при 200 и пустом `residual_tokens` (g08/single-005).
+    #
+    # ФРЕЙМ ОБЯЗАН САМ БЫТЬ УЛИЦЕЙ. Предложить любой хвост после запятой значило
+    # бы объявить адресом голое «66» — и число заказчика после запятой
+    # подменялось бы чужим домом.
+    for comma in re.finditer(r",\s*", text[start:end]):
+        low = start + comma.end()
+        if not _looks_like_street_head(text, low):
+            continue
+        for stop in ends:
+            if low < stop:
+                candidates.add((low, stop))
     return sorted(candidates, key=lambda pair: pair[1] - pair[0], reverse=True)
 
 
@@ -1707,6 +1776,28 @@ _STREET_TYPE_WORD = re.compile(
     r"(?i)^(?:ул\.?|улиц\w*|пр-т|пр\.?|просп\w*|пер\.?|переул\w*|б-р|бульвар\w*|ш\.?|шоссе|пл\.?|площад\w*|"
     r"наб\.?|набережн\w*|проезд\w*|тупик\w*|алле\w*|дорог\w*|тракт\w*|линия|линии)$")
 _CITY_OF_TOKEN = re.compile(r"^([А-ЯЁ][а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?),\s")
+
+
+def _looks_like_street_head(text: str, position: int) -> bool:
+    """Начинается ли здесь улица: РОДОВОЕ слово в одном из первых двух слов.
+
+    РОДОВОЕ, А НЕ ЛЮБОЙ МАРКЕР ЗАПИСИ. «д», «дом», «кв», «корп» — это части
+    адреса, а не его тип, и фрейм, начинающийся с «д 6, кв 13», улицей не
+    является. Спрошенный как улица, он разрешал СКРЕЩЕННОЕ упоминание —
+    «г казань, рябиновой, д 6, кв 13», где дом одного адреса и квартира
+    другого, — в настоящий адрес одной из подмен вместо отказа
+    (test_location_form_adversarial F/two).
+
+    `_STREET_TYPE_WORD` требует родовое слово ПЕРВЫМ, а подмена чеканится и
+    «название первым» («Барбарисовый бульвар», «Тополиный проспект») — вторая
+    форма тоже обязана считаться началом улицы, иначе фрейм, снявший ведущую
+    клаузу, не предлагался бы для половины типов.
+    """
+    words = [word.strip(" .,") for word in text[position:position + 64].split()[:2]]
+    if len(words) < 2:
+        return False
+    generic = [bool(_STREET_TYPE_WORD.match(word)) for word in words]
+    return any(generic) and not all(generic)
 
 
 def _name_windows(text: str) -> list[tuple[int, int, str]]:
@@ -2673,17 +2764,14 @@ def _join_address_fields(restored: object, original: object, vault: Vault,
     # спрошенные скопом, они дают ДВУХ владельцев — правило единственного
     # отказывало, и ни один из адресов не разрешался. Группа читается из
     # приставки имени поля: она и есть то, чем схема их различает.
-    # THE PREFIX IS WHAT IS LEFT WHEN THE SCHEMA'S OWN WORD COMES OFF, not the
-    # role's name. `locality` holds the city and `building` the house, and
-    # cutting the ROLE out of them cut nothing — each became a group of its
-    # own, asked alone, and the city with two owners in the conversation was
-    # never resolved (live v4: `courier_book.address.locality` reached the
-    # tool as our fake town).
+    # ПРИСТАВКА — ЭТО ИМЯ БЕЗ СЛОВА РОЛИ, а не то, что осталось от `rsplit` по
+    # нему: `address.street_type` и `streetType` — тот же адрес, что
+    # `address.street` и `street`, и склеенное имя рулило ими как чужими
+    # группами (см. `morph_places.field_prefix`, где токены и слова роли — один
+    # источник для обеих ног).
     groups: dict[str, dict[str, str]] = {}
     for key, value in addressed.items():
-        word, _ = morph_places.field_role(key)
-        prefix = key.lower().rsplit(word, 1)[0].strip("_")
-        groups.setdefault(prefix, {})[key] = value
+        groups.setdefault(morph_places.field_prefix(key), {})[key] = value
     out = dict(restored)
     for group in groups.values():
         out = _join_one_address(out, {key: value for key, value in group.items() if key in fragments},
@@ -2691,10 +2779,17 @@ def _join_address_fields(restored: object, original: object, vault: Vault,
     return out
 
 
-def _address_owners(evidence: dict[str, str], vault: Vault) -> set[str]:
-    """Адресные подмены, на которые указывают листья этой группы.
+def _leaf_owners(leaves: list[tuple[str, str]], vault: Vault) -> set[str]:
+    """Адресные подмены, на которые указывают эти (роль, значение) листья.
 
-    ДВА СПОСОБА СПРОСИТЬ, И ВЫБИРАЕТ МЕЖДУ НИМИ ОБЛАСТЬ, А НЕ ВКУС.
+    ОДИН ВОПРОС, ДВА ЧИТАТЕЛЯ ИМЁН. Схема называет роль СЛОВОМ ПОЛЯ — и
+    `_role_of_field` переводит его (`building` схемы — это `house` записи, там
+    лежит корпус). `split_roles` называет роль УЖЕ РОЛЬЮ, и переводить её
+    второй раз нельзя: «корпус 6» под ключом `building` спрашивалось как дом 6
+    и находило ЧУЖУЮ подмену с домом 6 — окно объявлялось противоречивым и
+    блокировало верный адрес (`test_hard_cases`: «мончегорсуая 195 корпус 1» не
+    возвращался). Поэтому переводит вызывающий, а спрашивает здесь одна
+    функция.
 
     ЕСТЬ РАЗГОВОР — листья спрашиваются ПО ОДНОМУ, каждый своей ролью. В
     строках одного диалога адресных подмен единицы, «какая наша подмена носит
@@ -2719,11 +2814,10 @@ def _address_owners(evidence: dict[str, str], vault: Vault) -> set[str]:
     которой сошлись обе цифры, и ни одна из них не сказала, о какой улице речь.
     """
     if vault.fragment_scope_is_a_dialogue():
-        named = {vault.place_owner(value, _role_of_field(key))
-                 for key, value in evidence.items()}
+        named = {vault.place_owner(value, role) for role, value in leaves}
         named.discard(None)
         return named
-    values = list(evidence.values())
+    values = [value for _role, value in leaves]
     paired: set[str] = set()
     for first in range(len(values)):
         for second in range(first + 1, len(values)):
@@ -2737,6 +2831,17 @@ def _address_owners(evidence: dict[str, str], vault: Vault) -> set[str]:
             if token is not None:
                 paired.add(token)
     return paired
+
+
+def _address_owners(evidence: dict[str, str], vault: Vault) -> set[str]:
+    """`_leaf_owners` для СХЕМЫ: ключ — ИМЯ ПОЛЯ, роль читается из него."""
+    return _leaf_owners([(_role_of_field(key), value) for key, value in evidence.items()],
+                        vault)
+
+
+def _role_owners(roles: dict[str, str], vault: Vault) -> set[str]:
+    """`_leaf_owners` для РАЗОБРАННОЙ ФРАЗЫ: ключ УЖЕ РОЛЬ (см. `_leaf_owners`)."""
+    return _leaf_owners(list(roles.items()), vault)
 
 
 def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
@@ -2818,9 +2923,18 @@ def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
                 roles["street"] = head[1]
     out = dict(restored)
     spellings = _spellings_for(value, literals.as_written)
+    # ОДНА УЛИЦА НА ДВА ЛИСТА — РОВНО ОДИН РАЗ. Схема, которая спрашивает
+    # `street` И `street_type` порознь (`streetType` — то же имя), называет одну
+    # улицу двумя полями: имя в одно, родовое слово в другое. Тогда в поле
+    # `street` едет ИМЯ (тип у него есть свой лист), иначе тип уезжает в
+    # инструмент дважды — и в улице, и рядом. Схема без листа типа получает
+    # улицу ЦЕЛИКОМ, как и получала.
+    split_street_type = any(_role_of_field(key) == "street_type" for key in evidence)
     for key in fragments:
         role = _role_of_field(key)
         part = roles.get(role)
+        if role == "street" and split_street_type:
+            part = roles.get("street_name") or part
         if part:
             # THE FORM IS THE AGENT'S: digits where it wrote digits, no type
             # word where it wrote none, and the AGENT'S LETTER-CASE. The vault
@@ -3019,19 +3133,26 @@ def surviving_substitutes(written: str, restored: str, vault: Vault,
     conflicts: dict[str, frozenset[str]] = _conflict_keys(forms)
     unresolved: set[str] = {value for value in asked.named | asked.words
                             if _conflicts_with(value, conflicts)}
-    if not asked.any():
-        return _maximal(shown_residual | unresolved | extended_phone)
     # ТОТ ЖЕ ВЫЗОВ И ТО ЖЕ ПЛЕЧО, ЧТО ВИДЕЛО ВОССТАНОВЛЕНИЕ (Б29). Вид выбирается
     # по плечу, а не берётся один на оба: вето читает только аргумент
     # (`_argument_view`), и сигнал, спросивший о прозе с вето, доложил бы об
     # отказе, которого на этом плече не было.
     call = (_argument_view if for_tool else _call_view)(_call_texts(written), vault)
+    # ЧИСЛО АДРЕСА, КОТОРОЕ ВОССТАНОВЛЕНИЕ ПЫТАЛОСЬ И НЕ СМОГЛО ОТОБРАЗИТЬ. Это
+    # не «ещё одна догадка по форме»: вопрос задаётся подмене, чья УЛИЦА стоит в
+    # том же прогоне, и она отвечает своими частями. Смесь «настоящая улица +
+    # фальшивый дом» уходила в инструмент с 200 и пустым `residual_tokens`
+    # (g08/single-005) — здесь она перестаёт быть молчаливой.
+    leftovers = _address_numbers_left(written, restored, call)
+    if not asked.any():
+        return _maximal(shown_residual | unresolved | extended_phone | leftovers)
     known = call.detokenize_many(asked.named)
     residual = ({value for value in asked.named if value in known}
                 | shown_residual | unresolved | extended_phone)
     residual |= {value for value in asked.named
                  if value not in known and call.residual_of(value) is not None}
     residual |= _pieces_of_ours(asked, residual, call)
+    residual |= leftovers
     residual |= {written[hit.start:hit.end]
                  for hit in _spoken_identifier_hits(written, call, for_tool)
                  if written[hit.start:hit.end] in asked.named}
@@ -3045,6 +3166,53 @@ def _maximal(residual: set[str]) -> list[str]:
     return sorted(value for value in residual
                   if not any(value != other and value in other
                              for other in residual))
+
+
+def _address_numbers_left(written: str, restored: str, vault: Vault) -> set[str]:
+    """Числовой компонент адресного прогона, который ОСТАЛСЯ подменой.
+
+    ПОЧЕМУ ЭТО ОТДЕЛЬНЫЙ ВОПРОС. Все прочие вопросы сигнала — про ФОРМУ
+    строки: цифровой прогон в семь знаков, целое значение в три цифры, слово
+    улицы, подсказка перед числом. Дом в две цифры не проходит ни один из них,
+    и отказ восстановления по нему молчал (g08/single-005: «дом 22 остался
+    подстановкой, `residual {}`»). Здесь спрашивает не форма, а ПОДМЕНА: улица
+    прогона называет владельца, и владелец отвечает, его ли это дом, квартира,
+    корпус или подъезд.
+
+    ЧУЖОЕ ЧИСЛО В ВОПРОС НЕ ПОПАДАЕТ. Совпадение проверяется по РОЛИ и по
+    `house_digits` — читалке числительных, которой пользуются и ключ, и чеканка,
+    — а не по длине и не по «похоже на дом». Число, которого нет ни у одной
+    нашей подмены этой улицы, не называется: молчание о чужом числе — это не
+    молчание об отказе.
+
+    СПРАШИВАЕТСЯ ТОЛЬКО ТО, ЧТО СТОИТ В ВОССТАНОВЛЕННОМ ТЕКСТЕ. Подмена,
+    которую восстановление отобразило, из вопроса уходит: сообщить о ней значило
+    бы поднять тревогу на верном ответе.
+    """
+    out: set[str] = set()
+    for match in _PLACE_RUN_ANY_CASE.finditer(written):
+        for start, end in _place_windows(written, match.start(), match.end()):
+            surface = written[start:end]
+            roles = morph_places.split_roles(surface)
+            street = roles.get("street", "").strip()
+            if not street:
+                continue
+            numbers = {role: value for role, value in roles.items()
+                       if role in ("house", "flat", "building", "entrance")
+                       and value and _still_standing(value, restored)}
+            if not numbers:
+                continue
+            token = (vault.place_owner(street, "street")
+                     or vault.place_owner_by_street(street))
+            if token is None:
+                continue
+            whole = morph_places.split_roles(token)
+            for role, value in numbers.items():
+                owned = whole.get(role, "")
+                if (owned and morph_places.house_digits(owned)
+                        == morph_places.house_digits(value)):
+                    out.add(value)
+    return out
 
 
 class _Candidates(NamedTuple):

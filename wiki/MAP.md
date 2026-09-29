@@ -156,14 +156,18 @@ register-spelling repair of a mistyped street for the TOOL leg.
 - **Tests:** test_hard_cases, test_unload_scrub, profile_deep · via detect_all → test_overmasking, test_persona_defects, test_product; `bench/voice/`, `bench/eval_gar_cut.py`, `make_addr_real.py`
 - **Docs:** `docs/gar-street-vocabulary.md`, `research/dd2-notes-B-ru-address.md`, `research/dd3-location-pii.md` · rules: INVARIANTS.md#address
 
-#### `pseudex/morph_places.py` — 1 607 lines · `live`
+#### `pseudex/morph_places.py` — 1 937 lines · `live`
 Place morphology and the address READER: street vs city, nominative, agreement
-with the generic word, `split_roles` (city / street / house / flat / entrance —
-the one parser every consumer must reuse), keys for the vault, `in_form_of` for
-restoring a tool argument in the agent's own form.
-- **API:** `looks_like_street`, `to_nominative`, `phrase_to_nominative`, `inflect_place`, `detect_case`, `place_gender`, `generic_forms`, `region_prefix_end`, `address_key`, `generic_full`, `street_house_key`, `strip_flat`, `strip_leading_city`, `place_shape`, `agree_with_generic`, `match_signature`, `signature_parts`, `is_generic_word`, `street_case`, `split_roles`, `role_spans`, `field_role`, `role_of_field`, `city_case`, `address_from_fields`, `part_in_form_of`, `house_digits`, `in_form_of`, `reduce_address`
+with the generic word, `split_roles` (city / street / street_type / street_name /
+house / flat / entrance — the one parser every consumer must reuse), keys for the
+vault (`address_key` is the IDENTITY and `street_house_key` is the LINKING key;
+`key_type` reads the type slot of the identity), `in_form_of` for restoring a
+tool argument in the agent's own form, and `field_role` / `field_tokens` /
+`field_prefix` for reading a schema's field names (`street_type`, `streetType`,
+`address.street`).
+- **API:** `looks_like_street`, `to_nominative`, `phrase_to_nominative`, `inflect_place`, `detect_case`, `place_gender`, `generic_forms`, `region_prefix_end`, `address_key`, `key_type`, `generic_full`, `street_house_key`, `strip_flat`, `strip_leading_city`, `place_shape`, `agree_with_generic`, `match_signature`, `signature_parts`, `is_generic_word`, `street_case`, `split_roles`, `role_spans`, `field_role`, `field_tokens`, `field_prefix`, `role_of_field`, `city_case`, `address_from_fields`, `part_in_form_of`, `house_digits`, `in_form_of`, `reduce_address`
 - **Uses:** agent_form, assets, morph, spoken · **Used by:** address, assets, envelope, notation, redact, structured, vault
-- **Tests:** test_hard_cases, test_product, test_unload_scrub; `bench/agentpii4/harness.py`, `bench/agentpii4/microscope.py`
+- **Tests:** test_address_composition, test_hard_cases, test_product, test_unload_scrub; `bench/agentpii4/harness.py`, `bench/agentpii4/microscope.py`
 - **Docs:** `docs/known-issues.md` (§2, Б2, Б10), `research/2026-09-02-agent-form-benchmark.md` · rules: INVARIANTS.md#address, INVARIANTS.md#agent-form
 
 #### `pseudex/context.py` — 386 lines · `live`
@@ -612,6 +616,7 @@ Run from `prototype/`; each loads the dev bundle itself.
 | `test_name_case_regression.py` | pinned random-name false alarm: literal accusative outputs and gender-aware morphology controls |
 | `test_location_hop_form.py` | structured address leaves recomposed into one mention, prose/tool form parity and independent owners |
 | `test_location_form_adversarial.py` | independent LOC attacks, including unresolved fragments and CAPS; a red suite is not an accepted fix |
+| `test_address_composition.py` | class Б: the street TYPE survives on both legs and in a schema field (incl. a dotted path), `street`/`street_type` are two leaves of ONE street, one real street is one fake street whatever the house and the litera keeps two houses apart, and a fragment of a substitute resolves WHOLE or is named in `residual_tokens` |
 | `test_error_echo_privacy.py` | S01 privacy gate: archived truncated spoken-phone echo, seven unbound-result shapes, ordinary-number and cross-conversation controls; E01 case-retyped cut form remains open |
 | `test_date_association_dob.py` | a date personal ONLY by association (next to a СНИЛС/card/passport, no «рождения») is typed DOB, not DATE, so the vault mints a DOB fake and an unbound tool result echoing it is redacted instead of leaking; meeting and document dates stay real |
 | `test_prose_fragments.py` | a piece or a derivative of a substitute in the ANSWER to the customer |

@@ -1260,6 +1260,32 @@ def _house_like(original: str) -> int:
     return low + secrets.randbelow(high - low + 1)
 
 
+def _compose_head(street: str, generic: str) -> str:
+    """Подменная улица из имени и родового слова в форме ПИШУЩЕГО.
+
+    Один сборщик на оба входа `_fake_place` (свежая чеканка и переиспользованная
+    голова) — иначе две ветки одной формы разошлись бы, как расходятся все
+    вторые читалки в этом файле. Пустое родовое слово — «упоминание его не
+    несло», и подмена его не дописывает: форма принадлежит тому, кто пишет.
+    Marker order follows the generic: a full word leads («улица Тополиная»), an
+    abbreviation leads with a dot («ул. Тополиная»), «проспект» and «бульвар»
+    read naturally after the name («Тополиный проспект»), and a mention that
+    named no type word gets none.
+    """
+    if not generic:
+        return street
+    full = morph_places.generic_full(generic)
+    abbreviated = generic.lower() != full
+    if abbreviated:
+        # An abbreviation always leads and keeps the exact form written: «пр-т»
+        # stays «пр-т», never «проспект» and never «пр-т.» — the hyphenated forms
+        # take no trailing dot.
+        return f"{generic}{'' if '-' in generic else '.'} {street}"
+    if full in ("проспект", "бульвар"):
+        return f"{street} {generic}"
+    return f"{generic} {street}"
+
+
 def _fake_place(original: str, head: str = "") -> str:
     """A place of the SAME KIND as the one it replaces, in the nominative.
 
@@ -1296,27 +1322,30 @@ def _fake_place(original: str, head: str = "") -> str:
     # that notices a mismatch is a model that edits it. That is how gender and
     # case disagreement broke names, and it is the same failure here.
     shape = morph_places.place_shape(original) if original else {}
-    if not head:
-        generic = str(shape.get("generic") or "улица")
-        gender = str(shape.get("gender") or "femn")
+    generic = str(shape.get("generic") or "улица")
+    gender = str(shape.get("gender") or "femn")
+    if head:
+        # ИМЯ ГОЛОВЫ ПЕРЕИСПОЛЬЗУЕТСЯ, А РОДОВОЕ СЛОВО ПЕРЕСОБИРАЕТСЯ В ФОРМЕ
+        # ЭТОГО УПОМИНАНИЯ. `head` — подменная улица той же НАСТОЯЩЕЙ улицы, но
+        # записанная в форме ДРУГОГО упоминания: клиент написал «на Тверской 7»
+        # после «ул. Тверская, д. 7, корп. 2», и голова, взятая дословно,
+        # приносила в новое упоминание чужое сокращение «ул.». Тогда косвенная
+        # подмена приходила «на ул. Ивовой 2», а `detect_case` читает сокращение
+        # как именительный — подмена в косвенном слоте (test_hard_cases).
+        # Настоящая улица одна, поэтому ИМЯ общее, а тип — того, кто пишет;
+        # родового слова у упоминания нет — берётся то же умолчание, что у
+        # свежей чеканки («улица»), иначе две записи одной улицы разошлись бы
+        # формой.
+        named = [w for w in head.split() if not morph_places.is_generic_word(w)]
+        street = (" ".join(named) if named else
+                  morph_places.to_nominative(secrets.choice(_usable_streets(ASSETS.version))))
+        head = _compose_head(morph_places.agree_with_generic(street, gender), generic)
+    else:
         street = morph_places.to_nominative(secrets.choice(_usable_streets(ASSETS.version)))
         # The pool is written feminine because most generics are; reusing the
         # original's generic word means the name has to follow it.
         street = morph_places.agree_with_generic(street, gender)
-        # Marker order follows the generic: a full word leads («улица Тополиная»),
-        # an abbreviation leads with a dot («ул. Тополиная»), and «проспект» reads
-        # naturally after the name («Тополиный проспект»).
-        full = morph_places.generic_full(generic)
-        abbreviated = generic.lower() != full
-        if abbreviated:
-            # An abbreviation always leads, and keeps the exact form written: «пр-т»
-            # stays «пр-т», never «проспект» and never «пр-т.» — the hyphenated forms
-            # take no trailing dot.
-            head = f"{generic}{'' if '-' in generic else '.'} {street}"
-        elif full in ("проспект", "бульвар"):
-            head = f"{street} {generic}"
-        else:
-            head = f"{generic} {street}"
+        head = _compose_head(street, generic)
 
     out = head
     # NEVER A FAKE TOWN INSIDE AN ADDRESS. The shape may say «has a city» on a
@@ -3200,6 +3229,28 @@ class Vault:
         сравнение строк не нашло бы ничего.
         """
         stems, numbers = morph_places.signature_parts(candidate)
+        # ГОРОД ЗАПИСИ НЕ ЯВЛЯЕТСЯ ЧАСТЬЮ ПОДМЕНЫ, И СПРАШИВАТЬ ЕГО НЕЛЬЗЯ
+        # (Б-4). Поселение в подмене НАСТОЯЩЕЕ by design — оно не индексируется
+        # в `token_parts` (см. чеканку), — поэтому написанная фраза с городом не
+        # сходилась ни на одной подмене ЦЕЛИКОМ: «сортавала, улица липовая 22»
+        # резолвилось окном покороче — улицей, — а дом оставался подменой, и
+        # инструмент получал СМЕСЬ настоящей улицы с фальшивым домом при 200 и
+        # пустом `residual_tokens` (g08/single-005: «улица настоящая, дом 22
+        # остался подстановкой»).
+        #
+        # ВОПРОС ЗАДАЁТСЯ БЕЗ ГОРОДА, НО ГОРОД ПРИ ЭТОМ ПРОВЕРЯЕТСЯ ОТДЕЛЬНО.
+        # Просто выкинуть его нельзя: «Самара, мятная 10» — это слова МОДЕЛИ
+        # поверх голой записи клиента («луговая 10»), и без сверки города
+        # целая фраза разрешалась бы, а `in_form_of` снесла бы агентское
+        # «Самара,» как часть, которой у записи нет (test_product: клиент
+        # ничего не дописывает и не чинит). Поэтому город обязан сойтись с
+        # городом подмены, когда подмена его называет; подмена БЕЗ города
+        # владельцем фразы с городом не становится — её разберёт окно покороче,
+        # а город агента останется как написан.
+        city = morph_places.split_roles(candidate).get("city", "")
+        city_stems = set(morph_places.signature_parts(city)[0]) if city else set()
+        if city_stems:
+            stems = tuple(stem for stem in stems if stem not in city_stems)
         parts = [*stems, *numbers]
         if not parts:
             return None
@@ -3216,6 +3267,17 @@ class Vault:
         for scope, scope_args in self._fragment_scopes(_MINTED_HERE_JOINED):
             found = self._place_owner_in(parts, scope, scope_args, number_role)
             if found is not None:
+                if city_stems and not _settlement_of(found):
+                    # ГОРОД НАЗВАН, А ПОДМЕНА ГОРОДА НЕ НОСИТ. Значит, город в
+                    # фразе — слова агента поверх ГОЛОЙ записи клиента
+                    # («Самара, мятная 10» для записи «луговая 10»), и объявить
+                    # её подменой ЦЕЛИКОМ нельзя: `in_form_of` снёс бы
+                    # агентское «Самара,» как часть, которой у записи нет
+                    # (test_product). Окно покороче разрешится само и оставит
+                    # город как написан. Когда подмена город НЕСЁТ, целая фраза
+                    # разрешается: город в ней либо тот же, либо подменён
+                    # агентом — из записи вернётся настоящий.
+                    return None
                 return found
         return None
 
@@ -3287,9 +3349,15 @@ class Vault:
         parts = [part for stems, numbers in by_role.values() for part in (*stems, *numbers)]
         if len(by_role) < 2 or not parts:
             return None
+        # ПОД-РОЛИ УЛИЦЫ — ПОЛОВИНЫ ОДНОЙ РОЛИ, А НЕ САМОСТОЯТЕЛЬНЫЕ ЧАСТИ: у
+        # `street_type` нет ни основы, ни числа, и в сравнении наборов ролей он
+        # не участвует (иначе схема со `street` + `street_type` не называла бы
+        # подмену целой никогда). Убираются с ОБЕИХ сторон — симметрично.
+        named_roles = {role for role in by_role if role not in morph_places._STREET_SUB_ROLES}
         owners = self._place_fragment_owners(parts, "", ())
         whole = {token for token in owners
-                 if set(morph_places.split_roles(token)) == set(by_role)
+                 if {role for role in morph_places.split_roles(token)
+                     if role not in morph_places._STREET_SUB_ROLES} == named_roles
                  and all(_wears_parts_in_role(token, stems, numbers, role)
                          for role, (stems, numbers) in by_role.items())}
         return next(iter(whole)) if len(whole) == 1 else None
@@ -3312,9 +3380,21 @@ class Vault:
         stems, numbers = morph_places.signature_parts(candidate)
         if numbers or not stems:
             return None
+        # ГОРОД ЗДЕСЬ ТАК ЖЕ НЕ ЧАСТЬ ПОДМЕНЫ — см. `place_owner`. Поле `street`,
+        # в котором агент оставил город («Сортавала, улица Ольховая»), иначе не
+        # находило владельца вовсе, и остаток не назывался.
+        city = morph_places.split_roles(candidate).get("city", "")
+        city_stems: set[str] = set()
+        if city:
+            city_stems = set(morph_places.signature_parts(city)[0])
+            stems = [stem for stem in stems if stem not in city_stems]
+            if not stems:
+                return None
         for scope, scope_args in self._fragment_scopes(_MINTED_HERE_JOINED):
             found = self._street_owner_in(stems, scope, scope_args)
             if found is not None:
+                if city_stems and not _settlement_of(found):
+                    return None
                 return found
         return None
 
@@ -3907,7 +3987,18 @@ class Vault:
         ).fetchall()
         heads: set[str] = set()
         for stored, city_flag, canonical, token in rows:
-            if stored == part or not _street_stems_match(_street_stem(stored), stem):
+            # ОДНА УЛИЦА — ОДНА ПОДМЕННАЯ УЛИЦА, НЕЗАВИСИМО ОТ ДОМА. Здесь стоял
+            # ещё и пропуск «stored == part» — то есть ровно та строка, чей
+            # терпимый ключ совпал, ИСКЛЮЧАЛАСЬ из поиска головы. Совпадает же
+            # он именно у соседних домов одной улицы: `street_house_key` срезает
+            # приклеенную литеру, и «9а» даёт тот же ключ, что «9». Дом 9а
+            # получал НОВУЮ подменную улицу, следующий дом — ещё одну: одна
+            # улица → N подмен, и в инструмент уезжали три несвязанных адреса
+            # (g06/search_rank P3 — четыре подмены на «депутатской»). Правило
+            # переиспользования читается по ОСНОВЕ улицы, и совпавший ключ — это
+            # «та же улица», а не повод её пропустить; различать надо ДОМА, и
+            # различает их `_shares_a_house_in_conversation` при чеканке.
+            if not _street_stems_match(_street_stem(stored), stem):
                 continue
             other_settlement = canonical.split()[0].casefold() if city_flag else ""
             if settlement != other_settlement:
@@ -3919,39 +4010,112 @@ class Vault:
 
     def _same_place_written_differently(self, canonical: str, value: str,
                                         shape: dict[str, object]) -> tuple[str, str] | None:
-        """The substitute for a CITY-BEARING address this conversation already
-        holds with the same city, street and house — written another way.
+        """The substitute for an address this conversation already holds with
+        the same settlement, street and house — written another way.
 
         «Самара, Луговая 10» from the customer and «Самарская область, г
         Самара, ул Луговая, д 10» back from the directory are one place, and
-        the canonical keeps them apart on purpose: the type word is part of the
-        identity («Ленинский проспект» is not «Ленинская улица»), so a key
-        that dropped it would merge two streets. What it may not do is mint a
+        the canonical keeps them apart on purpose. What it may not do is mint a
         second substitute for one place — the model then compares the address
         it asked about with a different fake and answers «не найден» (live v4,
         `compare`: 29 of 42 triples).
+
+        ЭТО И ЕСТЬ ОТДЕЛЬНОЕ ПРАВИЛО СВЯЗЫВАНИЯ ДЛЯ ТИПА, которого требует
+        решение владельца. Родовое слово — часть тождества, поэтому «переулок
+        Мончегорская 10» и «Мончегорская 10» — две строки; связываются они
+        ЗДЕСЬ, по основе улицы, дому и городу, а не по ключу, и одно место
+        по-прежнему получает одну подмену (A2). Обратная сторона той же монеты:
+        два РАЗНЫХ типа, названных оба («переулок Пушкина» и «улица Пушкина»),
+        — это два места, и связывать их нельзя ничем; поэтому тип сравнивается
+        отдельно и только когда он назван С ОБЕИХ сторон.
 
         Same discipline as every link here: exactly one owner on that street
         and house in this conversation, AND the same settlement — a different
         city on the same street and house is a different place and gets its own
         substitute.
+
+        БЕЗ РАЗГОВОРА ЭТОТ ЖЕ ВОПРОС ЗАДАЁТСЯ ПО САМОМУ КЛЮЧУ. «Одно место — одна
+        подмена навсегда и между разговорами» — записанный контракт
+        (`bench/agentpii5/test_mint_consistency`), а `place_parts` живёт только
+        внутри разговора. Поэтому, когда разговора нет вовсе (или в разговоре
+        пары не нашлось), та же пара ищется `_place_family_owner`: тип стоит
+        ПОСЛЕДНИМ слотом ключа, значит написание без типа — префикс написания с
+        типом, и продолжение читается диапазоном по индексу.
         """
-        if not self._conversation or not shape.get("has_city"):
+        found = self._place_family_owner(canonical)
+        if found is not None:
+            return found, found
+        if not self._conversation:
             return None
         part = morph_places.street_house_key(value)
         if not part:
             return None
-        rows = self._place_rows(part, has_city=1)
+        # ОБА ВИДА СТРОК: с городом и без. Город входит в тождество
+        # (`_place_identity`), поэтому пара «с городом / без города» не
+        # встретится здесь никогда — её разбирает `_linked_place`.
+        rows = self._place_rows(part, has_city=None)
         # THE WHOLE IDENTITY MINUS THE TYPE WORD: settlement, street stem and
         # every number as written. The short key drops the house litera on
         # purpose (a short mention may omit it), and read alone it linked the
         # register's NEIGHBOUR — «д 10А» to «д 10» — into one substitute.
         wanted = _place_identity(canonical)
-        same = [token for owner_canonical, token in rows
-                if _same_house(_place_identity(owner_canonical), wanted)]
+        named = morph_places.key_type(canonical)
+        same = [token for _city, owner_canonical, token in rows
+                if _same_house(_place_identity(owner_canonical), wanted)
+                and not (named and morph_places.key_type(owner_canonical)
+                         and named != morph_places.key_type(owner_canonical))]
         if len(same) != 1:
             return None
         return same[0], same[0]
+
+    def _place_family_owner(self, canonical: str) -> str | None:
+        """Подмена этого заказчика, чей ключ отличается только СЛОТОМ ТИПА.
+
+        «г. Уфа, переулок Мончегорская 10, кв. 54» и «г. Уфа, Мончегорская 10,
+        кв. 54» — одно место, и одно место обязано остаться одной подменой и
+        между разговорами (`bench/agentpii5/test_mint_consistency`). Тип —
+        ПОСЛЕДНИЙ слот `address_key`, поэтому написание без типа есть префикс
+        написания с типом, и вопрос задаётся ДВУМЯ точечными чтениями по
+        индексу `(customer, canonical)`, а не перебором строк заказчика.
+
+        РОВНО ОДНО ПРОДОЛЖЕНИЕ — ЭТО ОДНО МЕСТО. Два («переулок» и «улица» на
+        той же основе, доме и городе) — два разных места по решению владельца, и
+        ответа нет: назвать любое из них значило бы отправить курьера не туда.
+
+        БЕЗ `self._lock`: вызывается только из чеканки, которая лок уже держит
+        (`threading.Lock` не реентрантный — тот же урок, что у
+        `_real_place_with_stem_locked`).
+        """
+        words = canonical.split()
+        base = [word for word in words if word not in morph_places._GENERIC]
+        if not base:
+            return None
+        plain = " ".join(base)
+        # НАПИСАНИЯ С ТИПОМ НА ЭТОЙ ЖЕ ОСНОВЕ — это «plain <пробел> тип».
+        # Диапазон начинается с пробела, поэтому «plainfoo» в него не попадает.
+        typed_rows = self._conn.execute(
+            "SELECT canonical, token FROM tokens WHERE customer=? AND entity_type='LOC' "
+            "AND canonical >= ? AND canonical < ? LIMIT 2",
+            (self._customer, plain + " ", plain + " \uffff"),
+        ).fetchall()
+        if len(base) == len(words):
+            # БЕЗ ТИПА: ровно одно продолжение — это одно место; два («переулок»
+            # и «улица») — два разных места, и ответа нет.
+            return typed_rows[0][1] if len(typed_rows) == 1 else None
+        # С ТИПОМ: ДРУГОЙ ТИП НА ТОЙ ЖЕ ОСНОВЕ ЗАКРЫВАЕТ ВОПРОС. «переулок
+        # Пушкина 5» и «улица Пушкина 5» — два места (решение владельца), и
+        # связать второе с бестиповой строкой, которую занял первый, значило бы
+        # слить их в одну подмену.
+        mine = frozenset(morph_places.key_type(canonical))
+        if any(frozenset(morph_places.key_type(other)) != mine
+               for other, _token in typed_rows):
+            return None
+        rows = self._conn.execute(
+            "SELECT token FROM tokens WHERE customer=? AND entity_type='LOC' "
+            "AND canonical=?",
+            (self._customer, plain),
+        ).fetchall()
+        return rows[0][0] if len(rows) == 1 else None
 
     def holds_minted_place(self, value: str) -> bool:
         """A LOC mention that CONTAINS a substitute of this conversation.

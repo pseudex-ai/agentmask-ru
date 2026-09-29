@@ -600,8 +600,16 @@ def test_directory_record_is_the_customers_address() -> None:
     register = "Самарская область, г Самара, ул Луговая, д 10"
     assert address_key(register) == address_key("г. Самара, ул. Луговая, д. 10")
     assert address_key("Санкт-Петербург, г Колпино, ул Полевая, д 160в") == address_key("Колпино, ул Полевая, 160в")
-    assert split_roles(register) == {"city": "Самара", "street": "ул Луговая", "house": "10"}
-    assert split_roles("г Пермь, ул Добролюбова, д 154б") == {"city": "Пермь", "street": "ул Добролюбова", "house": "154б"}
+    # РОДОВОЕ СЛОВО — СВОЯ РОЛЬ ЧИТАЛКИ (решение владельца: тип — часть
+    # тождества адреса). `street` остаётся ЦЕЛОЙ фразой, поэтому старые
+    # потребители не двигаются, а `street_type`/`street_name` — её половины,
+    # которыми схема инструмента спрашивает тип отдельным полем.
+    assert split_roles(register) == {"city": "Самара", "street": "ул Луговая",
+                                     "street_type": "ул", "street_name": "Луговая",
+                                     "house": "10"}
+    assert split_roles("г Пермь, ул Добролюбова, д 154б") == {
+        "city": "Пермь", "street": "ул Добролюбова", "street_type": "ул",
+        "street_name": "Добролюбова", "house": "154б"}
     assert street_house_key("ул Полевая, д 160в") == street_house_key("полевая 160 в") == "полевой 160"
     assert address_key("ул Полевая, д 160в") != address_key("ул Полевая, д 160"), "the litera is part of the house"
 
@@ -704,7 +712,9 @@ def test_directory_record_links_to_the_short_mention() -> None:
     assert street_house_key("можга проезд пушкина 89") == "пушкин 89", "a city before a street is still skipped"
     assert detect_case("г Глазов, ул Кирова, д 79") == "nomn"
     assert detect_case("Офис на проспекте Жасминовом 176, корп. 9") != "nomn", "a tail abbreviation pins nothing"
-    assert split_roles("г Самара, ул Пушкина, д 65 к 1") == {"city": "Самара", "street": "ул Пушкина", "house": "65", "building": "1"}
+    assert split_roles("г Самара, ул Пушкина, д 65 к 1") == {
+        "city": "Самара", "street": "ул Пушкина", "street_type": "ул",
+        "street_name": "Пушкина", "house": "65", "building": "1"}
     assert split_roles("ул Пушкина 65 с 2")["building"] == "2" and split_roles("садовая 89 а")["house"] == "89 а"
 
     detector = Detector()
@@ -874,7 +884,9 @@ def test_fresh_seed_shapes() -> None:
                  "букина сергея ивановича он 19 12 1992 телефон",
                  "букина сергея ивановича оон четырнадцатое марта восемьдесят седьмого года телефон"):
         assert [s.entity_type for s in detector.detect(said)] == ["NAME", "DOB"], detector.detect(said)
-    assert split_roles("зеленоградская 8 бкв150") == {"street": "зеленоградская", "house": "8 б", "flat": "150"}
+    assert split_roles("зеленоградская 8 бкв150") == {
+        "street": "зеленоградская", "street_name": "зеленоградская",
+        "house": "8 б", "flat": "150"}
     # THE GENERIC WORD DECIDES THE CASE. «на улице Ленина 1 кв 11» — the
     # commonest address form in the language — was read as the genitive
     # («Ленина» out-voted «улице»), minted «улицы Пихтовой» and restored

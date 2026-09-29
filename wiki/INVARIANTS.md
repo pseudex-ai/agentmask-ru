@@ -417,6 +417,49 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 - **A settlement inside an address is REAL and stays.** The substitute keeps the
   customer's city (Одоев stays Одоев); only street and house are fake — the city
   identifies nobody and the directory lookup needs it. Pins: `test_hard_cases`.
+- **The street TYPE word is CONTENT, and its presence and word come from the
+  RECORD — the marker's form, position, case and letter-case belong to whoever
+  writes.** A leading type word is the writer's own notation and travels verbatim
+  (abbreviation included); a type word written AFTER the name takes the RECORD's
+  word, because «название первым» is the order the substitute itself is minted
+  in. Nothing is added when the customer wrote no type word. One renderer
+  (`morph_places._street_like`) serves the masking leg, prose and a schema field,
+  so «переулок Пушкина» and «улица Пушкина» stop being interchangeable in a CRM.
+  Owner's decision (type = identity); witnesses g02/m-074, m-112. Pins:
+  `test_address_composition`.
+- **The street type is part of the ADDRESS IDENTITY, and the LINKING key is a
+  different key.** `address_key` carries the type as its own slot — LAST, and
+  normalised («ул» and «улица» are one «улица») — so two types named on one name
+  are two rows and two substitutes, while the same place written WITHOUT the type
+  is a PREFIX of it. That prefix relation is what links the pair:
+  `Vault._same_place_written_differently` inside a conversation (by the indexed
+  tolerant key) and `Vault._place_family_owner` by the key itself — two indexed
+  readings, so «one place, one substitute, for ever and across conversations»
+  holds even with no conversation named. The type is compared when BOTH writings
+  name one, and a different type on the same base refuses the link.
+  `key_type` reads that slot. Pins: `test_address_composition`,
+  `bench/agentpii5/test_loc_acceptance.py` (A2),
+  `bench/agentpii5/test_mint_consistency.py`.
+- **One real street is one fake street, whatever the house — and the house LITERA
+  is part of the house's identity.** The reuse key is the street stem WITHOUT the
+  house (`street_house_key` deliberately drops the litera) and the reuse rule may
+  not skip the row whose tolerant key matches, which is exactly what «9а» does to
+  «9» (`Vault._same_street_in_conversation`); «34 в» and «34» are two houses
+  (`address_key` glues a spaced litera and never strips a letter that follows a
+  number), and two different houses of one street get two different fake numbers
+  (`_shares_a_house_in_conversation`). Witnesses g06 P3 (four substitutes for one
+  street) and P4 (the courier to 34 instead of 34в). Pins:
+  `test_address_composition`.
+- **A fragment of a substitute resolves WHOLE or is named loudly — never as a
+  hybrid.** The record's settlement is REAL by construction and is not indexed as
+  a piece of the fake, so `place_owner` asks with the city taken out and
+  `_settlement_of(found)` decides whether the phrase can be claimed whole at all;
+  a phrase naming a city the fake does not carry is left to the shorter window,
+  so the agent's own city is not deleted. A fake number that stays standing in
+  the output, belonging to the substitute whose street stands beside it, is added
+  to `surviving_substitutes` as a residual (`_address_numbers_left`) — the «дом
+  22 остался подстановкой, residual {}» of g08/single-005. Pins:
+  `test_address_composition`.
 
 ## Spoken
 
