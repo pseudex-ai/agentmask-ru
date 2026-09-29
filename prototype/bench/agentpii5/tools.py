@@ -2039,6 +2039,10 @@ def registry_problems(registry: dict[str, ToolSpecV5]) -> list[str]:
         if not isinstance(refused, Refusal) or not refused.rule:
             problems.append(f"V05 {name}: parse({{}}) did not refuse with a documented rule "
                             f"(got {refused!r})")
+    # V08 rides here rather than beside the corpus checks because it is the same
+    # kind of fact as V01–V07: a claim the REGISTRY makes and only its own tools
+    # can falsify (SPIKE-Ж, Ж-6/Ж-7).
+    problems.extend(notation_problems(registry))
     return problems
 
 
@@ -2091,3 +2095,114 @@ def result_types(tool: str) -> tuple[str, ...]:
         if field.pii_type and field.pii_type not in types:
             types.append(field.pii_type)
     return tuple(types)
+
+
+# --- WHAT NOTATION A LEAF DEMANDS (SPIKE-Ж, Ж-6) ------------------------------
+#
+# THE TOOL SCHEMA IS THE AUTHORITATIVE MARKER, AND NOTHING IS GUESSED BEYOND IT.
+# The owner's ruling for class Ж is two-sided: the VALUE line is notation-BLIND
+# (it mirrors the form the agent wrote and never judges the tool's schema), and
+# the schema is what says how a substitution on the OUT leg must be SPELLED so
+# the tool executes it. `snils_verify`'s own schema says «СНИЛС в формате
+# XXX-XXX-XXX YY» and its parser (`agentpii4.tools.parse_snils`) enforces
+# exactly that; `vehicle_check` says «кириллицей, без пробелов» and its parser
+# STRIPS the spaces and upper-cases instead; `calendar_free` takes «от одного до
+# трёх слов» in any order. Recording that here — next to the parser that
+# requires it — turns a notation mismatch from an accident of byte comparison
+# into a NAMED fact, which is what the spike asked for (Ж-6).
+#
+# WHY IT IS A TABLE AND NOT A `FieldSpec` FIELD. `FieldSpec` is v4's, and
+# `bench/agentpii4/` is the frozen baseline the whole instrument is measured
+# against (`contracts.C-001`, `git diff --stat -- bench/agentpii4/` must stay
+# empty); a v5 dataclass wrapping it would fork the object every existing caller
+# already passes around. A table keyed by (tool, path) is the same declaration
+# with no second type.
+#
+# THE DECLARATION IS NOT DECORATION: `notation_problems` proves it against the
+# leaf's OWN parser — the declared spelling must be ACCEPTED, and a demanding
+# notation must be the only spelling accepted. A table nothing reads is how a
+# «marker» becomes a comment.
+NOTATIONS: tuple[str, ...] = ("any", "snils", "e164", "gost")
+
+LEAF_NOTATION: dict[tuple[str, str], str] = {
+    # the parser strips spaces and upper-cases, so the leaf asks for ANY spelling
+    ("vehicle_check", "plate"): "any",
+    # «от одного до трёх слов», order free — the parser takes them in any order
+    ("calendar_free", "person"): "any",
+    # «Формат 112-233-445 95»: the parser enforces the ПФР spelling, dashes included
+    ("snils_verify", "snils"): "snils",
+    ("patient_find", "snils"): "snils",
+    # «Телефон в формате E.164, например +79161234567»: «8916…» is refused
+    ("patient_find", "phone"): "e164",
+}
+
+# THE EVIDENCE THAT MAKES EACH DECLARATION FALSIFIABLE: a call the parser
+# ACCEPTS in the declared notation, and the SAME value in the other notation a
+# Russian speaker writes it in. `any` means the parser accepts BOTH (that is
+# what «любая» means, and a leaf declared `any` whose parser refused one of them
+# would be a lie); a demanding notation means the parser accepts the declared
+# one and REFUSES the other — which is what «the schema requires it» means.
+# The samples are the schema's own examples, not invented values.
+LEAF_NOTATION_EVIDENCE: dict[tuple[str, str], tuple[dict[str, object], dict[str, object]]] = {
+    ("vehicle_check", "plate"): ({"plate": "В163ОУ23"}, {"plate": "в 163 оу 23"}),
+    ("calendar_free", "person"): ({"person": "Евгений Вольнов", "date": "2026-09-10"},
+                                  {"person": "Вольнов Евгений", "date": "2026-09-10"}),
+    ("snils_verify", "snils"): ({"snils": "017-897-237 96"}, {"snils": "01789723796"}),
+    ("patient_find", "snils"): ({"snils": "017-897-237 96"}, {"snils": "01789723796"}),
+    ("patient_find", "phone"): ({"phone": "+79164021187"}, {"phone": "89164021187"}),
+}
+
+
+def leaf_notation(tool: str, path: str) -> str:
+    """The notation this leaf's schema declares, or "" when it declares none.
+
+    EMPTY IS «NOT DECLARED», never «any»: 38 of the 43 tools make no claim about
+    the spelling of a leaf, and inventing one for them would be exactly the
+    guessing the owner forbade."""
+    return LEAF_NOTATION.get((tool, path), "")
+
+
+def notation_problems(registry: dict[str, ToolSpecV5]) -> list[str]:
+    """V08: every declared notation is the one the leaf's own parser demands.
+
+    A DECLARATION NO PARSER CAN REFUSE IS NOT A DECLARATION. For a demanding
+    notation the rule proves both halves — the declared spelling is accepted and
+    the other one is refused — so a registry that quietly widened its parser (or
+    a declaration copied onto the wrong leaf) reddens here instead of silently
+    making the marker meaningless. `any` is proved the other way: a leaf that
+    declares «any spelling» must accept both."""
+    problems: list[str] = []
+    for (tool, path), notation in sorted(LEAF_NOTATION.items()):
+        where = f"{tool}.{path}"
+        spec = registry.get(tool)
+        if spec is None:
+            problems.append(f"V08 {where}: declares a notation but is not in the registry")
+            continue
+        if spec.base.name != tool:
+            problems.append(f"V08 {where}: registry key and ToolSpec.name disagree")
+        if not any(field.path == path for field in spec.base.fields):
+            problems.append(f"V08 {where}: declares a notation for a leaf the schema has not")
+            continue
+        if notation not in NOTATIONS:
+            problems.append(f"V08 {where}: {notation!r} is not one of {NOTATIONS}")
+            continue
+        evidence = LEAF_NOTATION_EVIDENCE.get((tool, path))
+        if evidence is None:
+            problems.append(f"V08 {where}: declares {notation!r} with nothing proving the "
+                            f"parser demands it")
+            continue
+        declared, other = evidence
+        accepted = spec.base.parse(dict(declared))
+        refused = spec.base.parse(dict(other))
+        if isinstance(accepted, Refusal):
+            problems.append(f"V08 {where}: the schema declares {notation!r} but the parser "
+                            f"refuses {declared!r} ({accepted.rule})")
+        if notation == "any":
+            if isinstance(refused, Refusal):
+                problems.append(f"V08 {where}: declares 'any' but the parser refuses "
+                                f"{other!r} ({refused.rule})")
+        elif not isinstance(refused, Refusal):
+            problems.append(f"V08 {where}: declares {notation!r} but the parser ACCEPTS the "
+                            f"other spelling {other!r} — the declaration claims more than "
+                            f"the schema says")
+    return problems

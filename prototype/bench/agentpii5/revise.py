@@ -64,6 +64,7 @@ from bench.agentpii5 import mock
 from bench.agentpii5.contracts import (GENERIC_PIECE_ROLES, BranchSpec, CaseV5, Hop, LoopSpec,
                                        MemorySpec, PickSpec, ReturnExpectation, SPEECH_REGISTERS,
                                        V4_KIND_TO_BEHAVIOUR, hop_owner_of_leaf)
+from bench.agentpii5.observe import values_equal
 from bench.agentpii5.schema import has_result, validate_v5
 from bench.agentpii5.tools import REGISTRY_V5, expected_leaf_value, spec_v5_for
 
@@ -293,27 +294,21 @@ def _source_of(item: PiiItem, spec: FieldSpec, hops: Sequence[Hop], in_hop: dict
     return source if printed and wanted and _same_value(item.type, printed, wanted) else -1
 
 
-# The types whose value IS its digits, so a notation change is not a different
-# value: «+7 916…» and «+7 (916) …», «XXX-XXX-XXX YY» and eleven digits. LOC and
-# NAME are absent on purpose — «г Ростов-на-дону, ул Дзержинского, д 44» and
-# «44» have one digit signature and are not one value, and reading them as one
-# declared 177 hand-overs the source result never made.
-DIGIT_TYPES: tuple[str, ...] = ("PHONE", "CARD", "SNILS", "INN", "PASSPORT", "PLATE", "DOB")
-
-
 def _same_value(pii_type: str, left: str, right: str) -> bool:
-    """Two spellings of one value, under the fold the comparator uses: case and
-    ё→е for letters, the digit signature for the types that ARE digits. Not the
-    comparator itself — `metrics.value_matches` reads a run, this reads a
-    corpus — but the same question, so a hop this accepts is a hop that line
-    can hit."""
-    if left.casefold().replace("ё", "е") == right.casefold().replace("ё", "е"):
-        return True
-    if pii_type not in DIGIT_TYPES:
-        return False
-    digits = "".join(character for character in left if character.isdigit())
-    other = "".join(character for character in right if character.isdigit())
-    return bool(digits) and digits == other
+    """Two spellings of one value — A THIN CALLER OF THE ONE PREDICATE.
+
+    THIS USED TO BE A THIRD COPY, and its own docstring promised «a hop this
+    accepts is a hop that line can hit» while it already disagreed with the line
+    it promised to agree with: it folded the digit signature for a private
+    `DIGIT_TYPES` tuple that INCLUDED PLATE and DOB, while `metrics.value_matches`
+    folded nothing. Measured by the spike's RED test on PLATE, SNILS and INN:
+    `revise._same_value` said True where the value line said False, three times
+    out of three — a hop the corpus declared reachable counted as a hand-over the
+    gateway broke. The private tuple is deleted (SPIKE-Ж, Ж-4): the reading is
+    `contracts.VALUE_NORMALISERS` and the predicate is
+    `observe.values_equal`, so a hop this accepts is a hop that line can hit by
+    construction, not by discipline."""
+    return values_equal(pii_type, left, right)
 
 
 # How a confirmation refers BACK to the value it confirms, by the type of that

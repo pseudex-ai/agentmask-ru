@@ -107,7 +107,6 @@ from bench.agentpii5.observe import (
     own_pair,
     own_stems,
     part_matches,
-    spoken_digits_of,
     stem_of,
     # THE NEEDLE LAYER HAS ONE IMPLEMENTATION AND IT IS `observe`, which is why
     # three of its names are read here rather than restated: `_needle_spans` is
@@ -796,27 +795,22 @@ def _renders_address(item: PiiItem, spec: FieldSpec | None,
 
 def _value_ok(item: PiiItem, spec: FieldSpec | None, tool_name: str,
               path: str, produced: str) -> bool:
-    """Separate full PHONE identity from notation, including dictated values.
+    """Did the leaf receive this value — the run's predicate, plus ONE rescue.
 
-    Historical value_matches is notation-sensitive for an unknown field, and
-    role_matches reads digits but not spoken numbers. Neither is an independent
-    identity metric on those PHONE paths. Reuse the observer's numeral parser
-    and part comparator; leave partial/derived/free fields and other types on
-    their historical predicate until their own track is accepted.
+    THE PHONE BYPASS IS GONE (SPIKE-Ж, Ж-5). It existed because
+    `metrics.value_matches` was notation-sensitive on a role-less field and
+    `role_matches` read digits but not SPOKEN numerals; it re-parsed both sides
+    and compared the last ten digits. The one predicate now reads the type
+    through `contracts.VALUE_NORMALISERS` — `phone` carries the last ten digits
+    AND the prefix class, and it falls back to the observer's numeral parser for
+    a dictated value — so the bypass had nothing left to add except a difference
+    from the line it explains (`+1…` against `+7…` would have matched).
 
-    THE ONE ADDITION (v14) IS A BOUNDED FALSE-NEGATIVE RESCUE:
-    `value_matches` stays the first and only rule, and a role-less LOC leaf
-    whose joined city+street blob it cannot split may still be asked whether
-    every declared role of the expected address is rendered in the produced
-    text (`_renders_address`)."""
-    whole_phone = spec is None or (spec.kind == "identity" and spec.role in ("", "digits"))
-    if item.type == "PHONE" and whole_phone:
-        produced_digits: str = digits_of(produced) or spoken_digits_of(produced)
-        expected: str = item.canonical or item.value
-        expected_digits: str = digits_of(expected) or spoken_digits_of(expected)
-        if len(produced_digits) not in (10, 11) or len(expected_digits) not in (10, 11):
-            return False
-        return part_matches("PHONE", produced_digits, expected_digits)
+    THE ONE RESCUE THAT REMAINS (v14) is `_renders_address`: `parts_of` welds a
+    leading settlement into the street blob, so a correct address_suggest query
+    that spells the city in front («казань ленина 14») reads as a wrong value
+    from the roles comparison alone. The rescue is bounded to that leaf and asks
+    whether every declared role of the expected address is rendered."""
     if leaf_value_ok(item, tool_name, path, produced):
         return True
     if tool_name != "address_suggest" or path != "query":

@@ -1,7 +1,7 @@
 {
  "version": 5,
  "cases": 1800,
- "digest": "6443332beef3335a57ca268d2968d00fd2d12e95910a4dcfb79858e22efcf729",
+ "digest": "590584a737fd1fb71ed33decefdafc5670f9b983c195a271f1cabebd6ee3e2ac",
  "corpus": [
   {
    "base": {
@@ -233548,7 +233548,7 @@
      "tool_name": "crm_upsert_contact",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 20,
      "path": "contact.phone",
      "optional": true
     },
@@ -236213,7 +236213,7 @@
      "tool_name": "crm_upsert_contact",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 20,
      "path": "contact.phone",
      "optional": true
     },
@@ -238948,7 +238948,7 @@
      "tool_name": "crm_upsert_contact",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 20,
      "path": "contact.phone",
      "optional": true
     },
@@ -241655,7 +241655,7 @@
      "tool_name": "crm_upsert_contact",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 20,
      "path": "contact.phone",
      "optional": true
     },
@@ -244320,7 +244320,7 @@
      "tool_name": "crm_upsert_contact",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 20,
      "path": "contact.phone",
      "optional": true
     },
@@ -246971,7 +246971,7 @@
      "tool_name": "crm_upsert_contact",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 20,
      "path": "contact.phone",
      "optional": true
     },
@@ -249650,7 +249650,7 @@
      "tool_name": "crm_upsert_contact",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 20,
      "path": "contact.phone",
      "optional": true
     },
@@ -252301,7 +252301,7 @@
      "tool_name": "crm_upsert_contact",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 20,
      "path": "contact.phone",
      "optional": true
     },
@@ -255008,7 +255008,7 @@
      "tool_name": "crm_upsert_contact",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 20,
      "path": "contact.phone",
      "optional": true
     },
@@ -257673,7 +257673,7 @@
      "tool_name": "crm_upsert_contact",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 20,
      "path": "contact.phone",
      "optional": true
     },
@@ -260380,7 +260380,7 @@
      "tool_name": "crm_upsert_contact",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 20,
      "path": "contact.phone",
      "optional": true
     },
@@ -263059,7 +263059,7 @@
      "tool_name": "crm_upsert_contact",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 20,
      "path": "contact.phone",
      "optional": true
     },
@@ -265752,7 +265752,7 @@
      "tool_name": "crm_upsert_contact",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 20,
      "path": "contact.phone",
      "optional": true
     },
@@ -268431,7 +268431,7 @@
      "tool_name": "crm_upsert_contact",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 20,
      "path": "contact.phone",
      "optional": true
     },
@@ -271068,7 +271068,7 @@
      "tool_name": "crm_upsert_contact",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 20,
      "path": "contact.phone",
      "optional": true
     },
@@ -626496,7 +626496,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -626754,7 +626754,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -627893,7 +627893,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -628151,7 +628151,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -629277,7 +629277,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -629535,7 +629535,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -630659,7 +630659,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -630917,7 +630917,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -632084,7 +632084,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -632342,7 +632342,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -633508,7 +633508,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -633766,7 +633766,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -634948,7 +634948,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -635206,7 +635206,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -636442,7 +636442,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -636700,7 +636700,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -637854,7 +637854,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -638112,7 +638112,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -639305,7 +639305,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -639563,7 +639563,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -640732,7 +640732,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -640990,7 +640990,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -642211,7 +642211,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -642469,7 +642469,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -643650,7 +643650,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -643908,7 +643908,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -645090,7 +645090,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -645348,7 +645348,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -646585,7 +646585,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -646843,7 +646843,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -648022,7 +648022,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -648280,7 +648280,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -649448,7 +649448,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -649706,7 +649706,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -650830,7 +650830,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -651088,7 +651088,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -652201,7 +652201,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -652459,7 +652459,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -653582,7 +653582,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -653840,7 +653840,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -654965,7 +654965,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -655223,7 +655223,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -656347,7 +656347,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -656605,7 +656605,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -657704,7 +657704,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -657962,7 +657962,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -659086,7 +659086,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -659344,7 +659344,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -660524,7 +660524,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -660782,7 +660782,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -661963,7 +661963,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -662221,7 +662221,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -663347,7 +663347,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -663605,7 +663605,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -664784,7 +664784,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -665042,7 +665042,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -666183,7 +666183,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -666441,7 +666441,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -667578,7 +667578,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -667836,7 +667836,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -668990,7 +668990,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -669248,7 +669248,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -670400,7 +670400,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -670658,7 +670658,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -671797,7 +671797,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -672055,7 +672055,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -673222,7 +673222,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -673480,7 +673480,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -674620,7 +674620,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -674878,7 +674878,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -676071,7 +676071,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -676329,7 +676329,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -677468,7 +677468,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -677726,7 +677726,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -678809,7 +678809,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -679067,7 +679067,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -680194,7 +680194,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -680452,7 +680452,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -681658,7 +681658,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -681916,7 +681916,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -683084,7 +683084,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -683342,7 +683342,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -684550,7 +684550,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -684808,7 +684808,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -686004,7 +686004,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -686262,7 +686262,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -687429,7 +687429,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -687687,7 +687687,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -688853,7 +688853,7 @@
     ],
     "note": "обращение, история по телефону, склейка дублей, эскалация СО СВОДКОЙ — персональные данные в прозе, которую читает живой оператор"
    },
-   "behaviour": "single",
+   "behaviour": "sequential_chain",
    "hops": [
     {
      "kind": "IN",
@@ -689111,7 +689111,7 @@
      "tool_name": "ticket_find",
      "call_ordinal": 0,
      "parallel_group": "",
-     "source_hop": -1,
+     "source_hop": 6,
      "path": "phone",
      "optional": false
     },
@@ -690866,7 +690866,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -692853,7 +692853,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -694812,7 +694812,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -696771,7 +696771,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -698772,7 +698772,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -700689,7 +700689,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -702606,7 +702606,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -704607,7 +704607,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -706566,7 +706566,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -708553,7 +708553,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -710484,7 +710484,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -712485,7 +712485,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -714388,7 +714388,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -716375,7 +716375,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -718348,7 +718348,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -720335,7 +720335,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -722364,7 +722364,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -724323,7 +724323,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -726324,7 +726324,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -728353,7 +728353,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -730368,7 +730368,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -732355,7 +732355,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -734300,7 +734300,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -736301,7 +736301,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -738316,7 +738316,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -740345,7 +740345,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -742318,7 +742318,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -744263,7 +744263,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -746306,7 +746306,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -748279,7 +748279,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],
@@ -750266,7 +750266,7 @@
      "call_ordinal": 0,
      "code": "snils_checksum",
      "echo_item_id": "i1",
-     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте одиннадцать цифр"
+     "message_template": "СНИЛС {value} не прошёл проверку контрольной суммы ПФР, передайте в формате XXX-XXX-XXX YY"
     }
    ],
    "memory": [],

@@ -49,7 +49,7 @@ Run the test: cd prototype && source .venv/bin/activate
 """
 import difflib
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -577,32 +577,172 @@ def item_survives_in(item: PiiItem, surface: str, text: str) -> bool:
     return survival(item_needles(item, surface), text, frozenset()).found
 
 
+# --- THE ONE PREDICATE «is this the same value» (SPIKE-Ж, Ж-1) --------------------------
+#
+# THE TABLE IS IN `contracts.VALUE_NORMALISERS`; THIS IS ITS EXECUTABLE HALF, and
+# it is the ONLY half. Three copies of this question used to exist —
+# `observe.part_matches` (this one), `metrics.value_matches` (byte equality with a
+# LOC exception) and `revise._same_value` (a third fold, already drifted) — and a
+# hop got one of them by accident: `leaf_value_ok` took the strict copy whenever
+# `FieldSpec.role` was empty, which is exactly the three leaves the class-Ж
+# witnesses land on (`calendar_free.person`, `vehicle_check.plate`,
+# `snils_verify.snils`). One table, one predicate, three thin callers.
+#
+# A READING ANSWERS FOR ONE TYPE and cannot be chosen by its caller: a LOC leaf
+# compared as though it were a NAME would compare a street to a surname. The
+# `ValueReading` below is that answer named, so `form`/`metrics`/`revise` ask the
+# same question by construction rather than by discipline.
+
+ValueReading = Callable[[str, str], bool]
+
+
+def _fold_equal(produced: str, target: str) -> bool:
+    """Case- and ё-folded equality — the reading of everything not named below."""
+    return fold(produced.strip()) == fold(target.strip())
+
+
+def _squeeze_equal(produced: str, target: str) -> bool:
+    """Every separator dropped: the spacing is `form_hOUT`'s question."""
+    left, right = squeeze(produced), squeeze(target)
+    return bool(left) and left == right
+
+
+def _digits_equal(produced: str, target: str) -> bool:
+    """The type IS its digits: «XXX-XXX-XXX YY» and eleven bare digits."""
+    left, right = digits_of(produced), digits_of(target)
+    return bool(left) and left == right
+
+
+def _phone_signature(text: str) -> tuple[str, str]:
+    """(prefix class, last ten digits) — EQUALITY, not identification.
+
+    The needle layer's phone signature is the last ten digits alone, and that is
+    right for its own question («did the value survive a rewrite»); the value
+    line asks a different one, and there `+1 916…` and `+7 916…` share those ten
+    while being two numbers. So the class rides beside them: «+7», «8», «7» and
+    a bare national number are ONE class (they are what `pseudex.vault` folds
+    together), anything else is its own.
+    """
+    digits = digits_of(text) or spoken_digits_of(text)
+    if len(digits) < PHONE_SIGNATURE_DIGITS:
+        return "", ""
+    prefix = digits[:-PHONE_SIGNATURE_DIGITS]
+    if prefix in ("", "7", "8"):
+        prefix = "ru"
+    return prefix, digits[-PHONE_SIGNATURE_DIGITS:]
+
+
+def _phone_equal(produced: str, target: str) -> bool:
+    left, right = _phone_signature(produced), _phone_signature(target)
+    return bool(left[1]) and left == right
+
+
+def _iso_equal(produced: str, target: str) -> bool:
+    """A date compared as its ISO fold, whatever notation wrote it."""
+    left = parts_of("DOB", produced).get("iso", "")
+    right = parts_of("DOB", target).get("iso", "")
+    return bool(left) and left == right
+
+
+def _part_multiset(pii_type: str, text: str) -> tuple[tuple[str, str], ...]:
+    """The value's parts as a MULTISET of (role, folded word), order excluded.
+
+    «Евгений Вольнов» and the corpus canonical «вольнов евгений» are ONE value
+    written in two orders: the tool's own parser accepts either
+    (`_calendar_free_parse`), and the word order is `form_hOUT`'s `order`
+    feature, which does not even charge it. Identifying a part by its suffix
+    would be a second guess (see `metrics.leaf_value_ok_for_spec` on «заболотный»
+    and «миллер»), so the roles come from `parts_of` — the one reading the whole
+    package shares.
+    """
+    return tuple(sorted((role, fold(word))
+                        for role, word in parts_of(pii_type, text).items() if word))
+
+
+def _name_equal(produced: str, target: str) -> bool:
+    """A NAME is its parts as a multiset: the order is not the value."""
+    left, right = _part_multiset("NAME", produced), _part_multiset("NAME", target)
+    return bool(left) and left == right
+
+
+def _place_equal(produced: str, target: str) -> bool:
+    """LOC is the roles street / house / flat OF THE TARGET, settlement excluded.
+
+    An address is carried by several fields and joined with `FIELD_SEP`, so its
+    string can never equal a one-line canonical; a tool that keeps the city in
+    its own field is not a different address. This is `metrics.value_matches`'s
+    old exception MOVED here rather than lost (SPIKE-Ж, Ж-1) — and it is the
+    reading that answers `value_matches` and `part_matches` alike, which is why
+    «route one into the other» was never the fix: before the move the two copies
+    disagreed in BOTH directions on this type.
+    """
+    left = parts_of("LOC", produced.replace(contracts.FIELD_SEP, ", "))
+    right = parts_of("LOC", target)
+    roles = [role for role in ("street", "house", "flat") if role in right]
+    if not roles:
+        # A LEAF THAT ASKS FOR ONE PART WHOSE PART `parts_of` CANNOT TYPE ON ITS
+        # OWN. «85» is a house number with no street around it and the reader
+        # returns «no roles» for it — but `courier_book.address.building` asks
+        # for exactly that part, and calling a leaf right value wrong because the
+        # reader is context-hungry is the defect this class is about, one level
+        # down. The part's own comparison is the case's own answer (the old
+        # `role_matches` fold), and it is reached only when the TARGET names no
+        # role at all: a whole address never lands here.
+        return _fold_equal(produced, target)
+    return all(fold(left.get(role, "")) == fold(right[role]) for role in roles)
+
+
+VALUE_READINGS: dict[str, ValueReading] = {
+    "fold": _fold_equal,
+    "squeeze": _squeeze_equal,
+    "digits": _digits_equal,
+    "phone": _phone_equal,
+    "iso": _iso_equal,
+    "name_parts": _name_equal,
+    "place_roles": _place_equal,
+}
+
+
+def value_reading(pii_type: str) -> ValueReading:
+    """THE READING of `pii_type`, from the closed table — never from the caller."""
+    name = contracts.VALUE_NORMALISERS.get(pii_type, "fold")
+    return VALUE_READINGS[name]
+
+
+def values_equal(pii_type: str, produced: str, target: str) -> bool:
+    """Did this leaf receive THE SAME VALUE, whatever notation wrote it.
+
+    THE ONE PREDICATE. `metrics.value_matches`, `metrics.role_matches`,
+    `observe.part_matches` and `revise._same_value` are thin callers of it, and
+    the distinction between a role leaf and a role-less one is the TARGET the
+    caller builds (`tools.expected_leaf_value`), never the comparator (SPIKE-Ж,
+    Ж-3).
+
+    AN EMPTY SIDE IS A MISS AND NOT A MATCH. An empty target is «the value has
+    no such part» — the case the corpus was rebuilt to hold no more of, and the
+    one `fx_end_to_end_adversarial` point 4 pins: a made-up patronymic must not
+    become a hit by comparing nothing to nothing (the v4 defect «a triple with
+    nothing to compare passed all five levels»).
+    """
+    if not produced or not target:
+        return False
+    return value_reading(pii_type)(produced, target)
+
+
 def part_matches(pii_type: str, produced: str, target: str) -> bool:
     """Two renderings of the SAME part, compared in the part's own notation.
 
-    The part is stored in the type's canonical notation — a PHONE's part is ten
-    digits, a DOB's is ISO — and the TOOL asks for its own: `contact.phone`
-    parses «+7…», `patient.birth_date` parses ISO. Comparing the two strings
-    byte for byte therefore says «wrong value» about a leaf that is right, and
-    it did: a PERFECT gateway topped out at 76.8 % on `round_trip`,
-    `end_to_end`, `multi_all_out`, `doc_extracted` and `chain_value`. A PLATE
-    is compared squeezed for the same reason: the spacing is `form_hOUT`'s
-    question, and charging the value line for it would make one defect two."""
-    if not produced or not target:
-        return False
-    if pii_type in DIGIT_TYPES:
-        left, right = digits_of(produced), digits_of(target)
-        if pii_type == "PHONE":
-            left, right = left[-PHONE_SIGNATURE_DIGITS:], right[-PHONE_SIGNATURE_DIGITS:]
-        return bool(left) and left == right
-    if pii_type in DATE_TYPES:
-        left = parts_of("DOB", produced).get("iso", "")
-        right = parts_of("DOB", target).get("iso", "")
-        return bool(left) and left == right
-    if pii_type in SQUEEZED_TYPES:
-        left, right = squeeze(produced), squeeze(target)
-        return bool(left) and left == right
-    return fold(produced.strip()) == fold(target.strip())
+    THE NEEDLE LAYER'S NAME FOR THE ONE PREDICATE, kept because `leaf_holds` and
+    the actual-hop reader ask it by this name. The part is stored in the type's
+    canonical notation — a PHONE's part is ten digits, a DOB's is ISO — and the
+    TOOL asks for its own: `contact.phone` parses «+7…», `patient.birth_date`
+    parses ISO. Comparing the two strings byte for byte therefore says «wrong
+    value» about a leaf that is right, and it did: a PERFECT gateway topped out
+    at 76.8 % on `round_trip`, `end_to_end`, `multi_all_out`, `doc_extracted`
+    and `chain_value`. A PLATE is compared squeezed for the same reason: the
+    spacing is `form_hOUT`'s question, and charging the value line for it would
+    make one defect two."""
+    return values_equal(pii_type, produced, target)
 
 
 # A leaf holding one character carries no evidence: «7» stands inside every

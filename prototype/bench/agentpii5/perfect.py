@@ -110,7 +110,7 @@ _LAT_TARGET: str = "ovezydjlnpbrtkmafuhcwsxqig"
 _LAT_MAP = str.maketrans(_LAT_ALPHABET, _LAT_TARGET)
 # HOW MANY OTHER LATIN MAPS THERE ARE TO TRY, and why there has to be more than
 # one. A NAME the tracker's directory answers in is LATIN — «Polyakova
-# Valentina» — and `form.name_script` reads a Latin name's TRANSLITERATION
+# Valentina» — and `form.name_translit` reads a Latin name's TRANSLITERATION
 # STANDARD off short markers («ya», «yu», «kh», «ts», a final «y», «shch»,
 # «iu», «ia», «cz», «e'»). One fixed letter map scrambles those markers away
 # and invents new ones: «Polyakova Valentina» (BGN, «ya») became «Amriokova
@@ -633,8 +633,10 @@ def _fake_name_words(text: str, fakes: dict[str, str], shift: int = 0) -> str:
 
     THE STANDARD IS READ OFF THE WHOLE STRING and handed down to each word:
     «ya» in the surname is what makes «Polyakova Valentina» BGN, and a word
-    asked about itself would not know."""
-    label = form.name_script(text)
+    asked about itself would not know. It is `name_translit` — the ROMANIZATION
+    feature — and not `name_script`, which since SPIKE-Ж answers the ALPHABET
+    alone (`latin`/`cyrillic`/`mixed`/`none`)."""
+    label = form.name_translit(text)
     out: list[str] = []
     for token in _WORD.findall(text):
         if token.isalpha():
@@ -653,19 +655,25 @@ def _signature_shift(texts: Sequence[str], mint_at: object) -> int:
     transliteration standard it arrived in.
 
     ZERO WHEN THE QUESTION DOES NOT ARISE, which is every Cyrillic name in the
-    corpus: `form.name_script` answers `cyrillic` on both sides whatever the
-    letters became, so the base map is chosen and nothing moves. The walk is for
-    the LATIN names the office suite introduced, and a value for which no
-    rotation works keeps the base map — a named miss beats a silent re-roll.
+    corpus: no Latin letter is present, so the base map is chosen and nothing
+    moves. The walk is for the LATIN names the office suite introduced, and a
+    value for which no rotation works keeps the base map — a named miss beats a
+    silent re-roll.
+
+    THE ALPHABET DECIDES WHETHER THE QUESTION ARISES, the romanization feature
+    decides whether a rotation ANSWERS it: `name_translit` answers
+    `latin:unknown` both for a Cyrillic name and for a Latin one no table
+    speaks for, and only `name_script` tells those two apart.
     """
-    wanted = [form.name_script(one) for one in texts if one]
-    if not any(label.startswith("latin") or label == "mixed" for label in wanted):
+    texts = [one for one in texts if one]
+    wanted = [form.name_translit(one) for one in texts]
+    if not any(form.name_script(one) in ("latin", "mixed") for one in texts):
         return 0
     for shift in range(_LAT_SHIFTS):
         if shift and _lat_fixes_a_letter(shift):
             continue
-        made = [mint_at(one, shift) for one in texts if one]            # type: ignore[operator]
-        if [form.name_script(one) for one in made] == wanted:
+        made = [mint_at(one, shift) for one in texts]                    # type: ignore[operator]
+        if [form.name_translit(one) for one in made] == wanted:
             return shift
     return 0
 

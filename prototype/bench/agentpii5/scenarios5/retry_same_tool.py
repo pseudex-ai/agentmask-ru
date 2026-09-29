@@ -65,8 +65,17 @@ _BANK_MESSAGE: str = ("invalid_request: параметр inn «{value}» не п
                       "ожидается 10 или 12 цифр без пробелов")
 _PLATE_MESSAGE: str = ("номер {value} не найден в формате ГОСТ Р 50577, "
                        "передайте серию и регион кириллицей без пробелов")
+# A PROVOCATION MAY NOT TEACH A NOTATION ITS OWN PARSER REFUSES (SPIKE-Ж, Ж-7).
+# This one used to say «передайте одиннадцать цифр» while
+# `agentpii4.tools.parse_snils` accepts ONLY «XXX-XXX-XXX YY» (`\d{3}-\d{3}-\d{3}
+# \d{2}`), so the first declared arg hop of every SNILS case of this family was
+# unpassable by construction: the gateway mirrored the notation the agent was
+# TOLD to write, the tool refused it, and `end_to_end` counted the gateway's
+# miss. The wording now teaches the spelling the leaf's own schema declares
+# (`tools.LEAF_NOTATION[("snils_verify", "snils")]`), which is also the spelling
+# the real ПФР service documents.
 _SNILS_MESSAGE: str = ("СНИЛС {value} не прошёл проверку контрольной суммы ПФР, "
-                       "передайте одиннадцать цифр")
+                       "передайте в формате XXX-XXX-XXX YY")
 _SLOT_MESSAGE: str = ("сотрудник {value} не найден в расписании, "
                       "передайте фамилию и имя как в карточке")
 # The date of the requested slot, per register. NO DOTTED FORM ANYWHERE: a dot is

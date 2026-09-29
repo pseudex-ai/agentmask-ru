@@ -25,9 +25,17 @@ import sys
 
 def _spec_features() -> dict[str, tuple[str, ...]]:
     """docs/tz-agentpii5.md §8.4, copied by hand. Do not import it from
-    contracts — the point is that the two are written twice."""
+    contracts — the point is that the two are written twice.
+
+    `script` AND `translit` ARE TWO FEATURES SINCE CLASS Ж. The row of the spec
+    now names both («`script` (кириллица/латиница/смешанная — АЛФАВИТ) ·
+    `translit` (gost/icao/bgn/unknown — СИСТЕМА РОМАНИЗАЦИИ, воздерживается на
+    `unknown`)»), and the copy here moves with it in the same change: a spec that
+    still showed one feature would make this check pass on the old contract,
+    which is exactly what «written twice» is for."""
     return {
-        "NAME": ("case_class", "gram_case", "order", "parts", "initials", "script", "hyphen_particle"),
+        "NAME": ("case_class", "gram_case", "order", "parts", "initials", "script", "translit",
+                 "hyphen_particle"),
         "PHONE": ("prefix", "grouping", "separators", "parens"),
         "LOC": ("case_class", "generic", "generic_position", "house_marker", "flat_marker", "commas",
                 "city_present", "city_position", "by_fields", "building_entrance_markers"),

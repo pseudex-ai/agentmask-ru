@@ -67,7 +67,13 @@ def _pairs() -> tuple[Pair, ...]:
         ("NAME", "Иванов П.", "Иванов Пётр", frozenset({"initials"})),
         ("NAME", "Иванов П.С.", "Иванов Пётр", frozenset({"initials"})),
         ("NAME", "Ivanov Petr", "Иванов Пётр", frozenset({"script"})),
-        ("NAME", "Petrov Iurii", "Petrov Yuriy", frozenset({"script"})),
+        # TWO ROMANIZATION SYSTEMS ARE A REAL DIFFERENCE AND IT IS `translit`
+        # THAT NAMES IT (SPIKE-Ж, Ж-5): «Iurii» is ICAO and «Yuriy» is BGN, both
+        # concrete labels, and the feature they belong to is no longer `script`
+        # (which answers the ALPHABET — here `latin` on both sides). The pair
+        # above is the other case: ONE side is not a romanization at all, so
+        # `translit` abstains on `latin:unknown` and only `script` differs.
+        ("NAME", "Petrov Iurii", "Petrov Yuriy", frozenset({"translit"})),
         ("NAME", "Иванов-Петров Пётр", "Иванов Пётр", frozenset({"hyphen_particle"})),
         # A particle is written lower case in Russian, so it moves
         # `case_class` too — the expectation says so rather than being

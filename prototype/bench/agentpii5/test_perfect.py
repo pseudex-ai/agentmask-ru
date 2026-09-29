@@ -257,21 +257,34 @@ def build_probe(tier: str) -> Probe:
 # --- what a right gateway ACTUALLY prints, tier by tier ------------------------------
 
 # Every single-arm line a right gateway (`perfect.simulate`) prints on every tier
-# of the RECORDED ladder, as (hits, total). RE-MEASURED 23.09.2026 after the
-# office suite and the ladder recut, on corpus `e1129f8543ff` (`corpus_digest_v5`,
-# stamp `7f7b1a80ba0c`) and ladder tiers nano `24d0486a4e1c` · small
-# `4213399ddc00` · medium `b1b343528d8a` · large `6e1dd196d29c` · holdout
-# `7f010f5ff9f7` · max `e07944f22fe2`. The previous table stood on corpus
-# `b80300397179` / stamp `9d5b624572fa`, whose tiers no longer exist.
+# of the RECORDED ladder, as (hits, total). RE-MEASURED 30.09.2026 for class Ж,
+# on corpus `590584a737fd` (`corpus_digest_v5`, v4 stamp `7f7b1a80ba0c` — the v4
+# VIEW is unchanged, which is why the ladder tiers are byte-identical) and ladder
+# tiers nano `24d0486a4e1c` · small `4213399ddc00` · medium `b1b343528d8a` ·
+# large `6e1dd196d29c` · holdout `7f010f5ff9f7` · max `e07944f22fe2`.
 #
-# TWO OF THE MOVES ARE NOT THE CORPUS GROWING, and they are named so nobody
-# reads them as noise. `perfect.simulate` was wrong in two ways the office
-# suite's cases were the first to reach: a Latin NAME's substitute lost its
+# WHAT MOVED AND WHY IT IS ONE MOVE. The `chain_*` denominators grew on every
+# tier but `nano` (small 84→88, medium 198→207, large 382→399, holdout 232→246,
+# max 1158→1218). That is NOT a new case: `revise._same_value` decides whether a
+# declared hand-over is one a copy of the source result can make, and it used to
+# be a THIRD copy of «is this the same value» — a digit fold that had already
+# drifted from the value line (SPIKE-Ж, Ж-4). Unified with
+# `observe.values_equal`, the hand-overs the corpus can honestly declare are
+# named: a PLATE respaced by the source result, a NAME whose parts the source
+# printed in another order and a LOC whose settlement the source spelled out are
+# now hand-overs instead of un-earnable promises. The hits equal the totals on
+# both sides of the move — a PERFECT gateway earns every one of them — which is
+# the check that the new transitions are reachable and not merely counted.
+#
+# HISTORY. The measurement before this one (23.09.2026, corpus `e1129f8543ff`)
+# recorded two moves that were NOT the corpus growing, and they are kept because
+# the reasons still stand: `perfect.simulate` was wrong in two ways the office
+# suite's cases were the first to reach — a Latin NAME's substitute lost its
 # transliteration standard (`_marker_spans`), and a pool draw handed «Анна» the
 # fake «Жанна», which CONTAINS it (`_swallows`). Both made the PERFECT gateway
-# fail — `answer_real`, `chain_form`, `doc_masked`, `toolresult_masked` — on
-# five cases, and both are the simulation inventing a defect that is only its
-# own, the class `_fake_digits` already warns about.
+# fail (`answer_real`, `chain_form`, `doc_masked`, `toolresult_masked`) on five
+# cases, and both were the simulation inventing a defect that is only its own,
+# the class `_fake_digits` already warns about.
 #
 # WHY A TABLE AND NOT A SENTENCE. The numbers used to live in the `why` of each
 # bound, as prose, and prose is not checked: two tracks of one session moved the
@@ -333,10 +346,10 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
     "small": {
         "answer_optional_only": (48, 97),
         "answer_real": (49, 49),
-        "chain_form": (84, 84),
-        "chain_form_written": (84, 84),
-        "chain_value": (84, 84),
-        "chain_value_written": (84, 84),
+        "chain_form": (88, 88),
+        "chain_form_written": (88, 88),
+        "chain_value": (88, 88),
+        "chain_value_written": (88, 88),
         "consistency": (43, 43),
         "coverage": (857, 857),
         "doc_extracted": (35, 35),
@@ -373,10 +386,10 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
     "medium": {
         "answer_optional_only": (125, 237),
         "answer_real": (112, 112),
-        "chain_form": (198, 198),
-        "chain_form_written": (198, 198),
-        "chain_value": (198, 198),
-        "chain_value_written": (198, 198),
+        "chain_form": (207, 207),
+        "chain_form_written": (207, 207),
+        "chain_value": (207, 207),
+        "chain_value_written": (207, 207),
         "consistency": (112, 112),
         "coverage": (2102, 2102),
         "doc_extracted": (81, 81),
@@ -413,10 +426,10 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
     "large": {
         "answer_optional_only": (247, 473),
         "answer_real": (226, 226),
-        "chain_form": (382, 382),
-        "chain_form_written": (382, 382),
-        "chain_value": (382, 382),
-        "chain_value_written": (382, 382),
+        "chain_form": (399, 399),
+        "chain_form_written": (399, 399),
+        "chain_value": (399, 399),
+        "chain_value_written": (399, 399),
         "consistency": (187, 187),
         "coverage": (4138, 4138),
         "doc_extracted": (132, 132),
@@ -453,10 +466,10 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
     "holdout": {
         "answer_optional_only": (135, 282),
         "answer_real": (147, 147),
-        "chain_form": (232, 232),
-        "chain_form_written": (232, 232),
-        "chain_value": (232, 232),
-        "chain_value_written": (232, 232),
+        "chain_form": (246, 246),
+        "chain_form_written": (246, 246),
+        "chain_value": (246, 246),
+        "chain_value_written": (246, 246),
         "consistency": (111, 111),
         "coverage": (2451, 2451),
         "doc_extracted": (66, 66),
@@ -493,10 +506,10 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
     "max": {
         "answer_optional_only": (720, 1421),
         "answer_real": (701, 701),
-        "chain_form": (1158, 1158),
-        "chain_form_written": (1158, 1158),
-        "chain_value": (1158, 1158),
-        "chain_value_written": (1158, 1158),
+        "chain_form": (1218, 1218),
+        "chain_form_written": (1218, 1218),
+        "chain_value": (1218, 1218),
+        "chain_value_written": (1218, 1218),
         "consistency": (537, 537),
         "coverage": (12398, 12398),
         "doc_extracted": (373, 373),
@@ -531,6 +544,7 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
         "typed": (7420, 7420),
     },
 }
+
 
 
 def test_the_recorded_numbers_are_still_the_numbers(probe: Probe) -> list[str]:

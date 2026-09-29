@@ -824,7 +824,19 @@ class ResultRenderer(Protocol):
 # as DOB, listed separately because the spec lists «DOB/DATE» and a metric
 # slice by type must not fold the two.
 FORM_FEATURES: dict[str, tuple[str, ...]] = {
-    "NAME": ("case_class", "gram_case", "order", "parts", "initials", "script", "hyphen_particle"),
+    # `script` IS THE ALPHABET AND `translit` IS THE ROMANIZATION (SPIKE-Ж, Ж-5).
+    # One feature used to answer both: `form.name_script` returned
+    # `latin:gost|icao|bgn|unknown`, so two LATIN strings whose letters no
+    # published table spells differently — `unknown`, which is the extractor
+    # saying «no opinion» — were charged a `script` difference. That is 50 of
+    # the 62 `form OUT/answer` misses of g07 (17 cases), and it punishes the
+    # instrument's own resolution limit, exactly as `order` → `other` already
+    # abstains next door. The alphabet is a real question and stays (3
+    # Cyrillic-versus-Latin hops in the archives, 202 in g06, are class Г and
+    # MUST remain a difference); the romanization system is a separate one and
+    # abstains when no table speaks.
+    "NAME": ("case_class", "gram_case", "order", "parts", "initials", "script", "translit",
+             "hyphen_particle"),
     "PHONE": ("prefix", "grouping", "separators", "parens"),
     "LOC": ("case_class", "generic", "generic_position", "house_marker", "flat_marker", "commas",
             "city_present", "city_position", "by_fields", "building_entrance_markers"),
@@ -852,7 +864,8 @@ FEATURE_LABELS: dict[tuple[str, str], tuple[str, ...]] = {
     ("NAME", "order"): ("F-I-O", "I-F", "I-O-F", "single", "other"),
     ("NAME", "parts"): ("1", "2", "3", "4+"),
     ("NAME", "initials"): ("none", "given", "given_patronymic"),
-    ("NAME", "script"): ("cyrillic", "latin:gost", "latin:icao", "latin:bgn", "latin:unknown", "mixed", "none"),
+    ("NAME", "script"): ("cyrillic", "latin", "mixed", "none"),
+    ("NAME", "translit"): ("latin:gost", "latin:icao", "latin:bgn", "latin:unknown"),
     ("NAME", "hyphen_particle"): ("none", "hyphen", "particle", "both"),
     ("PHONE", "prefix"): ("plus7", "eight", "seven", "bare", "other"),
     ("PHONE", "grouping"): ("3-3-2-2", "3-3-4", "solid", "other"),
@@ -919,6 +932,13 @@ FORM_ABSTAIN: dict[tuple[str, str], str] = {
     ("EMAIL", "case_class"): "none",
     ("PLATE", "case_class"): "none",
     ("NAME", "script"): "none",
+    # THE ROMANIZATION SYSTEM ABSTAINS WHEN THERE IS NO OPINION, and the label
+    # `latin:unknown` IS that opinion's absence — the extractor's own words in
+    # `form_tables.TRANSLIT_SIGNATURES` («nothing discriminating»). Comparing it
+    # as though it were a CONVENTION is what made `DMITRIY KUZNETSOV` against
+    # `EGOR BOBROV` differ. The same shape as `order` → `other` below,
+    # and `test_form` pins the two abstentions together.
+    ("NAME", "translit"): "latin:unknown",
     ("NAME", "order"): "other",
 }
 # LEXEME-DEPENDENT FEATURES, and why a label is not enough for them.
@@ -1287,6 +1307,66 @@ DERIVED_PIECE_TYPES: frozenset[str] = frozenset({"NAME"})
 # RESPACED was invisible to all 29 lines while the same fake written verbatim
 # was caught — the critical-defect line defeated by inserting spaces.
 SQUEEZED_TYPES: frozenset[str] = frozenset({"PLATE"})
+
+# --- THE ONE READING OF «IS THIS THE SAME VALUE» (SPIKE-Ж, Ж-1) ----------------
+#
+# ONE TABLE, AND EVERY QUESTION ABOUT A VALUE'S IDENTITY READS IT. The spike
+# measured the same question answered by THREE copies — `metrics.value_matches`
+# (byte equality with a LOC exception), `observe.part_matches` (digits / ISO /
+# squeeze), `revise._same_value` (a third fold) — and which copy a hop got was
+# decided by whether its `FieldSpec.role` was empty: `calendar_free.person`
+# (NAME), `vehicle_check.plate` (PLATE) and `snils_verify.snils` (SNILS) all
+# declare `role=''` and took the strict one. 24 PLATE and 9 NAME hops then read
+# as the GATEWAY's miss on values the tool's own parser had ACCEPTED
+# (`tools._vehicle_check_parse` strips spaces and upper-cases; the
+# `_calendar_free_parse` takes one to three words in any order). Two copies are
+# one drift away, and the third had already left.
+#
+# THE QUESTION IS NOTATION-TOLERANT ON PURPOSE. `observe.part_matches`'s own
+# docstring states the doctrine — «the spacing is `form_hOUT`'s question, and
+# charging the value line for it would make one defect two» — and the owner
+# ruling for class Ж is the same doctrine one level up: the value line is
+# notation-BLIND (it mirrors the agent's form and does not judge the tool's
+# schema), while the field's declared notation stays an authoritative marker for
+# the substitution on the OUT leg (`tools.LEAF_NOTATION`). So separators,
+# spaces, case class, word order and the dotted notation the tool happens to
+# want are NOT this table's business: only what makes two spellings ONE VALUE.
+#
+# A NAMED READING, NOT A LAMBDA, because a closed vocabulary is what a test can
+# hold: `test_contracts` pins every value here to a reading the implementation
+# declares and every type of `TYPES` to a row, and `test_spike_zh` pins that the
+# three former copies answer alike on a shared pair set.
+#
+# WHY `PHONE` IS NOT THE NEEDLE RULE, and why «just call `part_matches`» would
+# be wrong: the needle layer asks IDENTIFICATION — «did this value survive being
+# rewritten», where the last ten digits are the signature that the rewrite left
+# the number intact. A LEAF asks EQUALITY, and there `+1 916…` and `+7 916…`
+# share those ten digits while being two different numbers. Hence a reading that
+# carries the PREFIX CLASS beside them. This is the one place where the value
+# line deliberately does NOT reduce to the needle layer, and the reason is
+# written here rather than rediscovered (SPIKE-Ж, risk 3).
+VALUE_READINGS: tuple[str, ...] = (
+    "fold",         # case- and ё-folded text — the default
+    "squeeze",      # every separator dropped (PLATE)
+    "digits",       # the type IS its digits (SNILS / INN / CARD / PASSPORT)
+    "phone",        # the last ten digits AND the prefix class (+7 ≡ 8 ≢ +1)
+    "iso",          # the ISO fold of a date, whatever notation wrote it
+    "name_parts",   # the parts as a MULTISET: «Евгений Вольнов» ≡ «вольнов евгений»
+    "place_roles",  # the roles street / house / flat; the settlement is excluded
+)
+VALUE_NORMALISERS: dict[str, str] = {
+    "NAME": "name_parts",
+    "LOC": "place_roles",
+    "PHONE": "phone",
+    "EMAIL": "fold",
+    "DOB": "iso",
+    "DATE": "iso",
+    "CARD": "digits",
+    "SNILS": "digits",
+    "INN": "digits",
+    "PASSPORT": "digits",
+    "PLATE": "squeeze",
+}
 
 
 @dataclass(frozen=True)

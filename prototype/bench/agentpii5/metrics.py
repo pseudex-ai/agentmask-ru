@@ -62,6 +62,7 @@ from bench.agentpii5.observe import (
     substitute_surfaces,
     survives_in,
     value_needles,
+    values_equal,
 )
 from bench.agentpii5.tools import expected_leaf_value, spec_v5_for
 
@@ -113,18 +114,18 @@ def _item_of(one: RunObservation, item_id: str) -> PiiItem | None:
 
 
 def value_matches(pii_type: str, produced: str, target: str) -> bool:
-    """Did the consumer receive THE WHOLE value, byte for byte.
+    """Did the consumer receive THE SAME VALUE, whatever notation wrote it.
 
-    LOC is the one exception, and it is not leniency: an address is carried by
-    several fields and joined with `FIELD_SEP`, so the string can never equal a
-    one-line canonical. The roles are compared instead — street, house, flat —
-    and the city is left out because a tool that stores the city in its own
-    field is not a different address."""
-    if pii_type == "LOC":
-        left, right = parts_of("LOC", produced.replace(contracts.FIELD_SEP, ", ")), parts_of("LOC", target)
-        roles = [role for role in ("street", "house", "flat") if role in right]
-        return bool(roles) and all(fold(left.get(role, "")) == fold(right[role]) for role in roles)
-    return fold(produced.strip()) == fold(target.strip())
+    A THIN CALLER OF `observe.values_equal`, which reads the closed table
+    `contracts.VALUE_NORMALISERS` (SPIKE-Ж, Ж-1). It used to be a SECOND
+    implementation — `fold(produced) == fold(target)` with a LOC exception — and
+    the choice between it and the needle layer's copy was made by whether a
+    leaf's `FieldSpec.role` was empty, so a PLATE written «в 163 оу 23» against
+    the canonical «В163ОУ23» read as the gateway's miss on a value the tool's
+    own parser had accepted. The LOC exception did not disappear: it is the
+    table's `place_roles` reading, and `test_spike_zh` pins that both former
+    copies now answer it the same way (they disagreed in BOTH directions)."""
+    return values_equal(pii_type, produced, target)
 
 
 def leaf_spec(tool_name: str, path: str) -> FieldSpec | None:
@@ -171,11 +172,14 @@ def returned_as_item(source: PiiItem, returned: str) -> PiiItem:
 def role_matches(pii_type: str, produced: str, target: str) -> bool:
     """Did THIS LEAF receive its own part of the value.
 
-    A THIN CALLER OF `observe.part_matches` (contracts §4bis). The comparison
-    of two renderings of one part belongs to the needle layer — `leaf_holds`
-    asks it of a substitute and this line asks it of the real value, and two
-    copies of «is this the same part written another way» is exactly the
-    shape of the defect round 4 removed. The FORM the leaf wears is
+    A THIN CALLER OF THE ONE PREDICATE (contracts §4bis, SPIKE-Ж Ж-1). The
+    comparison of two renderings of one part belongs to the needle layer —
+    `leaf_holds` asks it of a substitute and this line asks it of the real
+    value, and two copies of «is this the same part written another way» is
+    exactly the shape of the defect round 4 removed. Since class Ж the two
+    names call ONE implementation (`observe.values_equal` over
+    `contracts.VALUE_NORMALISERS`), so a difference between them can no longer
+    be produced by editing one of them. The FORM the leaf wears is
     `form_hOUT`'s question and is not folded in here."""
     return part_matches(pii_type, produced, target)
 
@@ -191,12 +195,21 @@ def leaf_value_ok_for_spec(item: PiiItem, spec: FieldSpec | None, produced: str)
     (`leaf_foreign`). Two copies of «is this the value the tool asked for» is
     exactly the drift R-53 removed: the honest share and the headline would stop
     differing by their population and start differing by their rule.
+
+    THE ROLE PICKS THE TARGET, NEVER THE COMPARATOR (SPIKE-Ж, Ж-3). It used to
+    fork — `value_matches` for a role-less leaf, `role_matches` for a role leaf —
+    and the fork decided which of two copies of «same value» a hop got. The
+    leaves the class-Ж witnesses land on are exactly the role-less ones
+    (`calendar_free.person`, `vehicle_check.plate`, `snils_verify.snils`), so
+    the fork was not a distinction between two questions: it was a coin. One
+    predicate now, and the role still chooses the PART of the value
+    (`expected_leaf_value`).
     """
     if spec is not None and spec.kind == "free":
         return item_survives_in(item, item.canonical or item.value, produced)
-    if spec is None or not spec.role:
-        return value_matches(item.type, produced, item.canonical or item.value)
-    return role_matches(item.type, produced, expected_leaf_value(item, spec))
+    target = expected_leaf_value(item, spec) if spec is not None and spec.role \
+        else (item.canonical or item.value)
+    return values_equal(item.type, produced, target)
 
 
 def leaf_value_ok(item: PiiItem, tool_name: str, path: str, produced: str) -> bool:
@@ -266,9 +279,17 @@ def value_repaired(pii_type: str, produced: str, target: str) -> bool:
 
 
 def _item_value_repaired(hop: HopObservation, item: PiiItem) -> bool:
-    """`value_repaired`, asked of the leaf's own part. Without the role the
-    diagnostic would answer a different question from the line it explains,
-    and the two would stop differing by «what normalisation costs»."""
+    """`value_repaired`, asked of the leaf's own part.
+
+    THE FORK HERE IS ABOUT THE TARGET, NOT THE COMPARATOR (SPIKE-Ж, Ж-3). A
+    role-less leaf is still asked the whole `value_repaired` — its lenient
+    per-type ladder (a canonical date notation, a declined name, the digits of a
+    phone) is the diagnostic's own question and `round_trip_repaired` is
+    published apart from `round_trip` precisely because the two differ by what
+    normalisation costs. The one way they could ALSO have differed — by their
+    RULE — is gone: `role_matches` and `value_matches` are now one predicate, so
+    this diagnostic cannot disagree with the line it explains about whether two
+    spellings are one value."""
     spec = leaf_spec(hop.hop.tool_name, hop.hop.path)
     if spec is None or not spec.role:
         return value_repaired(item.type, hop.produced, item.canonical or item.value)
