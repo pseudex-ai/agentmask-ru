@@ -199,9 +199,6 @@ def test_unschemed_named() -> list[str]:
             problems.append(f"an unschemed entry has no tool name: {entry!r}")
         if not reason.strip():
             problems.append(f"the unschemed entry {head.strip()!r} has no reason")
-    if not any(entry.partition(":")[0].strip() == "fssp_proceedings_search"
-               for entry in UNSCHEMED_TOOLS):
-        problems.append("fssp_proceedings_search is not named in UNSCHEMED_TOOLS")
     return problems
 
 
@@ -211,9 +208,11 @@ def test_parsers_good_bad() -> list[str]:
                            tuple[tuple[dict[str, object], str], ...]]] = {
         # --- research-grounded (unchanged) -----------------------------------
         "crm_requisite_get": (
-            ({"inn": "500100732259"}, {"ogrnip": "312345678901230"}),
+            ({"inn": "500100732259"}, {"ogrnip": "312345678901230"},
+             {"iban": "RU0304452522540817810538091310419"}),
             (({"inn": "500100732258"}, "inn_checksum"),
-             ({"ogrnip": "312345678901231"}, "ogrnip_checksum")),
+             ({"ogrnip": "312345678901231"}, "ogrnip_checksum"),
+             ({"iban": "RU0304452522540817810538091310418"}, "iban_checksum")),
         ),
         "crm_requisite_set": (
             ({"inn": "500100732259", "ogrnip": "312345678901230",
@@ -477,6 +476,24 @@ def test_parsers_good_bad() -> list[str]:
               "fields": "ym:s:clientID"},),
             (({"counter_id": "12345", "date1": "01.01.2026", "date2": "2026-01-31",
                "fields": "ym:s:clientID"}, "date_format"),),
+        ),
+        "fssp_proceedings_search": (
+            ({"region": "18", "last_name": "Фомина", "first_name": "Анна",
+              "middle_name": "Петровна", "birth_date": "14.03.1987"},),
+            (({"region": "18", "last_name": "Фомина"}, "missing_required"),
+             ({"region": "18", "last_name": "Фомина", "first_name": "Анна",
+               "birth_date": "1987-03-14"}, "date_format")),
+        ),
+        "court_document_fetch": (
+            ({"court": "Индустриальный районный суд", "case_number": "2-13/2015"},),
+            (({"court": "Индустриальный районный суд"}, "missing_required"),
+             ({"court": "Индустриальный районный суд", "case_number": "13/2015"},
+              "case_number_format")),
+        ),
+        "esia_roles_get": (
+            ({"prn_oid": "1000123456"},),
+            (({}, "missing_required"),
+             ({"prn_oid": "abc"}, "oid_format")),
         ),
     }
     by_name = {spec.base.name: spec for spec in TOOLS_V6}

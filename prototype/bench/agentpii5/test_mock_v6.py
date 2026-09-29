@@ -83,6 +83,11 @@ STS_FINES = "77 12 345678"
 DRIVER_LIC = "9912345678"
 ELN_OGRN = "1027700132195"
 ELN_LN = "900012345678"
+IBAN_REQ = _v6("IBAN")
+IBAN_WRITE = _v6("IBAN")
+FSSP_IP_READ = _v6("FSSP_IP_NO")
+COURT_CASE_READ = _v6("COURT_CASE_NO_SOU")
+ESIA_OID_READ = _v6("ESIA_OID")
 
 # The rubric account/bik pair is the tool's documented acceptance (`test_tools_v6`).
 RUBLE_ACCOUNT = "40602810700000000025"
@@ -106,6 +111,7 @@ RECORDS: tuple[tuple[str, dict[str, object], tuple[tuple[str, str, str, str, str
     ("write", {}, (
         ("w_inn", "INN", "grom", INN_WRITE, ""),
         ("w_ogrnip", "OGRNIP", "grom", OGRNIP_WRITE, ""),
+        ("w_iban", "IBAN", "grom", IBAN_WRITE, ""),
         ("w_ser", "PASSPORT", "grom", "4509", ""),
         ("w_num", "PASSPORT", "grom", "123456", ""),
         ("w_given", "NAME", "grom", "Марина", ""),
@@ -133,10 +139,11 @@ RECORDS: tuple[tuple[str, dict[str, object], tuple[tuple[str, str, str, str, str
         ("w_status", "NAME", "grom", "Открыт", ""),
         ("w_cdp", "CDP_CUSTOMER_ID", "grom", "c-000184523", ""),
     )),
-    ("req-1", {"rq_inn": INN_REQ, "ogrnip": OGRNIP_REQ,
+    ("req-1", {"rq_inn": INN_REQ, "ogrnip": OGRNIP_REQ, "iban": IBAN_REQ,
                "rq_ident_doc_ser": "4501", "rq_ident_doc_num": "100001"}, (
         ("r_inn", "INN", "grom", INN_REQ, "rq_inn"),
         ("r_ogrnip", "OGRNIP", "grom", OGRNIP_REQ, "ogrnip"),
+        ("r_iban", "IBAN", "grom", IBAN_REQ, "iban"),
         ("r_ser", "PASSPORT", "grom", "4501", "rq_ident_doc_ser"),
         ("r_num", "PASSPORT", "grom", "100001", "rq_ident_doc_num"),
     )),
@@ -392,13 +399,27 @@ RECORDS: tuple[tuple[str, dict[str, object], tuple[tuple[str, str, str, str, str
         ("wb_client", "METRICA_CLIENT_ID", "grom", "250987654321098765", "client_id"),
         ("wb_ip", "IP_ADDRESS", "grom", "95.165.12.34", "ip"),
     )),
+    ("fssp-1", {"name": "ФОМИНА АННА ПЕТРОВНА 14.03.1987 Г. ИЖЕВСК",
+                "ip_number": FSSP_IP_READ, "case_number": COURT_CASE_READ,
+                "last_name": "ФОМИНА", "first_name": "АННА"}, (
+        ("fs_name", "NAME", "grom", "ФОМИНА АННА ПЕТРОВНА 14.03.1987 Г. ИЖЕВСК", "name"),
+        ("fs_ip", "FSSP_IP_NO", "grom", FSSP_IP_READ, "ip_number"),
+        ("fs_case", "COURT_CASE_NO_SOU", "grom", COURT_CASE_READ, "case_number"),
+    )),
+    ("court-1", {"case_number": COURT_CASE_READ, "name": "Истец Фомина А.П."}, (
+        ("ct_case", "COURT_CASE_NO_SOU", "grom", COURT_CASE_READ, "case_number"),
+        ("ct_name", "NAME", "grom", "Истец Фомина А.П.", "name"),
+    )),
+    ("esia-1", {"oid": ESIA_OID_READ}, (
+        ("es_oid", "ESIA_OID", "grom", ESIA_OID_READ, "oid"),
+    )),
 )
 
 
 # (tool, arguments, expected form). The argument parses AND finds the seeded
 # record, so the mock answers its "success" form.
 RENDERS: tuple[tuple[str, dict[str, object], str], ...] = (
-    ("crm_requisite_set", {"inn": INN_WRITE, "ogrnip": OGRNIP_WRITE,
+    ("crm_requisite_set", {"inn": INN_WRITE, "ogrnip": OGRNIP_WRITE, "iban": IBAN_WRITE,
                            "ident_doc": {"ser": "4509", "num": "123456"}}, "single"),
     ("crm_contact_upsert", {"first_name": "Марина", "last_name": "Громова",
                             "custom_fields_values": [{"field_id": 10001,
@@ -489,6 +510,11 @@ RENDERS: tuple[tuple[str, dict[str, object], str], ...] = (
                            "date2": "2026-01-31", "fields": "ym:s:clientID,ym:s:ipAddress"},
      "free_text"),
     ("phone_clean", {"source": "8 (916) 402-11-87"}, "canon"),
+    ("fssp_proceedings_search", {"region": "18", "last_name": "Фомина",
+                                  "first_name": "Анна"}, "list"),
+    ("court_document_fetch", {"court": "Индустриальный районный суд",
+                               "case_number": COURT_CASE_READ}, "free_text"),
+    ("esia_roles_get", {"prn_oid": ESIA_OID_READ}, "single"),
 )
 
 

@@ -135,6 +135,14 @@ RECIPES: dict[str, Recipe] = {
                            "полис ОСАГО -> проверка"),
     "VIN": Recipe("VIN", "gov", "osago_policy_check", "vin", "vehicle.vin", "vin", "single",
                   ("VIN", "ВИН", "вин-код"), "VIN -> проверка ОСАГО"),
+    "IBAN": Recipe("IBAN", "crm", "crm_requisite_get", "iban",
+                   "requisite.rq_iban", "iban", "single",
+                   ("IBAN", "айбан", "международный номер счёта"),
+                   "IBAN -> реквизиты"),
+    "ESIA_OID": Recipe("ESIA_OID", "gov", "esia_roles_get", "prn_oid",
+                       "personOid", "oid", "single",
+                       ("ЕСИА", "идентификатор ЕСИА", "Госуслуги ID"),
+                       "ЕСИА OID -> роли учётной записи"),
 }
 
 # The chain pairs: a READ tool whose ONE result carries two admitted types, so a
@@ -146,6 +154,8 @@ CHAIN_SPECS: dict[tuple[str, str], dict[str, str]] = {
                               "write_tool": "insurance_claim_create", "write_path": "vehicle.vin"},
     ("EPTS_NUMBER", "VIN"): {"second_result": "vin",
                              "write_tool": "insurance_claim_create", "write_path": "vehicle.vin"},
+    ("IBAN", "OGRNIP"): {"second_result": "requisite.rq_ogrnip",
+                         "write_tool": "crm_requisite_set", "write_path": "ogrnip"},
 }
 
 

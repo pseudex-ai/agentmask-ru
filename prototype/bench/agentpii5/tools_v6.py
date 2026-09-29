@@ -253,11 +253,37 @@ def _parse_arbitrazh(raw, tool, path):
     return value
 
 
+def _parse_court_case_sou(raw, tool, path):
+    if not isinstance(raw, str):
+        return Refusal(tool, path, "case_number_format", str(raw))
+    value = raw.strip()
+    if not re.fullmatch(r"(?:\d{1,2}[а-я]?|М)-\d{1,6}/\d{4}", value):
+        return Refusal(tool, path, "case_number_format", str(raw))
+    return value
+
+
+def _parse_iban(raw, tool, path):
+    if not isinstance(raw, str):
+        return Refusal(tool, path, "iban_format", str(raw))
+    value = re.sub(r"\s", "", raw.strip().upper())
+    if not re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}", value):
+        return Refusal(tool, path, "iban_format", str(raw))
+    if not checksum_v6.validate_iban(value):
+        return Refusal(tool, path, "iban_checksum", str(raw))
+    return value
+
+
+def _parse_esia_oid(raw, tool, path):
+    if not isinstance(raw, str) or not raw.strip().isdigit():
+        return Refusal(tool, path, "oid_format", str(raw))
+    return raw.strip()
+
+
 # --- research-grounded (kept: no apis.json tool shares their name) ---------------
 
 def _crm_requisite_get_parse(args):
     tool = "crm_requisite_get"
-    present = [key for key in ("inn", "ogrnip") if args.get(key) not in (None, "")]
+    present = [key for key in ("inn", "ogrnip", "iban") if args.get(key) not in (None, "")]
     if len(present) != 1:
         return Refusal(tool, "", "exactly_one_key", ", ".join(present))
     if present[0] == "inn":
@@ -265,6 +291,11 @@ def _crm_requisite_get_parse(args):
         if isinstance(inn, Refusal):
             return inn
         return {"inn": inn}
+    if present[0] == "iban":
+        iban = _parse_iban(args["iban"], tool, "iban")
+        if isinstance(iban, Refusal):
+            return iban
+        return {"iban": iban}
     ogrnip = _parse_ogrnip(args["ogrnip"], tool, "ogrnip")
     if isinstance(ogrnip, Refusal):
         return ogrnip
@@ -273,20 +304,22 @@ def _crm_requisite_get_parse(args):
 
 CRM_REQUISITE_GET = ToolSpec(
     name="crm_requisite_get",
-    source="Bitrix24 REST crm.requisite.get/list — RQ_OGRNIP, RQ_INN, "
+    source="Bitrix24 REST crm.requisite.get/list — RQ_OGRNIP, RQ_INN, RQ_IBAN, "
            "RQ_IDENT_DOC_SER/RQ_IDENT_DOC_NUM/RQ_IDENT_DOC_DATE/RQ_IDENT_DOC_ISSUED_BY "
            "(https://apidocs.bitrix24.ru/api-reference/crm/requisites/universal/crm-requisite-fields.html)",
     schema=_schema(
         "crm_requisite_get",
-        "Получить реквизиты продавца или физлица по ИНН или ОГРНИП. Возвращает ИНН, "
-        "ОГРНИП и паспорт по серии и номеру.",
+        "Получить реквизиты продавца или физлица по ИНН, ОГРНИП или IBAN. Возвращает ИНН, "
+        "ОГРНИП, IBAN и паспорт по серии и номеру.",
         {"inn": {"type": "string", "description": "ИНН, 10 или 12 цифр"},
-         "ogrnip": {"type": "string", "description": "ОГРНИП, 15 цифр"}},
+         "ogrnip": {"type": "string", "description": "ОГРНИП, 15 цифр"},
+         "iban": {"type": "string", "description": "IBAN, RU + 2 ключа + БИК 9 + счёт 20"}},
         ()),
     fields=(FieldSpec("inn", "identity", "INN", "digits"),
-            FieldSpec("ogrnip", "identity", "OGRNIP", "digits")),
+            FieldSpec("ogrnip", "identity", "OGRNIP", "digits"),
+            FieldSpec("iban", "identity", "IBAN", "")),
     parse=_crm_requisite_get_parse, mutating=False,
-    result_pii=("requisite.rq_inn", "requisite.rq_ogrnip",
+    result_pii=("requisite.rq_inn", "requisite.rq_ogrnip", "requisite.rq_iban",
                 "requisite.rq_ident_doc_ser", "requisite.rq_ident_doc_num"))
 
 
@@ -299,6 +332,11 @@ def _crm_requisite_set_parse(args):
     if isinstance(inn, Refusal):
         return inn
     out = {"inn": inn}
+    if args.get("iban") not in (None, ""):
+        iban = _parse_iban(args["iban"], tool, "iban")
+        if isinstance(iban, Refusal):
+            return iban
+        out["iban"] = iban
     if args.get("ogrnip") not in (None, ""):
         ogrnip = _parse_ogrnip(args["ogrnip"], tool, "ogrnip")
         if isinstance(ogrnip, Refusal):
@@ -333,7 +371,7 @@ def _crm_requisite_set_parse(args):
 
 CRM_REQUISITE_SET = ToolSpec(
     name="crm_requisite_set",
-    source="Bitrix24 REST crm.requisite.add/update — RQ_INN, RQ_OGRNIP, "
+    source="Bitrix24 REST crm.requisite.add/update — RQ_INN, RQ_OGRNIP, RQ_IBAN, "
            "RQ_IDENT_DOC_SER/RQ_IDENT_DOC_NUM/RQ_IDENT_DOC_DATE/RQ_IDENT_DOC_ISSUED_BY; "
            "the saved requisite is echoed back (v5 R-41 write-echo) "
            "(https://apidocs.bitrix24.ru/api-reference/crm/requisites/universal/crm-requisite-fields.html)",
@@ -342,6 +380,7 @@ CRM_REQUISITE_SET = ToolSpec(
         "Завести или обновить реквизиты продавца. Паспорт передаётся по серии и номеру.",
         {"inn": {"type": "string", "description": "ИНН, 10 или 12 цифр"},
          "ogrnip": {"type": "string", "description": "ОГРНИП, 15 цифр"},
+         "iban": {"type": "string", "description": "IBAN, RU + 2 ключа + БИК 9 + счёт 20"},
          "ident_doc": {"type": "object",
                        "properties": {"ser": {"type": "string", "description": "Серия паспорта, 4 цифры"},
                                       "num": {"type": "string", "description": "Номер паспорта, 6 цифр"},
@@ -351,12 +390,13 @@ CRM_REQUISITE_SET = ToolSpec(
         ("inn",)),
     fields=(FieldSpec("inn", "identity", "INN", "digits", required=True),
             FieldSpec("ogrnip", "identity", "OGRNIP", "digits"),
+            FieldSpec("iban", "identity", "IBAN", ""),
             FieldSpec("ident_doc.ser", "identity", "PASSPORT", "series"),
             FieldSpec("ident_doc.num", "identity", "PASSPORT", "number"),
             FieldSpec("ident_doc.date", "plain"),
             FieldSpec("ident_doc.issued_by", "plain")),
     parse=_crm_requisite_set_parse, mutating=True,
-    result_pii=("requisite.rq_inn", "requisite.rq_ogrnip",
+    result_pii=("requisite.rq_inn", "requisite.rq_ogrnip", "requisite.rq_iban",
                 "requisite.rq_ident_doc_ser", "requisite.rq_ident_doc_num",
                 "error.subject"))
 
@@ -1957,11 +1997,11 @@ LMS_USER_GET = ToolSpec(
     name='lms_user_get',
     source='https://docs.moodle.org/dev/Web_service_API_functions',
     schema=_schema('lms_user_get', 'Moodle Web Services core_user_get_users_by_field (вузы и колледжи РФ)',
-        {'field': {'type': 'string', 'description': 'значение из закрытого списка'}, 'values': {'type': 'string', 'description': 'EMAIL'}},
+        {'field': {'type': 'string', 'description': 'значение из закрытого списка'}, 'values': {'type': 'string', 'description': 'STUDENT_ID'}},
         ('field', 'values')),
     fields=(
             FieldSpec('field', 'enum', required=True),
-            FieldSpec('values', "identity", 'EMAIL', '', required=True),
+            FieldSpec('values', "identity", 'STUDENT_ID_NUMBER', '', required=True),
     ),
     parse=_lms_user_get_parse, mutating=False,
     result_pii=('[].firstname', '[].lastname', '[].email', '[].idnumber', '[].phone1', '[].username'))
@@ -2168,15 +2208,110 @@ WEB_VISITS_EXPORT = ToolSpec(
     result_pii=('text',))
 
 
+# --- fssp_proceedings_search (banks_mfo_collectors, evidence=secondary, api closed) ---
+def _fssp_proceedings_search_parse(args):
+    tool = "fssp_proceedings_search"
+    miss = _required(args, tool, "", ("region", "last_name", "first_name"))
+    if miss:
+        return miss
+    region = str(args["region"]).strip()
+    if not region:
+        return Refusal(tool, "region", "missing_required", region)
+    last = parse_name_word(args["last_name"], tool, "last_name")
+    first = parse_name_word(args["first_name"], tool, "first_name")
+    bad = _first(last, first)
+    if bad:
+        return bad
+    out = {"region": region, "last_name": last, "first_name": first}
+    if args.get("middle_name") not in (None, ""):
+        mid = parse_name_word(args["middle_name"], tool, "middle_name")
+        if isinstance(mid, Refusal):
+            return mid
+        out["middle_name"] = mid
+    if args.get("birth_date") not in (None, ""):
+        birth = _parse_dmy(args["birth_date"], tool, "birth_date")
+        if isinstance(birth, Refusal):
+            return birth
+        out["birth_date"] = birth
+    return out
+
+FSSP_PROCEEDINGS_SEARCH = ToolSpec(
+    name='fssp_proceedings_search',
+    source='https://habr.com/ru/articles/648321/ (api-ip.fssp.gov.ru/about — HTTP 410 Gone 2026-09-24)',
+    schema=_schema('fssp_proceedings_search', 'ФССП «Банк данных исполнительных производств» — search/physical (api-ip.fssp.gov.ru, ЗАКРЫТ); живые пути: веб-форма fssp.gov.ru/iss/ip и межведомственный обмен ФССП↔банки',
+        {'region': {'type': 'string', 'description': 'строка'}, 'last_name': {'type': 'string', 'description': 'NAME (surname)'}, 'first_name': {'type': 'string', 'description': 'NAME (given)'}, 'middle_name': {'type': 'string', 'description': 'NAME (patronymic)'}, 'birth_date': {'type': 'string', 'description': 'DOB — DD.MM.YYYY'}},
+        ('region', 'last_name', 'first_name')),
+    fields=(
+            FieldSpec('region', 'plain', required=True),
+            FieldSpec('last_name', "identity", 'NAME', 'surname', required=True),
+            FieldSpec('first_name', "identity", 'NAME', 'given', required=True),
+            FieldSpec('middle_name', "identity", 'NAME', 'patronymic', required=False),
+            FieldSpec('birth_date', "identity", 'DOB', '', required=False),
+    ),
+    parse=_fssp_proceedings_search_parse, mutating=False,
+    result_pii=('result[].name', 'result[].exe_production', 'result[].details'))
+
+
+# --- court_document_fetch (legal, evidence=summary, synthetic) ---
+def _court_document_fetch_parse(args):
+    tool = "court_document_fetch"
+    miss = _required(args, tool, "", ("court", "case_number"))
+    if miss:
+        return miss
+    court = str(args["court"]).strip()
+    if not court:
+        return Refusal(tool, "court", "missing_required", court)
+    case = _parse_court_case_sou(args["case_number"], tool, "case_number")
+    if isinstance(case, Refusal):
+        return case
+    return {"court": court, "case_number": case}
+
+COURT_DOCUMENT_FETCH = ToolSpec(
+    name='court_document_fetch',
+    source='https://sudrf.ru/',
+    schema=_schema('court_document_fetch', 'ГАС «Правосудие» / sudrf.ru — текст судебного акта (обезличенный при публикации) и карточка дела',
+        {'court': {'type': 'string', 'description': 'строка'}, 'case_number': {'type': 'string', 'description': 'COURT_CASE_NO_SOU'}},
+        ('court', 'case_number')),
+    fields=(
+            FieldSpec('court', 'plain', required=True),
+            FieldSpec('case_number', "identity", 'COURT_CASE_NO_SOU', '', required=True),
+    ),
+    parse=_court_document_fetch_parse, mutating=False,
+    result_pii=('text',))
+
+
+# --- esia_roles_get (government_services, evidence=primary) ---
+def _esia_roles_get_parse(args):
+    tool = "esia_roles_get"
+    miss = _required(args, tool, "", ("prn_oid",))
+    if miss:
+        return miss
+    oid = _parse_esia_oid(args["prn_oid"], tool, "prn_oid")
+    if isinstance(oid, Refusal):
+        return oid
+    return {"prn_oid": oid}
+
+ESIA_ROLES_GET = ToolSpec(
+    name='esia_roles_get',
+    source='ЕСИА, Методические рекомендации v2.5 (rulaws.ru) — REST rs/prns/{prn_oid}/roles; '
+           '"personOid" — идентификатор зарегистрированной учётной записи',
+    schema=_schema('esia_roles_get', 'ЕСИА REST API — роли учётной записи по prn_oid; возвращает personOid',
+        {'prn_oid': {'type': 'string', 'description': 'ESIA_OID — цифры'}},
+        ('prn_oid',)),
+    fields=(FieldSpec('prn_oid', "identity", 'ESIA_OID', '', required=True),),
+    parse=_esia_roles_get_parse, mutating=False,
+    result_pii=('personOid',))
+
+
 TOOLS_V6: tuple[ToolSpecV5, ...] = (
     ToolSpecV5(base=CRM_REQUISITE_GET, vertical='crm',
                return_forms=(
-                   _form('single', '{"requisite":{"id":7,"rq_inn":"500100732259","rq_ogrnip":"312345678901230","rq_ident_doc_ser":"4509","rq_ident_doc_num":"123456"}}', ('requisite.rq_inn', 'requisite.rq_ogrnip', 'requisite.rq_ident_doc_ser', 'requisite.rq_ident_doc_num')),
+                   _form('single', '{"requisite":{"id":7,"rq_inn":"500100732259","rq_ogrnip":"312345678901230","rq_iban":"RU0304452522540817810538091310419","rq_ident_doc_ser":"4509","rq_ident_doc_num":"123456"}}', ('requisite.rq_inn', 'requisite.rq_ogrnip', 'requisite.rq_iban', 'requisite.rq_ident_doc_ser', 'requisite.rq_ident_doc_num')),
                    _form('empty', '{"requisites":[]}', ())),
                differs_from_user_form=True, suite=NO_SUITE),
     ToolSpecV5(base=CRM_REQUISITE_SET, vertical='crm',
                return_forms=(
-                   _form('single', '{"requisite":{"id":7,"rq_inn":"500100732259","rq_ogrnip":"312345678901230","rq_ident_doc_ser":"4509","rq_ident_doc_num":"123456"}}', ('requisite.rq_inn', 'requisite.rq_ogrnip', 'requisite.rq_ident_doc_ser', 'requisite.rq_ident_doc_num')),
+                   _form('single', '{"requisite":{"id":7,"rq_inn":"500100732259","rq_ogrnip":"312345678901230","rq_iban":"RU0304452522540817810538091310419","rq_ident_doc_ser":"4509","rq_ident_doc_num":"123456"}}', ('requisite.rq_inn', 'requisite.rq_ogrnip', 'requisite.rq_iban', 'requisite.rq_ident_doc_ser', 'requisite.rq_ident_doc_num')),
                    _form('error_with_value', '{"error":{"code":"inn_checksum","subject":"500100732259"}}', ('error.subject',))),
                differs_from_user_form=True, suite=NO_SUITE),
     ToolSpecV5(base=CRM_CONTACT_UPSERT, vertical='crm',
@@ -2609,12 +2744,42 @@ TOOLS_V6: tuple[ToolSpecV5, ...] = (
                          ('text',)),
                ),
                differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=FSSP_PROCEEDINGS_SEARCH, vertical='government',
+               return_forms=(
+                   _form('list',
+                         '{"result":[{"name":"ГРОМОВА МАРИНА БОРИСОВНА 14.03.1987 Г. ИЖЕВСК","exe_production":"123456/24/18017-ИП от 02.04.2024","details":"Судебный приказ от 11.01.2024 № 2-45/2024","subject":"Задолженность по кредитным платежам: 48210.50 руб.","department":"Октябрьский РОСП г. Ижевска","bailiff":"СОКОЛОВА А. В."}]}',
+                         ('result[].name', 'result[].exe_production', 'result[].details')),
+                   _form('empty',
+                         '{"result":[]}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=COURT_DOCUMENT_FETCH, vertical='files',
+               return_forms=(
+                   _form('free_text',
+                         '{"case_number":"2-1234/2026","text":"… Истец Громова М.Б. обратилась в суд с иском к <ФИО1> о взыскании … проживающей по адресу: г. Ижевск, ул. Клубная, д. 85, кв. 12 …"}',
+                         ('text',)),
+                   _form('empty',
+                         '{"text":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=ESIA_ROLES_GET, vertical='government',
+               return_forms=(
+                   _form('single',
+                         '{"personOid":"1000123456","roles":["citizen"],"status":"active"}',
+                         ('personOid',)),
+                   _form('empty',
+                         '{"personOid":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
 )
 
 
 V6_RESULT_TYPES: dict[str, tuple[str, ...]] = {
-    'crm_requisite_get': ('INN', 'OGRNIP', 'PASSPORT'),
-    'crm_requisite_set': ('INN', 'OGRNIP', 'PASSPORT'),
+    'crm_requisite_get': ('INN', 'OGRNIP', 'IBAN', 'PASSPORT'),
+    'crm_requisite_set': ('INN', 'OGRNIP', 'IBAN', 'PASSPORT'),
     'crm_contact_upsert': ('NAME',),
     'phone_clean': ('PHONE',),
     'receipt_create': ('NAME', 'EMAIL', 'PHONE', 'INN'),
@@ -2654,12 +2819,15 @@ V6_RESULT_TYPES: dict[str, tuple[str, ...]] = {
     'budget_charges_find': ('UIN', 'NAME', 'PASSPORT'),
     'diploma_registry_check': ('DIPLOMA_NUMBER', 'NAME'),
     'exam_results_check': ('NAME',),
-    'lms_user_get': ('NAME', 'EMAIL', 'STUDENT_ID_NUMBER', 'PHONE'),
+    'lms_user_get': ('NAME', 'EMAIL', 'STUDENT_ID_NUMBER', 'PHONE', 'LOGIN'),
     'dwh_sql_query': ('NAME', 'PHONE', 'INN'),
     'bi_chart_export': ('NAME', 'PHONE'),
     'audience_segment_upload': (),
     'email_contacts_import': ('EMAIL', 'PHONE', 'NAME'),
     'web_visits_export': ('METRICA_CLIENT_ID', 'IP_ADDRESS', 'EMAIL'),
+    'fssp_proceedings_search': ('NAME', 'DOB', 'FSSP_IP_NO', 'COURT_CASE_NO_SOU'),
+    'court_document_fetch': ('NAME', 'LOC', 'COURT_CASE_NO_SOU'),
+    'esia_roles_get': ('ESIA_OID',),
 }
 
 
@@ -2711,16 +2879,17 @@ V6_META: dict[str, V6ToolMeta] = {
     'audience_segment_upload': V6ToolMeta('summary', 'official', 'marketing_cdp'),
     'email_contacts_import': V6ToolMeta('primary', 'official', 'marketing_cdp'),
     'web_visits_export': V6ToolMeta('primary', 'official', 'marketing_cdp'),
+    'fssp_proceedings_search': V6ToolMeta('secondary', 'closed', 'banks_mfo_collectors'),
+    'court_document_fetch': V6ToolMeta('summary', 'synthetic', 'legal'),
+    'esia_roles_get': V6ToolMeta('primary', 'official', 'government_services'),
 }
 
 
 UNSCHEMED_TOOLS: tuple[str, ...] = (
-    "fssp_proceedings_search: FSSP mirror HTTP 410 (OD-47), fields only from a 2016-2021 Habr article",
     "call_detail_records: result_set with synthetic provenance, no exact fields",
-    "court_document_fetch: free_text with synthetic provenance, no exact fields",
     "post_tracking_history: the track is a NEGATIVE (OD-27), result is a movement history with no PII (V04)",
     # The §2.4 gap families the research did not open as a real API mirror.
-    "kyc_questionnaire: 115-ФЗ KYC form (BIRTH_CERT/RESIDENCE_PERMIT/CREDIT_SUBJECT_CODE/IBAN) has no exact producer→consumer fields",
+    "kyc_questionnaire: 115-ФЗ KYC form (BIRTH_CERT/RESIDENCE_PERMIT/CREDIT_SUBJECT_CODE) has no exact producer→consumer fields",
     "collection_dossier: взыскание docket with EXEC_DOC_NO, no exact fields",
     "dms_guarantee_letter: ДМС guarantee letter (MEDCARD_NUMBER/REFERRAL_NUMBER), no exact fields",
     "device_service_request: service request with IMEI, no exact fields",

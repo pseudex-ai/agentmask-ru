@@ -281,6 +281,7 @@ class BackendV6(BackendV5):
             "id": 7,
             "rq_inn": self._slot(str(parsed["inn"])),
             "rq_ogrnip": self._slot(str(parsed.get("ogrnip", ""))),
+            "rq_iban": self._slot(str(parsed.get("iban", ""))),
             "rq_ident_doc_ser": self._slot(str(doc.get("ser", ""))),
             "rq_ident_doc_num": self._slot(str(doc.get("num", ""))),
         }}, "single"
@@ -407,7 +408,7 @@ class BackendV6(BackendV5):
     # --- the READ tools: the stored record, tagged by the exact binding ----------
 
     def _v6_crm_requisite_get(self, parsed: dict[str, object]) -> tuple[object, str]:
-        key = "inn" if "inn" in parsed else "ogrnip"
+        key = "inn" if "inn" in parsed else ("iban" if "iban" in parsed else "ogrnip")
         rid = self._find_record_by_value(str(parsed[key]))
         if not rid:
             return {"requisites": []}, "empty"
@@ -415,6 +416,7 @@ class BackendV6(BackendV5):
             "id": 7,
             "rq_inn": self._field(rid, "rq_inn"),
             "rq_ogrnip": self._field(rid, "ogrnip"),
+            "rq_iban": self._field(rid, "iban"),
             "rq_ident_doc_ser": self._field(rid, "rq_ident_doc_ser"),
             "rq_ident_doc_num": self._field(rid, "rq_ident_doc_num"),
         }}, "single"
@@ -841,6 +843,35 @@ class BackendV6(BackendV5):
             "provider": "МТС",
             "qc": 0,
         }]}, "canon"
+
+    def _v6_fssp_proceedings_search(self, parsed: dict[str, object]) -> tuple[object, str]:
+        key = str(parsed["last_name"]) or str(parsed["first_name"])
+        rid = self._find_record_by_value(key)
+        if not rid:
+            return {"result": []}, "empty"
+        return {"result": [{
+            "name": self._field(rid, "name"),
+            "exe_production": self._field(rid, "ip_number"),
+            "details": self._field(rid, "case_number"),
+        }]}, "list"
+
+    def _v6_court_document_fetch(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["case_number"]))
+        if not rid:
+            return {"text": None}, "empty"
+        name = self._real(self._path_item.get((rid, "name"), ""))
+        case = self._real(self._path_item.get((rid, "case_number"), ""))
+        text = self._compose((("… Истец ", ""),
+                              (name, self._path_item.get((rid, "name"), "")),
+                              (" обратилась в суд … № ", ""),
+                              (case, self._path_item.get((rid, "case_number"), ""))), "")
+        return {"case_number": str(parsed["case_number"]), "text": text}, "free_text"
+
+    def _v6_esia_roles_get(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["prn_oid"]))
+        if not rid:
+            return {"personOid": None}, "empty"
+        return {"personOid": self._field(rid, "oid")}, "single"
 
 
 def seed_backend_v6(case: object) -> BackendV6:

@@ -33,6 +33,11 @@ from bench.agentpii5 import schema_v6 as sv
 
 CHAIN_FORM_PREFIX: str = "chain:"
 
+# The two types whose READ tools (diploma_registry_check, hr_employee_get) declare
+# the forced-error echo path `error.subject` — the only READ tools that can host a
+# `retry_same_tool` case without crossing an undeclared result leaf (K6-15).
+RETRY_ELIGIBLE_TYPES: frozenset[str] = frozenset(("DIPLOMA_NUMBER", "EMPLOYEE_TAB_NUMBER"))
+
 # The three vertical-coverage cases `build_full` appends on top of the plan:
 # one reader per reading vertical (delivery/directory/files) that no v6 type
 # recipe crosses. They seed a v5 NAME/PHONE, not a v6 type, so they live in
@@ -46,6 +51,7 @@ PLAN_TOTAL: int = 500 - VERTICAL_READER_CASES
 CHAIN_PAIRS: dict[str, str] = {
     "OSAGO_POLICY": "VIN",              # osago_policy_check -> policy.* + vehicle.vin
     "EPTS_NUMBER": "VIN",               # epts_status_get -> epts + vin
+    "IBAN": "OGRNIP",                   # crm_requisite_get -> rq_iban + rq_ogrnip
 }
 
 # The admitted types, each with its (industry -> case count) distribution. The
@@ -64,24 +70,26 @@ CHAIN_PAIRS: dict[str, str] = {
 # into a K6-18 coverage gap for a whole industry — the report names that one red
 # line too.
 TYPE_DISTRIBUTION: dict[str, tuple[tuple[str, int], ...]] = {
-    "OGRNIP": (("retail", 20), ("logistics", 11), ("internal_bi", 6), ("legal", 2)),
-    "BANK_ACCOUNT": (("banks_mfo_collectors", 28), ("internal_bi", 4), ("hr", 6)),
-    "CADASTRAL_NUMBER": (("real_estate", 12), ("government_services", 10), ("legal", 8),
+    "OGRNIP": (("retail", 20), ("logistics", 8), ("internal_bi", 4), ("legal", 2)),
+    "BANK_ACCOUNT": (("banks_mfo_collectors", 24), ("internal_bi", 4), ("hr", 6)),
+    "CADASTRAL_NUMBER": (("real_estate", 10), ("government_services", 10), ("legal", 8),
                          ("insurance", 4), ("banks_mfo_collectors", 2)),
     "DIPLOMA_NUMBER": (("education", 24), ("hr", 10)),
-    "EMPLOYEE_TAB_NUMBER": (("internal_bi", 14), ("hr", 10), ("logistics", 10), ("retail", 4)),
-    "EPTS_NUMBER": (("logistics", 20), ("auto", 10), ("insurance", 6)),
-    "GIS_ZHKH_ELS": (("internal_bi", 18), ("real_estate", 10), ("government_services", 8)),
-    "ICCID": (("telecom", 16), ("logistics", 12), ("retail", 8)),
-    "INTL_PASSPORT": (("hospitality", 15), ("insurance", 9), ("banks_mfo_collectors", 8),
+    "EMPLOYEE_TAB_NUMBER": (("internal_bi", 10), ("hr", 10), ("logistics", 10), ("retail", 4)),
+    "EPTS_NUMBER": (("logistics", 18), ("auto", 10), ("insurance", 6)),
+    "GIS_ZHKH_ELS": (("internal_bi", 16), ("real_estate", 10), ("government_services", 8)),
+    "ICCID": (("telecom", 14), ("logistics", 12), ("retail", 8)),
+    "INTL_PASSPORT": (("hospitality", 13), ("insurance", 9), ("banks_mfo_collectors", 6),
                       ("hr", 6)),
-    "LOAN_CONTRACT_NUMBER": (("banks_mfo_collectors", 28), ("internal_bi", 10)),
-    "LOYALTY_CARD_NUMBER": (("retail", 24), ("medicine", 13), ("hospitality", 4),
+    "LOAN_CONTRACT_NUMBER": (("banks_mfo_collectors", 24), ("internal_bi", 10)),
+    "LOYALTY_CARD_NUMBER": (("retail", 14), ("medicine", 13), ("hospitality", 3),
                             ("marketing_cdp", 5)),
-    "OMS_ENP": (("medicine", 34), ("insurance", 4), ("hr", 2), ("government_services", 2)),
+    "OMS_ENP": (("medicine", 32), ("insurance", 2)),
     "OSAGO_POLICY": (("insurance", 12), ("auto", 14), ("banks_mfo_collectors", 8)),
-    "VIN": (("auto", 12), ("logistics", 10), ("banks_mfo_collectors", 8),
+    "VIN": (("auto", 10), ("logistics", 8), ("banks_mfo_collectors", 6),
             ("government_services", 6), ("insurance", 4)),
+    "IBAN": (("retail", 20), ("hr", 8), ("banks_mfo_collectors", 6)),
+    "ESIA_OID": (("education", 24), ("government_services", 6), ("banks_mfo_collectors", 4)),
 }
 
 # The behaviour mix over the SINGLE-type cases (chain cases are sequential_chain
@@ -172,8 +180,19 @@ def _build() -> tuple[PlanRow, ...]:
     behaviour_queue: list[str] = []
     for behaviour in behaviour_names:
         behaviour_queue.extend([behaviour] * (BEHAVIOUR_FLOOR + delivered[behaviour]))
-    for position, (type_id, industry) in enumerate(singles):
-        rows.append((type_id, industry, behaviour_queue[position], ""))
+    # `retry_same_tool` forces an error whose echo path (`error.subject`) only
+    # diploma_registry_check and hr_employee_get declare (RESULT_PII_APPROX), so
+    # it must ride those two types — a retry on any other READ tool would cross a
+    # leaf the tool's result_pii does not declare (K6-15).
+    retry_want = BEHAVIOUR_FLOOR + delivered["retry_same_tool"]
+    retry_eligible = [(t, i) for (t, i) in singles if t in RETRY_ELIGIBLE_TYPES]
+    other_singles = [(t, i) for (t, i) in singles if t not in RETRY_ELIGIBLE_TYPES]
+    for type_id, industry in retry_eligible[:retry_want]:
+        rows.append((type_id, industry, "retry_same_tool", ""))
+    leftover = retry_eligible[retry_want:] + other_singles
+    other_queue = [b for b in behaviour_queue if b != "retry_same_tool"]
+    for position, (type_id, industry) in enumerate(leftover):
+        rows.append((type_id, industry, other_queue[position], ""))
 
     total = len(rows)
     if total != PLAN_TOTAL:

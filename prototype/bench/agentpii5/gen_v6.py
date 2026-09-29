@@ -157,6 +157,50 @@ def _ogrn_ok(digits: str) -> bool:
     return False
 
 
+def _snils_ok(digits: str) -> bool:
+    """СНИЛС mod 101, restated for the K6-21 guard (11 digits)."""
+    if len(digits) != 11:
+        return False
+    total = sum(int(ch) * (9 - i) for i, ch in enumerate(digits[:9]))
+    if total < 100:
+        check = total
+    elif total in (100, 101):
+        check = 0
+    else:
+        check = total % 101
+        if check == 100:
+            check = 0
+    return check == int(digits[9:])
+
+
+def _inn_ok(digits: str) -> bool:
+    """ИНН weight vectors, restated for the K6-21 guard (10 or 12 digits)."""
+    if len(digits) == 10:
+        weights = [2, 4, 10, 3, 5, 9, 4, 6, 8]
+        return sum(int(digits[i]) * weights[i] for i in range(9)) % 11 % 10 == int(digits[9])
+    if len(digits) == 12:
+        w11 = [7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
+        w12 = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
+        c11 = sum(int(digits[i]) * w11[i] for i in range(10)) % 11 % 10
+        c12 = sum(int(digits[i]) * w12[i] for i in range(11)) % 11 % 10
+        return c11 == int(digits[10]) and c12 == int(digits[11])
+    return False
+
+
+def _luhn_ok(digits: str) -> bool:
+    """A full number is Luhn-valid: its body's check digit matches the tail."""
+    if len(digits) < 2:
+        return False
+    return _luhn(digits[:-1]) == digits[-1]
+
+
+def _v5_contract_checksum(digits: str) -> bool:
+    """True when a digit run is a valid v5 checksum of its OWN length (K6-21):
+    СНИЛС 11, ИНН 12, ОГРН 13, ОГРНИП 15, CARD 16."""
+    return (_snils_ok(digits) or _inn_ok(digits) or _ogrn_ok(digits)
+            or _luhn_ok(digits))
+
+
 def _uin_check(body: str) -> str:
     """УИН: weights 1..10 cyclic from the MOST significant digit, sum mod 11.
     Remainder ≤ 9 is the digit; remainder 10 re-runs with the sequence shifted
@@ -396,11 +440,12 @@ def _gen_driver_license(rng):
 
 
 def _gen_cadastral_number(rng):
-    # K6-21: the digit run can land on 11/12/13/15/16, and a 13- or 15-digit run
-    # must NOT pass the v5 ОГРН/ОГРНИП contract check, so re-mint until it does not.
+    # K6-21: the digit run can land on 11/12/13/15/16, and a run of any of those
+    # lengths must NOT pass the v5 contract checksum of the same length, so
+    # re-mint (advancing the seed-derived rng) until it fails every one.
     while True:
         value = f"{_digits(rng, 2)}:{_digits(rng, 2)}:{_digits(rng, rng.choice((6, 7)))}:{_digits(rng, rng.randint(1, 5))}"
-        if not _ogrn_ok("".join(ch for ch in value if ch.isdigit())):
+        if not _v5_contract_checksum("".join(ch for ch in value if ch.isdigit())):
             return value
 
 
