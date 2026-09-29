@@ -186,6 +186,14 @@ def is_own_substitute(span: Span, vault: Vault) -> bool:
     # by construction; a place is not, whatever it is spelled like.
     if span.entity_type != "LOC" and vault.name_rendering_is_ours(span.value):
         return True
+    if isinstance(span, PartSpan) and span.entity_type != "LOC":
+        # A FIELD OF A TYPED OBJECT IS JUDGED BY THE WHOLE OBJECT, exactly as the
+        # address branch below judges it and for the same reason: leaf by leaf
+        # nothing is a token (`{"passport": {"series": "0012", …}}` is two bare
+        # four- and six-digit runs), so the record was minted a SECOND document
+        # and the model watched its own substitute change. The whole is what the
+        # vault minted and what its digit signature answers for.
+        return span.whole != span.value and vault.is_minted_token(span.whole)
     if span.entity_type != "LOC":
         return False
     # A FIELD OF AN ADDRESS OBJECT IS JUDGED BY THE WHOLE OBJECT. The model's
@@ -196,6 +204,40 @@ def is_own_substitute(span: Span, vault: Vault) -> bool:
     # address objects were introduced).
     whole = vault_value(span)
     return vault.holds_minted_place(whole) or (whole != span.value and vault.is_minted_token(whole))
+
+
+def _document_part(span: PartSpan, vault: Vault) -> str:
+    """ОДИН ЛИСТ ТИПИЗИРОВАННОГО ОБЪЕКТА — часть ЕГО подмены, в его форме.
+
+    Серия и номер паспорта — не два документа, а один: поле получает СВОЮ часть
+    подмены целого, иначе инструмент увидит серию одного человека и номер
+    другого. Раскладка — по цифровой длине роли из арендуемой карты частей
+    (`COMPOSITE_TYPES.lengths`), а не по догадке о форме значения.
+
+    РОЛЬ, КОТОРУЮ ПОДМЕНА ПОКАЗАТЬ НЕ МОЖЕТ, ОТДАЁТ ЛИСТ ЦЕЛОЙ ПОДМЕНОЙ —
+    ровно как у адреса (`_token_for_text`): fail closed, а не открытый лист.
+    """
+    composite = ASSETS.get().structured.composites.get(span.entity_type)
+    token = vault.tokenize(span.whole, span.entity_type)
+    if composite is None:
+        return token
+    digits = re.sub(r"\D", "", token)
+    offset = 0
+    for role in composite.order:
+        size = composite.lengths.get(role, 0)
+        if role == span.role:
+            part = digits[offset:offset + size]
+            return _digits_like(span.value, part) if part else token
+        offset += size
+    return token
+
+
+def _digits_like(original: str, digits: str) -> str:
+    """Цифры подмены в СВОИХ разделителях: лист написан так, как написан."""
+    if not digits or len(re.sub(r"\D", "", original)) != len(digits):
+        return digits
+    stream = iter(digits)
+    return "".join(next(stream) if ch.isdigit() else ch for ch in original)
 
 
 def vault_value(span: Span) -> str:
@@ -317,6 +359,14 @@ def _token_for_text(span: Span, vault: Vault) -> str:
         # word where it wrote none. A role the substitute cannot show (it
         # mirrors the whole's shape, so this is a defence, not a path) gets
         # the whole substitute rather than the real part.
+        #
+        # THE SPLITTER IS CHOSEN BY TYPE, because a composite object is not only
+        # an address: `morph_places.split_roles` reads a street out of a phrase,
+        # and `{"passport": {"series", "number"}}` is split by the DIGIT LENGTH
+        # the leased map declares for each role. Both go through the same rule —
+        # the record is ONE value, the leaf shows ITS part.
+        if span.entity_type != "LOC":
+            return _document_part(span, vault)
         whole = vault.tokenize(span.whole, "LOC")
         part = morph_places.split_roles(whole).get(span.role, "")
         if not part:
@@ -2624,7 +2674,81 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
         return node
 
     return json.dumps(_join_initials_deep(
-        _join_addresses_deep(walk(parsed), parsed, call, literals), parsed), ensure_ascii=False)
+        _join_documents_deep(
+            _join_addresses_deep(walk(parsed), parsed, call, literals), parsed, call),
+        parsed), ensure_ascii=False)
+
+
+_COMPOSITE_KEY_RE = re.compile(r"[\s\-_.]")
+
+
+def _join_documents_deep(restored: object, original: object, vault: Vault) -> object:
+    """`_join_document_fields` at EVERY level of the object, as the address join."""
+    if isinstance(restored, dict) and isinstance(original, dict):
+        joined = _join_document_fields(restored, original, vault)
+        if not isinstance(joined, dict):
+            return joined
+        return {key: _join_documents_deep(value, original.get(key), vault)
+                for key, value in joined.items()}
+    if isinstance(restored, list) and isinstance(original, list):
+        return [_join_documents_deep(value, original[index] if index < len(original) else None,
+                                     vault)
+                for index, value in enumerate(restored)]
+    return restored
+
+
+def _join_document_fields(restored: dict, original: dict, vault: Vault) -> dict:
+    """СОБРАТЬ ДОКУМЕНТ, РАЗЛОЖЕННЫЙ СХЕМОЙ ПО ПОЛЯМ, И РАЗЛОЖИТЬ ЕГО ОБРАТНО.
+
+    `{"passport": {"series": "0012", "number": "345678"}}` — две подмены-листа и
+    ни одного токена: каждый лист по отдельности не разрешается, потому что
+    подмена у документа ОДНА. Листья спрашиваются ВМЕСТЕ, по цифровой длине
+    роли из арендуемой карты частей (`ASSETS.structured.composites`), и
+    настоящий документ раскладывается по тем же ролям — ровно тем же приёмом,
+    каким адрес собирается из `street`/`house` (`_join_address_fields`).
+
+    Лист переписывается ТОЛЬКО если он не разрешился сам (`restored == original`)
+    и только когда собранные цифры принадлежат ОДНОЙ подмене этого разговора.
+    Иначе объект остаётся как был: выдать чужой документ хуже, чем не выдать
+    ничего.
+    """
+    if not isinstance(restored, dict) or not isinstance(original, dict):
+        return restored
+    for entity_type, composite in ASSETS.get().structured.composites.items():
+        leaf_keys: dict[str, str] = {}
+        for key in original:
+            if not isinstance(original.get(key), str):
+                continue
+            role = composite.roles.get(_COMPOSITE_KEY_RE.sub("", key.strip().lower()))
+            if role and role not in leaf_keys:
+                leaf_keys[role] = key
+        if any(role not in leaf_keys for role in composite.required):
+            continue
+        sizes = {role: composite.lengths.get(role, 0) for role in composite.order}
+        parts = [original[leaf_keys[role]] for role in composite.order]
+        # A LEAF OF A NUMBERED DOCUMENT CARRIES DIGITS AND ALMOST NOTHING ELSE.
+        if any(not re.fullmatch(r"[\d\s\-./]*\d[\d\s\-./]*", part) for part in parts):
+            continue
+        digits = "".join(re.sub(r"\D", "", part) for part in parts)
+        if len(digits) != sum(sizes.values()):
+            continue
+        real = vault.composed_document_owner(digits, entity_type)
+        if not real:
+            continue
+        real_digits = re.sub(r"\D", "", real)
+        if len(real_digits) != len(digits):
+            continue
+        out = dict(restored)
+        offset = 0
+        for role in composite.order:
+            key = leaf_keys[role]
+            size = sizes[role]
+            part = real_digits[offset:offset + size]
+            offset += size
+            if out.get(key) == original[key]:
+                out[key] = _digits_like(original[key], part)
+        return out
+    return restored
 
 
 _INITIALS_LEAF = re.compile(r"^\s*([А-ЯЁ])\.?(?:\s?([А-ЯЁ])\.?)?\s*$")

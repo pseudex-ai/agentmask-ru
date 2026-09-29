@@ -29,6 +29,52 @@ from pseudex.structured import detect_structured_kv
 # rather than in the shipped engine.
 
 
+# A CHECKSUM COUNTED ON A SUB-RUN DOES NOT DECIDE HOW LONG THE SUPER-SPAN IS.
+#
+# `+79628863588` is a phone that PASSES the СНИЛС mod-101 — about one random
+# eleven-digit number in a hundred does — and `_SNILS_NODASH_RE` (`\b\d{11}\b`)
+# runs from index 1, five characters shorter than the span libphonenumber reads.
+# PRIORITY puts SNILS (6) above PHONE (5), and `_resolve` sorts by priority with
+# LENGTH only as a tiebreak, so the checksum of the SUB-RUN rewrote the BOUNDARY
+# of the super-span: the substitute stood on eleven digits, the «+» stayed a
+# literal, and the leaf received a value in the СНИЛС notation instead of a
+# phone (g07 `rag-008`, `form OUT/tool_arg 0/1`).
+#
+# THE PRIORITY TABLE IS NOT TOUCHED, and its comment stays true where it was
+# written: at EQUAL boundaries a valid INN/СНИЛС/card still outranks a bare
+# phone. The rule is only about a STRICT containment whose BOUNDARY CHARACTER —
+# the one character of the wider span standing just outside the sub-run — is not
+# a digit: a «+», an international prefix, a separator. That character is
+# evidence about where the value ENDS, and a checksum computed on a shorter run
+# has no business overruling it. A digit there means the sub-run is a piece of a
+# longer NUMBER, and there the checksum keeps its say.
+_CHECKSUM_TYPES = frozenset({"SNILS", "INN", "CARD", "VIN", "OGRN", "OGRNIP"})
+
+
+def _boundary_beats_checksum(spans: list[Span], text: str) -> list[Span]:
+    """Drop a checksum span that is a strict, non-digit-bounded sub-run of one
+    wider span of another type. See the block comment above."""
+    out: list[Span] = []
+    for span in spans:
+        if span.entity_type not in _CHECKSUM_TYPES:
+            out.append(span)
+            continue
+        swallowed = False
+        for other in spans:
+            if (other is span or other.entity_type == span.entity_type
+                    or not (other.start <= span.start and span.end <= other.end)
+                    or (other.start == span.start and other.end == span.end)):
+                continue
+            if ((other.start < span.start and text[span.start - 1].isdigit())
+                    or (span.end < other.end and text[span.end].isdigit())):
+                continue
+            swallowed = True
+            break
+        if not swallowed:
+            out.append(span)
+    return out
+
+
 def _resolve(spans: list[Span], priority: dict[str, int],
              text: str = "", keyed: list[Span] | None = None) -> list[Span]:
     """Разрешение пересечений: по приоритету, потом по длине, без наложений.
@@ -268,8 +314,13 @@ class Detector:
             # order number was masked as a phone. Offsets are 1:1 by invariant,
             # so the same spans index into either text.
             with stage("detect.resolve"):
-                resolved = _resolve(suppress(text, spans) + kv_spans,
-                                    ASSETS.get().priority, text, keyed=kv_spans)
+                # AFTER `suppress`, deliberately: if the wider span is denied by
+                # context the checksum sub-run stays, so the value is masked
+                # either way. Dropping it earlier could leave the text with
+                # nothing at all — a leak bought for a notation.
+                resolved = _resolve(
+                    _boundary_beats_checksum(suppress(text, spans), text) + kv_spans,
+                    ASSETS.get().priority, text, keyed=kv_spans)
             # A NAME LEAVES WITH THE CASES ITS SENTENCE ALLOWS (`NameSpan`): the
             # vault reads the phrase alone, and «на имя марину» alone is a man.
             return [Span(s.start, s.end, "LOC", s.value) if s.entity_type == "ADDR"

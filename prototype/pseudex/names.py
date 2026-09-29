@@ -103,11 +103,120 @@ def _is_known_name(word: str, names: NameAssets) -> bool:
                                         for lemma in _lemmas(low))
 
 
+def _plain_ascii_token(text: str, start: int, end: int) -> bool:
+    """Стоит ли латинское слово ВНУТРИ большего ASCII-токена.
+
+    Почта, URL, путь, `snake_case`-идентификатор и имя файла — не человек, и
+    ни одно из них не может быть чьим-то именем. Отвергается по соседнему
+    символу, а не по регулярке всего токена: сосед — то, что уже написано в
+    тексте, и отдельного словаря для этого не нужно.
+
+    ТОЧКА СУДИТСЯ ПО ТОМУ, ЧТО ЗА НЕЙ. Конец предложения — «Ivanov.» — это
+    точка, за которой пробел или конец строки; точка домена — за ней ещё буква.
+    Без этого различия половина имён в конце фразы перестала бы находиться.
+    """
+    before = text[start - 1] if start else ""
+    after = text[end] if end < len(text) else ""
+    # `in` on a string is TRUE FOR THE EMPTY STRING, and the first word of a
+    # message has no character before it: `before in "…"` would refuse every
+    # Latin name that opens a sentence.
+    if before and before in "@/_\\-0123456789":
+        return False
+    if after and after in "@/_\\-0123456789":
+        return False
+    if before == "." and start > 1 and text[start - 2] not in " \t\n":
+        return False
+    if after == "." and end + 1 < len(text) and text[end + 1] not in " \t\n":
+        return False
+    return True
+
+
+def _latin_dictionary_hit(text: str, start: int, end: int, word: str, low: str,
+                          before: str, names: NameAssets) -> bool:
+    """ЛАТИНСКОЕ СЛОВО СУДИТСЯ ТЕМ ЖЕ ИНДЕКСОМ, ЧТО И КИРИЛЛИЧЕСКОЕ.
+
+    Позиция в прогоне перестаёт быть свидетельством: `Kukushkin Valeriy` — тот
+    же человек, что `Valeriy Kukushkin`, и судится он СЛОВОМ. Свидетельство
+    лежит в `dict_surnames`/`dict_first`, прочитанных латиницей
+    (`assets.NameAssets.latin_surnames`/`latin_first`).
+
+    ЗАГЛАВНАЯ ИЛИ ИМЕННОЙ ЯКОРЬ — тот же гейт, что у строчной кириллической
+    ветки: транслит 196 800 русских фамилий совпадает с английскими словами и
+    торговыми марками (`Roman`, `Sokol`, `Volkov`), и столица либо уже
+    написанная рядом подсказка — единственное, что отделяет человека от прозы.
+
+    ПОЧТА/URL/ПУТЬ ИСКЛЮЧЕНЫ ДО этого вопроса — за них отвечает
+    `_plain_ascii_token`: локальная часть адреса — не фамилия.
+    """
+    if not low.isascii() or not low.isalpha():
+        return False
+    if low not in names.latin_first and low not in names.latin_surnames:
+        return False
+    if not _plain_ascii_token(text, start, end):
+        return False
+    if word[:1].isupper() or any(cue in before for cue in names.cues):
+        return True
+    return False
+
+
 def _is_surname_shaped(word: str, names: NameAssets) -> bool:
     low = word.lower()
     if low in names.dict_surnames:
         return True
     return len(low) > 4 and low.endswith(names.surname_suffixes)
+
+
+_NAME_ANCHOR_WINDOW = 24
+
+
+_CASE_ENDINGS = ("ого", "ему", "ому", "ыми", "ими", "ой", "ый", "ая", "ые",
+                 "ым", "их", "ых", "ов", "ев", "ин", "у", "а", "е", "и", "ю", "я", "ы")
+
+
+def _declined_surname_shaped(low: str, names: NameAssets) -> bool:
+    """Фамилия, пришедшая В КОСВЕННОМ ПАДЕЖЕ, — та же фамилия.
+
+    Суффиксный тест читает именительный («-ов», «-ин», «-ский»), а человек
+    называется «от аленчиев», «к аленчиеву», «у ивановых»: падежное окончание
+    снимается перед тестом, ровно как `canonicalize` снимает его перед ключом.
+    Окончание снимается ОДНО, и слово обязано остаться фамильно-образным —
+    иначе «-ов» нашёлся бы в любом слове, кончающемся на «а».
+    """
+    if _is_surname_shaped(low, names):
+        return True
+    return any(len(low) > len(ending) and _is_surname_shaped(low[:-len(ending)], names)
+               for ending in _CASE_ENDINGS if low.endswith(ending))
+
+
+def _anchored_surname(text: str, start: int, word: str, low: str,
+                      names: NameAssets) -> bool:
+    """СТРОЧНАЯ ФАМИЛИЯ, КОТОРОЙ ЯКОРЬ ДАЁТ ПРАВО НА СПАН.
+
+    Строчное слово в арендованном словаре уже судится `_lowercase_dictionary_ok`,
+    и этот тест отвергает «репина»: у него есть обычное чтение «NOUN,inan». Но
+    «от аленчиев» не находит НИЧТО — слово не лежит ни в одном словаре, а
+    `_is_surname_shaped` без второго сигнала спана не даёт. Второй сигнал —
+    ЯКОРЬ: предлог, вводящий человека («от», «к», «у», «для»), или уже
+    арендованная подсказка («перезвоните», «имя», «фио»).
+
+    ПОЧЕМУ ЭТО ОДНО ПРАВИЛО, А НЕ ЗАПЛАТКА. Ровно так же решает адресная
+    ветка: роль строчного слова определяется тем, что стоит ПЕРЕД ним. Якорь
+    уже был написан — `_street_reference` читает «на/по» + реестр ГАР, чтобы
+    ОТОБРАТЬ спан у имени; здесь то же свидетельство работает в обратную
+    сторону.
+
+    ГЕЙТ ОТ ОВЕРМАСКИРОВАНИЯ — тот же словарный тест, что у строчной ветки:
+    слово принимается, только если pymorphy НЕ знает его как обычное русское
+    слово. Поэтому «от клиентов», «для сотрудников», «у поставщиков» (NOUN,
+    родительный множественного) остаются прозой, а «от аленчиев» — человеком.
+    """
+    if (not _declined_surname_shaped(low, names)
+            or not _lowercase_dictionary_ok(word, low)):
+        return False
+    tail = text[max(0, start - _NAME_ANCHOR_WINDOW):start]
+    if any(cue in tail.lower() for cue in names.cues):
+        return True
+    return names.anchor_re.search(tail) is not None
 
 
 def is_known_name(word: str) -> bool:
@@ -1584,6 +1693,19 @@ def gazetteer_names(text: str) -> list[Span]:
         if not _whole_token_ok(text, match.start(), match.end()):
             continue
         if _name_set_hit(word, low, lemmas, before, names):
+            spans.append(Span(match.start(), match.end(), "NAME", word))
+        elif _latin_dictionary_hit(text, match.start(), match.end(), word, low,
+                                   before, names):
+            # ЛАТИНИЦА — НЕ ОТДЕЛЬНАЯ ВЕТКА, А ТОТ ЖЕ СЛОВАРНЫЙ ПУТЬ. Здесь она
+            # судится СЛОВОМ, и потому порядок слов в прогоне перестаёт быть
+            # свидетельством. Склейка соседей ниже (`_merge_adjacent`) собирает
+            # из найденных слов один спан — прогон перестал быть детектором и
+            # стал соединителем.
+            spans.append(Span(match.start(), match.end(), "NAME", word))
+        elif _anchored_surname(text, match.start(), word, low, names):
+            # СТРОЧНАЯ ФАМИЛИЯ, КОТОРОЙ СЛОВАРЬ НЕ ДАЁТ СПАНА, А ЯКОРЬ ДАЁТ.
+            # «от аленчиев» — то же правило, что у адресной ветки: роль слова
+            # решает то, что стоит ПЕРЕД ним (см. `_anchored_surname`).
             spans.append(Span(match.start(), match.end(), "NAME", word))
         elif (word[:1].isupper() or _lowercase_dictionary_ok(word, low)) and (
             # СТОРОЖ ОТНОСИТСЯ ТОЛЬКО К СТРОЧНОЙ СЛОВАРНОЙ ВЕТКЕ, ради которой

@@ -34,5 +34,14 @@ def is_stretched_filler(word: str) -> bool:
     # as a rare given name, and «ноль два ии саркисян карен» is not her.
     if len(set(word.lower())) == 1:
         return True
+    # A LATIN WORD IS NOT JUDGED BY THE RUSSIAN DICTIONARY. «anna», «alla»,
+    # «emma», «nell» carry two distinct letters and pymorphy does not know the
+    # Latin string, so `parses[0].is_known` called every one of them a filler —
+    # and the join that keeps fillers OUT of a name deleted the given-name half
+    # before any rule could judge the surname beside it. The dictionary is
+    # evidence about the language it describes; asking it about another script
+    # answers "unknown", which is not "filler".
+    if not any("а" <= char <= "я" or char == "ё" for char in word.lower()):
+        return False
     parses = MORPH.parse(word)
     return not (parses and parses[0].is_known)

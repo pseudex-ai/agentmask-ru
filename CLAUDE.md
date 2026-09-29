@@ -798,7 +798,7 @@ vectors), card (Luhn), ОГРН/ОГРНИП, passport (cue-gated), VIN, licence
 The validators are the algorithm and stay in the binary; the cue words are leased.
 - **API:** `validate_snils`, `validate_inn`, `validate_luhn`, `validate_ogrn`, `vin_check_digit_valid`, `detect_vehicle_ids`, `detect_structured`, `detect_plates`
 - **Uses:** assets, detect, fuzzy · **Used by:** detect_all, spoken, vault
-- **Tests:** test_product, make_dataset · via detect_all → test_coverage_152fz, test_hard_cases, test_overmasking
+- **Tests:** test_class_g_leaks, test_product, make_dataset · via detect_all → test_coverage_152fz, test_hard_cases, test_overmasking
 - **Docs:** `research/dd2-notes-C-disambiguation.md`, `research/ru-pii-dataset-and-detectors.md` · rules: INVARIANTS.md#structured-ids
 
 #### `pseudex/structured.py` — 219 lines · `live`
@@ -841,7 +841,7 @@ typo index, the four-signal split-surname join. Also the gate that KEEPS or DROP
 a Natasha PER/LOC.
 - **API:** `is_known_name`, `is_surname_shaped`, `keep_location`, `trim_person_span`, `keep_person`, `gazetteer_names`, `trim_document_words`
 - **Uses:** assets, detect, fuzzy, morph, spoken · **Used by:** address, assets, detect_all
-- **Tests:** test_product, test_unload_scrub, profile_deep · via detect_all → test_names_morphology, test_hard_cases, test_persona_defects, test_overmasking; `bench/gate/`, `bench/eval_massive_ru.py`, `bench/eval_external_ner.py`
+- **Tests:** test_class_g_leaks, test_product, test_unload_scrub, profile_deep · via detect_all → test_names_morphology, test_hard_cases, test_persona_defects, test_overmasking; `bench/gate/`, `bench/eval_massive_ru.py`, `bench/eval_external_ner.py`
 - **Docs:** `research/dd2-notes-A-ru-ner.md`, `research/2026-08-31-ml-gate-or-rules.md`, `bench/gate/README.md` · rules: INVARIANTS.md#names
 
 #### `pseudex/morph_names.py` — 988 lines · `live`
@@ -860,7 +860,7 @@ marker-less streets (ГАР-vocabulary-gated) ∪ bare lower-case streets (four 
 register-spelling repair of a mistyped street for the TOOL leg.
 - **API:** `register_spelling`, `repair_street`, `detect_address`
 - **Uses:** _morph_compat, assets, detect, fuzzy, morph, morph_places, names, spoken · **Used by:** assets, detect_all, redact
-- **Tests:** test_hard_cases, test_unload_scrub, profile_deep · via detect_all → test_overmasking, test_persona_defects, test_product; `bench/voice/`, `bench/eval_gar_cut.py`, `make_addr_real.py`
+- **Tests:** test_hard_cases, test_unload_scrub, profile_deep · test_class_g_leaks via detect_all → test_overmasking, test_persona_defects, test_product; `bench/voice/`, `bench/eval_gar_cut.py`, `make_addr_real.py`
 - **Docs:** `docs/gar-street-vocabulary.md`, `research/dd2-notes-B-ru-address.md`, `research/dd3-location-pii.md` · rules: INVARIANTS.md#address
 
 #### `pseudex/morph_places.py` — 1 937 lines · `live`
@@ -915,7 +915,7 @@ ADDR 4 > NAME 3 > DATE/PASSPORT/LOC 2); `ADDR` exists only to outrank a NAME
 inside a street name and is remapped to `LOC` after resolution.
 - **API:** `Detector`
 - **Uses:** _morph_compat, address, assets, context, credentials, detect, morph_names, names, normalize, profiling, quasi, ru_pii, spoken, structured · **Used by:** envelope, proxy, service
-- **Tests:** test_argument_form, test_collisions, test_coverage_152fz, test_credentials, test_hard_cases, test_names_morphology, test_overmasking, test_perf_masking, test_persona_defects, test_product, test_prose_fragments; every `eval_*.py`; every `bench/`
+- **Tests:** test_class_g_leaks, test_argument_form, test_collisions, test_coverage_152fz, test_credentials, test_hard_cases, test_names_morphology, test_overmasking, test_perf_masking, test_persona_defects, test_product, test_prose_fragments; every `eval_*.py`; every `bench/`
 - **Docs:** `docs/how-it-works.md`, `docs/spec.md`, `research/dd2-notes-D-architecture-eval.md` · rules: INVARIANTS.md#pipeline
 
 #### `pseudex/translit.py` — 350 lines · `live`
@@ -984,7 +984,7 @@ sender on both legs. Streaming detokenizer with one carry per
 `surviving_substitutes` for substitutes that failed to resolve.
 - **API:** `mask_text`, `is_own_substitute`, `vault_value`, `tokenize_span`, `unmask_text`, `unmask_stream_chunk`, `unmask_arguments`, `residual_tokens`, `surviving_substitutes`, `StreamDetokenizer`
 - **Uses:** address, agent_form, assets, detect, morph_names, morph_places, normalize, notation, profiling, spoken, translit, vault · **Used by:** envelope, notation, proxy, service
-- **Tests:** test_argument_form, test_collisions, test_derived_forms, test_digit_truncation, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_phone_hop_form, test_error_echo_privacy, test_product, test_prose_fragments, bench_masking, profile_latency; `bench/agentpii{2,3,4}`, `bench/agentrun/roundtrip.py`
+- **Tests:** test_class_g_leaks, test_argument_form, test_collisions, test_derived_forms, test_digit_truncation, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_phone_hop_form, test_error_echo_privacy, test_product, test_prose_fragments, bench_masking, profile_latency; `bench/agentpii{2,3,4}`, `bench/agentrun/roundtrip.py`
 - **Docs:** `docs/how-it-works.md`, `docs/known-issues.md` (§0, §1, Б8, Б11, Б12) · rules: INVARIANTS.md#swap, INVARIANTS.md#streaming
 
 #### `pseudex/vault.py` — 3 397 lines · `live`
@@ -1002,7 +1002,7 @@ never `canon[2:12]`), refuses two owners of one number, and
 without ever resolving it.
 - **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `name_key`, `fold_key`, `place_key`, `token_re`, `create_tables`, `create_indexes`, `Vault` (+ `VAULT_MIGRATIONS`)
 - **Uses:** assets, credentials, date_form, fuzzy, morph_names, morph_places, normalize, notation, profiling, ru_pii, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, notation, proxy, redact, service, schema (lazy)
-- **Tests:** vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_digit_truncation, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
+- **Tests:** test_class_g_leaks, vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_digit_truncation, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
 - **Docs:** `docs/tz-vault-encryption.md`, `docs/tz-name-gender-canonical.md`, `docs/how-it-works.md`, `research/2026-09-03-checksum-valid-substitutes.md` · rules: INVARIANTS.md#vault, INVARIANTS.md#collisions, INVARIANTS.md#conversation-scope
 
 #### `pseudex/envelope.py` — 326 lines · `live`
@@ -1043,7 +1043,7 @@ In-memory registry of the LEASED detection assets — gazetteers, street
 vocabulary, cue words, priority table, look-alike folds, key→type map, fake
 pools. Compiles every regex ONCE at load; raises `BundleNotLeased` when nothing
 is loaded — no bundle means NO detection, not less.
-- **API:** `BundleNotLeased`, `NameAssets`, `AddressAssets`, `SpokenAssets`, `QuasiAssets`, `ContextAssets`, `StructuredAssets`, `RuPiiAssets`, `TranslitAssets`, `FakeAssets`, `DetectionAssets`, `Assets`
+- **API:** `BundleNotLeased`, `NameAssets`, `AddressAssets`, `SpokenAssets`, `QuasiAssets`, `ContextAssets`, `StructuredAssets`, `RuPiiAssets`, `TranslitAssets`, `FakeAssets`, `CompositeType, DetectionAssets`, `Assets`
 - **Uses:** address, bundle, morph, morph_places, names, vault (lazy) · **Used by:** address, context, detect_all, license, morph_names, morph_places, names, normalize, proxy, quasi, redact, ru_pii, service, spoken, structured, translit, vault
 - **Tests:** test_canary, test_derived_forms, test_fingerprint, test_hard_cases, test_product, test_prose_fragments, test_tuning_lease_security, test_unload_scrub, test_watermark, testkit
 - **Docs:** `docs/tz-license-packaging.md`, `docs/tz-tuning-in-lease.md` · rules: INVARIANTS.md#lease
@@ -1331,6 +1331,7 @@ Run from `prototype/`; each loads the dev bundle itself.
 | `test_location_form_adversarial.py` | independent LOC attacks, including unresolved fragments and CAPS; a red suite is not an accepted fix |
 | `test_address_composition.py` | class Б: the street TYPE survives on both legs and in a schema field (incl. a dotted path), `street`/`street_type` are two leaves of ONE street, one real street is one fake street whatever the house and the litera keeps two houses apart, and a fragment of a substitute resolves WHOLE or is named in `residual_tokens` |
 | `test_digit_truncation.py` | class Д: a substitute's NUMBER survives its spelling — a run equal to the substitute's digits as a number (leading zeros dropped) resolves to the real value WHOLE and never to a positional slice of the canon, two owners of one number are a NAMED refusal, a named place (passport series/number, last four digits) still slices, and a run one digit from a substitute is reported in the residual without ever being resolved |
+| `test_class_g_leaks.py` | class Г (five vectors): a Latin name is judged WORD BY WORD whatever its position (`Kukushkin Valeriy`, `Fomin Vyacheslav`, a lone `Kukushkin`) and the substitute mirrors the source script and resolves back; a bare lowercase word is granted a span by its anchor (`адрес репина` → LOC, `от аленчиев`/`к аленчиеву` → NAME, `на бибиревская` → LOC) while the measured negatives stay untouched; a typed PARENT key closes its children (`passport.series`/`.number` masked as 4/6-digit parts of ONE document, `address` still whole, and the parts rejoin on the tool leg); a substitute may not carry a whole word that is another person's real value in the conversation, and pool exhaustion fails CLOSED; and a phone that passes the СНИЛС checksum wins by BOUNDARY (the «+» included) while an equal-boundary or dashed СНИЛС does not move |
 | `test_error_echo_privacy.py` | S01 privacy gate: archived truncated spoken-phone echo, seven unbound-result shapes, ordinary-number and cross-conversation controls; E01 case-retyped cut form remains open |
 | `test_date_association_dob.py` | a date personal ONLY by association (next to a СНИЛС/card/passport, no «рождения») is typed DOB, not DATE, so the vault mints a DOB fake and an unbound tool result echoing it is redacted instead of leaking; meeting and document dates stay real |
 | `test_prose_fragments.py` | a piece or a derivative of a substitute in the ANSWER to the customer |

@@ -2404,6 +2404,10 @@ class Vault:
         # разговор: без них кусок спрашивается только внутри разговора.
         # См. `with_written_digits`.
         self._written_digits: tuple[str, ...] = ()
+        # ОСНОВЫ СЛОВ НАСТОЯЩИХ ЗНАЧЕНИЙ РАЗГОВОРА (`_spent_real_words`), ведро
+        # по первым четырём буквам. Живут ровно столько, сколько верна таблица:
+        # сбрасываются вставкой строки NAME.
+        self._spent_words: dict[str, tuple[str, ...]] | None = None
         self._lock = threading.Lock()
         self._conn = sqlite_connect(db_path, VAULT_STORE)
         # Base tables, numbered steps, indexes over migrated columns — and the
@@ -2455,6 +2459,11 @@ class Vault:
             # person: «тагиев рустам;тагиев рустам». One draw in a hundred.
             if entity_type == "NAME" and len(set(token.split())) != len(token.split()):
                 continue
+            # …AND NO CANDIDATE CARRIES A WORD A REAL VALUE OF THE CONVERSATION
+            # HAS. Class Г, vector 4 — the rule lives in `_is_free_token`, which is
+            # the ONE guard every candidate passes (`_extends_known_person` goes
+            # through it too), so a direct question and the mint loop can never
+            # disagree about it.
             # THE NUMBERS OF A FRESH PLACE DRAW MUST NOT CONTAIN EACH OTHER, AND
             # NONE MAY BE A NUMBER OF THE REAL VALUE. «улица Барбарисовая 1,
             # корп. 11» for «мончегорсуая 195 корпус 1» came back from prose as
@@ -2509,9 +2518,96 @@ class Vault:
             f"the pool in _render_token"
         )
 
+    def _spent_real_words(self) -> dict[str, tuple[str, ...]]:
+        """ОСНОВЫ СЛОВ НАСТОЯЩИХ ЗНАЧЕНИЙ РАЗГОВОРА — то, что подмена не смеет нести.
+
+        Класс Г, вектор 4. `_shares_a_word` сравнивает кандидата только с ТЕМ,
+        ЧТО ОН ЗАМЕНЯЕТ, а `_is_free_token` сверяет ЦЕЛУЮ строку тремя точечными
+        запросами. Про ЧАСТИ настоящих значений разговора не спрашивал никто,
+        поэтому перечеканка эха выдала подмену с НАСТОЯЩЕЙ фамилией клиента:
+        `Отправитель — Лебедева Ч. Д.` при настоящем
+        `Лебедева Екатерина Петровна` провисело у модели восемь запросов
+        (g04 `long_order-027`).
+
+        ЧТО ИМЕННО СЧИТАЕТСЯ СВИДЕТЕЛЬСТВОМ. Решение владельца
+        (`DECISIONS-SPRINT.md` §Класс Г): «подмена не имеет права нести целое
+        слово = настоящее значение ДРУГОГО лица в том же разговоре». Значит
+        индекс — это НАСТОЯЩИЕ значения (ключ `canonical` и написанная форма
+        `original`), а не выданные подмены: две подмены, делящие слово, — это
+        неразличимость двух личностей, и её держит
+        `_shares_a_stem_in_conversation` (строго на первой половине попыток,
+        мягко на второй), а не эта проверка. Индекс растёт с числом ЛЮДЕЙ в
+        разговоре, а не с числом чеканок, — иначе длинный диалог с одним
+        клиентом упирался бы в пул и отвечал 5xx.
+
+        ОСНОВА, А НЕ НАПИСАНИЕ, и это не послабление, а то же правило: «Лебедев»
+        в подмене раскрывает «Лебедева» в настоящем так же полно, как она сама,
+        — фамилия одна, различает их только род. `_stem_of_word`/`_stems_related`
+        — те же помощники, которыми уже судится пара подмен. Ведра по первым
+        ЧЕТЫРЁМ буквам основы: если короткая основа — префикс длинной и обе не
+        короче четырёх, первые четыре буквы у них совпадают, поэтому проверка
+        остаётся точечной, а не O(слово × волт).
+
+        ПОЧЕМУ ЧИТАЕТСЯ ЦЕЛИКОМ, А НЕ ПО СЛОВУ НА ЗАПРОС. Цикл чеканки делает до
+        `_TOKEN_MINT_ATTEMPTS` попыток, и по запросу на слово это была бы сотня
+        обращений к базе на каждую новую фамилию. Читается один раз на разговор
+        (`self._spent_words`) и сбрасывается вставкой — см. `_tokenize_unrecorded`.
+        """
+        if self._spent_words is None:
+            if not self._conversation:
+                self._spent_words = {}
+            else:
+                # CALLED UNDER THE LOCK (`_unique_token`, `_is_free_token`), and
+                # NOT re-acquiring it: `threading.Lock` is not reentrant, and a
+                # nested `with self._lock` here deadlocked the mint loop on the
+                # first NAME (the whole test hung at 0% CPU).
+                rows = self._conn.execute(
+                    "SELECT canonical, original FROM tokens WHERE customer=? "
+                    "AND entity_type='NAME' AND minted_in=?",
+                    (self._customer, self._conversation),
+                ).fetchall()
+                buckets: dict[str, set[str]] = {}
+                for canonical, original in rows:
+                    for value in (canonical or "", original or ""):
+                        for word in value.split():
+                            if len(word) <= 1:
+                                continue
+                            stem = _stem_of_word(word.casefold().replace("ё", "е"))
+                            buckets.setdefault(stem[:4], set()).add(stem)
+                self._spent_words = {prefix: tuple(sorted(stems))
+                                     for prefix, stems in buckets.items()}
+        return self._spent_words
+
+    def _shares_a_spent_word(self, token: str,
+                             carry: frozenset[str] | None = None) -> bool:
+        """Несёт ли кандидат слово (или его основу) НАСТОЯЩЕГО значения разговора.
+
+        `carry` — слова ТОГО ЖЕ человека, чью подмену кандидат продолжает или
+        сокращает. Доращивание («Букин Сергей» -> «Букин Сергей Иванович») и
+        инициалы («Ващенко Т. С.») по построению несут слова уже выданной
+        подмены ЭТОГО человека: без исключения правило отбирало бы у человека
+        собственное имя и чеканило ему второе (test_product:
+        `test_fuller_mention_reuses_the_substitute`). Исключение узкое — оно
+        называет одну конкретную строку, выбранную логикой доращивания, а не
+        «слова этого разговора».
+        """
+        spent = self._spent_real_words()
+        if not spent:
+            return False
+        own = carry or frozenset()
+        for word in token.split():
+            if len(word) <= 1:
+                continue
+            folded = word.casefold()
+            if folded in own or folded.replace("ё", "е") in own:
+                continue
+            stem = _stem_of_word(folded.replace("ё", "е"))
+            if any(_stems_related(stem, other)
+                   for other in spent.get(stem[:4], ())):
+                return True
+        return False
+
     def _shares_a_stem_in_conversation(self, token: str) -> bool:
-        """Whether any word of the candidate shares its stem with a NAME token
-        already minted in this conversation. Called under the lock."""
         # `_stem_of_word` strips ONE ending, so «Сазонов» gives «сазон» and
         # «Сазонова» gives «сазонов»; the man's and the woman's form of one
         # surname are related by prefix, not by equality.
@@ -2548,10 +2644,34 @@ class Vault:
         return any(_street_stem(other) == stem for (other,) in rows)
 
     def _is_free_token(self, token: str, entity_type: str, original: str = "",
-                       canonical: str = "") -> bool:
+                       canonical: str = "",
+                       carry: frozenset[str] | None = None) -> bool:
         """The four guards every candidate substitute passes, whether drawn at
         random or composed from parts already minted. Called under the lock."""
         if entity_type == "NAME" and original and _shares_a_word(token, original):
+            return False
+        # …AND NO CANDIDATE CARRIES A WORD A REAL VALUE OF THE CONVERSATION HAS.
+        #
+        # CLASS Г, VECTOR 4, and the owner's decision (`DECISIONS-SPRINT.md`
+        # §Класс Г): a substitute has no right to carry a WHOLE WORD that is the
+        # REAL VALUE of ANOTHER person in the same conversation. This is where
+        # the guard belongs — the same one every candidate passes — because a
+        # direct question and the mint loop must never disagree.
+        #
+        # WHY THE WHOLE STRING WAS NOT ENOUGH. «Отправитель — Лебедева Ч. Д.»
+        # survived eight requests at the model while the real client was
+        # «Лебедева Екатерина Петровна» (g04 `long_order-027`): the three point
+        # queries below compare TOKEN and CANONICAL as strings, and a surname is
+        # neither of them.
+        #
+        # STRICT ON BOTH HALVES OF THE MINT LOOP, unlike the stem rule: the
+        # surname pool is 36, so a dialogue naming more distinct people than that
+        # exhausts and FAILS CLOSED (`_unique_token` raises, the gateway answers
+        # 5xx) rather than spelling out somebody else's surname. That is the
+        # price the owner chose; a shared STEM between two SUBSTITUTES is not a
+        # leak and keeps its soft second half (`_shares_a_stem_in_conversation`).
+        if (entity_type == "NAME" and self._conversation
+                and self._shares_a_spent_word(token, carry)):
             return False
         # THE SAME RULE FOR A STREET. «Луговая» is in the fake pool because it
         # is a common street, and a common street is what the customer lives
@@ -3008,6 +3128,10 @@ class Vault:
                 # processes — the conditions this race needs.
                 self._conn.rollback()
                 return self._existing_token(canonical)
+            # THE SPENT-WORD INDEX IS STALE THE MOMENT THE ROW LANDS, and the
+            # NEXT candidate in this same loop must see this person's words.
+            if entity_type == "NAME":
+                self._spent_words = None
             # Parts are indexed ONLY for multi-word names, and in one statement.
             # A single-word canonical has nothing a later mention could be a part
             # OF, so a row for it is pure write volume — and write volume is not
@@ -3585,6 +3709,35 @@ class Vault:
                 (self._customer, reading, *scope_args),
             ).fetchall()
         return {_pick_value(row[0], row[1], row[2], for_tool) for row in rows}
+
+    def composed_document_owner(self, digits: str, entity_type: str) -> str | None:
+        """Настоящее значение, чьи цифры РОВНО эти, — если владелец один.
+
+        ДОКУМЕНТ, РАЗЛОЖЕННЫЙ СХЕМОЙ ПО ПОЛЯМ, ВОССТАНАВЛИВАЕТСЯ ЦЕЛЫМ. Серия и
+        номер паспорта приезжают ЛИСТАМИ (`passport.series` / `.number`), а
+        подмена — одна строка: `detokenize` по листу не находит ничего, ровно
+        как у адреса, и лечится тем же — собрать части в целое и спросить про
+        ЦЕЛОЕ.
+
+        Спрашивается ЦИФРОВАЯ ПОДПИСЬ (`_digit_signatures`), а не написание:
+        группировка подмены на тождество не влияет, и «0012 345678» находит ту
+        же строку, что «0012345678». Кандидат обязан быть ОДИН, а разговор
+        сужает вопрос — как у `digit_fragment_owner` и по той же причине.
+        """
+        if len(digits) < 4:
+            return None
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT canonical, original, entity_type, minted_in FROM tokens "
+                "WHERE customer=? AND digits=? AND entity_type=?",
+                (self._customer, digits, entity_type),
+            ).fetchall()
+        if self._conversation:
+            rows = [row for row in rows if row[3] == self._conversation]
+        if len(rows) != 1:
+            return None
+        canonical, original, kind, _ = rows[0]
+        return _pick_value(kind, canonical or "", original or "", True)
 
     def digit_fragment_owner(self, fragment: str, entity_type: str | None = None,
                              position: str | None = None) -> tuple[str, str] | None:
@@ -4750,7 +4903,14 @@ class Vault:
             checkable = " ".join(w for w, kind in zip(built, shape) if kind != "init")
             if checkable and not morph_names.survives_round_trip(checkable, resolved):
                 continue
-            if not self._is_free_token(candidate, "NAME", value, canonical):
+            # THE WORDS OF THE SHORT SUBSTITUTE ARE THIS PERSON'S OWN, and the
+            # grown candidate is built FROM them: they are the one set the
+            # spent-word rule must let through.
+            if not self._is_free_token(
+                    candidate, "NAME", value, canonical,
+                    carry=frozenset(w.casefold()
+                                    for w in (short_canonical + " " + short_token).split()
+                                    if len(w) > 1)):
                 continue
             return candidate, short_token
         return None
@@ -4831,7 +4991,10 @@ class Vault:
         built = [token_surname if kind == "surn" else next(name_iter)[0] + "."
                  for _, kind in zip(real_parts, shape)]
         candidate = " ".join(built)
-        if not self._is_free_token(candidate, "NAME", value, canonical):
+        if not self._is_free_token(
+                candidate, "NAME", value, canonical,
+                carry=frozenset(w.casefold()
+                                for w in (other + " " + full_token).split() if len(w) > 1)):
             return None
         return candidate, full_token
 

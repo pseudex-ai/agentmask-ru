@@ -9,7 +9,7 @@ so the entire value is masked. Offsets are taken straight from the regex match
 import re
 
 from pseudex import morph_places
-from pseudex.assets import ASSETS, StructuredAssets
+from pseudex.assets import ASSETS, CompositeType, StructuredAssets
 from pseudex.detect import PartSpan, Span
 
 # A filename/extension or a path separator. No person's name contains either, so
@@ -129,31 +129,134 @@ def _by_object(text: str, matches: list[re.Match[str]]) -> dict[int, list[re.Mat
     return groups
 
 
-def _address_object_spans(text: str, matches: list[re.Match[str]],
-                          claimed: set[int]) -> list[Span]:
+def _object_spans(text: str, matches: list[re.Match[str]],
+                  claimed: set[int]) -> list[Span]:
+    """РОДИТЕЛЬСКИЙ КЛЮЧ ТИПИЗУЕТ ДЕТЕЙ — для ЛЮБОГО типизированного объекта.
+
+    Правило было написано ровно один раз и жёстко под LOC: роли
+    city/street/house/flat, причём street и house обязательны. Поэтому в одном и
+    том же payload объект `address` закрывался целиком, а
+    `{"passport": {"series": "4608", "number": "246256"}}` уходил открытым: 4 и
+    6 цифр без контрольной суммы не берёт ни один shape-рекогнайзер, а `_JSON_KV`
+    матчит только СТРОКОВЫЕ значения и родительский ключ не видит вовсе
+    (g09 `document-027…-048`: 24 утечки, `form:OUT/tool_arg PASSPORT 0/22`).
+
+    Здесь объектов два рода, и оба — «ключ типизирует детей»:
+      * `address` — композит по смыслу: city или flat без улицы и дома адресом
+        не являются, поэтому роли обязательные;
+      * любой тип из арендованной `COMPOSITE_TYPES` (PASSPORT) — композит по
+        КОНВЕНЦИИ документа: серия и номер названы `lengths`, и по ним подмена
+        раскладывается обратно по полям.
+
+    FAIL-CLOSED: если родитель типизирован, а часть не читается (нет обязательной
+    роли или значение без цифр), лист всё равно ЗАКРЫВАЕТСЯ — целой подменой
+    документа вместо части. Открытым он не остаётся никогда.
+    """
+    structured = ASSETS.get().structured
+    # The opening brace of each object, ONCE for the whole text: reading it back
+    # per object would rescan every brace in the payload for every group.
+    opening = {identifier: position for position, identifier in _brace_events(text)
+               if identifier}
+    out: list[Span] = []
+    for object_id, group in _by_object(text, matches).items():
+        parent = _object_key(text, opening.get(object_id))
+        entity_type = _key_type(parent, structured) if parent else None
+        composite = structured.composites.get(entity_type or "")
+        if composite is not None:
+            # A TYPED COMPOSITE: the parent key says which document this is, and
+            # the leased map says which roles it has and how long each is. A leaf
+            # that does not read as a part is NOT dropped — it falls through to
+            # the key-typed path below and is masked whole rather than left open.
+            leaves = _composite_leaves(group, composite)
+            if leaves:
+                whole = _composite_whole(
+                    composite, {role: value for role, (_, value) in leaves.items()})
+                for role, (match, value) in leaves.items():
+                    out.append(_part_span(match, entity_type or "", whole, role))
+                    claimed.add(match.start())
+                continue
+        # AN OBJECT WITH A STREET AND A HOUSE IS ONE ADDRESS, whatever else it
+        # holds and whatever the parent is called: the leaf NAMES are the
+        # evidence, and that is how this rule worked before the parent key was
+        # read at all. The parent can only ADD a type (`{"address": {…}}`);
+        # requiring one would have dropped every untyped record.
+        address = _address_object_leaves(group)
+        if address:
+            out += address
+            for match in group:
+                claimed.add(match.start())
+    return out
+
+
+def _object_key(text: str, opening: int | None) -> str:
+    """The KEY that opens the object whose brace stands at `opening`, or "".
+
+    The key sits before the brace as `"passport"  :  {`, and walking BACKWARDS
+    from it is the only way to see the key: `_JSON_KV` never matches an object
+    value, which is the whole reason the parent key was invisible.
+    """
+    if opening is None:
+        return ""
+    tail = text[max(0, opening - 120):opening]
+    found = re.search(r'"([^"\s][^"]*?)"\s*:\s*$', tail)
+    return found.group(1) if found else ""
+
+
+def _address_object_leaves(group: list[re.Match[str]]) -> list[Span]:
     """AN OBJECT WITH A STREET AND A HOUSE IS ONE ADDRESS, whatever else it
     holds. Each leaf becomes a part of ONE substitute (see `PartSpan`); the
     street and the house are required because a city or a flat alone is not
     an address, and a street without a house is a street."""
+    leaves: dict[str, re.Match[str]] = {}
+    for match in group:
+        role = morph_places.role_of_field(match.group(1))
+        if role in _ADDRESS_ROLES and match.group(2).strip() and role not in leaves:
+            leaves[role] = match
+    if "street" not in leaves or "house" not in leaves:
+        return []
+    whole = morph_places.address_from_fields(
+        {role: match.group(2).strip() for role, match in leaves.items()})
     spans: list[Span] = []
-    for group in _by_object(text, matches).values():
-        leaves: dict[str, re.Match[str]] = {}
-        for match in group:
-            role = morph_places.role_of_field(match.group(1))
-            if role in _ADDRESS_ROLES and match.group(2).strip() and role not in leaves:
-                leaves[role] = match
-        if "street" not in leaves or "house" not in leaves:
-            continue
-        whole = morph_places.address_from_fields(
-            {role: match.group(2).strip() for role, match in leaves.items()})
-        for role, match in leaves.items():
-            raw = match.group(2)
-            lead = len(raw) - len(raw.lstrip())
-            value = raw.strip()
-            start = match.start(2) + lead
-            spans.append(PartSpan(start, start + len(value), "LOC", value, whole, role))
-            claimed.add(match.start())
+    for role, match in leaves.items():
+        spans.append(_part_span(match, "LOC", whole, role))
     return spans
+
+
+def _composite_leaves(group: list[re.Match[str]],
+                      composite: CompositeType) -> dict[str, tuple[re.Match[str], str]]:
+    """The leaves of a typed object, by ROLE, or {} when it is not that object."""
+    leaves: dict[str, tuple[re.Match[str], str]] = {}
+    for match in group:
+        role = composite.roles.get(_KEY_CLEAN_RE.sub("", match.group(1).strip().lower()))
+        value = match.group(2).strip()
+        if role and value and role not in leaves:
+            leaves[role] = (match, value)
+    if any(role not in leaves for role in composite.required):
+        return {}
+    # A PART WHOSE VALUE CARRIES NO DIGIT IS NOT A PART OF A NUMBERED DOCUMENT.
+    # The key still typed it, so it is not dropped — `detect_structured_kv` will
+    # mask it as its own value below; here it would only misplace a substitute.
+    if any(not any(ch.isdigit() for ch in value) for _, value in leaves.values()):
+        return {}
+    return leaves
+
+
+def _composite_whole(composite: CompositeType, values: dict[str, str]) -> str:
+    """Одна строка документа из его частей — то, что волт ключует и чеканит.
+
+    ПОРЯДОК ЧАСТЕЙ — ТОЖДЕСТВО ДОКУМЕНТА, а не оформление: «4608 246256» и
+    «246256 4608» — разные строки, и склеенные в обратном порядке они дали бы
+    серию одного человека и номер другого. Порядок объявлен в арендуемой карте.
+    """
+    return " ".join(values[role] for role in composite.order if role in values)
+
+
+def _part_span(match: re.Match[str], entity_type: str, whole: str, role: str) -> Span:
+    raw = match.group(2)
+    lead = len(raw) - len(raw.lstrip())
+    value = raw.strip()
+    start = match.start(2) + lead
+    return PartSpan(start, start + len(value), entity_type, value, whole, role)
 
 
 def detect_structured_kv(text: str) -> list[Span]:
@@ -161,7 +264,7 @@ def detect_structured_kv(text: str) -> list[Span]:
     structured = ASSETS.get().structured
     json_matches = list(_JSON_KV.finditer(text))
     claimed: set[int] = set()
-    spans: list[Span] = _address_object_spans(text, json_matches, claimed)
+    spans: list[Span] = _object_spans(text, json_matches, claimed)
     for regex in (_JSON_KV, _FORM_KV):
         for match in regex.finditer(text):
             if regex is _JSON_KV and match.start() in claimed:

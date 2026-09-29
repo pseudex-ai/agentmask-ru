@@ -96,6 +96,20 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 - **Checksum-gated, and the checksums stay in the binary.** СНИЛС mod 101, ИНН
   weight vectors, Luhn, ОГРН — they are the algorithm, not the tuned data; cue
   words and priority are leased. Pins: `test_coverage_152fz`, `test_product`.
+- **A CHECKSUM COMPUTED ON A SUB-RUN DOES NOT DECIDE HOW LONG THE SUPER-SPAN
+  IS** (класс Г, вектор 5). `+79628863588` passes the СНИЛС mod-101 (about one
+  random eleven-digit number in a hundred) and `\b\d{11}\b` runs five
+  characters shorter than the span libphonenumber reads; SNILS (6) outranks
+  PHONE (5), and length is only a tiebreak, so the checksum of the SHORTER span
+  rewrote the BOUNDARY: the substitute stood on eleven digits, the «+» stayed a
+  literal, and the leaf received a СНИЛС notation instead of a phone
+  (g07 `rag-008`, `form OUT/tool_arg 0/1`). `_boundary_beats_checksum` drops a
+  checksum span that is a STRICT sub-run of one wider span of another type when
+  the BOUNDARY CHARACTER — the wider span's character just outside the sub-run —
+  is not a digit. The priority table is untouched, so at EQUAL boundaries a
+  valid СНИЛС/ИНН/card still outranks a bare phone, and a real eleven-digit
+  СНИЛС written `79628863588` does not move. Pins: `test_class_g_leaks.py`
+  (5a-5d), `test_coverage_152fz`, `test_hard_cases`.
 - **A passport needs a cue, and the window after it is sixteen characters.**
   «Паспортные данные: 4518123456» needed nine and the pattern allowed eight.
   UNPINNED.
@@ -120,6 +134,23 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   `{"a": "д. 12, кв. 5"}` was not found at all — 189 of 267 leaked LOC tails on
   AgentPII v3; coverage 70.0% → 80.4%. Pins: `test_product`.
 
+- **A PARENT KEY TYPES ITS CHILDREN — FOR ANY TYPED OBJECT, NOT ONLY FOR
+  `address`** (класс Г, вектор 3). The rule was written once, hard-wired to LOC
+  (roles city/street/house/flat with street+house required), so in ONE payload
+  the `address` object was closed whole while `{"passport": {"series": "4608",
+  "number": "246256"}}` went out open: four and six digits carry no checksum, no
+  shape recogniser claims them, and `_JSON_KV` matches only STRING values — the
+  parent key was invisible. 24 leaks in g09 `document-027…-048`, the only zero
+  cell of the form table (`PASSPORT 0/22`). `structured._object_key` reads the
+  key that opens the object backwards from its brace, `_key_type` types it, and
+  the LEASED map `COMPOSITE_TYPES` names the roles, their order (identity, not
+  formatting) and the digit length of each — so the substitute is split by the
+  same lengths on the way back and the tool receives the real series and the real
+  number of ONE person. The address half is unchanged and no longer needs a
+  typed parent: leaf NAMES are still the evidence. FAIL-CLOSED: an object whose
+  parent types it but whose parts do not read is masked by the key-typed path,
+  never left open. Pins: `test_class_g_leaks.py` (3a-3g), `test_product`,
+  `test_address_composition`.
 ## Dates
 
 - **A bare date is not personal data; it becomes personal by ASSOCIATION** —
@@ -233,6 +264,37 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   among them) to buy two fewer false masks on MASSIVE. Measure the price of any
   veto on MASSIVE before accepting it. UNPINNED — `bench/eval_massive_ru.py`.
 
+- **THE SCRIPT IS A PROPERTY OF THE INDEX, NOT A SEPARATE BRANCH** (класс Г,
+  вектор 1). Latin names were produced by ONE positional rule over
+  `_LATIN_PAIR_RE`, accepted only when a word of a 641-entry seed stood in the
+  first slot — while the surname itself sat in `dict_surnames` (196 800),
+  Cyrillic. The engine «knew» «Кукушкин» and did not know `Kukushkin`:
+  `Kukushkin Valeriy` masked only `Valeriy`, and the model read a hybrid
+  (`Kukushkin Родион`), concluded «другой человек» and stopped working (g06
+  `tracker-004`, 5 of 8 IN/tool hops with a Latin name leaked). `assets` now
+  derives `latin_first`/`latin_surnames` from the SAME dictionaries through the
+  leased translit table, and `names._latin_dictionary_hit` judges every Latin
+  word on its own — so word order stops being evidence, and `_merge_adjacent`
+  joins the words into one span. The gates are narrowed, not widened: a capital
+  or a naming cue, and a word inside an e-mail/URL/path/`snake_case` token is
+  never a person (`_plain_ascii_token`). Pins: `test_class_g_leaks.py` (1a-1d),
+  `test_overmasking`, `test_derived_forms`.
+- **A LATIN WORD IS NOT JUDGED BY THE RUSSIAN DICTIONARY** (класс Г, вектор 1,
+  следствие). `is_stretched_filler` asked pymorphy about the LATIN string, got
+  «unknown», and — because `anna` has two distinct letters — called it a filler;
+  the join that keeps fillers OUT of a name then deleted the given half before
+  any rule could judge the surname beside it. Unknown is not filler. Pins:
+  `test_class_g_leaks.py` (1a).
+- **A BARE LOWERCASE SURNAME MAY BE NAMED BY ITS ANCHOR, NOT ONLY BY A CAPITAL**
+  (класс Г, вектор 2). `_lowercase_dictionary_ok` refuses «репина» (an ordinary
+  NOUN reading), and a word in no dictionary at all («аленчиев») had no second
+  signal: only `_is_surname_shaped` and a predicate. `_anchored_surname` reads
+  the anchor the module already had — the leased prepositions that introduce a
+  PERSON (от/к/у/для …, `assets_source.NAME_ANCHOR_PREPS`) and the naming cues —
+  and accepts a case-ending-stripped surname shape that pymorphy does NOT know
+  as an ordinary word. So «от аленчиев» / «к аленчиеву» are people while «от
+  клиентов», «для сотрудников», «у поставщиков» (NOUN, genitive plural) stay
+  prose. Pins: `test_class_g_leaks.py` (2a), `test_overmasking`.
 ## Name morphology
 
 - **A name part with no dictionary NAME reading is not thereby indeclinable,
@@ -272,6 +334,24 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 
 ## Address
 
+- **THE ANCHOR MAY GRANT A SPAN, NOT ONLY FORBID ONE** (класс Г, вектор 2).
+  A lowercase word with no house number belonged to NO branch: the marked arms
+  want a type word, the marker-less ones want a capital or a digit, and
+  `markerless_lower` is held by the number. «адрес репина», «на бибиревская» —
+  the real street of the customer — went to the model and then into an e-mail
+  body (g08 `mailfind-000`, `mailfind-003`, `IN/tool leaked` twice each). The
+  anchor in front of the word already existed (`names._street_reference` reads
+  «на/по» + the ГАР register + no number) but could only TAKE a span away from
+  names. `street_nohouse_bare` + `street_nohouse_prep` (both leased) plus two
+  gates in the engine: the register (ГАР) AND a morphological reading of a NAME
+  OF A PLACE — a surname reading on top (репина, ленина, гагарина) or a feminine
+  nominative adjective (бибиревская, заречная, школьная). That rejects «правды»,
+  «труда», «строителей» (ordinary genitives in ГАР) and «на московский» («…вокзал»,
+  a masculine adjective agreeing with an omitted noun); a settlement reading
+  (Geox) is NOT accepted, because ГАР also holds city names and a bare toponym
+  is not a street. The intent anchor is the EXACT one — `_intent_before`'s fuzzy
+  half answers «yes» to «поставь будильник». Pins: `test_class_g_leaks.py`
+  (2a-2b), `test_overmasking` (99.5%, identical false positives), `test_product`.
 - **An address span drops its leading CUE words.** «адрес ленинский проспект
   55» sent «адрес» to the tool inside the street name, «мой адрес …» sent two.
   Trimmed with `addr_ctx` for the cue vocabulary and the `Apro` grammeme for
@@ -745,6 +825,26 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   assistant messages carry REAL values; «assistant means echo, do not mask» would
   hand the model every value it ever mentioned. Demonstrated, not argued. Pins:
   `test_perf_masking`, `test_product`.
+
+- **A SUBSTITUTE MAY NOT CARRY A WHOLE WORD THAT IS ANOTHER PERSON'S REAL
+  VALUE IN THE SAME CONVERSATION** (класс Г, вектор 4; решение владельца,
+  [DECISIONS-SPRINT.md](../research/hop-format-audit/DECISIONS-SPRINT.md) §Класс Г). `_shares_a_word` compares a candidate with
+  only the value it replaces, and `_is_free_token`'s three point queries compare
+  WHOLE strings — so when the transcript was re-detected and the engine re-minted
+  its own echo, the draw produced a substitute carrying the customer's real
+  surname: `Отправитель — Лебедева Ч. Д.` stood in front of the model for eight
+  more requests while the real client was `Лебедева Екатерина Петровна` (g04
+  `long_order-027`; g12 `fanout_pick-020` shares «валерий»). `_spent_name_words`
+  indexes the conversation's real canonicals AND its issued substitutes as whole
+  words, and `_is_free_token` refuses any candidate that repeats one of them.
+  STRICT on both halves of the mint loop: when a dialogue names more distinct
+  people than the surname pool (36), the mint FAILS CLOSED — a 5xx, never a
+  substitute that spells out a real surname — and the pool is named in the
+  error. A shared STEM is not a leak and keeps its soft second half
+  (`_shares_a_stem_in_conversation`). The same person's OWN words are exempt
+  (`carry`), or growth («Букин Сергей» → «Букин Сергей Иванович») and initials
+  would mint a second identity. Pins: `test_class_g_leaks.py` (4a-4e),
+  `test_product`, `test_collisions`.
 
 ## Conversation scope
 
