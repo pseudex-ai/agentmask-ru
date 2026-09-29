@@ -1093,6 +1093,20 @@ ORG_CUE: tuple[str, ...] = (
     "компания", "компании", "фирма", "фирмы", "организация", "организации",
     "поставщик", "поставщика", "магазин", "магазина", "бренд", "бренда",
 )
+# A ROLE WORD THAT INTRODUCES STAFF, NOT THE SUBJECT. A date beside a name the
+# text frames as a doctor / specialist / position holder is a meeting or slot
+# date, not that person's date of birth: `context._date_is_personal` must not
+# read the DOCTOR's name in a clinic-slot result as evidence the date belongs to
+# the patient. The subject is named by nothing or by a subject word («пациент»,
+# «клиент»); the role word is what demotes the name. Kept as tuning rather than a
+# published abbreviation list because the set is authored from a measured false
+# positive (a live clinic run), like `ORG_CUE`.
+PERSONNEL_CUE: tuple[str, ...] = (
+    "врач", "врача", "врачу", "доктор", "доктора", "специалист", "специалиста",
+    "должность", "сотрудник", "сотрудника", "администратор", "администратора",
+    "медсестра", "медсестры", "медбрат", "медбрата", "лечащий", "лечащего",
+    "doctor", "physician", "specialist", "speciality", "specialty", "nurse",
+)
 
 # --- transliteration machinery (align/render/fold) ------------------------
 # TUNING-DATA mined from 1 812 aligned control-arm words (counts in the inline

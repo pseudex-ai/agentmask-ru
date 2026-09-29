@@ -1147,13 +1147,22 @@ def _is_bare_settlement_echo(fragment: str, value: _InjectedValue) -> bool:
     because `split_roles` returns the city as written and the dialogue may have
     recorded the address in an oblique case («сортавале…»), which a raw
     comparison of surfaces would miss.
+
+    The echo span keeps the address's own punctuation — «Калуга, » is the prefix
+    of a recorded «Калуга, ул Сосновая 5» that stops where the street word
+    changes, and the comma rides along. `_settlement_of` strips `, .` from the
+    settlement before comparing (`vault._settlement_of`), so this fragment must
+    be brought to the same normalization or the settlement reads as a cut and is
+    redacted. Only the trailing `, .` is stripped — a fragment of the settlement
+    itself («нижний» of «нижний новгород») still fails the equality and stays
+    redacted.
     """
     if value.entity_type != "LOC":
         return False
     settlement = _settlement_of(value.real)
     if not settlement:
         return False
-    return morph_places.phrase_to_nominative(fragment).strip().casefold() \
+    return morph_places.phrase_to_nominative(fragment).strip(" ,.").casefold() \
         == settlement.casefold()
 
 
@@ -1175,6 +1184,15 @@ def _replace_echoes(text: str,
     with a substitute, and a span the bound leg already claimed is left to it, so
     the specific identity always wins over the conservative answer. Neither leg
     writes inside a rendering this dialogue already showed (`renderings`).
+
+    `DATE` is EXCLUDED from the neutral leg. A bare numeric date is not personal
+    data on its own — a meeting, invoice or delivery date — and the detection
+    scorer keeps it real (`context._date_is_personal` suppresses it unless a
+    birth cue or a subject identifier is beside it). Redacting its echo here made
+    production diverge from the scorer on a live clinic-slot run: the date of an
+    appointment next to the DOCTOR's name was cut to `REDACTED…`. A date of birth
+    is not affected: with an explicit birth cue the engine types it `DOB`, never
+    `DATE`, and `DOB` still redacts here.
     """
     blocked = _substitute_ranges(text, renderings)
 
@@ -1191,6 +1209,7 @@ def _replace_echoes(text: str,
                    for value, digits in recorded
                    for start, end in _typed_echo_spans(text, value, digits)
                    if _free(start, end)
+                   and value.entity_type != "DATE"
                    and not _is_bare_settlement_echo(text[start:end], value)]
         for span in _choose_spans(neutral):
             if not any(span[0] < claim[1] and claim[0] < span[1] for claim in chosen):

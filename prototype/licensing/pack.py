@@ -274,6 +274,7 @@ def _tuning_payload() -> dict[str, object]:
             "place_ref": list(assets_source.PLACE_REF),
             "version_ctx": list(assets_source.VERSION_CTX),
             "org_cue": list(assets_source.ORG_CUE),
+            "personnel_cue": list(assets_source.PERSONNEL_CUE),
         },
         # A LIST of pairs, not a dict. `_key_type` falls back to matching the
         # normalized key against each stem in turn, so the ORDER decides which

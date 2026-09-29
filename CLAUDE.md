@@ -1298,6 +1298,7 @@ Run from `prototype/`; each loads the dev bundle itself.
 | `test_location_hop_form.py` | structured address leaves recomposed into one mention, prose/tool form parity and independent owners |
 | `test_location_form_adversarial.py` | independent LOC attacks, including unresolved fragments and CAPS; a red suite is not an accepted fix |
 | `test_error_echo_privacy.py` | S01 privacy gate: archived truncated spoken-phone echo, seven unbound-result shapes, ordinary-number and cross-conversation controls; E01 case-retyped cut form remains open |
+| `test_date_association_dob.py` | a date personal ONLY by association (next to a СНИЛС/card/passport, no «рождения») is typed DOB, not DATE, so the vault mints a DOB fake and an unbound tool result echoing it is redacted instead of leaking; meeting and document dates stay real |
 | `test_prose_fragments.py` | a piece or a derivative of a substitute in the ANSWER to the customer |
 | `test_names_morphology.py` | gender, case and self-agreement of names; the round-trip guard |
 | `test_hard_cases.py` | 967 lines of the awkward, the rare and the deliberately hostile — addresses, names, dates, KV |

@@ -186,6 +186,7 @@ class ContextAssets:
     place_ref: tuple[str, ...]
     version_ctx: tuple[str, ...]
     org_cue: frozenset[str]
+    personnel_cue: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -426,6 +427,7 @@ def _build(payload: dict[str, object]) -> DetectionAssets:
             place_ref=tuple(payload["context"]["place_ref"]),
             version_ctx=tuple(payload["context"]["version_ctx"]),
             org_cue=frozenset(payload["context"]["org_cue"]),
+            personnel_cue=tuple(payload["context"].get("personnel_cue", ())),
         ),
         structured=StructuredAssets(key_type=key_type, key_stems=key_stems),
         ru_pii=_build_ru_pii(payload["ru_pii"]),

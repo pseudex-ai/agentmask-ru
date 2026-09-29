@@ -196,6 +196,38 @@ def _passport_cue_in(window: str, triggers: tuple[str, ...]) -> bool:
     return False
 
 
+_PERSONNEL_HEAD: int = 40
+# Words that introduce the SUBJECT — the person the record is about — not staff.
+# A subject word anywhere in the window before a name beats a role word further
+# back: «врач принял пациента Иванова» — Иванова is the subject even though
+# «врач» sits earlier in the same sentence. Published subject words, kept in the
+# engine like `quasi._PERSON_BEFORE_DATE_RE`, not leased tuning.
+_SUBJECT_CUE = re.compile(
+    r"(?<![а-яёa-z0-9])(?:пациент\w*|клиент\w*|ребён\w*|ребен\w*|"
+    r"получател\w*|заказчик\w*|посетител\w*)(?![а-яёa-z0-9])",
+    re.IGNORECASE)
+
+
+def _name_is_personnel(text: str, span: Span) -> bool:
+    """Whether a NAME is framed as STAFF (врач/специалист/должность), not the subject.
+
+    A role word introducing the name — prose «врач Лапина Вера», or a JSON key
+    `"doctor": {"name": "Лапина Вера"}` a few characters back — demotes it: the
+    person is the one PROVIDING the service, so a date beside them is a meeting
+    or slot date, not their date of birth. Only a role word in the SHORT window
+    before the name counts, matched on whole words («врач» does not match
+    «врачебный»). A subject word in the same window wins over the role word, so a
+    patient named after a doctor is not demoted («врач принял пациента Иванова»).
+    """
+    head = text[max(0, span.start - _PERSONNEL_HEAD): span.start].lower()
+    if _SUBJECT_CUE.search(head):
+        return False
+    for cue in ASSETS.get().context.personnel_cue:
+        if re.search(r"(?<![а-яёa-z0-9])" + re.escape(cue) + r"(?![а-яёa-z0-9])", head):
+            return True
+    return False
+
+
 def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
     """Whether a bare numeric date is a quasi-identifier or just a date.
 
@@ -246,10 +278,21 @@ def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
     # дата 21.01.1979» names nobody, yet the date is plainly that person's date
     # of birth. Gating on NAME alone dropped date recall to 48% on exactly those.
     # A document date has no identifier beside it — that is what separates them.
-    return any(other.entity_type in _IDENTIFIES_A_PERSON
-               and other.start < span.end + 80
-               and other.end > span.start - 80
-               for other in spans)
+    #
+    # A NAME is not evidence when it is STAFF: the doctor in a clinic-slot result
+    # sits within 80 characters of every slot's datetime, and reading the doctor's
+    # name as the subject made a meeting date read as a birth date — the slot got
+    # a fake date and the model booked March instead of September (live run).
+    # The subject is named by nothing or by a subject word; a role word demotes.
+    for other in spans:
+        if other.entity_type not in _IDENTIFIES_A_PERSON:
+            continue
+        if not (other.start < span.end + 80 and other.end > span.start - 80):
+            continue
+        if other.entity_type == "NAME" and _name_is_personnel(text, other):
+            continue
+        return True
+    return False
 
 
 _SENTENCE_SPLIT = re.compile(r"[.!?\n]")
@@ -299,8 +342,25 @@ def suppress(text: str, spans: list[Span]) -> list[Span]:
     for span in spans:
         if span.entity_type == "IP" and _is_version_string(text, span.start, context):
             continue
-        if span.entity_type == "DATE" and not _date_is_personal(text, span, spans):
-            continue
+        if span.entity_type == "DATE":
+            # A DATE THE DENY LAYER KEEPS IS PERSONAL, AND PERSONAL MEANS DOB.
+            # `_date_is_personal` answers «is this date a person's date or a
+            # document date» — by a birth cue or by association with a subject
+            # identifier — and it is the ONE signal, not a new heuristic. A
+            # personal date kept as `DATE` leaked through the envelope's neutral
+            # echo leg, which excludes `DATE` on purpose (a meeting/invoice date
+            # must stay real): «Реквизиты: СНИЛС …, карта …, дата 21.01.1979»
+            # typed the date `DATE`, so an unbound tool result echoing it reached
+            # the model in the clear. Retyping the kept span to `DOB` makes the
+            # vault mint a DOB fake and the echo leg redact its echo, while the
+            # meeting date — which `_date_is_personal` rejects — still falls into
+            # the `continue` below and stays real. `quasi` already emits `DOB`
+            # for the birth-cue case; a duplicate DOB of the same span is dropped
+            # by overlap resolution, so no new evidence path is opened.
+            if _date_is_personal(text, span, spans):
+                span = Span(span.start, span.end, "DOB", span.value)
+            else:
+                continue
         if span.entity_type == "PASSPORT" and not _passport_is_evidenced(text, span, context):
             continue
         if span.entity_type == "PHONE":
