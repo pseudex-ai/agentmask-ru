@@ -144,6 +144,19 @@ def deepseek_max_output_tokens(connector_max_tokens: int) -> int:
     return min(connector_max_tokens, DEEPSEEK_MAX_OUTPUT_TOKENS)
 
 
+def scaled_timeout(case: Case, scale: float) -> float:
+    """v4's per-case timeout, scaled by `--timeout-scale`.
+
+    v5 calls `v4_harness._timeout(case)` in THREE places — `converse(...,
+    timeout_s=...)`, `asyncio.wait_for(drive(), timeout=...)` and the `timeout`
+    arm's reason — and the three must multiply by the SAME scale, or a run's
+    record and its actual deadline disagree about how long the model had. v4's
+    own `_timeout` stays untouched: it is the baseline the treatment arm is
+    measured against, and the control arms still run under it.
+    """
+    return v4_harness._timeout(case) * scale
+
+
 @dataclass
 class TripleResult:
     """Everything one triple produced, before anything is written.
@@ -676,14 +689,24 @@ class ArmConnector(Protocol):
 class ClaudeArms:
     """Keep the existing Claude execution path available through the same interface."""
 
+    def __init__(self, timeout_scale: float = 1.0) -> None:
+        # `--timeout-scale`, carried here because the per-case timeout is a
+        # property of how ONE arm executes, not of the retry driver. The same
+        # value rides in `DrivePolicy.timeout_scale` (the run-level record) and
+        # in `meta.provider`; both arms and the policy are built from the one
+        # CLI flag in `main`, so they cannot drift.
+        self.timeout_scale = timeout_scale
+
     async def control(self, case: CaseV5, arm: str, repeat: int, backend: BackendV5,
                       model: str, cap: float, run_id: str) -> v4_harness.ArmOutcome:
-        return await _guarded_control(case, arm, repeat, backend, model, cap, run_id)
+        return await _guarded_control(case, arm, repeat, backend, model, cap, run_id,
+                                      self.timeout_scale)
 
     async def intervention(self, case: CaseV5, repeat: int, gateway: GatewayV5,
                            backend: BackendV5, model: str, cap: float,
                            run_id: str) -> ArmOutcomeV5:
-        return await _guarded_arm_v5(case, repeat, gateway, backend, model, cap, run_id)
+        return await _guarded_arm_v5(case, repeat, gateway, backend, model, cap, run_id,
+                                     self.timeout_scale)
 
 
 class GatewayHooks:
@@ -797,9 +820,14 @@ def connector_tools(schemas: list[dict[str, object]]) -> tuple[ToolSpec, ...]:
 class ConnectedArms:
     """Run all three arms through one injected model connector."""
 
-    def __init__(self, connector: AgentConnector, max_calls: int = DEFAULT_MAX_CALLS) -> None:
+    def __init__(self, connector: AgentConnector, max_calls: int = DEFAULT_MAX_CALLS,
+                 timeout_scale: float = 1.0) -> None:
         self.connector = connector
         self.max_calls = max_calls
+        # `--timeout-scale`: same comment as `ClaudeArms` — the per-case timeout
+        # is an arm-execution property, so the connector carries the scale it
+        # hands to `converse(... timeout_s=...)`.
+        self.timeout_scale = timeout_scale
 
     async def _run(self, case: CaseV5, arm: str, repeat: int,
                    gateway: GatewayV5 | PassThrough, backend: BackendV5,
@@ -810,7 +838,7 @@ class ConnectedArms:
         indices = tuple(i for i, message in enumerate(case.base.messages)
                         if message.role == 'user')
         result = await self.connector.converse(system, tools, indices, hooks,
-                                               v4_harness._timeout(case.base),
+                                               scaled_timeout(case.base, self.timeout_scale),
                                                self.max_calls)
         if gateway.faults:
             raise HarnessError(f'{case.base.id}/{arm}: {gateway.faults[0]}')
@@ -860,7 +888,7 @@ class ConnectedArms:
             return v4_harness._failed_arm(case.base, arm, repeat, 'timeout',
                                          type(error).__name__ + ': ' + str(error), cap, cap, run_id)
         except (HarnessError, OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
-            return arm_verdict(case.base, arm, repeat, error, cap, run_id)
+            return arm_verdict(case.base, arm, repeat, error, cap, run_id, self.timeout_scale)
 
     async def intervention(self, case: CaseV5, repeat: int, gateway: GatewayV5,
                            backend: BackendV5, model: str, cap: float,
@@ -877,12 +905,13 @@ class ConnectedArms:
                                            type(error).__name__ + ': ' + str(error), cap, cap, run_id)
             return ArmOutcomeV5(outcome, _empty_run(case, repeat))
         except (HarnessError, OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
-            return ArmOutcomeV5(arm_verdict(case.base, 'I', repeat, error, cap, run_id),
+            return ArmOutcomeV5(arm_verdict(case.base, 'I', repeat, error, cap, run_id, self.timeout_scale),
                                 _empty_run(case, repeat))
 
 
 async def run_arm_v5(case: CaseV5, arm: str, repeat: int, gateway: GatewayV5,
-                     backend: BackendV5, model: str, cap: float, run_id: str) -> ArmOutcomeV5:
+                     backend: BackendV5, model: str, cap: float, run_id: str,
+                     timeout_scale: float = 1.0) -> ArmOutcomeV5:
     """The GATEWAY arm of one case against the real model.
 
     Only the gateway arm: a control has no substitutes to observe, so it runs
@@ -940,7 +969,7 @@ async def run_arm_v5(case: CaseV5, arm: str, repeat: int, gateway: GatewayV5,
                 if joined:
                     gateway.note(joined)
 
-    await asyncio.wait_for(drive(), timeout=v4_harness._timeout(case.base))
+    await asyncio.wait_for(drive(), timeout=scaled_timeout(case.base, timeout_scale))
     if gateway.faults:
         raise HarnessError(f"{case.base.id}/{arm}: {gateway.faults[0]}")
     if result is None:
@@ -1014,7 +1043,7 @@ def transient_blip(error: BaseException) -> bool:
 
 
 def arm_verdict(case: Case, arm: str, repeat: int, broken: BaseException, cap: float,
-                run_id: str) -> v4_harness.ArmOutcome:
+                run_id: str, timeout_scale: float = 1.0) -> v4_harness.ArmOutcome:
     """Вердикт v4 по исключению ОДНОГО плеча — одно место на все три.
 
     ОБРЫВ ПРОВАЙДЕРА ОТСЮДА УЛЕТАЕТ НАВЕРХ, и это вся починка §1.4: защита
@@ -1037,7 +1066,7 @@ def arm_verdict(case: Case, arm: str, repeat: int, broken: BaseException, cap: f
         raise broken
     if isinstance(broken, asyncio.TimeoutError):
         return v4_harness._failed_arm(case, arm, repeat, "timeout",
-                                      f"таймаут {v4_harness._timeout(case):.0f}s",
+                                      f"таймаут {scaled_timeout(case, timeout_scale):.0f}s",
                                       cap, cap, run_id)
     if isinstance(broken, HarnessError):
         return v4_harness._failed_arm(case, arm, repeat, "harness_error",
@@ -1052,7 +1081,8 @@ def arm_verdict(case: Case, arm: str, repeat: int, broken: BaseException, cap: f
 
 
 async def _guarded_arm_v5(case: CaseV5, repeat: int, gateway: GatewayV5, backend: BackendV5,
-                          model: str, cap: float, run_id: str) -> ArmOutcomeV5:
+                          model: str, cap: float, run_id: str,
+                          timeout_scale: float = 1.0) -> ArmOutcomeV5:
     """Never raises for one arm — EXCEPT on a provider blip, which §1.4's retry
     owns and which `arm_verdict` sends back up.
 
@@ -1060,14 +1090,16 @@ async def _guarded_arm_v5(case: CaseV5, repeat: int, gateway: GatewayV5, backend
     ledger that books it at zero lets the next case spend money already gone).
     """
     try:
-        return await run_arm_v5(case, "I", repeat, gateway, backend, model, cap, run_id)
+        return await run_arm_v5(case, "I", repeat, gateway, backend, model, cap, run_id,
+                                timeout_scale)
     except Exception as broken:      # noqa: BLE001 — `arm_verdict` re-raises what is not ours
-        failed = arm_verdict(case.base, "I", repeat, broken, cap, run_id)
+        failed = arm_verdict(case.base, "I", repeat, broken, cap, run_id, timeout_scale)
     return ArmOutcomeV5(failed, _empty_run(case, repeat))
 
 
 async def _guarded_control(case: CaseV5, arm: str, repeat: int, backend: BackendV5,
-                           model: str, cap: float, run_id: str) -> v4_harness.ArmOutcome:
+                           model: str, cap: float, run_id: str,
+                           timeout_scale: float = 1.0) -> v4_harness.ArmOutcome:
     """Плечо контроля — v4's `run_arm` под НАШИМ стражем.
 
     v4's `_guarded_arm` делает то же самое, но обрыв провайдера у него никуда
@@ -1075,12 +1107,16 @@ async def _guarded_control(case: CaseV5, arm: str, repeat: int, backend: Backend
     что зовём v4's `run_arm` (его опции, его таймаут, его запись) и отдаём
     исключение общему `arm_verdict`: контрольные плечи ходят в ту же модель и
     моргает провайдер на них ровно так же, как на плече шлюза.
+
+    `timeout_scale` сюда НЕ доезжает до v4's `run_arm` (тот сам зовёт v4's
+    `_timeout` — базлайн не двигается); он нужен только `arm_verdict`, чтобы
+    сообщение «таймаут …s» в записи назвало тот же дедлайн, что и плечо I.
     """
     try:
         return await v4_harness.run_arm(case.base, arm, repeat, PassThrough(case.base),
                                         backend, model, cap, run_id)
     except Exception as broken:      # noqa: BLE001 — `arm_verdict` re-raises what is not ours
-        return arm_verdict(case.base, arm, repeat, broken, cap, run_id)
+        return arm_verdict(case.base, arm, repeat, broken, cap, run_id, timeout_scale)
 
 
 def _empty_run(case: CaseV5, repeat: int) -> ArmRunV5:
@@ -1434,6 +1470,12 @@ class DrivePolicy:
     `expected_per_case_usd` — точка оценки §1.1, делённая на тройки; ноль
     означает «оценки не было», и тогда стоп-кран не вооружён (см.
     `runinfo.brake_verdict`), а не срабатывает наугад.
+
+    `timeout_scale` — множитель per-case таймаута (`--timeout-scale`). Это
+    свойство ИСПОЛНЕНИЯ плеча, а не повтора, поэтому до мест исполнения его
+    несёт коннектор (`ClaudeArms`/`ConnectedArms`); здесь поле живёт как
+    запись настройки прогона рядом с остальными ручками драйвера, и в
+    `main` оно берётся из того же флага, что и коннектор.
     """
 
     attempts: int
@@ -1441,6 +1483,7 @@ class DrivePolicy:
     pause: Callable[[float], Awaitable[None]]
     jitter: Callable[[], float]
     expected_per_case_usd: float
+    timeout_scale: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -2150,6 +2193,10 @@ def main() -> int:
     parser.add_argument("--retry-delay", type=float, default=runinfo.RETRY_BASE_S,
                         help="первый отступ между попытками в секундах (растёт "
                              "экспоненциально до потолка)")
+    parser.add_argument("--timeout-scale", type=float, default=1.0,
+                        help="множитель per-case таймаута: (120 + 30 * ходов) * scale, "
+                             "scale > 0. Для длинных цепочек, которым не хватает "
+                             "дефолтных секунд на глубокое рассуждение")
     parser.add_argument("--no-price-brake", action="store_true",
                         help="не вооружать стоп-кран по цене: точечный перепрогон "
                              "дорогих кейсов, чья оценка взята от дешёвой пары и врёт")
@@ -2179,6 +2226,8 @@ def main() -> int:
         parser.error('--retries must be >= 0')
     if args.retry_delay < 0:
         parser.error('--retry-delay must be >= 0')
+    if args.timeout_scale <= 0:
+        parser.error('--timeout-scale must be > 0')
     if args.resume and (args.agent_connector == 'deepseek' or args.judge_connector == 'codex'):
         parser.error('new connector resume is not yet validated; use a fresh output directory')
 
@@ -2439,14 +2488,14 @@ def main() -> int:
     config = None if args.no_judge else JudgeConfig(
         model=args.judge_model, ledger=ledger, query_cap_usd=QUERY_CAP_USD, retries=RETRIES,
         trace_path=out / f"{run_id}.judge.trace.jsonl", temperature=JUDGE_TEMPERATURE)
-    arms: ArmConnector = ClaudeArms()
+    arms: ArmConnector = ClaudeArms(args.timeout_scale)
     if args.agent_connector == 'deepseek':
         arms = ConnectedArms(DeepSeekConnector(DeepSeekSettings(
             args.model, args.agent_effort, args.connector_max_tokens,
             args.agent_turn_limit, deepseek_max_output_tokens(args.connector_max_tokens),
             out / f'{run_id}.agent.usage.jsonl',
             os.environ.get('AGENTPII5_DEEPSEEK_BASE_URL', 'https://api.deepseek.com'))),
-            args.max_calls)
+            args.max_calls, args.timeout_scale)
     if config is not None and args.judge_connector == 'codex':
         config = ConnectedJudgeConfig(
             model=args.judge_model, ledger=ledger, query_cap_usd=QUERY_CAP_USD,
@@ -2482,6 +2531,9 @@ def main() -> int:
             'judge_effort': args.judge_effort, 'max_tokens': args.connector_max_tokens,
             'agent_turn_limit': args.agent_turn_limit, 'judge_request_limit': args.judge_request_limit,
             'max_calls': args.max_calls,
+            # The multiplier that decided the per-case deadline (the excluded
+            # `timeout` arms are reproduced only if this number is known).
+            'timeout_scale': args.timeout_scale,
             'agent_cost_basis': ('deepseek_peak_estimate_2026-09-26' if args.agent_connector == 'deepseek'
                                  else 'claude_sdk_reported_usd'),
             'judge_cost_basis': ('chatgpt_subscription_quota_not_api_usd' if args.judge_connector == 'codex'
@@ -2511,7 +2563,7 @@ def main() -> int:
               flush=True)
     policy = DrivePolicy(attempts=max(1, args.retries), base_s=args.retry_delay,
                          pause=asyncio.sleep, jitter=random.random,
-                         expected_per_case_usd=expected)
+                         expected_per_case_usd=expected, timeout_scale=args.timeout_scale)
     started = time.time()
     # §1.2: ОДНА ЗАЩИЩЁННАЯ ОБЛАСТЬ НА ВСЁ, ЧТО ИДЁТ ПОСЛЕ ПЕРВОГО ДОЛЛАРА, а не
     # на один `asyncio.run`. Раньше обработчик накрывал только сам прогон, и
