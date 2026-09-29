@@ -192,7 +192,7 @@ GROUP_C: Tuple[TypeSpec, ...] = (
         grammar="строка до 12 символов; примеры эмитента — 12 цифр на «9000…».",
         length="строка ≤12 (xs:string, «Макс.длинна: 12», СФР «Спецификация ЭЛН МО v2.3»)", grammar_status="ГОТОВ",
         cues=("ЭЛН", "больничный", "листок нетрудоспособности", "номер больничного", "электронный больничный"),
-        field_keys=("lnCode", "LN_CODE", "prevLnCode", "nextLnCode", "eln", "eln_number", "sick_leave_number"),
+        field_keys=("lnCode", "LN_CODE", "prevLnCode", "nextLnCode", "eln", "eln_number", "sick_leave_number", "ln_code"),
         industries=("medicine", "hr"), pd_context="",
         form_features=("grouping", "separators", "digit_count"),
         feature_labels=(
@@ -356,7 +356,7 @@ GROUP_C: Tuple[TypeSpec, ...] = (
         grammar="цифры печатного пропуска или RFID UID в hex (8 или 14 hex).",
         length="", grammar_status="ГОТОВ",
         cues=("пропуск", "номер пропуска", "карта доступа", "бейдж"),
-        field_keys=("pass_number", "access_card_id", "badge_id", "card_uid"),
+        field_keys=("pass_number", "access_card_id", "badge_id", "card_uid", "card_number"),
         industries=("hr", "internal_bi", "hospitality", "real_estate"), pd_context="",
         form_features=("separators", "case_class", "padding"),
         feature_labels=(

@@ -201,6 +201,24 @@ def _v5_contract_checksum(digits: str) -> bool:
             or _luhn_ok(digits))
 
 
+def _v5_length_checksum(digits: str) -> bool:
+    """The LENGTH-SPECIFIC v5 contract checksum (K6-21 exactly): a digit run of
+    length 11/12/13/15/16 must be invalid for the [C]-type of that length —
+    СНИЛС mod 101, ИНН weights, ОГРН mod 11 / ОГРНИП mod 13, CARD Luhn. The
+    all-checksums `_v5_contract_checksum` is NOT used here: it would loop forever
+    on a 15-digit IMEI (whose OWN Luhn is always valid)."""
+    n = len(digits)
+    if n == 11:
+        return _snils_ok(digits)
+    if n == 12:
+        return _inn_ok(digits)
+    if n in (13, 15):
+        return _ogrn_ok(digits)
+    if n == 16:
+        return _luhn_ok(digits)
+    return False
+
+
 def _uin_check(body: str) -> str:
     """УИН: weights 1..10 cyclic from the MOST significant digit, sum mod 11.
     Remainder ≤ 9 is the digit; remainder 10 re-runs with the sequence shifted
@@ -468,8 +486,14 @@ def _gen_esia_oid(rng):
 
 
 def _gen_imei(rng):
-    body = _digits(rng, 14)
-    return body + _luhn(body)
+    # K6-21: a 15-digit value must NOT also be a valid ОГРНИП (mod 13), so re-mint
+    # (advancing the seed-derived rng) until it fails that contract check — the
+    # Luhn validity of the IMEI itself is kept by construction.
+    while True:
+        body = _digits(rng, 14)
+        value = body + _luhn(body)
+        if not _ogrn_ok(value):
+            return value
 
 
 def _gen_iccid(rng):
@@ -480,7 +504,14 @@ def _gen_iccid(rng):
 
 
 def _gen_imsi(rng):
-    return "250" + _digits(rng, 12)              # MCC 250 (РФ), ≤15 digits total
+    # K6-21: a 15-digit value must NOT also be a valid ОГРНИП (mod 13), so re-mint
+    # (advancing the seed-derived rng) until it fails that contract check. IMSI
+    # carries no checksum of its own (MCC 250 + 12 digits), so there is nothing
+    # to keep valid beyond the mod-13 guard itself.
+    while True:
+        value = "250" + _digits(rng, 12)       # MCC 250 (РФ), ≤15 digits total
+        if not _ogrn_ok(value):
+            return value
 
 
 def _gen_mac(rng):
@@ -533,7 +564,10 @@ def _gen_employee_tab_number(rng):
 
 
 def _gen_employment_contract_number(rng):
-    return f"{_digits(rng, 3)}-ТД"
+    # «ТД-2024/00123» (year + 5 digits) — enough entropy that 34 cases never mint
+    # the same contract number twice (K6-19); the old «145-ТД» (3 digits) collided
+    # within the corpus.
+    return f"ТД-{rng.choice(('2023', '2024', '2025', '2026'))}/{_digits(rng, 5)}"
 
 
 def _gen_access_pass_number(rng):
@@ -669,6 +703,26 @@ def generate(type_id: str, seed: int) -> tuple[str, str]:
     if type_id not in _V6:
         raise ValueError(f"gen_v6: unknown v6 type id {type_id!r}")
     rng = random.Random(seed)
-    value = _GENERATORS[type_id](rng)  # type: ignore[operator]
+    checksum = _V6[type_id].generated_checksum
+    # K6-21: a digit run of length 11/12/13/15/16 must NOT be a valid checksum of
+    # the v5 [C]-type of that length, or the engine's contract mask (CARD/INN/
+    # OGRN/ОГРНИП) would swallow it as an error. Re-mint (advancing the seed-
+    # derived rng) until it fails. A type whose OWN checksum is the same
+    # algorithm (Luhn at 16, ОГРНИП at 15) is exempt: that collision is a declared
+    # cluster (K1/K6) resolved by cue or key. This is a single uniform guard over
+    # every generator, on top of the per-generator guards EPTS/CADASTRAL/DIPLOMA
+    # already carry.
+    while True:
+        value = _GENERATORS[type_id](rng)  # type: ignore[operator]
+        digits = "".join(ch for ch in value if ch.isdigit())
+        n = len(digits)
+        if n not in (11, 12, 13, 15, 16):
+            break
+        if n == 16 and checksum == "luhn":
+            break
+        if n == 15 and checksum == "ogrnip":
+            break
+        if not _v5_length_checksum(digits):
+            break
     canonical = _canonical(value, _V6[type_id].value_notation)
     return value, canonical

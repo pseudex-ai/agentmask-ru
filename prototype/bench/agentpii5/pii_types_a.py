@@ -91,7 +91,8 @@ GROUP_A: tuple[TypeSpec, ...] = (
         length="как BIRTH_CERT: серия + номер 6 цифр", grammar_status="ГРАММАТИКА?",
         cues=("свидетельство о браке", "о заключении брака", "о расторжении брака", "о смерти",
               "о перемене имени", "об установлении отцовства", "об усыновлении"),
-        field_keys=("marriage_certificate", "death_certificate", "name_change_certificate"),
+        field_keys=("marriage_certificate", "death_certificate", "name_change_certificate",
+                     "certificate_number"),
         industries=("banks_mfo_collectors", "insurance", "legal"), pd_context="",
         form_features=("grouping", "separators", "case_class", "script"),
         feature_labels=(
@@ -227,7 +228,7 @@ GROUP_A: tuple[TypeSpec, ...] = (
                 "варианты: ЗАГЛАВНЫЕ, без дефисов 33 hex",
         length="38 знаков (32 hex + 4 дефиса + контрольный символ; ЦБ 758-П Прил. 2 пп. 4–5)", grammar_status="ГОТОВ",
         cues=("УИд", "УИД", "уникальный идентификатор договора", "идентификатор сделки", "UID договора"),
-        field_keys=("uid", "UID", "deal_uid", "contract_uid", "uid_deal"),
+        field_keys=("uid", "UID", "deal_uid", "contract_uid", "uid_deal", "loan_uid"),
         industries=("banks_mfo_collectors", "internal_bi"), pd_context="",
         form_features=("grouping", "separators", "case_class"),
         feature_labels=(

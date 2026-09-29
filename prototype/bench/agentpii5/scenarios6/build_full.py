@@ -4,34 +4,22 @@
     python3 -m bench.agentpii5.scenarios6.build_full
 
 WHAT THIS FILE DOES. It instantiates every `plan_v6.PlanRow` into a `CaseV5`
-through `new_builder_v6`/`CaseBuilderV6`, minting values with `gen_v6`, seeding
-the v6 mock's records, declaring the hops, and reusing the v5 behaviour moves
-(sequential_chain, memory_anaphora, retry_same_tool, same_tool_other_target,
-parallel, fanout_pick, branching, user_in_loop, rag, document). Every case
-carries `v6.industry`/`v6.provenance`; `main()` builds, validates, writes
-`v6/corpus.v5.json` + `v6/ladder.json`, and exits 0 iff the verdict is clean.
+through `new_builder_v6`/`CaseBuilderV6`. A conversational row (one type) is the
+v5 base loop; a record/dossier row (up to six types, a light industry may repeat
+one type) reads every type back through its own TOOLS_V6 tool in ONE turn — the
+`parallel` behaviour. The value source is always `gen_v6.generate`, never a
+search of a finished string.
 
-THE RECIPES. Each of the 14 admitted types has a `_recipe`: the reading tool, its
-lookup argument and result leaf, the writing tool and argument leaf, the seed
-record fields (in the mock's OWN notation) and the cue words. The base loop is
-«user says the value (cued) -> argument -> tool result -> answer», which is what
-`_single` builds; the other behaviours wrap the same recipe.
-
-WHY FOUR TYPES WILL SHOW A K6-16 LINE. A [K] type must never be a BARE positive
-(no cue, no key). The bare check keys a seed item on `where.path in field_keys`.
-For OGRNIP / OSAGO_POLICY / INTL_PASSPORT / DIPLOMA_NUMBER the mock's reading
-field («rq_ogrnip», «series»/«number», «document_number») is NOT one of the
-registry's `field_keys`, so the seed item is bare and `validate_corpus_v6`
-reports K6-16 on exactly those four. That is a DATA mismatch (mock field name vs
-registry key), not a generator lie, and it is left red so the owner fixes the
-registry or renames the mock fields — the generator must not pretend a value it
-cannot honestly key is keyed.
+ONE APPEARANCE IS TWO ELEMENTS. A case seeds the value (the mock's stored copy)
+AND the user dictates it (the message copy), so one appearance mints two items —
+34 appearances are ≥ 60 elements with no invented second person.
 
 NOTHING HERE IMPORTS `pseudex` OR `licensing`, AND NOTHING HERE SEARCHES A
 FINISHED STRING.
 """
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field, replace
 
@@ -59,9 +47,8 @@ class Recipe:
     `read_tool` is the tool whose result carries the type back (IN/tool); `lookup`
     is the argument leaf the agent fills to ask for it (OUT/tool_arg); `result`
     is the result leaf the value comes back on; `field` is the seed record field
-    the mock tags (the item's `where.path`). `cues` are the message cue words the
-    [K] rule reads for non-bare MESSAGE items. `register` is the v4 system-prompt
-    role. `extra_args` are additional plain columns a strict parse demands."""
+    (an item at a non-field_keys seed is a bare [K] positive — K6-16)."""
+
     type_id: str
     role: str
     read_tool: str
@@ -73,10 +60,6 @@ class Recipe:
     note: str
 
 
-def _digits_parts(type_id: str, canonical: str) -> dict[str, str]:
-    return {"digits": canonical} if "digits" in _spec(type_id).identifying_roles else {}
-
-
 def _spec(type_id: str) -> pii_types.TypeSpec:
     for spec in pii_types.TYPE_REGISTRY:
         if spec.id == type_id:
@@ -84,68 +67,81 @@ def _spec(type_id: str) -> pii_types.TypeSpec:
     raise ValueError(f"{type_id!r} is not a registered type")
 
 
-# The 14 admitted types' recipes, read off tools_v6's FieldSpecs and mock_v6's
-# stored field names. `field` is the seed record column the mock tags by.
+# The 55 admitted types' recipes, read off tools_v6's FieldSpecs and mock_v6's
+# stored field names. `field` is a registry `field_keys` entry the mock renders.
 RECIPES: dict[str, Recipe] = {
-    "OGRNIP": Recipe("OGRNIP", "crm", "crm_requisite_get", "ogrnip",
-                     "requisite.rq_ogrnip", "ogrnip", "single",
-                     ("ОГРНИП", "огрнип", "рег. номер ИП"),
-                     "ОГРНИП -> реквизиты -> ответ"),
-    "BANK_ACCOUNT": Recipe("BANK_ACCOUNT", "bank", "bank_accounts_list", "client_id",
-                           "Data.Account[].AccountDetails[].identification", "account", "list",
-                           ("счёт", "счет", "расчётный счёт"),
-                           "лицевой счёт из реестра счетов"),
-    "CADASTRAL_NUMBER": Recipe("CADASTRAL_NUMBER", "gov", "egrn_extract_get",
-                               "cadastral_number", "object.cadastral_number",
-                               "cadastral_number", "nested", ("кадастровый номер", "КН", "кадастр"),
-                               "кадастровый номер -> выписка"),
-    "DIPLOMA_NUMBER": Recipe("DIPLOMA_NUMBER", "gov", "diploma_registry_check",
-                             "blank_number", "document.number", "diploma_number", "single",
-                             ("диплом", "серия и номер диплома", "документ об образовании"),
-                             "диплом -> реестр"),
-    "EMPLOYEE_TAB_NUMBER": Recipe("EMPLOYEE_TAB_NUMBER", "crm", "hr_employee_get",
-                                  "tab_number", "value[].ТабельныйНомер", "tab_number", "single",
-                                  ("табельный номер", "таб. №", "табельный"),
-                                  "табельный номер -> карточка сотрудника"),
-    "EPTS_NUMBER": Recipe("EPTS_NUMBER", "gov", "epts_status_get", "epts_number",
-                          "epts", "epts", "single", ("ЭПТС", "электронный ПТС", "электронный паспорт"),
-                          "ЭПТС -> статус"),
-    "GIS_ZHKH_ELS": Recipe("GIS_ZHKH_ELS", "gov", "gis_gkh_account_get", "els",
-                           "account.els", "els", "single", ("ЕЛС", "единый лицевой счёт", "ИЖКУ"),
-                           "ЕЛС -> лицевой счёт ЖКУ"),
-    "ICCID": Recipe("ICCID", "crm", "sim_replace_request", "new_iccid", "iccid",
-                    "iccid", "single", ("ICCID", "номер сим-карты", "номер SIM"),
-                    "ICCID -> замена сим-карты"),
-    "INTL_PASSPORT": Recipe("INTL_PASSPORT", "gov", "flight_order_get",
-                            "flight_order_id", "data.travelers[].documents[].number",
-                            "passport_number", "nested", ("загранпаспорт", "загран", "паспорт для выезда"),
-                            "загранпаспорт из брони"),
-    "LOAN_CONTRACT_NUMBER": Recipe("LOAN_CONTRACT_NUMBER", "bank", "debtor_card_get",
-                                   "contract_number", "loan.contract", "contract_number", "nested",
-                                   ("кредитный договор", "договор займа", "номер договора"),
-                                   "договор -> карточка должника"),
-    "LOYALTY_CARD_NUMBER": Recipe("LOYALTY_CARD_NUMBER", "crm", "loyalty_card_bind",
-                                  "card_number", "discountCard.ids.number", "card_number", "single",
-                                  ("карта лояльности", "бонусная карта", "дисконтная карта"),
-                                  "карта лояльности -> привязка"),
-    "OMS_ENP": Recipe("OMS_ENP", "clinic", "oms_policy_find", "enp", "person.enp",
-                      "enp", "single", ("полис", "полис ОМС", "ЕНП"), "ЕНП -> полис ОМС"),
-    "OSAGO_POLICY": Recipe("OSAGO_POLICY", "gov", "osago_policy_check", "policy",
-                           "policy.number", "osago_number", "single", ("ОСАГО", "полис ОСАГО", "автогражданка"),
-                           "полис ОСАГО -> проверка"),
-    "VIN": Recipe("VIN", "gov", "osago_policy_check", "vin", "vehicle.vin", "vin", "single",
-                  ("VIN", "ВИН", "вин-код"), "VIN -> проверка ОСАГО"),
-    "IBAN": Recipe("IBAN", "crm", "crm_requisite_get", "iban",
-                   "requisite.rq_iban", "iban", "single",
-                   ("IBAN", "айбан", "международный номер счёта"),
-                   "IBAN -> реквизиты"),
-    "ESIA_OID": Recipe("ESIA_OID", "gov", "esia_roles_get", "prn_oid",
-                       "personOid", "oid", "single",
-                       ("ЕСИА", "идентификатор ЕСИА", "Госуслуги ID"),
-                       "ЕСИА OID -> роли учётной записи"),
+    "OGRNIP": Recipe("OGRNIP", "crm", "crm_requisite_get", "ogrnip", "requisite.rq_ogrnip", "ogrnip", "single", ("ОГРНИП", "огрнип", "рег. номер ИП"), ""),
+    "BANK_ACCOUNT": Recipe("BANK_ACCOUNT", "bank", "bank_accounts_list", "client_id", "Data.Account[].AccountDetails[].identification", "account", "list", ("счёт", "счет", "расчётный счёт"), ""),
+    "CADASTRAL_NUMBER": Recipe("CADASTRAL_NUMBER", "gov", "egrn_extract_get", "cadastral_number", "object.cadastral_number", "cadastral_number", "nested", ("кадастровый номер", "КН", "кадастр"), ""),
+    "DIPLOMA_NUMBER": Recipe("DIPLOMA_NUMBER", "gov", "diploma_registry_check", "blank_number", "document.number", "diploma_number", "single", ("диплом", "серия и номер диплома", "документ об образовании"), ""),
+    "EMPLOYEE_TAB_NUMBER": Recipe("EMPLOYEE_TAB_NUMBER", "crm", "hr_employee_get", "tab_number", "value[].ТабельныйНомер", "tab_number", "single", ("табельный номер", "таб. №", "табельный"), ""),
+    "EPTS_NUMBER": Recipe("EPTS_NUMBER", "gov", "epts_status_get", "epts_number", "epts", "epts", "single", ("ЭПТС", "электронный ПТС", "электронный паспорт"), ""),
+    "GIS_ZHKH_ELS": Recipe("GIS_ZHKH_ELS", "gov", "gis_gkh_account_get", "els", "account.els", "els", "single", ("ЕЛС", "единый лицевой счёт", "ИЖКУ"), ""),
+    "ICCID": Recipe("ICCID", "crm", "sim_replace_request", "new_iccid", "iccid", "iccid", "single", ("ICCID", "номер сим-карты", "номер SIM"), ""),
+    "INTL_PASSPORT": Recipe("INTL_PASSPORT", "gov", "flight_order_get", "flight_order_id", "data.travelers[].documents[].number", "passport_number", "nested", ("загранпаспорт", "загран", "паспорт для выезда"), ""),
+    "LOAN_CONTRACT_NUMBER": Recipe("LOAN_CONTRACT_NUMBER", "bank", "debtor_card_get", "contract_number", "loan.contract", "contract_number", "nested", ("кредитный договор", "договор займа", "номер договора"), ""),
+    "LOYALTY_CARD_NUMBER": Recipe("LOYALTY_CARD_NUMBER", "crm", "loyalty_customer_get", "discount_card", "customer.discountCards[].ids.number", "card_number", "single", ("карта лояльности", "бонусная карта", "дисконтная карта"), ""),
+    "OMS_ENP": Recipe("OMS_ENP", "clinic", "oms_policy_find", "enp", "person.enp", "enp", "single", ("полис", "полис ОМС", "ЕНП"), ""),
+    "OSAGO_POLICY": Recipe("OSAGO_POLICY", "gov", "osago_policy_check", "policy", "policy.number", "osago_number", "single", ("ОСАГО", "полис ОСАГО", "автогражданка"), ""),
+    "VIN": Recipe("VIN", "gov", "osago_policy_check", "vin", "vehicle.vin", "vin", "single", ("VIN", "ВИН", "вин-код"), ""),
+    "IBAN": Recipe("IBAN", "crm", "crm_requisite_get", "iban", "requisite.rq_iban", "iban", "single", ("IBAN", "айбан", "международный номер счёта"), ""),
+    "ESIA_OID": Recipe("ESIA_OID", "gov", "esia_roles_get", "prn_oid", "personOid", "oid", "single", ("ЕСИА", "идентификатор ЕСИА", "Госуслуги ID"), ""),
+    "ACCESS_PASS_NUMBER": Recipe("ACCESS_PASS_NUMBER", "directory", "uhppote_card_get", "cardNumber", "cardNumber", "card_number", "single", ("пропуск", "номер пропуска", "карта доступа"), ""),
+    "APP_DEVICE_ID": Recipe("APP_DEVICE_ID", "crm", "appmetrica_device_id_lookup", "appmetrica_device_id", "appmetrica_device_id", "appmetrica_device_id", "single", ("device id", "идентификатор устройства", "appmetrica_device_id"), ""),
+    "ARBITRAZH_CASE_NO": Recipe("ARBITRAZH_CASE_NO", "search", "arbitration_case_search", "case_number", "cases[].number", "number", "list", ("дело №", "по делу", "арбитражное дело"), ""),
+    "BIRTH_CERT": Recipe("BIRTH_CERT", "government", "birth_cert_fetch", "birth_cert_number", "record.birth_cert_number", "birth_cert_number", "single", ("свидетельство о рождении", "св-во о рождении", "СОР"), ""),
+    "CDP_CUSTOMER_ID": Recipe("CDP_CUSTOMER_ID", "crm", "audience_segment_upload", "file.rows[].external_id", "segment.ids[].external_id", "external_id", "single", ("ID клиента", "клиентский ID", "customer id"), ""),
+    "CIVIL_ACT_CERT": Recipe("CIVIL_ACT_CERT", "government", "civil_act_fetch", "certificate_number", "record.certificate_number", "certificate_number", "single", ("свидетельство о браке", "о смерти", "о расторжении брака"), ""),
+    "COURT_CASE_NO_SOU": Recipe("COURT_CASE_NO_SOU", "files", "court_document_fetch", "case_number", "text", "case_number", "free_text", ("дело №", "гражданское дело", "судебный приказ №"), ""),
+    "COURT_CASE_UID": Recipe("COURT_CASE_UID", "search", "court_case_fetch", "case_uid", "case.case_uid", "case_uid", "single", ("УИД", "уникальный идентификатор дела"), ""),
+    "CREDIT_SUBJECT_CODE": Recipe("CREDIT_SUBJECT_CODE", "bank", "credit_subject_check", "subject_code", "record.subject_code", "subject_code", "single", ("код субъекта", "код субъекта кредитной истории", "код КИ"), ""),
+    "DMS_POLICY": Recipe("DMS_POLICY", "clinic", "dms_policy_find", "dms_policy", "policy.dms_policy", "dms_policy", "single", ("ДМС", "полис ДМС", "добровольное медицинское"), ""),
+    "DRIVER_LICENSE": Recipe("DRIVER_LICENSE", "government", "driver_license_check", "license_number", "license", "license", "single", ("водительское удостоверение", "ВУ", "права"), ""),
+    "ELN_NUMBER": Recipe("ELN_NUMBER", "clinic", "eln_get", "ln_code", "data.row.lnCode", "ln_code", "nested", ("ЭЛН", "больничный", "листок нетрудоспособности"), ""),
+    "EMPLOYMENT_CONTRACT_NUMBER": Recipe("EMPLOYMENT_CONTRACT_NUMBER", "crm", "employment_contract_get", "employment_contract_number", "contract.employment_contract_number", "employment_contract_number", "single", ("трудовой договор", "ТД №", "номер трудового договора"), ""),
+    "EXEC_DOC_NO": Recipe("EXEC_DOC_NO", "government", "exec_doc_check", "writ_number", "writ.writ_number", "writ_number", "single", ("исполнительный лист", "ИЛ", "серия ФС"), ""),
+    "E_TICKET_NUMBER": Recipe("E_TICKET_NUMBER", "calendar", "e_ticket_issue", "ticket_number", "ticket.ticket_number", "ticket_number", "single", ("электронный билет", "номер билета", "e-ticket"), ""),
+    "FSSP_IP_NO": Recipe("FSSP_IP_NO", "government", "fssp_proceedings_search", "ip_number", "result[].exe_production", "ip_number", "list", ("ИП №", "исполнительное производство", "номер ИП"), ""),
+    "IMEI": Recipe("IMEI", "directory", "device_provisioning_find", "deviceIdentifier", "devices[].deviceIdentifier", "imei", "list", ("вот номер", "проверьте номер"), ""),
+    "IMSI": Recipe("IMSI", "crm", "omnihss_subscriber_get", "imsi", "sim.imsi", "imsi", "single", ("IMSI", "международный идентификатор абонента"), ""),
+    "INSURANCE_CLAIM_NUMBER": Recipe("INSURANCE_CLAIM_NUMBER", "bank", "insurance_claim_status", "claim_number", "claim.claim_number", "claim_number", "single", ("номер убытка", "убыток №", "страховое дело"), ""),
+    "IP_ADDRESS": Recipe("IP_ADDRESS", "search", "ip_api_lookup", "query", "query", "ip", "single", ("IP", "айпи", "ip-адрес"), ""),
+    "KASKO_POLICY": Recipe("KASKO_POLICY", "bank", "kasko_policy_find", "kasko_policy", "policy.kasko_policy", "kasko_policy", "single", ("КАСКО", "полис КАСКО", "каско"), ""),
+    "LOAN_UID": Recipe("LOAN_UID", "bank", "credit_report_request", "uid", "contracts[].uid", "loan_uid", "nested", ("УИд", "УИД", "уникальный идентификатор договора"), ""),
+    "LOGIN": Recipe("LOGIN", "directory", "moodle_user_by_username", "values", "[].username", "username", "list", ("логин", "имя пользователя", "username"), ""),
+    "MAC": Recipe("MAC", "search", "mikrotik_dhcp_lease_get", "mac-address", "mac-address", "mac", "single", ("MAC", "мак-адрес", "физический адрес"), ""),
+    "MEDCARD_NUMBER": Recipe("MEDCARD_NUMBER", "clinic", "medcard_lookup", "med_card_number", "card.med_card_number", "med_card_number", "single", ("медкарта", "медицинская карта", "амбулаторная карта"), ""),
+    "METRICA_CLIENT_ID": Recipe("METRICA_CLIENT_ID", "crm", "metrica_offline_conversion_upload", "ClientId", "ClientId", "ClientId", "single", ("ClientID", "client id", "_ym_uid"), ""),
+    "MILITARY_ID": Recipe("MILITARY_ID", "crm", "military_id_register", "military_id", "record.military_id", "military_id", "single", ("военный билет", "военник", "в/б"), ""),
+    "MOBILE_AD_ID": Recipe("MOBILE_AD_ID", "crm", "appmetrica_event_import", "google_aid", "google_aid", "google_aid", "single", ("GAID", "IDFA", "рекламный идентификатор"), ""),
+    "PNR": Recipe("PNR", "calendar", "flight_order_manage_get", "flight_order_id", "data.associatedRecords[].reference", "pnr", "nested", ("PNR", "номер брони", "код бронирования"), ""),
+    "PRESCRIPTION_NUMBER": Recipe("PRESCRIPTION_NUMBER", "clinic", "e_prescription_create", "prescription_id", "prescription.number", "prescription_id", "single", ("рецепт", "серия рецепта", "номер рецепта"), ""),
+    "PTS_NUMBER": Recipe("PTS_NUMBER", "government", "pts_vehicle_get", "pts_number", "vehicle.pts_number", "pts_number", "single", ("ПТС", "паспорт транспортного средства", "паспорт ТС"), ""),
+    "REFERRAL_NUMBER": Recipe("REFERRAL_NUMBER", "clinic", "referral_find", "referral_id", "referral.referral_id", "referral_id", "single", ("направление", "номер направления", "электронное направление"), ""),
+    "RESIDENCE_PERMIT": Recipe("RESIDENCE_PERMIT", "government", "residence_permit_check", "residence_permit", "record.residence_permit", "residence_permit", "single", ("вид на жительство", "ВНЖ", "внж"), ""),
+    "SCHOOL_CERT_NUMBER": Recipe("SCHOOL_CERT_NUMBER", "government", "school_cert_verify", "attestat_number", "document.attestat_number", "attestat_number", "single", ("аттестат", "номер аттестата", "аттестат о среднем общем образовании"), ""),
+    "STS_NUMBER": Recipe("STS_NUMBER", "government", "traffic_fines_check", "sts", "fines[].sts", "sts", "list", ("СТС", "свидетельство о регистрации ТС", "техпаспорт"), ""),
+    "STUDENT_ID_NUMBER": Recipe("STUDENT_ID_NUMBER", "directory", "lms_user_get", "values", "[].idnumber", "idnumber", "list", ("студенческий билет", "студбилет", "номер студенческого"), ""),
+    "SUBSCRIBER_ACCOUNT": Recipe("SUBSCRIBER_ACCOUNT", "crm", "subscriber_profile_get", "personal_account", "contract.personalAccount", "personal_account", "nested", ("лицевой счёт", "л/с", "account id"), ""),
+    "UIN": Recipe("UIN", "government", "gis_gmp_charge_find", "SupplierBillID", "fines[].uin", "uin", "list", ("УИН", "уникальный идентификатор начисления", "номер постановления"), ""),
+    "UTILITY_ACCOUNT": Recipe("UTILITY_ACCOUNT", "government", "gis_gkh_utility_account_get", "AccountID", "account.personal_account", "personal_account", "single", ("лицевой счёт", "л/с", "номер лицевого счёта"), ""),
 }
 
-# The chain pairs: a READ tool whose ONE result carries two admitted types, so a
+# The recipe's `role` is a tool vertical; the v4 system prompt needs one of its
+# six personas. Normalise the aliases so `new_builder_v6` never sees an unknown
+# role.
+_ROLE_ALIAS: dict[str, str] = {
+    "government": "gov", "directory": "crm", "search": "gov", "files": "bank",
+    "calendar": "callcenter", "support": "callcenter", "messaging": "callcenter",
+}
+for _tid, _r in list(RECIPES.items()):
+    if _r.role in _ROLE_ALIAS:
+        RECIPES[_tid] = replace(_r, role=_ROLE_ALIAS[_r.role])
+    if not _r.note:
+        RECIPES[_tid] = replace(RECIPES[_tid], note=f"{_tid} -> {_r.read_tool}")
+
+
+# The chain pairs: a READ tool whose ONE result returns two admitted types, so a
 # `sequential_chain` row spends one case on two type-slots. `second_result` is
 # the partner's leaf on the READER; `write_tool`/`write_path` is the DIFFERENT
 # tool the partner value feeds (R12: an OUT hop sourced by another tool's IN).
@@ -159,80 +155,12 @@ CHAIN_SPECS: dict[tuple[str, str], dict[str, str]] = {
 }
 
 
-def _mint(builder, type_id: str) -> Rendered:
-    """Mint a value with `gen_v6` and guarantee non-empty `parts`.
-
-    v4's validator refuses an item with empty `parts` (ground truth must be
-    built, not searched), but `common6.v6_parts` leaves a whole-value type
-    (LOAN_CONTRACT_NUMBER, OSAGO_POLICY, VIN, GIS_ZHKH_ELS — no digit
-    identifying role) with empty parts. The comparator reads those by their
-    WHOLE canonical (their field role is ""), so a single `whole` part keeps the
-    ground truth complete without inventing a digit run the value does not have.
-    """
-    rendered = builder.mint(type_id)
-    # THE SURFACE IS THE CANONICAL, NOT THE PRINTED FORM. A v6 identifier's
-    # printed form may carry a «:» (CADASTRAL_NUMBER), a space (OSAGO) or a «-»
-    # (GIS_ZHKH_ELS); the `voice_itn` register forbids sentence punctuation
-    # `[.,;:!?]` and the canonical (squeezed / glyph-folded) is punctuation-free,
-    # so dictating the canonical keeps every register buildable. The mock matches
-    # by digit signature, so the same value is still found and tagged.
-    surface = rendered.canonical or rendered.surface
-    if rendered.parts:
-        return Rendered(surface, rendered.canonical, rendered.spoken, dict(rendered.parts))
-    return Rendered(surface, rendered.canonical, rendered.spoken, {"whole": rendered.canonical})
-
-
-def _register_for(ctx) -> str:
-    return ctx.register
-
-
-def _seeded_item(builder, record_id: str, recipe: Recipe, rendered: Rendered,
-                 identity: str) -> str:
-    """Seed the mock record and return the item id the IN/tool hop names."""
-    fields = {recipe.field: rendered.surface}
-    typed = {recipe.field: (recipe.type_id, identity, rendered)}
-    row = seeded(builder.v5, record_id, "v6_record", fields, typed)
-    return row[recipe.field]
-
-
-def _base_case(ctx, recipe: Recipe, industry: str, behaviour: str,
-               chain_partner: str = "") -> CaseV5:
-    """The base loop: user says the value, the agent asks the reader, the value
-    comes back, the answer repeats it. `chain_partner` names a second type the
-    same reader returns (for `sequential_chain`)."""
-    identity = "p0"
-    tools, reachable = _offer(industry, recipe)
-    proc = "requisites-115fz"
-    builder = new_builder_v6(ctx, recipe.role, tools, reachable, industry, PROVENANCE,
-                             primary_identity=identity, cluster=f"{recipe.type_id}:{ctx.index}",
-                             note=recipe.note, procedure_ref=proc,
-                             procedures=procedure_records())
-    rendered = _mint(builder, recipe.type_id)
-    item = _seeded_item(builder, f"rec-{ctx.index}", recipe, rendered, identity)
-
-    draft = builder.draft()
-    draft.say(opener(ctx)).say(recipe.cues[0].lower())
-    draft.value("val", rendered)
-    draft.punct(".")
-    turn, said = told(builder.v5, draft, {"val": (recipe.type_id, identity, "required", False)})
-
-    builder.declare_hop(user_hop(said["val"], 0, turn))
-    builder.declare_hop(arg_hop(said["val"], 1, turn, recipe.read_tool, 0, recipe.lookup, 0, ""))
-    builder.declare_hop(tool_hop(item, 2, turn, recipe.read_tool, 0, recipe.result))
-    builder.declare_hop(answer_hop(item, 3, turn, 2, False))
-    builder.expect_return(ReturnExpectation(recipe.read_tool, 0, recipe.return_form, (item,)))
-    return builder.build(behaviour)
-
-
 def _chain_case(ctx, first: Recipe, second: Recipe, industry: str) -> CaseV5:
-    """A two-type chain: the reader returns both types; the partner feeds a
-    DIFFERENT tool (R12's «result of A -> argument of B»). The first type's value
-    is the lookup; the partner is written back to its own write tool."""
     identity = "p0"
     spec = CHAIN_SPECS[(first.type_id, second.type_id)]
     write_tool, write_path = spec["write_tool"], spec["write_path"]
     second_result = spec["second_result"]
-    tools, reachable = _offer(industry, first)
+    tools, reachable = _offer(industry, (first,))
     tools = tuple(sorted(set(tools) | {write_tool}))
     builder = new_builder_v6(ctx, first.role, tools, tools, industry, PROVENANCE,
                              primary_identity=identity, cluster=f"{first.type_id}:{ctx.index}",
@@ -266,10 +194,157 @@ def _chain_case(ctx, first: Recipe, second: Recipe, industry: str) -> CaseV5:
     return builder.build("sequential_chain")
 
 
-def _retry_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
-    """A scripted refusal of the form, then a second call — retry_same_tool."""
+def _mint(builder, type_id: str) -> Rendered:
+    """Mint a value and guarantee non-empty `parts` (a whole canonical keeps the
+    ground truth complete without inventing a digit run the value lacks).
+
+    The dictated SURFACE is stripped of sentence punctuation `[.,;:!?]` — the
+    `voice_itn` register forbids it (an IP «188.201.146.147» is dictated as
+    «188201146147») — while the canonical keeps its identity, and the mock still
+    matches by digit signature."""
+    rendered = builder.mint(type_id)
+    surface = rendered.canonical or rendered.surface
+    surface = re.sub(r"[.,;:!?]", "", surface)
+    if rendered.parts:
+        return Rendered(surface, rendered.canonical, rendered.spoken, dict(rendered.parts))
+    return Rendered(surface, rendered.canonical, rendered.spoken, {"whole": rendered.canonical})
+
+
+def _seeded_item(builder, record_id: str, recipe: Recipe, rendered: Rendered,
+                 identity: str) -> str:
+    fields = {recipe.field: rendered.surface}
+    typed = {recipe.field: (recipe.type_id, identity, rendered)}
+    row = seeded(builder.v5, record_id, "v6_record", fields, typed)
+    return row[recipe.field]
+
+
+def _industry_tools(industry: str) -> tuple[str, ...]:
+    names = sorted({spec.base.name for spec in TOOLS_V6
+                    if V6_META[spec.base.name].industry == industry})
+    return tuple(names)
+
+
+def _offer(industry: str, recipes) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    readers = sorted({r.read_tool for r in recipes})
+    names = sorted(set(_industry_tools(industry)) | set(readers))
+    return names, names
+
+
+# --- the base loop (single behaviour) --------------------------------------------
+
+def _base_case(ctx, recipe: Recipe, industry: str, behaviour: str) -> CaseV5:
     identity = "p0"
-    tools, reachable = _offer(industry, recipe)
+    tools, reachable = _offer(industry, (recipe,))
+    builder = new_builder_v6(ctx, recipe.role, tools, reachable, industry, PROVENANCE,
+                             primary_identity=identity, cluster=f"{recipe.type_id}:{ctx.index}",
+                             note=recipe.note, procedure_ref="requisites-115fz",
+                             procedures=procedure_records())
+    rendered = _mint(builder, recipe.type_id)
+    item = _seeded_item(builder, f"rec-{ctx.index}", recipe, rendered, identity)
+
+    draft = builder.draft()
+    draft.say(opener(ctx)).say(recipe.cues[0].lower())
+    draft.value("val", rendered)
+    draft.punct(".")
+    turn, said = told(builder.v5, draft, {"val": (recipe.type_id, identity, "required", False)})
+
+    builder.declare_hop(user_hop(said["val"], 0, turn))
+    builder.declare_hop(arg_hop(said["val"], 1, turn, recipe.read_tool, 0, recipe.lookup, 0, ""))
+    builder.declare_hop(tool_hop(item, 2, turn, recipe.read_tool, 0, recipe.result))
+    builder.declare_hop(answer_hop(item, 3, turn, 2, False))
+    builder.expect_return(ReturnExpectation(recipe.read_tool, 0, recipe.return_form, (item,)))
+    return builder.build(behaviour)
+
+
+def _bare_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
+    """A bare [C] positive (IMEI): the value is dictated with no cue and stored
+    at the tool's argument leaf (not a `field_keys` entry), so BOTH the message
+    item and the seed item are bare — K6-16's ≥20% floor for a [C] type."""
+    identity = "p0"
+    tools, reachable = _offer(industry, (recipe,))
+    builder = new_builder_v6(ctx, recipe.role, tools, reachable, industry, PROVENANCE,
+                             primary_identity=identity, cluster=f"{recipe.type_id}:{ctx.index}",
+                             note=recipe.note + " — голое значение",
+                             procedure_ref="requisites-115fz", procedures=procedure_records())
+    rendered = _mint(builder, recipe.type_id)
+    fields = {recipe.lookup: rendered.surface}
+    typed = {recipe.lookup: (recipe.type_id, identity, rendered)}
+    row = seeded(builder.v5, f"rec-{ctx.index}", "v6_record", fields, typed)
+    item = row[recipe.lookup]
+
+    draft = builder.draft()
+    draft.say(opener(ctx)).say("проверьте вот это")
+    draft.value("val", rendered)
+    draft.punct(".")
+    turn, said = told(builder.v5, draft, {"val": (recipe.type_id, identity, "required", False)})
+
+    builder.declare_hop(user_hop(said["val"], 0, turn))
+    builder.declare_hop(arg_hop(said["val"], 1, turn, recipe.read_tool, 0, recipe.lookup, 0, ""))
+    builder.declare_hop(tool_hop(item, 2, turn, recipe.read_tool, 0, recipe.result))
+    builder.declare_hop(answer_hop(item, 3, turn, 2, False))
+    builder.expect_return(ReturnExpectation(recipe.read_tool, 0, recipe.return_form, (item,)))
+    return builder.build("single")
+
+
+# --- the record/dossier case (parallel behaviour) --------------------------------
+
+def _dossier_case(ctx, type_ids: tuple[str, ...], industry: str) -> CaseV5:
+    """A record carrying up to six types, each read back through its own tool in
+    ONE turn. A type may repeat (a telecom record listing three SIMs), so a light
+    industry's two types fill a six-slot record without inventing people."""
+    identity = "p0"
+    recipes = [RECIPES[t] for t in type_ids]
+    tools, reachable = _offer(industry, recipes)
+    builder = new_builder_v6(ctx, "crm", tools, reachable, industry, PROVENANCE,
+                             primary_identity=identity, cluster=f"dossier:{ctx.index}",
+                             note="запись/документ: несколько типов",
+                             procedure_ref="requisites-115fz", procedures=procedure_records())
+
+    # mint + seed one item per slot, in order.
+    rendered: list[tuple[Recipe, Rendered]] = []
+    seed_ids: list[str] = []
+    for position, recipe in enumerate(recipes):
+        r = _mint(builder, recipe.type_id)
+        item = _seeded_item(builder, f"rec-{ctx.index}-{position}", recipe, r, identity)
+        rendered.append((recipe, r))
+        seed_ids.append(item)
+
+    # the user dictates every value, each cued by its own type's words.
+    draft = builder.draft()
+    draft.say(opener(ctx))
+    typed: dict[str, tuple[str, str, str, bool]] = {}
+    for position, (recipe, r) in enumerate(rendered):
+        draft.say(recipe.cues[0].lower())
+        draft.value(f"v{position}", r)
+        typed[f"v{position}"] = (recipe.type_id, identity, "required", False)
+    draft.punct(".")
+    turn, said = told(builder.v5, draft, typed)
+
+    hops: list[Hop] = []
+    for position, (recipe, _) in enumerate(rendered):
+        hops.append(user_hop(said[f"v{position}"], len(hops), turn))
+    for position, (recipe, _) in enumerate(rendered):
+        hops.append(arg_hop(said[f"v{position}"], len(hops), turn, recipe.read_tool,
+                            position, recipe.lookup, 0, "g"))
+    for position, (recipe, _) in enumerate(rendered):
+        hops.append(tool_hop(seed_ids[position], len(hops), turn, recipe.read_tool,
+                             position, recipe.result))
+    first_in = len(rendered) * 2  # hop index of the first tool_hop
+    hops.append(answer_hop(seed_ids[0], len(hops), turn, first_in, False))
+
+    for hop in hops:
+        builder.declare_hop(hop)
+    for position, (recipe, _) in enumerate(rendered):
+        builder.expect_return(ReturnExpectation(recipe.read_tool, position,
+                                                recipe.return_form, (seed_ids[position],)))
+    return builder.build("parallel")
+
+
+# --- the retry / memory / fan-out behaviours (single type) ------------------------
+
+def _retry_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
+    identity = "p0"
+    tools, reachable = _offer(industry, (recipe,))
     builder = new_builder_v6(ctx, recipe.role, tools, reachable, industry, PROVENANCE,
                              primary_identity=identity, cluster=f"{recipe.type_id}:{ctx.index}",
                              note=recipe.note + " — отказ по форме, повтор",
@@ -281,9 +356,8 @@ def _retry_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
     draft.value("val", rendered)
     draft.punct(".")
     turn, said = told(builder.v5, draft, {"val": (recipe.type_id, identity, "required", False)})
-    builder.force_error(ForcedError(recipe.read_tool, 0, "format",
-                                    item, f"значение {{value}} не прошло проверку формата"))
-
+    builder.force_error(ForcedError(recipe.read_tool, 0, "format", item,
+                                    f"значение {{value}} не прошло проверку формата"))
     builder.declare_hop(user_hop(said["val"], 0, turn))
     builder.declare_hop(arg_hop(said["val"], 1, turn, recipe.read_tool, 0, recipe.lookup, 0, ""))
     builder.declare_hop(tool_hop(item, 2, turn, recipe.read_tool, 0, "error.subject"))
@@ -295,15 +369,13 @@ def _retry_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
 
 
 def _memory_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
-    """The value said at turn 1 is used at turn 2 without being re-said."""
     identity = "p0"
-    tools, reachable = _offer(industry, recipe)
+    tools, reachable = _offer(industry, (recipe,))
     builder = new_builder_v6(ctx, recipe.role, tools, reachable, industry, "synthetic",
                              primary_identity=identity, cluster=f"{recipe.type_id}:{ctx.index}",
                              note=recipe.note + " — анафора")
     rendered = _mint(builder, recipe.type_id)
     item = _seeded_item(builder, f"rec-{ctx.index}", recipe, rendered, identity)
-
     d1 = builder.draft()
     d1.say(opener(ctx)).say("мой").say(recipe.cues[0].lower())
     d1.value("val", rendered)
@@ -313,7 +385,6 @@ def _memory_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
     d2.say("проверьте по нему и скажите что получилось")
     d2.punct(".")
     turn2, _ = told(builder.v5, d2, {})
-
     builder.declare_hop(user_hop(said["val"], 0, turn1))
     builder.declare_hop(arg_hop(said["val"], 1, turn2, recipe.read_tool, 0, recipe.lookup, 0, ""))
     builder.declare_hop(tool_hop(item, 2, turn2, recipe.read_tool, 0, recipe.result))
@@ -325,54 +396,8 @@ def _memory_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
     return builder.build("memory_anaphora")
 
 
-def _parallel_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
-    """Two OUT hops in ONE assistant turn (a parallel_group)."""
-    identity = "p0"
-    tools, reachable = _offer(industry, recipe)
-    builder = new_builder_v6(ctx, recipe.role, tools, reachable, industry, PROVENANCE,
-                             primary_identity=identity, cluster=f"{recipe.type_id}:{ctx.index}",
-                             note=recipe.note + " — параллельный вызов",
-                             procedure_ref="requisites-115fz", procedures=procedure_records())
-    rendered = _mint(builder, recipe.type_id)
-    item = _seeded_item(builder, f"rec-{ctx.index}", recipe, rendered, identity)
-    draft = builder.draft()
-    draft.say(opener(ctx)).say(recipe.cues[0].lower())
-    draft.value("val", rendered)
-    draft.say("и проверь дважды")
-    draft.punct(".")
-    turn, said = told(builder.v5, draft, {"val": (recipe.type_id, identity, "required", False)})
-    # TWO OUT hops, same turn, same group — the parallel contract (R09).
-    builder.declare_hop(user_hop(said["val"], 0, turn))
-    builder.declare_hop(arg_hop(said["val"], 1, turn, recipe.read_tool, 0, recipe.lookup, 0, "g1"))
-    builder.declare_hop(arg_hop(said["val"], 2, turn, recipe.read_tool, 1, recipe.lookup, 0, "g1"))
-    builder.declare_hop(tool_hop(item, 3, turn, recipe.read_tool, 0, recipe.result))
-    builder.declare_hop(answer_hop(item, 4, turn, 3, False))
-    builder.expect_return(ReturnExpectation(recipe.read_tool, 0, recipe.return_form, (item,)))
-    return builder.build("parallel")
-
-
-def _industry_tools(industry: str) -> tuple[str, ...]:
-    """The v6 tools V6_META files under one industry, sorted and unique."""
-    names = sorted({spec.base.name for spec in TOOLS_V6
-                    if V6_META[spec.base.name].industry == industry})
-    return tuple(names)
-
-
-def _offer(industry: str, recipe: Recipe) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """The tools a case offers: the reader plus every tool of the case's industry.
-
-    Offering the whole industry keeps K6-14 honest: every v6 tool is reachable in
-    >= 5 cases because its own industry carries >= 20. The reader is added too,
-    because a type may be read by a tool filed under another industry (a bank
-    reading a CADASTRAL_NUMBER through egrn_extract_get).
-    """
-    names = sorted(set(_industry_tools(industry)) | {recipe.read_tool})
-    return names, names
-
-
 def _same_tool_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
-    """Two identities, one tool — R11's «find(A), find(B)»."""
-    tools, reachable = _offer(industry, recipe)
+    tools, reachable = _offer(industry, (recipe,))
     builder = new_builder_v6(ctx, recipe.role, tools, reachable, industry, PROVENANCE,
                              primary_identity="p0", cluster=f"{recipe.type_id}:{ctx.index}",
                              note=recipe.note + " — два лица, один инструмент",
@@ -402,9 +427,8 @@ def _same_tool_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
 
 
 def _fanout_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
-    """A list of two candidates of the same type, pick one by value (R13)."""
     from bench.agentpii5.contracts import PickSpec
-    tools, reachable = _offer(industry, recipe)
+    tools, reachable = _offer(industry, (recipe,))
     builder = new_builder_v6(ctx, recipe.role, tools, reachable, industry, PROVENANCE,
                              primary_identity="p0", cluster=f"{recipe.type_id}:{ctx.index}",
                              note=recipe.note + " — список, выбор по значению",
@@ -431,9 +455,8 @@ def _fanout_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
 
 
 def _branch_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
-    """found -> update, not-found -> create (R14)."""
     from bench.agentpii5.contracts import BranchSpec
-    tools, reachable = _offer(industry, recipe)
+    tools, reachable = _offer(industry, (recipe,))
     else_tool = next((t for t in tools if t != recipe.read_tool), recipe.read_tool)
     builder = new_builder_v6(ctx, recipe.role, tools, reachable, industry, PROVENANCE,
                              primary_identity="p0", cluster=f"{recipe.type_id}:{ctx.index}",
@@ -457,9 +480,8 @@ def _branch_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
 
 
 def _loop_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
-    """find -> show -> confirm -> act (R15)."""
     from bench.agentpii5.contracts import LoopSpec
-    tools, reachable = _offer(industry, recipe)
+    tools, reachable = _offer(industry, (recipe,))
     builder = new_builder_v6(ctx, recipe.role, tools, reachable, industry, PROVENANCE,
                              primary_identity="p0", cluster=f"{recipe.type_id}:{ctx.index}",
                              note=recipe.note + " — человек в цикле",
@@ -488,10 +510,8 @@ def _loop_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
 
 
 def _rag_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
-    """A retrieval over chunks that hold another person (R17), with the v6 type
-    still crossed through the reader."""
     from bench.agentpii5.contracts import RagSpec
-    tools, reachable = _offer(industry, recipe)
+    tools, reachable = _offer(industry, (recipe,))
     tools = tuple(sorted(set(tools) | {"kb_search"}))
     builder = new_builder_v6(ctx, recipe.role, tools, tools, industry, PROVENANCE,
                              primary_identity="p0", cluster=f"{recipe.type_id}:{ctx.index}",
@@ -499,10 +519,6 @@ def _rag_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
                              procedure_ref="requisites-115fz", procedures=procedure_records())
     rendered = _mint(builder, recipe.type_id)
     item = _seeded_item(builder, f"rec-{ctx.index}", recipe, rendered, "p0")
-    # A chunk with a FOREIGN identity (R17: >= 1 foreign identity). The foreign
-    # item is keyed by the type's FIRST field key, never «id»: a seed at «id» is
-    # not a `field_keys` entry, so `_bare_problems` would read the foreign value
-    # as a bare positive (K6-16) and refuse a value that is honestly keyed.
     foreign = _mint(builder, recipe.type_id)
     foreign_key = _spec(recipe.type_id).field_keys[0]
     chunk = seeded(builder.v5, f"chunk-{ctx.index}", "kb_chunks",
@@ -529,9 +545,8 @@ def _rag_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
 
 
 def _document_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
-    """A value read out of a file and written back (R18), with the v6 type."""
     from bench.agentpii5.contracts import DocumentSpec
-    tools, reachable = _offer(industry, recipe)
+    tools, reachable = _offer(industry, (recipe,))
     tools = tuple(sorted(set(tools) | {"file_read"}))
     builder = new_builder_v6(ctx, recipe.role, tools, tools, industry, PROVENANCE,
                              primary_identity="p0", cluster=f"{recipe.type_id}:{ctx.index}",
@@ -558,81 +573,21 @@ def _document_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
     return builder.build("document")
 
 
-# --- vertical coverage (K6-15): delivery / directory / files ---------------------
-# The 14 recipes read through crm/bank/gov/clinic tools; the three reading
-# verticals delivery/directory/files are offered but never crossed, so K6-15's
-# K16 half flags them. One case per vertical reads a v5 NAME/PHONE back through
-# a TOOLS_V6 tool of that vertical — coverage of any PII type, which is what the
-# check counts. The plan leaves `plan_v6.VERTICAL_READER_CASES` slots for these.
-
-_VERTICAL_READS: tuple[dict[str, str], ...] = (
-    # tool, industry, role, lookup leaf, result leaf, return form, value, seed field, key, ask
-    {"tool": "cdek_order_info", "industry": "logistics", "role": "delivery",
-     "lookup": "cdek_number", "result": "entity.recipient.name", "form": "nested",
-     "value": "NAME", "field": "name", "key": "PHONE", "ask": "заказ"},
-    {"tool": "phone_clean", "industry": "retail", "role": "crm",
-     "lookup": "source", "result": "items[].phone", "form": "canon",
-     "value": "PHONE", "field": "source", "key": "PHONE", "ask": "нормализуйте телефон"},
-    {"tool": "dwh_sql_query", "industry": "internal_bi", "role": "bank",
-     "lookup": "sql", "result": "data[].client_fio", "form": "list",
-     "value": "NAME", "field": "client_fio", "key": "NAME", "ask": "найдите клиента"},
-)
-
-
-def _vertical_case(ctx, vspec: dict[str, str]) -> CaseV5:
-    """One reading hop through a TOOLS_V6 tool of a vertical the recipes never
-    cross. The value read back is a v5 NAME or PHONE seeded into the tool's own
-    record, in a notation the user's register does not write — the same IN/tool
-    crossing that makes any other vertical «read»."""
-    tool = vspec["tool"]
-    identity = "p0"
-    builder = new_builder_v6(ctx, vspec["role"], (tool,), (tool,), vspec["industry"],
-                             "synthetic", primary_identity=identity,
-                             cluster=f"{vspec['value']}:{ctx.index}",
-                             note=f"вертикаль {vspec['value']} через {tool}")
-    drawn = v5.draw(ctx, city=ctx.rng.choice(list(pools.CORPUS_CITIES)))
-    name_r = v5.stored_name(drawn, ctx)
-    phone_r = v5.stored_phone(drawn)
-    if vspec["value"] == "NAME":
-        stored, value_type = name_r, "NAME"
-    else:
-        stored, value_type = phone_r, "PHONE"
-    # The record the tool reads: its lookup key plus the seeded value it returns.
-    fields = {vspec["field"]: stored.surface, vspec["lookup"]: phone_r.surface}
-    typed = {vspec["field"]: (value_type, identity, stored)}
-    row = seeded(builder.v5, f"vc-{ctx.index}", "v6_record", fields, typed)
-    item_id = row[vspec["field"]]
-
-    draft = builder.draft()
-    draft.say(opener(ctx)).say(vspec["ask"])
-    if vspec["key"] == "PHONE":
-        draft.value("key", v5.phone(ctx, drawn.phone))
-    else:
-        draft.value("key", v5.name(ctx, drawn.person, ("surname", "given")))
-    draft.punct(".")
-    turn, said = told(builder.v5, draft, {"key": (vspec["key"], identity, "required", False)})
-
-    builder.declare_hop(user_hop(said["key"], 0, turn))
-    builder.declare_hop(arg_hop(said["key"], 1, turn, tool, 0, vspec["lookup"], 0, ""))
-    builder.declare_hop(tool_hop(item_id, 2, turn, tool, 0, vspec["result"]))
-    builder.declare_hop(answer_hop(item_id, 3, turn, 2, False))
-    builder.expect_return(ReturnExpectation(tool, 0, vspec["form"], (item_id,)))
-    return builder.build("single")
+# --- the one reading vertical no v6 type crosses (K6-15 K16) --------------------
 
 
 def _build_one(ctx, row: plan_v6.PlanRow) -> CaseV5:
-    recipe = RECIPES[row.type_id]
-    partner = ""
-    if row.form.startswith(plan_v6.CHAIN_FORM_PREFIX):
-        partner = row.form[len(plan_v6.CHAIN_FORM_PREFIX):]
-    if row.behaviour == "sequential_chain" and partner:
-        return _chain_case(ctx, recipe, RECIPES[partner], row.industry)
+    if row.behaviour == "parallel":
+        return _dossier_case(ctx, row.types, row.industry)
+    if row.behaviour == "sequential_chain":
+        return _chain_case(ctx, RECIPES[row.types[0]], RECIPES[row.types[1]], row.industry)
+    recipe = RECIPES[row.types[0]]
+    if row.bare:
+        return _bare_case(ctx, recipe, row.industry)
     if row.behaviour == "retry_same_tool":
         return _retry_case(ctx, recipe, row.industry)
     if row.behaviour == "memory_anaphora":
         return _memory_case(ctx, recipe, row.industry)
-    if row.behaviour == "parallel":
-        return _parallel_case(ctx, recipe, row.industry)
     if row.behaviour == "same_tool_other_target":
         return _same_tool_case(ctx, recipe, row.industry)
     if row.behaviour == "fanout_pick":
@@ -645,52 +600,72 @@ def _build_one(ctx, row: plan_v6.PlanRow) -> CaseV5:
         return _rag_case(ctx, recipe, row.industry)
     if row.behaviour == "document":
         return _document_case(ctx, recipe, row.industry)
-    return _single(ctx, recipe, row.industry)
+    return _base_case(ctx, recipe, row.industry, row.behaviour)
 
 
-def _single(ctx, recipe: Recipe, industry: str) -> CaseV5:
-    return _base_case(ctx, recipe, industry, "single")
+# --- the one reading vertical no v6 type crosses (K6-15 K16) --------------------
+# Every v6 read tool crosses crm/bank/gov/clinic/directory/search/files, but the
+# delivery vertical (cdek_order_info) returns only v5 NAME/PHONE — so one case
+# reads a v5 NAME back through it, the same IN/tool crossing any other vertical
+# gets. The plan leaves one slot for it (sums to 499).
+
+_VERTICAL_READ: dict[str, str] = {
+    "tool": "cdek_order_info", "industry": "logistics", "role": "delivery",
+    "lookup": "cdek_number", "result": "entity.recipient.name", "form": "nested",
+    "value": "NAME", "field": "name", "key": "PHONE", "ask": "заказ",
+}
+
+
+def _vertical_case(ctx, vspec: dict[str, str]) -> CaseV5:
+    tool = vspec["tool"]
+    identity = "p0"
+    builder = new_builder_v6(ctx, vspec["role"], (tool,), (tool,), vspec["industry"],
+                             "synthetic", primary_identity=identity,
+                             cluster=f"{vspec['value']}:{ctx.index}",
+                             note=f"вертикаль {vspec['value']} через {tool}")
+    drawn = v5.draw(ctx, city=ctx.rng.choice(list(pools.CORPUS_CITIES)))
+    name_r = v5.stored_name(drawn, ctx)
+    phone_r = v5.stored_phone(drawn)
+    stored, value_type = name_r, "NAME"
+    fields = {vspec["field"]: stored.surface, vspec["lookup"]: phone_r.surface}
+    typed = {vspec["field"]: (value_type, identity, stored)}
+    row = seeded(builder.v5, f"vc-{ctx.index}", "v6_record", fields, typed)
+    item_id = row[vspec["field"]]
+
+    draft = builder.draft()
+    draft.say(opener(ctx)).say(vspec["ask"])
+    draft.value("key", v5.phone(ctx, drawn.phone))
+    draft.punct(".")
+    turn, said = told(builder.v5, draft, {"key": (vspec["key"], identity, "required", False)})
+
+    builder.declare_hop(user_hop(said["key"], 0, turn))
+    builder.declare_hop(arg_hop(said["key"], 1, turn, tool, 0, vspec["lookup"], 0, ""))
+    builder.declare_hop(tool_hop(item_id, 2, turn, tool, 0, vspec["result"]))
+    builder.declare_hop(answer_hop(item_id, 3, turn, 2, False))
+    builder.expect_return(ReturnExpectation(tool, 0, vspec["form"], (item_id,)))
+    return builder.build("single")
 
 
 def build_full(seed: int = SEED) -> list[CaseV5]:
-    """Instantiate every plan row into a v6 case, in plan order."""
     cases: list[CaseV5] = []
     registers = _registers(seed)
     position = 0
     for row in plan_v6.PLAN_V6:
         for _ in range(row.count):
             register = registers[position % len(registers)]
-            ctx = ctx_for(row.type_id, seed, position, register)
+            ctx = ctx_for(row.types[0], seed, position, register)
             case = _build_one(ctx, row)
-            # K6-11: a streaming case rides the voice register (R20). Every 5th
-            # voice_itn case is marked streaming — ≥ 30 of them, above the floor.
             if register == "voice_itn" and position % 5 == 0:
                 case = replace(case, streaming=True)
             cases.append(case)
             position += 1
-    # The three reading verticals the recipes never cross (K6-15): one case per
-    # vertical seeds a v5 NAME/PHONE the tool returns. The plan leaves exactly
-    # `plan_v6.VERTICAL_READER_CASES` slots for them, so the corpus sums to 500.
-    for vspec in _VERTICAL_READS:
-        register = registers[position % len(registers)]
-        ctx = ctx_for(vspec["tool"], seed, position, register)
-        case = _vertical_case(ctx, vspec)
-        if register == "voice_itn" and position % 5 == 0:
-            case = replace(case, streaming=True)
-        cases.append(case)
-        position += 1
+    register = registers[position % len(registers)]
+    ctx = ctx_for(_VERTICAL_READ["tool"], seed, position, register)
+    cases.append(_vertical_case(ctx, _VERTICAL_READ))
     return cases
 
 
 def _registers(seed: int) -> list[str]:
-    """The register mix OD-07: chat 0.40 / voice 0.30 / sloppy 0.20 / clean 0.10,
-    apportioned by Sainte-Laguë. «voice» is served by `voice_itn` (digits are
-    written, not spoken) because a v6 identifier is a digit run that the
-    `voice_raw` register refuses — 0 of 53 324 measured utterances carry one.
-
-    NOT v5's `registers_for`: v6's shares differ (chat 0.40, not 0.30) and the
-    voice bucket must be `voice_itn` alone, never `voice_raw`.
-    """
     targets = {"chat": 0.40, "voice_itn": 0.30, "sloppy": 0.20, "clean": 0.10}
     delivered = {name: 0 for name in targets}
     out: list[str] = []
