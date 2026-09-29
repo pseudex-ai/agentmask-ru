@@ -2119,6 +2119,9 @@ def main() -> int:
     parser.add_argument("--retry-delay", type=float, default=runinfo.RETRY_BASE_S,
                         help="первый отступ между попытками в секундах (растёт "
                              "экспоненциально до потолка)")
+    parser.add_argument("--no-price-brake", action="store_true",
+                        help="не вооружать стоп-кран по цене: точечный перепрогон "
+                             "дорогих кейсов, чья оценка взята от дешёвой пары и врёт")
     parser.add_argument("--dirty-ok", action="store_true",
                         help="прогон нельзя привязать к коммиту; это записано "
                              "в meta.json и в реестре")
@@ -2430,8 +2433,9 @@ def main() -> int:
     # ОЖИДАНИЕ НА СЛУЧАЙ ДЛЯ СТОП-КРАНА — точка оценки, делённая на тройки.
     # Ноль, когда оценки не было: кран не вооружён, и это сказано вслух, а не
     # срабатывает наугад на первом же прогоне новой пары моделей.
-    expected = (plan.usd_point / plan.demand.triples
-                if plan.basis.kind != "reserve_only" and plan.demand.triples else 0.0)
+    expected = (0.0 if args.no_price_brake else
+                (plan.usd_point / plan.demand.triples
+                 if plan.basis.kind != "reserve_only" and plan.demand.triples else 0.0))
     brake_line = ("не вооружён (оценки нет)" if expected <= 0.0 else
                   f"${expected * runinfo.COST_BRAKE_FACTOR:.4f} на случай в среднем")
     print(f"стоп-кран по цене: {brake_line}", flush=True)
