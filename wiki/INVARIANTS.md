@@ -747,6 +747,32 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   counts the leak, not the broken tool call — so a host with memory declares
   `pseudonym_scope` / `PSEUDEX_PSEUDONYM_SCOPE`. Pins: `test_collisions` (BOTH
   halves of the trade).
+- **A DERIVED FORM OF THIS DIALOGUE'S OWN SUBSTITUTE IS OURS, WHATEVER TYPE THE
+  SPAN CARRIES.** Class В: the model writes our substitute back as a part
+  («Котов Владислав»), one surname, initials («Котов В. О.»), an oblique case
+  («Котову Владиславу Олеговичу»), the other script — and `cardholder`
+  prefix-matches `card`, so `structured.detect_structured_kv` demotes the leaf
+  to OPAQUE and the span's TYPE stops saying NAME, which is how the dialogue's
+  own substitute became a second person («три личности», g04/g13) and a
+  paragraph of `REDACTED…` where a substitute stood (g07). The question is asked
+  of the SURFACE and answered by the vault
+  (`Vault.name_rendering_is_ours`, a sibling of `place_fragment_is_ours` /
+  `digit_fragment_is_ours` / `date_reading_is_ours`), and the rule lives in
+  `redact.is_own_substitute` so that `mask_text`, the envelope and the frozen
+  scorer `bench/agentpii3/score.py` answer one text the same way. Bounds: the
+  substitute must be one this CONVERSATION was shown (`token_uses`/`minted_in`),
+  ONE owner only, and the surface must carry the SURNAME slot — a bare given
+  name or patronymic is a word many people share. LOC keeps its own identity
+  machinery. Deliberately NOT gated on the caller's own-rendering evidence, so
+  the rule holds on the evidence-free reading a plain chat and `/mask` take.
+  Pins: `test_own_substitute_fixed_point`.
+- **THE ENGINE'S OWN REDACTION MARKER IS A FIXED POINT, NOT DATA.**
+  `REDACTED<6 hex>` is a redaction (`vault._render_token`'s fallback,
+  `envelope._neutral_redaction`), and its hex digits read as a NUMBER to the next
+  pass: under a numeric field key the engine minted a fake card over its own
+  redaction, so the one inert string became a new value on every request and the
+  model never saw the substitute it was given (g07). Pins:
+  `test_own_substitute_fixed_point`.
 
 ## Cache
 

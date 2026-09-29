@@ -14,7 +14,8 @@ from pseudex import agent_form, morph_names, morph_places, notation, spoken, tra
 from pseudex.assets import ASSETS
 from pseudex.normalize import normalize
 from pseudex.profiling import stage
-from pseudex.vault import LOC_TOKEN_PATTERN, token_re, Vault, name_key, place_key, _date_canonical, canonicalize, fold_key
+from pseudex.vault import (LOC_TOKEN_PATTERN, REDACTION_MARKER, token_re, Vault, name_key,
+                           place_key, _date_canonical, canonicalize, fold_key)
 
 # A number-like run (digits + phone separators), >=7 digits — a candidate for
 # digit-core detokenization when the model reformatted a numeric token.
@@ -139,6 +140,16 @@ def is_own_substitute(span: Span, vault: Vault) -> bool:
     # умолчанию — см. `Vault.with_own_values`.
     if vault.is_own_value(span.value):
         return True
+    # РЕДАКЦИЯ — НЕ ДАННЫЕ. The engine itself writes `REDACTED<6 hex>` where a
+    # substitute cannot stand (an OPAQUE leaf, an echo with no binding), and the
+    # marker's hex digits read as a NUMBER to the next pass: under a numeric field
+    # key (`cardholder` → CARD) the engine minted a fake card over its own
+    # redaction, so the one string that is supposed to be inert became a new value
+    # on every request, and the model never saw the substitute it was given
+    # (g07: `cardholder` → `REDACTED2aada2`). A marker is a fixed point of the
+    # mask, like every other rendering of ours — see `vault.REDACTION_MARKER`.
+    if REDACTION_MARKER.fullmatch(span.value):
+        return True
     if vault.is_minted_token(span.value):
         return True
     if span.entity_type in {"PHONE", "SNILS", "INN", "CARD", "PASSPORT"} and not any(
@@ -155,6 +166,26 @@ def is_own_substitute(span: Span, vault: Vault) -> bool:
     # derivation of a token from a real Latin name — the same test decides here.
     if span.entity_type == "NAME" and _is_derived_surface(span.value):
         return _derived_owner(span.value, vault) is not None
+    # CLASS В: THE IDENTITY QUESTION IS ASKED OF THE SURFACE, NOT OF THE TYPE.
+    # The branches above are switches on `span.entity_type`, and the type is a
+    # property of the FIELD, not of the value: `structured.detect_structured_kv`
+    # types a leaf by its KEY (`cardholder` prefix-matches `card`), demotes a
+    # numeric key type whose value has no digit to OPAQUE (`structured.py:216`),
+    # and OPAQUE has no renderer — so the model read `REDACTED<hex>` where its own
+    # substitute stood (g07). The type is gone by then; the IDENTITY is not, and
+    # the vault is its only holder. A part, a lone surname, initials, an oblique
+    # case and the other script are all renderings of ONE substitute this
+    # dialogue showed, and they are answered here for every type at once — the
+    # same one rule for `mask_text`, the envelope and the benchmark's scorer.
+    #
+    # LOC IS NOT ASKED, and that is not the type gate coming back. A place has
+    # its OWN identity question with its own machinery (`place_fragment_is_ours`,
+    # `holds_minted_place`, the `place_parts` index): «улица Шилова 12» is a real
+    # address that happens to carry a person's surname, and passing it through
+    # would put the customer's address in the clear. A NAME rendering is a person
+    # by construction; a place is not, whatever it is spelled like.
+    if span.entity_type != "LOC" and vault.name_rendering_is_ours(span.value):
+        return True
     if span.entity_type != "LOC":
         return False
     # A FIELD OF AN ADDRESS OBJECT IS JUDGED BY THE WHOLE OBJECT. The model's

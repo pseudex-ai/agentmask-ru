@@ -48,6 +48,21 @@ from pseudex.sqlite_setup import (
 
 _PLACE_CASES = ("nomn", "gent", "datv", "accs", "ablt", "loct")
 
+# РЕДАКЦИЯ — НЕ ПОДМЕНА, И ОНА НЕ ИМЕЕТ ПРАВА СТАТЬ ЗНАЧЕНИЕМ.
+#
+# Два места выдают `REDACTED<6 hex>`: `_render_token` на тип, у которого нет
+# рендерера (сегодня это `OPAQUE`, порождённый перетипизацией листа ключом
+# поля), и `envelope._neutral_redaction` на эхо, чья привязка неоднозначна.
+# Оба — СОЗНАТЕЛЬНАЯ редакция: она не несёт личности, не лежит в волте и не
+# восстанавливается. Но маркер состоит из букв и цифр, поэтому под числовым
+# ключом (`cardholder` → CARD) он читается как значение, и движок чеканит по
+# собственной редакции фальшивую карту: `{"cardholder": "REDACTED40c4d0"}` →
+# `{"cardholder": "0539 5860 3685 3925"}`. Каждый повторный запрос превращает
+# редакцию в НОВОЕ значение — идемпотентности нет ни у собственного вывода.
+# Вопрос задаётся ОДИН раз, для всех трёх вызывающих `is_own_substitute`.
+REDACTION_MARKER_PATTERN = r"REDACTED[0-9a-f]{6}"
+REDACTION_MARKER = re.compile(REDACTION_MARKER_PATTERN)
+
 
 def _rand_digits(count: int) -> str:
     return "".join(secrets.choice(string.digits) for _ in range(count))
@@ -946,6 +961,50 @@ def _stems_related(left: str, right: str) -> bool:
 def _stem_of_word(word: str) -> str:
     stem = _ENDING_RE.sub("", word)
     return stem if len(stem) >= 4 else word
+
+
+# СКОЛЬКО СЛОВ ЕЩЁ ИМЯ. Фамилия, имя, отчество и, для некоторых народов,
+# частица — дальше фраза, а не человек.
+_NAME_RENDERING_WORDS = 4
+
+
+def _name_word_forms(word: str) -> frozenset[str]:
+    """The forms one WRITTEN name word is looked up by — the same set
+    `residual_of` queries the index with, so the slot a word fits is decided by
+    the same evidence that decided the word belongs to this substitute at all.
+
+    A Latin word is folded, never inflected: morphology has nothing to say about
+    it, and the mint indexed every rendering `translit.UNITS` declares. A
+    Cyrillic word is read in both genders and in the nominative, because the
+    model writes the person in the case the sentence required («Котову»,
+    «Фёдоровичу») and the substitute is stored as minted."""
+    if word.isascii():
+        return frozenset((translit.fold(word),))
+    variants = {word.casefold(), morph_names.to_nominative(word).casefold()}
+    for gender in ("masc", "femn"):
+        variants.add(morph_names._part_to_nominative(word, gender).casefold())
+    return frozenset(variants)
+
+
+def _same_name_word(forms: frozenset[str], part: str) -> bool:
+    """Does a substitute's own word `part` read as the written form `forms`?
+
+    THREE READINGS, ONE PER WAY THE TWO SIDES DIFFER. The written word is
+    Cyrillic and the substitute's is too (`ершов` against the stored key); the
+    written word is LATIN and the substitute's is Cyrillic — that is the
+    `name_latin`/`cardholder` case, and `fold` is the comparison the index itself
+    makes, so `translit.fold(part)` is asked rather than a transliteration table;
+    or the written word is oblique and the substitute's is nominative. A
+    rendering the DEFAULT fold does not unify (a declared variant spelling) is
+    answered «not ours», which masks — the fail-closed side."""
+    if part.casefold() in forms:
+        return True
+    # `fold` folds a LATIN rendering; a Cyrillic word needs its default rendering
+    # first (`folded`), which is the key the mint stored beside the declared ones.
+    key = translit.fold(part) if part.isascii() else translit.folded(part)
+    if key in forms:
+        return True
+    return morph_names.to_nominative(part).casefold() in forms
 
 
 def _same_house(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
@@ -1909,7 +1968,7 @@ def _token_re(version: str) -> re.Pattern[str]:
         # совпасть с канонической датой подмены этого заказчика.
         r"\b\d{1,2}([./ -])\d{1,2}\1\d{2,4}\b",         # DATE, свободная запись («15.9.82», «19 12 1992»)
         r"\+79\d{9}(?!\d)",                          # PHONE, never a numeric prefix
-        r"REDACTED[0-9a-f]{6}",                       # fallback
+        REDACTION_MARKER_PATTERN,                    # fallback: редакция, а не подмена
         r"\b\d{10}\b",                                # INN — least specific, last
     ]))
 
@@ -3772,6 +3831,119 @@ class Vault:
                 (self._customer, *named),
             ).fetchone()
         return row is not None
+
+    def name_rendering_is_ours(self, surface: str) -> bool:
+        """Is this SURFACE a rendering of ONE name substitute THIS dialogue showed?
+
+        CLASS В. The model writes our own substitute back — as a part («Котов
+        Владислав»), as one surname («Котов»), as initials («Котов В. О.»), in a
+        case the sentence required («Котову Владиславу Олеговичу»), in the other
+        script («Kotov Vladislav») — and under a field key that RE-TYPES the leaf
+        (`cardholder` prefix-matches `card`, CARD is a numeric key type, the value
+        has no digit, `structured.detect_structured_kv` demotes it to OPAQUE) the
+        span is no longer a NAME at all. The question «is this ours» was asked of
+        the span's TYPE and of its LITERAL string, so neither the type-gated
+        branches nor the exact-surface membership could answer, and the dialogue's
+        own substitute was minted into a SECOND person — «три личности» in one
+        dialogue (g04/g13), a paragraph of `REDACTED…` where a substitute stood
+        (g07).
+
+        THE QUESTION IS ABOUT IDENTITY, AND IDENTITY LIVES HERE. The envelope's
+        own-rendering set is a list of exact strings and cannot be the source of
+        truth about who is whose; the vault is the only holder of the connection
+        between a substitute and the real person it stands for. So the question
+        is a sibling of `place_fragment_is_ours`, `digit_fragment_is_ours` and
+        `date_reading_is_ours`: one boolean, indexed point queries, no scans.
+
+        TWO DISCIPLINES, BOTH LOAD-BEARING:
+
+        * ONE OWNER IN THE DIALOGUE. `residual_of` already refuses when two
+          substitutes share a word, and narrows the answer to the substitutes
+          THIS conversation was shown. A name is distinctive enough for the
+          single-candidate rule to mean something (unlike a street), and the
+          conversation is where the model can have read it.
+        * THE SURFACE MUST NAME THE PERSON — THE SURNAME SLOT. A lone given
+          name or patronymic is not a rendering of anybody: the fake pools draw
+          from the same short list of Russian given names every real person is
+          drawn from, so «Артём» or «Артём Фёдорович» alone is a word (or two
+          words) many people answer to, not an identity. The surname is the slot
+          a person is addressed by, and the owner's own examples («одна фамилия /
+          инициалы / падеж») all carry it. `residual_of`'s docstring makes the
+          same distinction from the other side: «A single shared word would fire
+          on a real customer who happens to be called Юлия.»
+
+        THE SCRIPT AND THE CASE ARE COVERAGE, NOT EXTRA RULES: `residual_of`
+        already normalises a word to the nominative in both genders and folds a
+        Latin word through the declared transliteration keys the mint indexed.
+
+        THE SCOPE DOES NOT WIDEN WITH `PSEUDONYM_SCOPE=customer`, and that is
+        the fail-closed side. A host that declares agent memory widens the exact
+        token (`is_minted_token`) and accepts the price in real people; a PART
+        carries far less evidence than the whole rendering — one surname is
+        shared by strangers — so widening it to the whole customer would name
+        those strangers on the strength of a single word. `residual_of` and the
+        Latin `_derived_owner` are conversation-scoped for the same reason, and
+        this question reuses them rather than re-deriving the rule.
+        """
+        if not surface or not any(ch.isalpha() for ch in surface):
+            # NO LETTERS, NO PERSON. A digit run, a card, an account — the
+            # numeric types have their own digit-signature question above, and
+            # asking the name index about a number would pay morphology on every
+            # numeric span in the customer's traffic for an answer that is always
+            # «no».
+            return False
+        words = [word for word in re.split(r"[\s,;]+", surface.strip()) if word]
+        # A person's name is at most surname + given + patronymic (+ a particle).
+        # Anything longer is a phrase, and a phrase is not a rendering of a name.
+        if not words or len(words) > _NAME_RENDERING_WORDS:
+            return False
+        stripped = [word.strip(".") for word in words]
+        full = [word for word in stripped if len(word) > 2]
+        initials = [word for word in stripped if len(word) == 1]
+        if not full or len(full) + len(initials) != len(stripped):
+            # No full word at all is a BARE pair of initials — `_derived_owner`'s
+            # question, not this one. A word we cannot classify as either (a
+            # two-letter given name) is not evidence either way, so refuse.
+            return False
+        token = self.residual_of(surface)
+        if token is None:
+            return False
+        return self._names_the_person(full, initials, token)
+
+    def _names_the_person(self, full: list[str], initials: list[str], token: str) -> bool:
+        """Whether these written words pick out THIS substitute's person.
+
+        `residual_of` has already proved every full word belongs to `token`; what
+        is decided here is the IDENTITY MARKER: which slot each word stands in.
+        Slots are the substitute's own words, read through the same forms the
+        mint indexed (casefold, nominative, both genders, the declared Latin
+        keys), and the surface passes only when it carries the SURNAME slot.
+        Refusing is the safe side: an unrecognised word is masked, and a real
+        stranger mistaken for a part of our substitute is the one failure the
+        owner's decision explicitly bounds the rule by."""
+        parts = token.split()
+        shape = morph_names.name_shape(token)
+        if len(parts) != len(shape):
+            return False
+        taken = [False] * len(parts)
+        kinds: list[str] = []
+        for word in full:
+            forms = _name_word_forms(word)
+            index = next((i for i, part in enumerate(parts)
+                          if not taken[i] and _same_name_word(forms, part)), None)
+            if index is None:
+                return False
+            taken[index] = True
+            kinds.append(shape[index])
+        for letter in initials:
+            index = next((i for i, (part, kind) in enumerate(zip(parts, shape))
+                          if not taken[i] and kind in ("name", "patr", "init")
+                          and part[:1].casefold() == letter.casefold()), None)
+            if index is None:
+                return False
+            taken[index] = True
+            kinds.append(shape[index])
+        return "surn" in kinds
 
     def residual_of(self, candidate: str) -> str | None:
         """The minted token this leftover string is a piece of, if any.

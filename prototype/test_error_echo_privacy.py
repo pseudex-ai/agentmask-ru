@@ -246,6 +246,18 @@ def _showed_name(context: MaskContext) -> tuple[str, str]:
     return rows[0]
 
 
+# Three ONE-WORD substitutes, the way a CRM card's last/first/middle name fields
+# reach the model: shown APART, so no single rendering equals the joined string the
+# model writes back.
+PART_NAME_WORDS: tuple[str, ...] = ("Чижова", "Эмилия", "Романовна")
+
+
+def _mint_part_names(context: MaskContext) -> str:
+    """Mint one substitute per word and return them joined, as the model would."""
+    return " ".join(mask_text(word, context.vault, [Span(0, len(word), "NAME", word)])
+                    for word in PART_NAME_WORDS)
+
+
 def _mint_phone(context: MaskContext, user_text: str) -> tuple[str, str]:
     """Mask the customer turn and read back the LITERAL rendering this dialogue
     was shown — which is the leaf the production transcript carries in the call."""
@@ -1705,23 +1717,35 @@ def test_a_retyped_name_replay_carries_its_current_case_into_the_result() -> Non
 def test_the_cache_key_carries_the_own_rendering_evidence() -> None:
     """THE CACHE KEY MUST CARRY EVERY INPUT THE OUTPUT DEPENDS ON.
 
-    A re-cased rendering of the dialogue's own NAME masks DIFFERENTLY depending on
-    whether the caller can see that it is ours: evidence-free it is re-minted (the
-    fake-of-a-fake), evidence-bearing it is left alone. Both orders are driven
-    through the public entry points, because a cache keyed on `(org, conversation,
-    text)` alone serves whichever ran first — and the answer must follow the
-    CURRENT evidence, never the earlier call's."""
+    A NAME JOINED FROM SEPARATE PART-SUBSTITUTES masks DIFFERENTLY depending on
+    whether the caller can see that the parts are ours: evidence-free it is
+    re-minted (the fake-of-a-fake), evidence-bearing it is left alone. Both orders
+    are driven through the public entry points, because a cache keyed on
+    `(org, conversation, text)` alone serves whichever ran first — and the answer
+    must follow the CURRENT evidence, never the earlier call's.
+
+    THE VEHICLE MOVED WITH CLASS В (`research/hop-format-audit/SPIKE-В.md`), the
+    property did not. The vehicle used to be a re-cased WHOLE rendering, and that
+    string stopped discriminating when the identity rule landed in
+    `is_own_substitute` (`vault.name_rendering_is_ours`): the owner's decision is
+    «производная форма СВОЕЙ подмены пропускается как своя», without an evidence
+    caveat, so BOTH readings now leave it alone — stated as a check of its own
+    below, so the change is pinned rather than merely absent. What still
+    discriminates is the case no list of exact renderings can enumerate: parts
+    shown APART and joined by the model, which is `_is_own_composition`'s own
+    case and stays evidence-gated, because its evidence — which renderings this
+    dialogue showed — is what the cache key carries."""
     # ORDER 1 — evidence first, then the evidence-free reading.
     _vault, context = _session(CASE_CONVERSATION)
     _mint_phone(context, USER_MESSAGE)
-    shown, _real = _showed_name(context)
-    text: str = json.dumps({"name": shown.lower()}, ensure_ascii=False)
+    text: str = json.dumps({"name": _mint_part_names(context).lower()}, ensure_ascii=False)
     provenance = _Provenance(context)
     provenance.snapshot()
     guarded = _mask_one(text, context, provenance.own_renderings())
     plain = mask_one(text, context)
     check(guarded == text,
-          "with evidence the re-cased own NAME is left as it is (order 1)", f"guarded={guarded!r}")
+          "with evidence a NAME joined from separate parts is left as it is (order 1)",
+          f"guarded={guarded!r}")
     check(plain != text,
           "without evidence the same text is NOT served the evidence-bearing result (order 1)",
           f"plain={plain!r}")
@@ -1729,17 +1753,37 @@ def test_the_cache_key_carries_the_own_rendering_evidence() -> None:
     # ORDER 2 — evidence-free first, then the guarded reading.
     _vault2, context2 = _session(CASE_CONVERSATION)
     _mint_phone(context2, USER_MESSAGE)
-    shown2, _real2 = _showed_name(context2)
-    text2: str = json.dumps({"name": shown2.lower()}, ensure_ascii=False)
+    text2: str = json.dumps({"name": _mint_part_names(context2).lower()}, ensure_ascii=False)
     plain2 = mask_one(text2, context2)
     provenance2 = _Provenance(context2)
     provenance2.snapshot()
     guarded2 = _mask_one(text2, context2, provenance2.own_renderings())
     check(plain2 != text2,
-          "without evidence the re-cased own NAME is re-minted (order 2)", f"plain={plain2!r}")
+          "without evidence the joined NAME is re-minted (order 2)", f"plain={plain2!r}")
     check(guarded2 == text2,
           "with evidence the same text is NOT served the evidence-free result (order 2)",
           f"guarded={guarded2!r}")
+
+    # THE CLASS-В RULE THIS VEHICLE USED TO PIN, NOW UNCONDITIONAL. A re-cased
+    # rendering of ONE substitute is the string the dialogue itself showed, read
+    # through the case axis — and it is OUR rendering whichever reading asks, the
+    # evidence-free one included. The decision is the owner's and it is
+    # deliberately not gated on the caller's evidence: the frozen benchmark
+    # scorer calls the same `is_own_substitute` without it
+    # (`bench/agentpii3/score.py`), and a rule that lives in the envelope instead
+    # is how production and the instrument came to disagree about one text.
+    _vault3, context3 = _session(CASE_CONVERSATION)
+    _mint_phone(context3, USER_MESSAGE)
+    shown3, _real3 = _showed_name(context3)
+    retyped: str = json.dumps({"name": shown3.lower()}, ensure_ascii=False)
+    provenance3 = _Provenance(context3)
+    provenance3.snapshot()
+    check(_mask_one(retyped, context3, provenance3.own_renderings()) == retyped,
+          "a re-cased own NAME is a fixed point WITH evidence",
+          f"guarded={_mask_one(retyped, context3, provenance3.own_renderings())!r}")
+    check(mask_one(retyped, context3) == retyped,
+          "a re-cased own NAME is a fixed point WITHOUT evidence (class В)",
+          f"plain={mask_one(retyped, context3)!r}")
 
 
 def test_a_bound_call_never_attributes_a_value_it_did_not_carry() -> None:
