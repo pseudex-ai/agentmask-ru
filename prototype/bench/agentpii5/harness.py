@@ -124,6 +124,12 @@ STREAM_CHUNK: int = 17
 DEFAULT_MAX_CALLS: int = 4096
 
 
+# DeepSeek rejects `max_tokens` above this ("the valid range of max_tokens is
+# [1, 393216]"), so the per-response cap must stay inside it even when the
+# operator asked for a larger session budget.
+DEEPSEEK_MAX_OUTPUT_TOKENS = 393216
+
+
 def deepseek_max_output_tokens(connector_max_tokens: int) -> int:
     """The per-response output cap: the session token budget, NOT a fraction of it.
 
@@ -135,7 +141,7 @@ def deepseek_max_output_tokens(connector_max_tokens: int) -> int:
     the session budget while the session check still holds the whole conversation
     to it.
     """
-    return connector_max_tokens
+    return min(connector_max_tokens, DEEPSEEK_MAX_OUTPUT_TOKENS)
 
 
 @dataclass
