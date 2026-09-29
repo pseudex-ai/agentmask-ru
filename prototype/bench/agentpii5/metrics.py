@@ -737,8 +737,16 @@ def _span_masked(record: ToolResultRecord, item: PiiItem, span: tuple[int, int])
 
 
 def _record_clean(record: ToolResultRecord, items: dict[str, PiiItem]) -> bool:
-    """Every TAGGED slot of this result was masked, pieces included."""
+    """Every TAGGED slot of this result was masked, pieces included.
+
+    A `neg:` slot is a NEGATIVE (a business identifier that must stay), not a
+    PII item to mask — `overmask_result` scores it, and a right gateway leaves it
+    untouched. Folding it in here would make every result carrying a negative
+    read as a `toolresult_masked` miss, which is the defect this line existed to
+    prevent in the other direction."""
     for tag, span in record.spans_real.items():
+        if tag.startswith(NEG_TAG_PREFIX):
+            continue
         owner = _tagged_item(items, tag)
         if owner is None or not _span_masked(record, owner, span):
             return False

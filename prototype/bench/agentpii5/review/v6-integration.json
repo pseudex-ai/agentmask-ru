@@ -1,8 +1,8 @@
 {
  "generated_by": "bench.agentpii5.integrate_v6",
  "phase": "full",
- "corpus_sha256": "c493fd75cd3da8dabc00303f2517ef139ef1b55b28150b6413f64ab77cac7081",
- "ladder_sha256": "1e0df475564f4dacc71aad81eb092f13646d2c3decfe9a062aba75731fa981ad",
+ "corpus_sha256": "bec77a1d4455f2809d0dbfbac958e5860b8ea5566307e3a8585ca392f60803b9",
+ "ladder_sha256": "c504fe5cb4d091d477e483e9082ec1ad0d2fb71685f4290272e12bbb8ce79080",
  "registry_sha256": "ed88c032f0450579c716692798760b85a8693eeddebb55e54bd9c214393553e7",
  "l1": {
   "perfect": {
@@ -32,8 +32,8 @@
      "total": 122
     },
     "overmask": {
-     "hits": 30,
-     "total": 30
+     "hits": 65,
+     "total": 65
     },
     "consistency": {
      "hits": 0,
@@ -132,8 +132,8 @@
      "total": 52
     },
     "overmask_result": {
-     "hits": 0,
-     "total": 0
+     "hits": 35,
+     "total": 35
     }
    },
    "small": {
@@ -162,8 +162,8 @@
      "total": 397
     },
     "overmask": {
-     "hits": 120,
-     "total": 120
+     "hits": 253,
+     "total": 253
     },
     "consistency": {
      "hits": 2,
@@ -262,8 +262,8 @@
      "total": 176
     },
     "overmask_result": {
-     "hits": 0,
-     "total": 0
+     "hits": 133,
+     "total": 133
     }
    },
    "medium": {
@@ -292,8 +292,8 @@
      "total": 969
     },
     "overmask": {
-     "hits": 300,
-     "total": 300
+     "hits": 637,
+     "total": 637
     },
     "consistency": {
      "hits": 9,
@@ -392,8 +392,8 @@
      "total": 446
     },
     "overmask_result": {
-     "hits": 0,
-     "total": 0
+     "hits": 337,
+     "total": 337
     }
    },
    "max": {
@@ -422,8 +422,8 @@
      "total": 1599
     },
     "overmask": {
-     "hits": 500,
-     "total": 500
+     "hits": 1060,
+     "total": 1060
     },
     "consistency": {
      "hits": 20,
@@ -522,8 +522,8 @@
      "total": 792
     },
     "overmask_result": {
-     "hits": 0,
-     "total": 0
+     "hits": 560,
+     "total": 560
     }
    }
   },
@@ -653,15 +653,15 @@
     "label": "маскирует негативы в результатах",
     "catch": "overmask_result",
     "perfect": {
-     "hits": 0,
-     "total": 0
+     "hits": 560,
+     "total": 560
     },
     "mutant": {
      "hits": 0,
-     "total": 0
+     "total": 560
     },
-    "caught": false,
-    "changed": false
+    "caught": true,
+    "changed": true
    },
    {
     "id": "M10",
@@ -1945,14 +1945,14 @@
   ]
  },
  "regress": {
-  "corpus_digest": "c493fd75cd3da8dabc00303f2517ef139ef1b55b28150b6413f64ab77cac7081",
-  "ladder_corpus_sha256": "c493fd75cd3da8dabc00303f2517ef139ef1b55b28150b6413f64ab77cac7081",
+  "corpus_digest": "bec77a1d4455f2809d0dbfbac958e5860b8ea5566307e3a8585ca392f60803b9",
+  "ladder_corpus_sha256": "bec77a1d4455f2809d0dbfbac958e5860b8ea5566307e3a8585ca392f60803b9",
   "identity": true,
   "pinned_v5": {
    "corpus.v5.json": "51c37b6d88efe4d3478b8fa0e678de3ec0b9336f1b0c948862b2f7a54dcee01f",
    "ladder.json": "3e088f66334309feedd32f8d860a34d215e3ca94561b2a8d55425c01317708d9",
-   "v6/corpus.v5.json": "32cce1d94f4a186d8bfabce89d51620cfb2ff51f480dc8efd8b26bbc722087bb",
-   "v6/ladder.json": "1e0df475564f4dacc71aad81eb092f13646d2c3decfe9a062aba75731fa981ad"
+   "v6/corpus.v5.json": "8ea821c3208ed6a4ce5ed14f2acf22b30559300b7b55248448e763cda234fb03",
+   "v6/ladder.json": "c504fe5cb4d091d477e483e9082ec1ad0d2fb71685f4290272e12bbb8ce79080"
   }
  },
  "ladder_stamp": "51da21302e2c3f31ae46813f0ffbd044e996fd52b5b9bdb4a5ae23f22632493d"

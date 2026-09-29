@@ -1081,6 +1081,13 @@ def _tool_results(case: CaseV5, items: dict[str, PiiItem], subs: dict[str, Subst
     declared = {(ret.tool_name, ret.call_ordinal): ret for ret in case.returns}
     records: list[ToolResultRecord] = []
     mentions: list[MentionRecord] = []
+    # The v6 NEGATIVES a right gateway must leave untouched inside the results
+    # (§6.3, CQ-11). They ride the FIRST result as `neg:`-tagged slots, beside the
+    # positive the case declared — a BIK beside the account in a statement, a КБК
+    # beside the УИН in a charge. `overmask_result` counts these slots and M9
+    # masks them; every other metric skips `neg:` tags (a negative is not an item).
+    v6_negatives = [negative for negative in case.base.negatives
+                    if negative.family in contracts.V6_NEGATIVE_FAMILIES]
     for seq, ((turn, tool, ordinal), read_ids) in enumerate(sorted(by_result.items())):
         # EVERY DECLARED item of this result, even one no hop reads: a value the
         # result renders and nobody consumes still reaches the model.
@@ -1101,12 +1108,27 @@ def _tool_results(case: CaseV5, items: dict[str, PiiItem], subs: dict[str, Subst
             masked_parts.append(prefix + fake.canonical + "\n")
             spans_real[item_id] = (start_real, start_real + len(item.canonical))
             pieces.append((start_real, start_real + len(item.canonical), fake.canonical, item.type))
+        # THE NEGATIVES LAND IN THE FIRST RESULT, tagged with `NEG_TAG_PREFIX`
+        # (CQ-11). They are NOT `pieces` here: a right gateway leaves them
+        # untouched, and `overmask_result` reads their coverage as a survival. M9
+        # (`_m9_overmask_negatives`) later adds the piece and turns the survival
+        # into a hit against the mutant.
+        if seq == 0:
+            for ni, negative in enumerate(v6_negatives):
+                prefix = f"{negative.family}: " if real_parts else ""
+                start_real = sum(len(part) for part in real_parts) + len(prefix)
+                real_parts.append(prefix + negative.value + "\n")
+                masked_parts.append(prefix + negative.value + "\n")
+                spans_real[metrics.NEG_TAG_PREFIX + f"n{ni}"] = (
+                    start_real, start_real + len(negative.value))
         records.append(ToolResultRecord(
             tool_name=tool, seq=seq, call_ordinal=ordinal, turn=turn,
             return_form=(ret.return_form if ret else "flat_json"),
             text_real="".join(real_parts), text_masked="".join(masked_parts),
             spans_real=spans_real, pieces=tuple(pieces), forced=False))
         for item_id in spans_real:
+            if item_id.startswith(metrics.NEG_TAG_PREFIX):
+                continue                      # a negative, not an item: no mention
             mentions.append(MentionRecord(
                 item_id=item_id, msg=-1, result_seq=seq, substitute=subs[item_id].canonical,
                 request_index=request_of_result(len(case.base.messages), seq)))

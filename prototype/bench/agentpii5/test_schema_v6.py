@@ -93,15 +93,17 @@ def _fake_item(idx: int, bare: bool) -> PiiItem:
                    where=where, duty="required", spoken=False, stale=False)
 
 
-def _negative() -> Negative:
-    return Negative("ЗАКАЗ-00412", 0, 11, 0, "order_number", "fixture")
+def _negatives() -> tuple[Negative, ...]:
+    """One negative per REGISTERED family, so the clean corpus exercises every
+    `V6_NEGATIVE_FAMILIES` id and K6-05 (each family at its floor) stays quiet."""
+    return tuple(Negative(f"ЗАКАЗ-{family}", 0, 11, 0, family, "fixture")
+                 for family in c.V6_NEGATIVE_FAMILIES)
 
 
 def _v6_case(idx: int, industry: str, register: str, behaviour: str, streaming: bool,
              has_result: bool, carries_imei: bool, bare: bool,
-             tool: str, negative: bool) -> CaseV5:
+             tool: str, negatives: tuple[Negative, ...]) -> CaseV5:
     items = [_fake_item(idx, bare)] if carries_imei else []
-    negatives = (_negative(),) if negative else ()
     messages = (Message(role="system", content="s", source=None, name=""),
                 Message(role="user", content="найдите устройство", source=None, name=""))
     base = Case(
@@ -166,9 +168,8 @@ def _clean_corpus(phase: str) -> list[CaseV5]:
                 elif phase == "pilot" and j == 0:
                     behaviour = "retry_same_tool"
             bare = carries_imei and (j % imei_per_industry) == 0
-            negative = idx < sv.FLOORS["negative_family"][phase]
             cases.append(_v6_case(idx, industry, register, behaviour, streaming,
-                                  has_result, carries_imei, bare, tool, negative))
+                                  has_result, carries_imei, bare, tool, _negatives()))
             idx += 1
     return cases
 

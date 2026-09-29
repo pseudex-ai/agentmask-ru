@@ -25,8 +25,9 @@ from dataclasses import dataclass, field, replace
 
 from bench.agentpii4 import pools
 from bench.agentpii4.pools import Rendered
+from bench.agentpii4.schema import Message, Negative, TraceRow
 from bench.agentpii4.scenarios.common import ctx_for
-from bench.agentpii5 import build_v6, gen_v6, pii_types, schema_v6
+from bench.agentpii5 import build_v6, contracts_v6, gen_v6, pii_types, schema_v6
 from bench.agentpii5.contracts import (CaseV5, ForcedError, Hop, ReturnExpectation)
 from bench.agentpii5.scenarios5 import common as v5
 from bench.agentpii5.scenarios5.common import (answer_hop, arg_hop, opener, seeded, told,
@@ -646,6 +647,67 @@ def _vertical_case(ctx, vspec: dict[str, str]) -> CaseV5:
     return builder.build("single")
 
 
+# --- the v6 negative layer (§1.6, K6-05) -----------------------------------------
+# 28 families × 20 occurrences = 560 negatives laid over 500 cases: the first 60
+# cases carry a second negative, the rest one — «≈1.1 negatives per case», and
+# every family appears exactly 20 times. The schedule is the family order repeated
+# 20 times, so the assignment is a property of the POSITION (seed-independent ids,
+# seed-dependent values), never of the type a case happened to draw.
+
+_NEG_PER_FAMILY: int = 20
+_NEG_SCHEDULE: tuple[str, ...] = tuple(
+    family for family in contracts_v6.V6_NEGATIVE_FAMILIES for _ in range(_NEG_PER_FAMILY))
+_NEG_SECOND_AT: int = len(_NEG_SCHEDULE) - 500     # 60 cases carry a second negative
+
+
+def _negatives_for(position: int, seed: int) -> tuple[tuple[str, str], ...]:
+    """The `(family, value)` negatives a case at `position` carries, or () past
+    the schedule (never happens — the vertical reader is position 499)."""
+    if position >= 500:
+        return ()
+    slots = [_NEG_SCHEDULE[position]]
+    if position < _NEG_SECOND_AT:
+        slots.append(_NEG_SCHEDULE[500 + position])
+    return tuple(
+        (family, contracts_v6.neg_value(family, seed * 10_000 + position * 10 + slot))
+        for slot, family in enumerate(slots))
+
+
+def _attach_v6_negatives(case: CaseV5, position: int, seed: int) -> CaseV5:
+    """Append the case's v6 negatives to the FIRST user message, as declared
+    `Negative`s with their offsets and trace rows — the same discipline the v4
+    auto-negative keeps (built, never searched). The negative sits NEXT TO the
+    positive the message already dictates, so `overmask` (message) and K6-05
+    read it, and `perfect._tool_results` re-renders the same values into the
+    result as `neg:`-tagged slots for `overmask_result`."""
+    pairs = _negatives_for(position, seed)
+    if not pairs:
+        return case
+    base = case.base
+    msg_idx = 1                                    # first user message (0 is system)
+    messages = list(base.messages)
+    text = messages[msg_idx].content
+    trace = list(base.trace)
+    negatives = list(base.negatives)
+    cursor = len(text)
+    for family, value in pairs:
+        lead = " кстати "
+        start = cursor + len(lead)
+        end = start + len(value)
+        # NO trailing sentence punctuation: the voice_itn register forbids
+        # «.,;:!?», and the message already ends with its own opener's form.
+        segment = lead + value
+        text += segment
+        trace.append(TraceRow(msg=msg_idx, key="", start=cursor, end=cursor + len(segment),
+                              origin="literal"))
+        negatives.append(Negative(value=value, start=start, end=end, msg=msg_idx,
+                                  family=family, why="бизнес-идентификатор (не ПД)"))
+        cursor += len(segment)
+    messages[msg_idx] = Message(role="user", content=text, source=None, name="")
+    return replace(case, base=replace(base, messages=tuple(messages),
+                                      trace=tuple(trace), negatives=tuple(negatives)))
+
+
 def build_full(seed: int = SEED) -> list[CaseV5]:
     cases: list[CaseV5] = []
     registers = _registers(seed)
@@ -657,11 +719,13 @@ def build_full(seed: int = SEED) -> list[CaseV5]:
             case = _build_one(ctx, row)
             if register == "voice_itn" and position % 5 == 0:
                 case = replace(case, streaming=True)
+            case = _attach_v6_negatives(case, position, seed)
             cases.append(case)
             position += 1
     register = registers[position % len(registers)]
     ctx = ctx_for(_VERTICAL_READ["tool"], seed, position, register)
-    cases.append(_vertical_case(ctx, _VERTICAL_READ))
+    case = _attach_v6_negatives(_vertical_case(ctx, _VERTICAL_READ), position, seed)
+    cases.append(case)
     return cases
 
 

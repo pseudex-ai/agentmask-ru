@@ -332,11 +332,16 @@ def validate_corpus_v6(cases: Sequence[CaseV5], phase: str, total: int) -> list[
                 problems.append(f"K6-04 cluster {cluster_id} member {member}: {seen} "
                                 f"cluster cases carry it, floor {cluster_member_floor}")
 
-    # K6-05 every negative family present in the corpus at its occurrence floor.
+    # K6-05 every REGISTERED negative family present in the corpus at its
+    # occurrence floor. Iterated over `V6_NEGATIVE_FAMILIES` (never over the
+    # families the corpus happened to declare): a family with zero occurrences is
+    # a RED, not a silent pass — the v4/v5 `validate` accepted «some negatives»
+    # and never checked that the closed vocabulary was actually exercised.
     negative_floor = int(FLOORS["negative_family"][phase])
     family_counts: Counter[str] = Counter(
         negative.family for case in cases for negative in case.base.negatives)
-    for family, seen in sorted(family_counts.items()):
+    for family in c.V6_NEGATIVE_FAMILIES:
+        seen = family_counts.get(family, 0)
         if seen < negative_floor:
             problems.append(f"K6-05 negative family {family!r}: {seen} negatives, "
                             f"floor {negative_floor}")

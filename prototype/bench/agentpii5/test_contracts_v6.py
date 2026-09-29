@@ -36,8 +36,18 @@ def test_axes_and_provenance() -> list[str]:
         problems.append(f"V6_PROVENANCE_KINDS differs from the spec: {v6.V6_PROVENANCE_KINDS}")
     if v6.V6_DIR != "bench/agentpii5/v6":
         problems.append(f"V6_DIR differs from the spec: {v6.V6_DIR}")
-    if v6.V6_NEGATIVE_FAMILIES != ():
-        problems.append("V6_NEGATIVE_FAMILIES must be empty before the first v6 case")
+    expected_negatives = (
+        "BIK", "KPP", "INN_LEGAL", "OGRN_LEGAL", "GRN_RECORD",
+        "CORR_ACCOUNT", "LEGAL_ACCOUNT", "TREASURY_ACCOUNT", "KBK", "OKTMO",
+        "SWIFT_ISIN", "PASSPORT_DEPT_CODE", "CADASTRAL_QUARTER", "FIAS_GUID",
+        "ORG_OID", "VIN_MASK", "COURT_INDEX", "LAW_ARTICLE", "DOC_NUMBER",
+        "GOST_STANDARD", "ORDER_NUMBER", "TRACK_S10", "TRACK_RU14", "SKU_17",
+        "GTIN", "CONTRACT_B2B", "ICCID_M2M", "METRICA_COUNTER",
+    )
+    if v6.V6_NEGATIVE_FAMILIES != expected_negatives:
+        problems.append(f"V6_NEGATIVE_FAMILIES differs from the spec: {v6.V6_NEGATIVE_FAMILIES}")
+    if len(set(v6.V6_NEGATIVE_FAMILIES)) != 28:
+        problems.append("V6_NEGATIVE_FAMILIES has duplicate values")
     return problems
 
 
