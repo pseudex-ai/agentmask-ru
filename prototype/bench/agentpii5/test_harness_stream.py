@@ -368,8 +368,8 @@ def _drive(case: CaseV5, run_dir: Path, run_id: str) -> object:
     ledger = v3_judge.SpendLedger(run_dir / f"{run_id}.spend.tsv", 10.0)
     runner = h.triple_runner(detector, ledger, None, "scripted-model", run_id, h.ClaudeArms())
     h.write_corpus(run_dir, [case], "deadbeef")
-    policy = h.DrivePolicy(attempts=3, pause=_no_pause, jitter=lambda: 1.0,
-                           expected_per_case_usd=0.0)
+    policy = h.DrivePolicy(attempts=3, base_s=runinfo.RETRY_BASE_S, pause=_no_pause,
+                           jitter=lambda: 1.0, expected_per_case_usd=0.0)
     return asyncio.run(h.drive_v5([case], 1, runner, run_dir, run_id, 1, frozenset(), policy))
 
 

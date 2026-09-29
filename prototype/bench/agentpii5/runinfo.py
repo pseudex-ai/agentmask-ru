@@ -46,7 +46,9 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
+from bench.agentpii4.writer import WriterError
 from bench.agentpii5 import records as r
+from bench.agentpii5.connectors import ConnectorError
 from bench.agentpii5.contracts import CaseV5, INCOMPLETE_REPORT_MARK
 
 
@@ -785,9 +787,33 @@ def is_transport_error(error: BaseException) -> bool:
             or type(error).__name__ in TRANSPORT_ERROR_NAMES)
 
 
-def backoff_seconds(attempt: int, jitter: float) -> float:
+def is_transient_error(error: BaseException) -> bool:
+    """Флаки-отказ, который §1.4 повторяет: транспорт плюс три класса живых флаков.
+
+    Транспорт (`is_transport_error`) уже покрывает сетевые обрывы SDK. Сюда
+    добавлены классы, которые ИНАЧЕ молча снимали тройку как excluded, хотя их
+    исход зависит от ОТВЕТА провайдера, а не от нашего кода — повтор даёт другой
+    сэмпл и потому оправдан:
+    - `ConnectorError` — DeepSeek оборвал ответ (`response ended incomplete`);
+    - `ConnectorLimit` — его подкласс, лимит вызовов инструментов (следующий
+      сэмпл делает меньше вызовов);
+    - `WriterError` — слот не round-trip'нулся как JSON-строка (значение,
+      написанное моделью, сломало escaping; другой сэмпл пишет другое).
+
+    Наши ДЕТЕРМИНИРОВАННЫЕ дефекты сюда НЕ входят: `ValueError` маскирования,
+    `KeyError`, `FileNotFoundError` повторять значит трижды подождать перед тем
+    же отказом и спрятать причину за словом «флаки».
+    """
+    return (is_transport_error(error)
+            or isinstance(error, ConnectorError)
+            or isinstance(error, WriterError))
+
+
+def backoff_seconds(attempt: int, jitter: float, base_s: float = RETRY_BASE_S) -> float:
     """Сколько ждать перед попыткой `attempt` (1-based), с джиттером.
 
+    `base_s` — первый отступ (флаг `--retry-delay`): задержка растёт
+    экспоненциально (`base_s * 2^(attempt-1)`) и упирается в `RETRY_MAX_S`.
     Джиттер приходит ЧИСЛОМ 0..1 от вызывающего, а не берётся здесь из
     `random`: функция с собственным источником случайности не проверяется —
     тест может утверждать про неё только неравенство. Джиттер полный
@@ -798,7 +824,9 @@ def backoff_seconds(attempt: int, jitter: float) -> float:
         raise RunInfoError(f"backoff_seconds: попытка {attempt} — нумерация с 1")
     if not 0.0 <= jitter <= 1.0:
         raise RunInfoError(f"backoff_seconds: джиттер {jitter} вне 0..1")
-    delay = min(RETRY_MAX_S, RETRY_BASE_S * (2 ** (attempt - 1)))
+    if base_s < 0:
+        raise RunInfoError(f"backoff_seconds: отступ {base_s} отрицателен")
+    delay = min(RETRY_MAX_S, base_s * (2 ** (attempt - 1)))
     return delay * jitter
 
 

@@ -312,8 +312,8 @@ def test_the_real_runner_writes_the_capture_through_the_writer() -> list[str]:
                                  h.ConnectedArms(_Double()))
         result = asyncio.run(h.drive_v5([case], 1, runner, run_dir, "canary-writer", 1,
                                         frozenset(),
-                                        h.DrivePolicy(attempts=1, pause=_no_pause,
-                                                      jitter=lambda: 1.0,
+                                        h.DrivePolicy(attempts=1, base_s=h.runinfo.RETRY_BASE_S,
+                                                      pause=_no_pause, jitter=lambda: 1.0,
                                                       expected_per_case_usd=0.0)))
         if result.triples and result.triples[0].get("status") == "excluded":
             return [f"the scripted triple was excluded: {result.triples[0].get('reason')!r}"]

@@ -68,6 +68,7 @@ from bench.agentpii4.gateway import HarnessError, PassThrough, RealGateway
 from bench.agentpii4.mock import CallLog
 from bench.agentpii4.records import ArmMeta, arm_record
 from bench.agentpii4.schema import ARMS, EXCLUDED_TERMINATIONS, Case, Ladder, PiiItem, tier
+from bench.agentpii4.writer import WriterError
 from bench.agentpii5 import build as corpus_build
 from bench.agentpii5 import provider
 from bench.agentpii5 import records as r
@@ -76,7 +77,7 @@ from bench.agentpii5 import reportjson
 from bench.agentpii5 import runinfo
 from bench.agentpii5.codex_connector import CodexJudgeConnector, CodexSettings
 from bench.agentpii5.connectors import (
-    AgentConnector, ConnectorError, Json, ToolResult, ToolSpec, json_object)
+    AgentConnector, Json, ToolResult, ToolSpec, json_object)
 from bench.agentpii5.deepseek_connector import DeepSeekConnector, DeepSeekSettings
 from bench.agentpii5.calibration import write_stamp
 from bench.agentpii5.contracts import (
@@ -823,9 +824,12 @@ class ConnectedArms:
             outcome, _ = await self._run(case, arm, repeat, PassThrough(case.base),
                                           backend, model, cap)
             return outcome
-        except (ConnectorError, asyncio.TimeoutError) as error:
-            kind = 'timeout' if isinstance(error, asyncio.TimeoutError) else 'harness_error'
-            return v4_harness._failed_arm(case.base, arm, repeat, kind,
+        except asyncio.TimeoutError as error:
+            # OUR OWN `wait_for` deadline on the connector — a verdict, not a
+            # blip. ConnectorError (DeepSeek cut the reply) is NOT caught here:
+            # it is a RuntimeError, so it falls to the guard below and
+            # `arm_verdict` re-raises it as a transient blip for §1.4's retry.
+            return v4_harness._failed_arm(case.base, arm, repeat, 'timeout',
                                          type(error).__name__ + ': ' + str(error), cap, cap, run_id)
         except (HarnessError, OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
             return arm_verdict(case.base, arm, repeat, error, cap, run_id)
@@ -838,9 +842,10 @@ class ConnectedArms:
             if run is None:
                 raise HarnessError('intervention did not record observations')
             return ArmOutcomeV5(outcome, run)
-        except (ConnectorError, asyncio.TimeoutError) as error:
-            kind = 'timeout' if isinstance(error, asyncio.TimeoutError) else 'harness_error'
-            outcome = v4_harness._failed_arm(case.base, 'I', repeat, kind,
+        except asyncio.TimeoutError as error:
+            # Same line as `control`: our deadline is a verdict, ConnectorError
+            # is a transient blip re-raised by `arm_verdict` below.
+            outcome = v4_harness._failed_arm(case.base, 'I', repeat, 'timeout',
                                            type(error).__name__ + ': ' + str(error), cap, cap, run_id)
             return ArmOutcomeV5(outcome, _empty_run(case, repeat))
         except (HarnessError, OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
@@ -960,23 +965,24 @@ async def run_arm_v5(case: CaseV5, arm: str, repeat: int, gateway: GatewayV5,
     return ArmOutcomeV5(v4_harness.ArmOutcome(base, meta), run)
 
 
-def transport_blip(error: BaseException) -> bool:
-    """Обрыв провайдера НА ПЛЕЧЕ — и никогда наш собственный дедлайн (§1.4).
+def transient_blip(error: BaseException) -> bool:
+    """Флаки-отказ провайдера НА ПЛЕЧЕ — и никогда наш собственный дедлайн (§1.4).
 
-    `runinfo.is_transport_error` держит закрытую таблицу имён классов SDK плюс
-    `ConnectionError` и `TimeoutError`. На плече второй из встроенных надо
-    вычесть: `run_arm_v5` и v4's `run_arm` ограничивают плечо собственным
-    `asyncio.wait_for`, а `asyncio.TimeoutError is TimeoutError` начиная с
-    3.11 — то есть дедлайн, который мы поставили сами, неотличим по типу от
-    таймаута провайдера. Повторять его трижды значит трижды прождать
-    `_timeout(case)` секунд и заплатить три потолка за одно зависшее плечо, а
-    у него уже есть честный ответ — v4's `timeout` с полным начислением.
-    Собственный таймаут SDK приходит СВОИМ классом (`APITimeoutError`), он в
-    таблице имён и повторяется.
+    `runinfo.is_transient_error` держит транспорт (`is_transport_error` — закрытая
+    таблица имён классов SDK плюс `ConnectionError`/`TimeoutError`) И три
+    флаки-класса (`ConnectorError`/`ConnectorLimit`/`WriterError`). На плече
+    встроенный `TimeoutError` надо вычесть: `run_arm_v5` и v4's `run_arm`
+    ограничивают плечо собственным `asyncio.wait_for`, а
+    `asyncio.TimeoutError is TimeoutError` начиная с 3.11 — то есть дедлайн,
+    который мы поставили сами, неотличим по типу от таймаута провайдера.
+    Повторять его значит заново прождать `_timeout(case)` секунд и заплатить
+    потолок за одно зависшее плечо, а у него уже есть честный ответ — v4's
+    `timeout` с полным начислением. Собственный таймаут SDK приходит СВОИМ
+    классом (`APITimeoutError`), он в таблице имён и повторяется.
     """
     if isinstance(error, asyncio.TimeoutError):
         return False
-    return runinfo.is_transport_error(error)
+    return runinfo.is_transient_error(error)
 
 
 def arm_verdict(case: Case, arm: str, repeat: int, broken: BaseException, cap: float,
@@ -999,7 +1005,7 @@ def arm_verdict(case: Case, arm: str, repeat: int, broken: BaseException, cap: f
     вызывающего не ловит `BaseException`, так что `CancelledError` и
     `KeyboardInterrupt` проходят насквозь, как и раньше.
     """
-    if transport_blip(broken):
+    if transient_blip(broken):
         raise broken
     if isinstance(broken, asyncio.TimeoutError):
         return v4_harness._failed_arm(case, arm, repeat, "timeout",
@@ -1233,7 +1239,7 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
         # records' OWN writer (R-54), because the report reads them through
         # records' reader and a row spelled here by hand is a second schema.
         **r.triple_totals_to_json(triple_totals(None, 0)),
-        "status": "refused", "reason": "", "arms": {}, "judge": {}}
+        "status": "refused", "reason": "", "attempts": 1, "arms": {}, "judge": {}}
     try:
         await ledger.reserve(cap * 3)
     except v3_judge.BudgetExhausted as exhausted:
@@ -1403,6 +1409,7 @@ class DrivePolicy:
     """
 
     attempts: int
+    base_s: float
     pause: Callable[[float], Awaitable[None]]
     jitter: Callable[[], float]
     expected_per_case_usd: float
@@ -1444,32 +1451,41 @@ def transport_triple(case: CaseV5, repeat: int, attempts: int, error: str) -> di
             "cost_usd": 0.0, **r.triple_totals_to_json(triple_totals(None, 0)),
             "status": "excluded",
             "reason": f"{runinfo.TRANSPORT_TERMINATED}: {error} (попыток {attempts})",
-            "arms": {}, "judge": {}}
+            "attempts": attempts, "arms": {}, "judge": {}}
 
 
 async def run_with_retries(run_one: TripleRunner, case: CaseV5, repeat: int,
                            policy: DrivePolicy) -> TripleResult:
-    """Одна тройка с повтором на обрыве провайдера — экспоненциальный отступ с
-    джиттером, `policy.attempts` попыток, потом `TransportExhausted`.
+    """Одна тройка с повтором на флаки-отказе — экспоненциальный отступ с
+    джиттером (`policy.base_s` как первый отступ), `policy.attempts` попыток,
+    потом `TransportExhausted`.
 
-    `except Exception` здесь НЕ глотает ничего: всё, что не признано обрывом
-    транспорта (`runinfo.is_transport_error` — закрытая таблица имён классов),
-    поднимается дальше немедленно. Повторять наш собственный дефект три раза с
-    отступом значит трижды подождать перед тем же отказом и спрятать причину
-    за словом «транспорт».
+    `except Exception` здесь НЕ глотает ничего: всё, что не признано флаки
+    (`runinfo.is_transient_error` — транспорт + ConnectorError/ConnectorLimit +
+    WriterError), поднимается дальше немедленно. Повторять наш собственный
+    дефект с отступом значит несколько раз подождать перед тем же отказом и
+    спрятать причину за словом «флаки».
+
+    ПОВТОР НЕ ПЛОДИТ СТРОКИ. Возвращается ПЕРВЫЙ успешный `TripleResult` (его
+    `triple` и пишется в `<run>.triples.jsonl`), а сколько попыток на него ушло
+    штампуется в `triple["attempts"]`. Прерванные попытки не пишут ничего — это
+    та же тройка, а не новый repeat (`--repeats` — другое, K ПРОГОНОВ всех
+    троек).
     """
     last = ""
     for attempt in range(1, policy.attempts + 1):
         try:
-            return await run_one(case, repeat)
+            result = await run_one(case, repeat)
+            result.triple["attempts"] = attempt
+            return result
         except Exception as error:
-            if not runinfo.is_transport_error(error):
+            if not runinfo.is_transient_error(error):
                 raise
             last = f"{type(error).__name__}: {error}"
             print(f"  ОБРЫВ {case.base.id}|{repeat} попытка {attempt}/{policy.attempts}: {last}",
                   file=sys.stderr, flush=True)
             if attempt < policy.attempts:
-                await policy.pause(runinfo.backoff_seconds(attempt, policy.jitter()))
+                await policy.pause(runinfo.backoff_seconds(attempt, policy.jitter(), policy.base_s))
     raise TransportExhausted(last)
 
 
@@ -2099,7 +2115,10 @@ def main() -> int:
     parser.add_argument("--runs", default=str(runinfo.RUNS_PATH),
                         help="реестр прогонов (runs.json)")
     parser.add_argument("--retries", type=int, default=runinfo.RETRY_ATTEMPTS,
-                        help="попыток на случай при обрыве провайдера")
+                        help="попыток на случай при флаки-отказе провайдера")
+    parser.add_argument("--retry-delay", type=float, default=runinfo.RETRY_BASE_S,
+                        help="первый отступ между попытками в секундах (растёт "
+                             "экспоненциально до потолка)")
     parser.add_argument("--dirty-ok", action="store_true",
                         help="прогон нельзя привязать к коммиту; это записано "
                              "в meta.json и в реестре")
@@ -2121,6 +2140,10 @@ def main() -> int:
         parser.error('--judge-connector codex requires --codex-home or AGENTPII5_CODEX_HOME')
     if min(args.connector_max_tokens, args.agent_turn_limit, args.judge_request_limit) <= 0:
         parser.error('connector limits must be positive')
+    if args.retries < 0:
+        parser.error('--retries must be >= 0')
+    if args.retry_delay < 0:
+        parser.error('--retry-delay must be >= 0')
     if args.resume and (args.agent_connector == 'deepseek' or args.judge_connector == 'codex'):
         parser.error('new connector resume is not yet validated; use a fresh output directory')
 
@@ -2447,8 +2470,9 @@ def main() -> int:
         print(f"холдаут прочитан живым прогоном {touch.touched_by[:12]} от "
               f"{touch.touched_at}: состав ярусов больше не перерисовывается (R-52, п.10)",
               flush=True)
-    policy = DrivePolicy(attempts=max(1, args.retries), pause=asyncio.sleep,
-                         jitter=random.random, expected_per_case_usd=expected)
+    policy = DrivePolicy(attempts=max(1, args.retries), base_s=args.retry_delay,
+                         pause=asyncio.sleep, jitter=random.random,
+                         expected_per_case_usd=expected)
     started = time.time()
     # §1.2: ОДНА ЗАЩИЩЁННАЯ ОБЛАСТЬ НА ВСЁ, ЧТО ИДЁТ ПОСЛЕ ПЕРВОГО ДОЛЛАРА, а не
     # на один `asyncio.run`. Раньше обработчик накрывал только сам прогон, и

@@ -137,8 +137,8 @@ async def _no_pause(seconds: float) -> None:
 
 def _policy(attempts: int, expected_per_case_usd: float) -> h.DrivePolicy:
     """Политика драйвера для проверки: без сна, с полным джиттером."""
-    return h.DrivePolicy(attempts=attempts, pause=_no_pause, jitter=lambda: 1.0,
-                         expected_per_case_usd=expected_per_case_usd)
+    return h.DrivePolicy(attempts=attempts, base_s=runinfo.RETRY_BASE_S, pause=_no_pause,
+                         jitter=lambda: 1.0, expected_per_case_usd=expected_per_case_usd)
 
 
 def _finished_run(root: Path, canned: Callable[[CaseV5], h.TripleResult] = _canned) -> Path:
@@ -1179,7 +1179,7 @@ def test_the_retry_waits_between_attempts() -> list[str]:
     async def runner(one: CaseV5, repeat: int) -> h.TripleResult:
         raise ConnectionError("сброс")
 
-    policy = h.DrivePolicy(attempts=3, pause=pause, jitter=lambda: 1.0,
+    policy = h.DrivePolicy(attempts=3, base_s=runinfo.RETRY_BASE_S, pause=pause, jitter=lambda: 1.0,
                            expected_per_case_usd=0.0)
     with tempfile.TemporaryDirectory() as tmp:
         run_dir = Path(tmp) / "v5"
@@ -1292,17 +1292,17 @@ def test_a_provider_blip_is_not_a_verdict() -> list[str]:
         h.run_arm_v5, v4_harness.run_arm = original_v5, original_v4
     # И разница названа там, где она живёт: таблица `runinfo` держит
     # `TimeoutError`, потому что НА УРОВНЕ ТРОЙКИ он приходит только от судьи;
-    # на плече его вычитает `transport_blip`.
+    # на плече его вычитает `transient_blip`.
     if not runinfo.is_transport_error(asyncio.TimeoutError()):
         failures.append("runinfo перестал считать TimeoutError обрывом — тогда вычитать "
                         "его на плече нечего и проверка ни о чём")
-    if h.transport_blip(asyncio.TimeoutError()):
+    if h.transient_blip(asyncio.TimeoutError()):
         failures.append("собственный дедлайн плеча признан обрывом провайдера")
     for blip in (ConnectionError("сброс"), OverloadedError("529")):
-        if not h.transport_blip(blip):
+        if not h.transient_blip(blip):
             failures.append(f"{type(blip).__name__} не признан обрывом провайдера")
     for ours in (ValueError("наш дефект"), FileNotFoundError("нет файла")):
-        if h.transport_blip(ours):
+        if h.transient_blip(ours):
             failures.append(f"{type(ours).__name__} признан обрывом — наш дефект будут "
                             f"повторять с отступом")
     return failures
