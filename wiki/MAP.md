@@ -277,7 +277,7 @@ sender on both legs. Streaming detokenizer with one carry per
 `surviving_substitutes` for substitutes that failed to resolve.
 - **API:** `mask_text`, `is_own_substitute`, `vault_value`, `tokenize_span`, `unmask_text`, `unmask_stream_chunk`, `unmask_arguments`, `residual_tokens`, `surviving_substitutes`, `StreamDetokenizer`
 - **Uses:** address, agent_form, assets, detect, morph_names, morph_places, normalize, notation, profiling, spoken, translit, vault · **Used by:** envelope, notation, proxy, service
-- **Tests:** test_argument_form, test_collisions, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_phone_hop_form, test_error_echo_privacy, test_product, test_prose_fragments, bench_masking, profile_latency; `bench/agentpii{2,3,4}`, `bench/agentrun/roundtrip.py`
+- **Tests:** test_argument_form, test_collisions, test_derived_forms, test_digit_truncation, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_phone_hop_form, test_error_echo_privacy, test_product, test_prose_fragments, bench_masking, profile_latency; `bench/agentpii{2,3,4}`, `bench/agentrun/roundtrip.py`
 - **Docs:** `docs/how-it-works.md`, `docs/known-issues.md` (§0, §1, Б8, Б11, Б12) · rules: INVARIANTS.md#swap, INVARIANTS.md#streaming
 
 #### `pseudex/vault.py` — 3 397 lines · `live`
@@ -288,9 +288,14 @@ impossible ranges; the conversation scope (`for_conversation`, `with_pseudonym_s
 the digit-signature and translit reindexes; the collision guards at mint time.
 `Vault.resolve_digit_signatures_typed` preserves type and exact-over-tail
 precedence for PHONE rendering without a new schema or database query.
+`Vault.digit_fragment_owner` answers a run that is a substitute's digits as a
+NUMBER spelled without their leading zeros with the real value WHOLE (class Д,
+never `canon[2:12]`), refuses two owners of one number, and
+`digit_fragment_is_ours` names a substitute one digit from what the agent wrote
+without ever resolving it.
 - **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `name_key`, `fold_key`, `place_key`, `token_re`, `create_tables`, `create_indexes`, `Vault` (+ `VAULT_MIGRATIONS`)
 - **Uses:** assets, credentials, date_form, fuzzy, morph_names, morph_places, normalize, notation, profiling, ru_pii, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, notation, proxy, redact, service, schema (lazy)
-- **Tests:** vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
+- **Tests:** vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_digit_truncation, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
 - **Docs:** `docs/tz-vault-encryption.md`, `docs/tz-name-gender-canonical.md`, `docs/how-it-works.md`, `research/2026-09-03-checksum-valid-substitutes.md` · rules: INVARIANTS.md#vault, INVARIANTS.md#collisions, INVARIANTS.md#conversation-scope
 
 #### `pseudex/envelope.py` — 326 lines · `live`
@@ -618,6 +623,7 @@ Run from `prototype/`; each loads the dev bundle itself.
 | `test_location_hop_form.py` | structured address leaves recomposed into one mention, prose/tool form parity and independent owners |
 | `test_location_form_adversarial.py` | independent LOC attacks, including unresolved fragments and CAPS; a red suite is not an accepted fix |
 | `test_address_composition.py` | class Б: the street TYPE survives on both legs and in a schema field (incl. a dotted path), `street`/`street_type` are two leaves of ONE street, one real street is one fake street whatever the house and the litera keeps two houses apart, and a fragment of a substitute resolves WHOLE or is named in `residual_tokens` |
+| `test_digit_truncation.py` | class Д: a substitute's NUMBER survives its spelling — a run equal to the substitute's digits as a number (leading zeros dropped) resolves to the real value WHOLE and never to a positional slice of the canon, two owners of one number are a NAMED refusal, a named place (passport series/number, last four digits) still slices, and a run one digit from a substitute is reported in the residual without ever being resolved |
 | `test_error_echo_privacy.py` | S01 privacy gate: archived truncated spoken-phone echo, seven unbound-result shapes, ordinary-number and cross-conversation controls; E01 case-retyped cut form remains open |
 | `test_date_association_dob.py` | a date personal ONLY by association (next to a СНИЛС/card/passport, no «рождения») is typed DOB, not DATE, so the vault mints a DOB fake and an unbound tool result echoing it is redacted instead of leaking; meeting and document dates stay real |
 | `test_prose_fragments.py` | a piece or a derivative of a substitute in the ANSWER to the customer |

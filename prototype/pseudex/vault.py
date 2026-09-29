@@ -526,6 +526,16 @@ _DIGIT_FRAGMENT_PROBE = 16
 # Спрашивать волт о двузначном количестве значило бы объявлять подмену «уже
 # написанной» из-за случайного совпадения двух цифр.
 _WHOLE_SIGNATURE_MIN = 6
+# Сколько цифр делают прогон кандидатом в «почти нашу подмену» — подмену,
+# переписанную агентом РОВНО на одну цифру (Д-4, `_near_miss_is_ours`). Шесть, и
+# по той же причине, что у `_WHOLE_SIGNATURE_MIN`: короче самого короткого
+# значения, которое мы чеканим целиком, и длиннее любого куска, ради которого
+# этот вопрос задаётся, — иначе количество в одной правке от подмены читалось бы
+# как почти-подмена. СВОЕЮ КОНСТАНТОЙ, А НЕ ЧУЖОЮ: у `_WHOLE_SIGNATURE_MIN` свой
+# вопрос (вето «уже написано целиком»), и её значение менять ради этого порога
+# запрещено (SPIKE-Д, риск 6) — общая константа связала бы два решения, которые
+# обязаны двигаться порознь.
+_NEAR_MISS_DIGIT_FLOOR = 6
 
 # Типы, у которых канонизация даёт САМО ЗНАЧЕНИЕ в нормальной форме, а не ключ
 # для поиска. Для них и только для них аргументу отдаётся канон.
@@ -1095,6 +1105,54 @@ def _placements(token_digits: str, digits: str, position: str | None) -> list[in
     Отбор — `_stands_in_named_role`, см. там."""
     return [start for start in _offsets(token_digits, digits)
             if _stands_in_named_role(token_digits, digits, start, position)]
+
+
+def _same_number(first: str, second: str) -> bool:
+    """ОДНО ЧИСЛО, НАПИСАННОЕ ДВАЖДЫ: отличаются только ведущие нули.
+
+    Контрольная сумма живёт над ЦИФРАМИ (значением), а не над форматом, и «00»
+    у ИНН — часть ЗНАЧЕНИЯ, а не способ записи (решение владельца, класс Д). Но
+    для вопроса «где эти цифры стоят в настоящем значении» ведущий ноль не несёт
+    места вовсе: его снятие переписывает написание, а не сдвигает значение, —
+    поэтому переносить смещение на канон нечем, и единственный ответ, который не
+    выдумка, — значение ЦЕЛИКОМ.
+
+    Пустое ядро — не число: «000» и «0» не подмена, а пустая строка после
+    снятия нулей вопроса не задаёт."""
+    core = first.lstrip("0")
+    return bool(core) and core == second.lstrip("0")
+
+
+def _normalizing_hole(token_digits: str, digits: str) -> bool:
+    """Этот прогон — ЧИСЛО этой подмены, записанное без ведущих нулей.
+
+    Собственные слова модели: «Я убрал ведущие нули (это единственная правка
+    формата, которая была возможна без изменения самих данных)» (g03). Численно
+    она права, по идентичности — нет только тогда, когда написание принимают за
+    место: `canon[2:12]` — это 10 из 12 настоящих цифр.
+
+    ТОЛЬКО СОКРАЩЕНИЕ. Прогон ДЛИННЕЕ подмены её написанием не является, и
+    `_digit_rows` такого кандидата и не предлагает: `«0» + прогон` — это уже
+    другое число по разрядности, и угадывать за агента, что он имел в виду
+    подмену, нельзя."""
+    return (len(digits) < len(token_digits) and token_digits != digits
+            and _same_number(token_digits, digits))
+
+
+def _one_edit_neighbours(digits: str) -> set[str]:
+    """Все строки той же длины, отличающиеся от этой РОВНО в одной позиции —
+    вопрос «не наша ли это подмена, переписанная на одну цифру» (Д-4), заданный
+    в ИНДЕКСНОЙ форме: перебор кандидатов дешевле перебора строк заказчика, и
+    отвечает на него тот же индекс подписей, что и восстановление. Вставка и
+    удаление сюда не попадают, а две правки — уже не «почти наша подмена», и
+    правило, не отличающее одну правку от двух, назвало бы половину собственных
+    чисел заказчика."""
+    neighbours: set[str] = set()
+    for index, char in enumerate(digits):
+        for replacement in "0123456789":
+            if replacement != char:
+                neighbours.add(digits[:index] + replacement + digits[index + 1:])
+    return neighbours
 
 
 def _tiling(token_digits: str, runs: tuple[str, ...]) -> frozenset[tuple[int, str]]:
@@ -3641,12 +3699,25 @@ class Vault:
         СНИЛС, «серия 4509» the START of a passport, «последние четыре цифры
         телефона» the end of a phone — and a two-digit fragment read against
         every substitute's digits finds three owners and refuses, while read
-        against one type at one position it has exactly one."""
-        return [(real[start:start + len(digits)], row_type,
-                 token_digits in self._spent_signatures)
-                for token_digits, real, row_type in self._digit_rows(
-                    digits, entity_type, scope, scope_args)
-                for start in _placements(token_digits, digits, position)]
+        against one type at one position it has exactly one.
+
+        ОДНО ЧИСЛО — ЭТО ЗНАЧЕНИЕ, А НЕ МЕСТО (класс Д, Д-1). Прогон, равный
+        цифрам подмены как ЧИСЛО (отличается только числом ведущих нулей),
+        получает настоящее значение ЦЕЛИКОМ: `canon[2:12]` — это 10 из 12
+        настоящих цифр, порча данных при пустом остатке, и ни один публичный
+        счётчик её не видит. Смещение остаётся тем, что оно есть, — ответом на
+        вопрос о ДРУГОМ числе (серия паспорта, номер, последние четыре цифры):
+        там место называет подсказка или поле, и только там срез переносим."""
+        found: list[tuple[str, str, bool]] = []
+        for token_digits, real, row_type in self._digit_rows(
+                digits, entity_type, scope, scope_args):
+            spent = token_digits in self._spent_signatures
+            if _normalizing_hole(token_digits, digits):
+                found.append((real, row_type, spent))
+                continue
+            for start in _placements(token_digits, digits, position):
+                found.append((real[start:start + len(digits)], row_type, spent))
+        return found
 
     def _digit_fragments_tiled(self, digits: str, entity_type: str | None,
                                position: str | None) -> list[tuple[str, str, bool]]:
@@ -3669,13 +3740,27 @@ class Vault:
         номером, внутренние группы СНИЛС и карты. Поэтому кусок принимается
         ровно тогда, когда он САМ является плиткой (`_tiling`), а не когда он
         просто лежит внутри разбитой подмены: «серия + номер + количество»
-        разбивают паспорт серией и номером, и количество остаётся количеством."""
-        return [(real[start:start + len(digits)], row_type,
-                 token_digits in self._spent_signatures)
-                for token_digits, real, row_type in self._digit_rows(
-                    digits, entity_type, "", ())
-                for start in sorted(at for at, run in _tiling(
-                    token_digits, self._written_digits) if run == digits)]
+        разбивают паспорт серией и номером, и количество остаётся количеством.
+
+        ПЛИТКА, РАВНАЯ ПОДМЕНЕ КАК ЧИСЛО, ОТВЕЧАЕТ ЗНАЧЕНИЕМ ЦЕЛИКОМ — то же
+        правило Д-1: `{"prefix": "00", "inn": "8499949700"}` разбивает подмену
+        встык, но второй её кусок — не место внутри числа, а само число без
+        ведущих нулей, и срез `canon[2:12]` здесь такая же порча, как без
+        разбиения вовсе. ЯКОРЬ РАЗБИЕНИЯ ОСТАЁТСЯ ОБЯЗАТЕЛЬНЫМ И ЗДЕСЬ, и это
+        не формальность: эта политика спрашивает ВЕСЬ волт, поэтому снять с неё
+        единственное доказательство вызова значило бы отдавать значение ЧУЖОГО
+        разговора по одному совпадению числа — «10 из 12» меняется на «12 из 12»,
+        а класс остаётся классом. Громкий путь для прогона без разбиения — не
+        здесь, а в `digit_fragment_is_ours`: он назовёт его в остатке."""
+        found: list[tuple[str, str, bool]] = []
+        for token_digits, real, row_type in self._digit_rows(digits, entity_type, "", ()):
+            spent = token_digits in self._spent_signatures
+            for start in sorted(at for at, run in _tiling(
+                    token_digits, self._written_digits) if run == digits):
+                answer = (real if _normalizing_hole(token_digits, digits)
+                          else real[start:start + len(digits)])
+                found.append((answer, row_type, spent))
+        return found
 
     # ═══ THE REPORTING DIRECTION ═══════════════════════════════════════════
     # Три вопроса выше отвечают «ЧЬЯ это подмена» и молчат, когда кандидатов
@@ -3762,7 +3847,16 @@ class Vault:
         заказчика; `digit_fragment_owner` платит его, потому что обязан увидеть
         ВТОРОГО кандидата, чтобы отказать. Здесь достаточно первого, и предел
         обрывает чтение на нём. Промах всё равно читает всё — но ровно столько
-        же читает и восстановление, которое уже спросило про этот же кусок."""
+        же читает и восстановление, которое уже спросило про этот же кусок.
+
+        ЧЕТЫРЕ ВОПРОСА, И ВСЕ ЧЕТЫРЕ — «НАШЕ ЛИ ЭТО», А НЕ «ЧЬЁ ИМЕННО» (класс
+        Д). Стоит кусок на краю цифр подмены; является ли он плиткой разбиения
+        этого вызова; равен ли он цифрам подмены как ЧИСЛО, записанное без
+        ведущих нулей (`_normalizing_hole` — на краю такой прогон стоит всегда,
+        поэтому он и попадает в первый вопрос, но назван здесь); и, наконец,
+        отличается ли он от цифр подмены РОВНО на одну цифру (`_near_miss_is_ours`,
+        Д-4). Ни один из четырёх не разрешает подмену — все четыре только
+        называют её в остатке."""
         digits = "".join(ch for ch in fragment if ch.isdigit())
         if len(digits) < 2:
             return False
@@ -3803,7 +3897,41 @@ class Vault:
                     run == digits for _at, run in _tiling(
                         token_digits, self._written_digits)):
                 return True
-        return False
+        # ПОЧТИ-ПЕРЕПИСЫВАНИЕ ТОЖЕ НАЗЫВАЕТСЯ (Д-4). Выше спрашивалось «стоит ли
+        # кусок в цифрах подмены и на её краю»; подмена, переписанная агентом на
+        # ОДНУ цифру, не стоит там нигде, и вопрос молчал — g12
+        # `long_clinic-005` («+79693604666» при минтированном «89693604066»),
+        # g12 `long_clinic-043`, g08 `single-039` (модель разобрала диктовку на
+        # одну цифру иначе, чем движок). Во всех трёх инструмент исполнился на
+        # ФЕЙКЕ при 200 и пустом остатке. Ответ идёт ТОЛЬКО в остаток: числовая
+        # нечёткая подстановка запрещена (`spoken.py`), и по порядку тяжести
+        # репозитория названная тревога дешевле молчания."""
+        return self._near_miss_is_ours(digits, entity_type)
+
+    def _near_miss_is_ours(self, digits: str, entity_type: str | None) -> bool:
+        """Хоть одна подмена этого заказчика отличается от прогона РОВНО на одну
+        цифру — вопрос существования, а не тождества, как и весь этот раздел.
+
+        ПОРОГ — ШЕСТЬ ЦИФР (`_NEAR_MISS_DIGIT_FLOOR`, своя константа, а не
+        `_WHOLE_SIGNATURE_MIN`: у той свой вопрос, и менять её ради этого порога
+        нельзя). Число из трёх цифр в одной правке от подмены — это количество, и
+        объявлять его «почти нашей подменой» значило бы вернуть ложные тревоги
+        Б28ter.
+
+        СТРАНА ЗВОНА — НОТАЦИЯ, А НЕ ЦИФРА НОМЕРА. Свидетель g12 писал
+        «+79693604666» там, где отчеканено «89693604066»: одна переписанная
+        цифра ПОВЕРХ замены 8↔7, и без складывания знака правило его не видит.
+        Складывается только у одиннадцатизначного прогона и только когда тип не
+        назван или назван PHONE."""
+        if len(digits) < _NEAR_MISS_DIGIT_FLOOR:
+            return False
+        candidates = _one_edit_neighbours(digits)
+        if entity_type in (None, "PHONE") and len(digits) == 11 and digits[0] in "78":
+            folded = ("8" if digits[0] == "7" else "7") + digits[1:]
+            candidates |= _one_edit_neighbours(folded)
+        owners = self.resolve_digit_signatures_typed(candidates, True)
+        return any(entity_type is None or kind == entity_type
+                   for kind, _value in owners.values())
 
     def date_reading_is_ours(self, reading: str) -> bool:
         """Хоть одна подмена даты этого заказчика индексирована под этим
