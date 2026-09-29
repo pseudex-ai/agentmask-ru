@@ -90,6 +90,8 @@ def _spec_metrics() -> tuple[str, ...]:
         "multi_all_out", "multi_consistency", "retry_form", "memory_consistency",
         "rag_masked", "rag_identity_kept", "doc_masked", "doc_extracted", "residual",
         "stream_fidelity",
+        "end_to_end_written", "multi_all_out_written", "chain_value_written", "chain_form_written",
+        "out_written", "out_no_mint", "out_engine_kept", "out_not_masked", "out_leaf_foreign",
     )
 
 

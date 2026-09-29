@@ -118,7 +118,37 @@ _LEVEL_LINE = re.compile(
 # J1.1 is that second pair: `answer_optional_only` counts the answers
 # `answer_real` stopped judging (720 of 1357 oblige nothing), and read four
 # sections apart the reader cannot tell which denominator the rate belongs to.
-BESIDE: dict[str, str] = {"form_hOUT": "out_absent", "answer_real": "answer_optional_only"}
+BESIDE: dict[str, str] = {"form_hOUT": "out_absent", "answer_real": "answer_optional_only",
+                          "end_to_end": "end_to_end_written",
+                          "multi_all_out": "multi_all_out_written",
+                          "chain_value": "chain_value_written",
+                          "chain_form": "chain_form_written"}
+# ONE-TO-MANY, AND IN A SECOND TABLE FOR A REASON THAT IS NOT TASTE. The class Е
+# split turned the OUT funnel into four statuses plus the population they were
+# carved out of, and all five counts belong UNDER the line they explain; a
+# mapping of one companion each cannot carry them. `BESIDE`'s VALUE TYPE is a
+# plain `str` because `test_report` pins it (`BESIDE.get("form_hOUT") ==
+# "out_absent"`), and widening it would break the test of the rule instead of
+# the rule — so the primary companion (the line whose denominator the strict
+# headline leaves out) stays in `BESIDE` and the rest ride here. `beside_of` is
+# the ONE reader; the renderer and the tests never walk the two tables
+# themselves, so the pair cannot drift.
+BESIDE_MORE: dict[str, tuple[str, ...]] = {
+    # `out_absent` is `form_hOUT`'s complement; the four statuses the split
+    # created are the funnel, and a reader who cannot see them cannot tell a
+    # gateway that kept every form from one whose leaves were never written.
+    "form_hOUT": ("out_written", "out_no_mint", "out_engine_kept", "out_not_masked",
+                  "out_leaf_foreign"),
+}
+
+
+def beside_of(name: str) -> tuple[str, ...]:
+    """Every line printed UNDER `name`, in order: the primary companion of
+    `BESIDE` first (the one whose count is the denominator the strict line left
+    out), then the one-to-many companions of `BESIDE_MORE`."""
+    first = BESIDE.get(name)
+    rest = BESIDE_MORE.get(name, ())
+    return ((first,) if first else ()) + rest
 
 
 class ReportError(ValueError):
@@ -978,13 +1008,17 @@ def render(side: SideBySide, parts: ReportParts, dump: int) -> list[str]:
     # NOT again in the diagnostics block: `out_absent` under `form_hOUT` (F2.10).
     beside_printed: set[str] = set()
     for name in _printing_order(side.v5_lines):
-        if name in contracts.DIAGNOSTIC_METRIC_NAMES:
+        if name in contracts.DIAGNOSTIC_METRIC_NAMES or name in beside_printed:
+            # A NON-diagnostic companion (the honest share) is printed HERE, and
+            # the guard keeps it from being printed a second time as its own
+            # top-level line further down the registry order — one number, one
+            # line, and the strict headline above it.
             continue
         out.append("   " + render_line(side.v5_lines[name]))
-        companion = BESIDE.get(name)
-        if companion is not None and companion in side.v5_lines:
-            out.append("   " + render_line(side.v5_lines[companion]))
-            beside_printed.add(companion)
+        for companion in beside_of(name):
+            if companion in side.v5_lines and companion not in beside_printed:
+                out.append("   " + render_line(side.v5_lines[companion]))
+                beside_printed.add(companion)
     out += ["", "   диагностика — печатается, но не является критерием успеха"]
     for name in _printing_order(side.v5_lines):
         if name in contracts.DIAGNOSTIC_METRIC_NAMES and name not in beside_printed:
@@ -1165,8 +1199,10 @@ def render_side_by_side(v5_run_dir: Path, v4_run_dir: Path) -> list[str]:
 
 
 def _mutant_end_to_end(observations: Sequence[RunObservation]) -> Line:
-    """`unmasked` counted as a hit — the reading `end_to_end`'s own docstring
-    asked for before F1.3 («a passthrough scores 100% here»)."""
+    """A leaf the gateway never masked counted as a hit — the reading
+    `end_to_end`'s own docstring asked for before F1.3 («a passthrough scores
+    100% here»). The status it reads is `not_masked`, which is what the split
+    renamed that fact to when `unmasked` became three statuses."""
     hits = 0
     total = 0
     for one, hop in metric_bodies._owned(observations, "OUT", ("tool_arg",)):
@@ -1174,7 +1210,7 @@ def _mutant_end_to_end(observations: Sequence[RunObservation]) -> Line:
             continue
         total += 1
         item = metric_bodies._item_of(one, hop.hop.item_id)
-        hits += 1 if (hop.status == "unmasked"
+        hits += 1 if (hop.status in ("not_masked", "engine_kept")
                       or (hop.status == "observed" and item is not None
                           and metric_bodies._item_value_ok(hop, item))) else 0
     return Line("end_to_end", hits, total)
@@ -1257,7 +1293,8 @@ def _mutant_answer_real(observations: Sequence[RunObservation]) -> Line:
 
 
 MUTANTS: tuple[tuple[str, str, Metric], ...] = (
-    ("end_to_end", "`unmasked` leaf is a HIT (the pre-F1.3 reading)", _mutant_end_to_end),
+    ("end_to_end", "a leaf the engine never masked is a HIT (the pre-F1.3 reading)",
+     _mutant_end_to_end),
     ("answer_real", "a case that obliges nothing is still in the denominator (all() over an "
                     "empty list)", _mutant_answer_real),
     ("out_absent", "optional hops dropped from the denominator", _mutant_out_absent),

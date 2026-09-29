@@ -61,8 +61,8 @@ from bench.agentpii4.pools import BuildError
 from bench.agentpii4.schema import Case, PiiItem, SeedRecord, case_from_json
 from bench.agentpii4.tools import FieldSpec
 from bench.agentpii5 import mock
-from bench.agentpii5.contracts import (BranchSpec, CaseV5, Hop, LoopSpec, MemorySpec, PickSpec,
-                                       ReturnExpectation, SPEECH_REGISTERS,
+from bench.agentpii5.contracts import (GENERIC_PIECE_ROLES, BranchSpec, CaseV5, Hop, LoopSpec,
+                                       MemorySpec, PickSpec, ReturnExpectation, SPEECH_REGISTERS,
                                        V4_KIND_TO_BEHAVIOUR, hop_owner_of_leaf)
 from bench.agentpii5.schema import has_result, validate_v5
 from bench.agentpii5.tools import REGISTRY_V5, expected_leaf_value, spec_v5_for
@@ -239,11 +239,18 @@ def _declare(case: Case, reads: dict[str, list[tuple[PiiItem, str]]], forms: dic
         spec = spec_v5_for(tool, path)
         if spec is None:
             raise BuildError(f"{tool} has no leaf {path!r}")
+        # REACHABILITY (SPIKE-Е, Е-4): the schema says whether a call may omit
+        # the leaf, the PRODUCT says which leaves it never masks. A generic
+        # role (`contracts.GENERIC_PIECE_ROLES` — the settlement inside an
+        # address, the generic street word) is kept real by
+        # `pseudex/vault.py::_settlement_of`, so a REQUIRED hop there can never
+        # become `observed` and would be a miss by construction.
         argument_hops.append(Hop(kind="OUT", owner=hop_owner_of_leaf(tool, path),
                                  item_id=item.id, hop_index=-1, turn=last_turn,
                                  tool_name=tool, call_ordinal=0, parallel_group="",
                                  source_hop=_source_of(item, spec, hops, in_hop, rendered),
-                                 path=path, optional=not spec.required))
+                                 path=path,
+                                 optional=(not spec.required) or spec.role in GENERIC_PIECE_ROLES))
 
     # The answer comes before the arguments for `user_in_loop` (it is what the
     # confirmation is about) and after them everywhere else, which is the order

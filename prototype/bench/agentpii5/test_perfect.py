@@ -108,6 +108,11 @@ BOUNDS: dict[str, Bound] = {
     "round_trip_repaired": Bound(1.0, None, "the repaired twin of `round_trip`; a right "
                                             "gateway needs no repair, so the two are equal"),
     "end_to_end": Bound(1.0, None, _EARNED),
+    "end_to_end_written": Bound(1.0, None, "the engine's honest share of `end_to_end`: every "
+                                           "RESTORABLE leaf restored, with `absent` and the "
+                                           "unrestorable leaves left out of the denominator. A "
+                                           "right gateway earns it whole (`RECORDED`, counts equal "
+                                           "`end_to_end` on every tier)"),
     "overmask": Bound(1.0, None, "a right gateway touches no negative; the counts per "
                                  "tier are in `RECORDED`"),
     "consistency": Bound(1.0, None, _EARNED),
@@ -122,8 +127,17 @@ BOUNDS: dict[str, Bound] = {
                                     "for a phone the gateway had restored whole "
                                     "(`observe._restored_window`, round 6)"),
     "chain_value": Bound(1.0, None, _EARNED),
+    "chain_value_written": Bound(1.0, None, "the value hand-over over every restorable A→B "
+                                             "transition; a right gateway earns it whole "
+                                             "(`RECORDED`)"),
     "chain_form": Bound(1.0, None, _EARNED),
+    "chain_form_written": Bound(1.0, None, "the form hand-over over every restorable A→B "
+                                            "transition; a right gateway earns it whole "
+                                            "(`RECORDED`)"),
     "multi_all_out": Bound(1.0, None, _EARNED),
+    "multi_all_out_written": Bound(1.0, None, "every restorable OUT argument right in value and "
+                                               "form on every multi-out turn; a right gateway "
+                                               "earns it whole (`RECORDED`)"),
     "multi_consistency": Bound(1.0, None, _EARNED),
     "retry_form": Bound(1.0, None, _EARNED),
     "memory_consistency": Bound(1.0, None, _EARNED),
@@ -170,6 +184,30 @@ BOUNDS: dict[str, Bound] = {
                         "tier) and an agent that drops its last call prints about a quarter "
                         "— `wrong_absent_call`, proved every run by "
                         "`test_wrong_gateways_are_caught`"),
+    "out_written": Bound(1.0, None,
+                         "the mirror of `out_absent` over the same denominator: the declared "
+                         "OUT hops the agent wrote something in. A right agent writes them all "
+                         "(`RECORDED`, whole on every tier), and the two lines partition every "
+                         "declared OUT hop"),
+    "out_no_mint": Bound(None, 0.0,
+                         "the population `end_to_end_written` subtracts — `engine_kept` + "
+                         "`not_masked`. A gateway that masks every value on the way in has "
+                         "nothing to restore on in none of them (`RECORDED`, zero on every "
+                         "tier)"),
+    "out_engine_kept": Bound(None, None,
+                             "a product decision, not a defect: the engine keeps a generic "
+                             "role real on purpose (`contracts.GENERIC_PIECE_ROLES`), and the "
+                             "probe's gateway masks everything so it prints zero (`RECORDED`). "
+                             "No bound, because the count is what the product chooses not to "
+                             "protect, not a claim about the gateway"),
+    "out_not_masked": Bound(None, 0.0,
+                            "a passthrough leaf is a failure on the IN leg; a right gateway "
+                            "mints a substitute for every value, so none exist (`RECORDED`, "
+                            "zero on every tier)"),
+    "out_leaf_foreign": Bound(None, 0.0,
+                              "a THIRD value where a datum was at stake is a wrong value; a "
+                              "right gateway restores the real one, so none exist (`RECORDED`, "
+                              "zero on every tier)"),
     "rewrite_ratio_v5": Bound(None, None,
                               "it compares the gateway arm's reply with the CONTROL arm's, and "
                               "this probe writes both — so it measures the probe's prose, not "
@@ -256,19 +294,28 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
         "answer_optional_only": (12, 22),
         "answer_real": (10, 10),
         "chain_form": (18, 18),
+        "chain_form_written": (18, 18),
         "chain_value": (18, 18),
+        "chain_value_written": (18, 18),
         "consistency": (8, 8),
         "coverage": (192, 192),
         "doc_extracted": (7, 7),
         "doc_masked": (2, 2),
         "end_to_end": (116, 116),
+        "end_to_end_written": (116, 116),
         "form_hIN": (182, 192),
         "form_hOUT": (222, 222),
         "leak": (192, 192),
         "memory_consistency": (11, 11),
         "multi_all_out": (19, 19),
+        "multi_all_out_written": (19, 19),
         "multi_consistency": (19, 19),
         "out_absent": (0, 185),
+        "out_engine_kept": (0, 185),
+        "out_leaf_foreign": (0, 185),
+        "out_no_mint": (0, 185),
+        "out_not_masked": (0, 185),
+        "out_written": (185, 185),
         "overmask": (30, 30),
         "rag_identity_kept": (10, 10),
         "rag_masked": (10, 10),
@@ -287,19 +334,28 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
         "answer_optional_only": (48, 97),
         "answer_real": (49, 49),
         "chain_form": (84, 84),
+        "chain_form_written": (84, 84),
         "chain_value": (84, 84),
+        "chain_value_written": (84, 84),
         "consistency": (43, 43),
         "coverage": (857, 857),
         "doc_extracted": (35, 35),
         "doc_masked": (8, 8),
         "end_to_end": (522, 522),
+        "end_to_end_written": (522, 522),
         "form_hIN": (814, 857),
         "form_hOUT": (1090, 1090),
         "leak": (857, 857),
         "memory_consistency": (43, 43),
         "multi_all_out": (61, 61),
+        "multi_all_out_written": (61, 61),
         "multi_consistency": (82, 82),
         "out_absent": (0, 867),
+        "out_engine_kept": (0, 867),
+        "out_leaf_foreign": (0, 867),
+        "out_no_mint": (0, 867),
+        "out_not_masked": (0, 867),
+        "out_written": (867, 867),
         "overmask": (120, 120),
         "rag_identity_kept": (25, 25),
         "rag_masked": (27, 27),
@@ -318,19 +374,28 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
         "answer_optional_only": (125, 237),
         "answer_real": (112, 112),
         "chain_form": (198, 198),
+        "chain_form_written": (198, 198),
         "chain_value": (198, 198),
+        "chain_value_written": (198, 198),
         "consistency": (112, 112),
         "coverage": (2102, 2102),
         "doc_extracted": (81, 81),
         "doc_masked": (19, 19),
         "end_to_end": (1345, 1345),
+        "end_to_end_written": (1345, 1345),
         "form_hIN": (1988, 2102),
         "form_hOUT": (2751, 2751),
         "leak": (2102, 2102),
         "memory_consistency": (104, 104),
         "multi_all_out": (160, 160),
+        "multi_all_out_written": (160, 160),
         "multi_consistency": (196, 196),
         "out_absent": (0, 2187),
+        "out_engine_kept": (0, 2187),
+        "out_leaf_foreign": (0, 2187),
+        "out_no_mint": (0, 2187),
+        "out_not_masked": (0, 2187),
+        "out_written": (2187, 2187),
         "overmask": (300, 300),
         "rag_identity_kept": (57, 57),
         "rag_masked": (65, 65),
@@ -349,19 +414,28 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
         "answer_optional_only": (247, 473),
         "answer_real": (226, 226),
         "chain_form": (382, 382),
+        "chain_form_written": (382, 382),
         "chain_value": (382, 382),
+        "chain_value_written": (382, 382),
         "consistency": (187, 187),
         "coverage": (4138, 4138),
         "doc_extracted": (132, 132),
         "doc_masked": (37, 37),
         "end_to_end": (2636, 2636),
+        "end_to_end_written": (2636, 2636),
         "form_hIN": (3900, 4138),
         "form_hOUT": (5399, 5399),
         "leak": (4138, 4138),
         "memory_consistency": (212, 212),
         "multi_all_out": (314, 314),
+        "multi_all_out_written": (314, 314),
         "multi_consistency": (386, 386),
         "out_absent": (0, 4292),
+        "out_engine_kept": (0, 4292),
+        "out_leaf_foreign": (0, 4292),
+        "out_no_mint": (0, 4292),
+        "out_not_masked": (0, 4292),
+        "out_written": (4292, 4292),
         "overmask": (600, 600),
         "rag_identity_kept": (107, 107),
         "rag_masked": (124, 124),
@@ -380,19 +454,28 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
         "answer_optional_only": (135, 282),
         "answer_real": (147, 147),
         "chain_form": (232, 232),
+        "chain_form_written": (232, 232),
         "chain_value": (232, 232),
+        "chain_value_written": (232, 232),
         "consistency": (111, 111),
         "coverage": (2451, 2451),
         "doc_extracted": (66, 66),
         "doc_masked": (22, 22),
         "end_to_end": (1510, 1510),
+        "end_to_end_written": (1510, 1510),
         "form_hIN": (2356, 2451),
         "form_hOUT": (3115, 3115),
         "leak": (2451, 2451),
         "memory_consistency": (119, 119),
         "multi_all_out": (187, 187),
+        "multi_all_out_written": (187, 187),
         "multi_consistency": (229, 229),
         "out_absent": (0, 2488),
+        "out_engine_kept": (0, 2488),
+        "out_leaf_foreign": (0, 2488),
+        "out_no_mint": (0, 2488),
+        "out_not_masked": (0, 2488),
+        "out_written": (2488, 2488),
         "overmask": (359, 359),
         "rag_identity_kept": (68, 68),
         "rag_masked": (77, 77),
@@ -411,19 +494,28 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
         "answer_optional_only": (720, 1421),
         "answer_real": (701, 701),
         "chain_form": (1158, 1158),
+        "chain_form_written": (1158, 1158),
         "chain_value": (1158, 1158),
+        "chain_value_written": (1158, 1158),
         "consistency": (537, 537),
         "coverage": (12398, 12398),
         "doc_extracted": (373, 373),
         "doc_masked": (112, 112),
         "end_to_end": (7926, 7926),
+        "end_to_end_written": (7926, 7926),
         "form_hIN": (11721, 12398),
         "form_hOUT": (16192, 16192),
         "leak": (12398, 12398),
         "memory_consistency": (619, 619),
         "multi_all_out": (939, 939),
+        "multi_all_out_written": (939, 939),
         "multi_consistency": (1146, 1146),
         "out_absent": (0, 12918),
+        "out_engine_kept": (0, 12918),
+        "out_leaf_foreign": (0, 12918),
+        "out_no_mint": (0, 12918),
+        "out_not_masked": (0, 12918),
+        "out_written": (12918, 12918),
         "overmask": (1800, 1800),
         "rag_identity_kept": (310, 310),
         "rag_masked": (360, 360),
@@ -826,7 +918,8 @@ def test_wrong_gateways_are_caught(probe: Probe) -> list[str]:
 # about the VALUE, and a gateway that returns the right number in the wrong
 # notation must leave all of them exactly where it found them.
 FORM_READING_LINES: frozenset[str] = frozenset({
-    "form_hIN", "form_hOUT", "chain_form", "retry_form", "multi_all_out"})
+    "form_hIN", "form_hOUT", "chain_form", "chain_form_written", "retry_form",
+    "multi_all_out", "multi_all_out_written"})
 
 
 def test_readable_fakes_are_load_bearing(probe: Probe) -> list[str]:
@@ -876,17 +969,23 @@ def test_number_mutant_moves_only_form_lines(probe: Probe) -> list[str]:
 
 # M04 asks that the action ORDER be varied without a scheduled-turn assumption.
 # `perfect.reverse_action_order` reverses the records COHERENTLY (`seq` and
-# `call_turns` move with the list). The eight lines below follow the permutation
-# and the rest do not, and BOTH halves are the finding: the invariant lines read
-# the order off the record, and these eight are NAMED because a line that
-# silently depended on the schedule would be indistinguishable from one
-# measuring the gateway. The set is MEASURED on `medium` and above — on `nano`
-# three of them (chain_value, chain_form, residual) have too few observations to
-# move, which is why the stale half of the check is gated on the tiers that
-# exercise it while the «nothing unlisted may move» half runs everywhere.
+# `call_turns` move with the list). The seventeen lines below follow the
+# permutation and the rest do not, and BOTH halves are the finding: the invariant
+# lines read the order off the record, and these seventeen are NAMED because a
+# line that silently depended on the schedule would be indistinguishable from one
+# measuring the gateway. `residual` USED to be here and left when SPIKE-Е split
+# the `unmasked` status: the leaves that made it order-sensitive are now
+# `engine_kept`/`not_masked`/`leaf_foreign`, and the line no longer moves. The
+# set is MEASURED on `medium` and above — on `nano` only eight of them have
+# enough observations to move (the value/`_written` lines), on `small` twelve —
+# which is why the stale half of the check is gated on the tiers that exercise
+# the whole set while the «nothing unlisted may move» half runs everywhere.
 ORDER_SENSITIVE: frozenset[str] = frozenset({
-    "round_trip", "round_trip_repaired", "end_to_end", "form_hOUT", "multi_all_out",
-    "chain_value", "chain_form", "residual"})
+    "round_trip", "round_trip_repaired", "end_to_end", "end_to_end_written",
+    "form_hOUT", "multi_all_out", "multi_all_out_written",
+    "chain_value", "chain_value_written", "chain_form", "chain_form_written",
+    "out_absent", "out_written", "out_no_mint", "out_engine_kept", "out_not_masked",
+    "out_leaf_foreign"})
 # The tiers whose denominators exercise every line in ORDER_SENSITIVE.
 ORDER_FULL_TIERS: frozenset[str] = frozenset({"medium", "large", "max"})
 

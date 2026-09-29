@@ -24,10 +24,14 @@ FOUR RULES DECIDE EVERYTHING HERE, AND THEY ARE NOT SYMMETRIC.
     compare» is v4's D1 defect — `values_ok` was `not any(...)` over an empty
     list and a triple that made no call passed five levels.
   * NOTHING TO COMPARE IS NOT A PASS. An OUT leaf that carries no substitute
-    is `unmasked`, never `observed`: `produced == reference` there, so
-    `form_match` said «same» and a gateway that masked NOTHING printed 100%
-    on `form_hOUT`, `chain_form`, `chain_value` and `multi_all_out`. The same
-    rule, one level up, is why D1 was a defect at all.
+    is `engine_kept` / `not_masked` / `leaf_foreign` — never `observed`: the
+    comparison there is a string with itself (`produced == reference`), so
+    `form_match` said «same» and a gateway that masked NOTHING printed 100% on
+    `form_hOUT`, `chain_form`, `chain_value` and `multi_all_out`. One status
+    named that fact until class Е split it in three (the engine's deliberate
+    exception / nothing was minted / a third value arrived); all three are
+    still misses wherever a form or a value is asked. The same rule, one level
+    up, is why D1 was a defect at all.
 
 WHY `difflib` FOR THE ANSWER. The engine restores the reply in one pass and
 records no spans for it; asking the engine where it substituted would be the
@@ -730,9 +734,79 @@ def calls_of_turn(run: ArmRunV5, turn: int) -> tuple[tuple[int, ObservedCall], .
 
 
 def call_for_hop(run: ArmRunV5, hop: Hop) -> ObservedCall | None:
-    """The `call_ordinal`-th call of `hop.tool_name` inside `hop.turn`."""
+    """The `call_ordinal`-th call of `hop.tool_name` inside `hop.turn`.
+
+    THE TIMETABLE IS THE CORPUS'S AND IS NOT TOUCHED (SPIKE-Е, Е-5). A call made
+    in ANOTHER turn is not this hop: widening the window would move a
+    denominator under its own name, and an estimator that does that «lets a
+    counting fix be read as an engine improvement» (`actual_hops.py`). The
+    equivalence of leaves below reaches across TOOLS inside the declared turn
+    and never across turns."""
     same = [call for _index, call in calls_of_turn(run, hop.turn) if call.name == hop.tool_name]
     return same[hop.call_ordinal] if 0 <= hop.call_ordinal < len(same) else None
+
+
+def call_ordinal_of(run: ArmRunV5, index: int) -> int:
+    """The ordinal of one call among the calls of the SAME tool in the SAME turn
+    — the number `Hop.call_ordinal` means and `_extra_call_hops` reads.
+
+    ONE DEFINITION, because the equivalence below has to name the leaf it
+    claimed in the SAME terms the undeclared-hop scan uses: two spellings of
+    «which call is this» would let a claimed leaf be counted a second time as an
+    undeclared crossing."""
+    call = run.base.calls[index]
+    turn = run.call_turns[index]
+    return sum(1 for other, one in enumerate(run.base.calls)
+               if other < index and one.name == call.name and run.call_turns[other] == turn)
+
+
+def equivalent_out_leaf(run: ArmRunV5, hop: Hop) -> tuple[int, ObservedCall, str] | None:
+    """(call index, call, path) of the SEMANTICALLY EQUAL leaf this run actually
+    wrote in this hop's turn, or None (SPIKE-Е, Е-6).
+
+    The corpus declares `courier_book.address.locality` and the agent writes
+    `crm_upsert_contact.contact.address.city`: one settlement, one crossing,
+    one restoration — and the instrument read `absent` because it looked for
+    the corpus's TOOL NAME (g08: 25 of the 30 `absent` of the group). The
+    classes are AUTHORED in `contracts.LEAF_EQUIVALENCE` and grounded in the
+    registry's own type and role, never guessed off a name; the declared leaf
+    itself is not a candidate, so the corpus's own ordinal still selects the
+    call it declares and only a MISSING/EMPTY leaf opens this search.
+
+    THE TURN IS THE DECLARED ONE, for `call_for_hop`'s reason: equivalence is a
+    fact about LEAVES, never about WHEN.
+
+    TWO EQUAL LEAVES WITH TWO DIFFERENT VALUES ARE A REFUSAL, NOT A CHOICE. A
+    rule that picked one would credit a value the agent may not have carried
+    (SPIKE-Е risk 5); a rule that quietly preferred the declared tool would keep
+    the defect it exists to remove.
+
+    THE CANDIDATES ARE DEDUPED BY `fold`, NOT BY THE BYTES. «Ижевск» and
+    «ижевск» in two equivalent leaves are one value written twice — refusing over
+    that would stop a live run on a case difference, and the rule would then be
+    measuring the tool's capitalisation rather than the datum. What falls is two
+    values that are not the same word at all."""
+    twins = contracts.equivalent_leaves(hop.tool_name, hop.path)
+    if not twins:
+        return None
+    found: dict[str, tuple[int, ObservedCall, str, str]] = {}
+    for index, call in calls_of_turn(run, hop.turn):
+        for tool, path in twins:
+            if call.name != tool:
+                continue
+            text = leaf_text(flatten(call.written), tool, path)
+            if text:
+                found.setdefault(fold(text), (index, call, path, text))
+    if not found:
+        return None
+    if len(found) > 1:
+        raise ObserveError(
+            f"{run.base.case_id}: hop {hop.hop_index} ({hop.tool_name}.{hop.path}) has no call "
+            f"of its own and {len(found)} semantically equal leaves in turn {hop.turn} carry "
+            f"DIFFERENT values {sorted(entry[3] for entry in found.values())}; the rule refuses "
+            f"to choose between them")
+    index, call, path, _text = next(iter(found.values()))
+    return index, call, path
 
 
 def result_for_hop(run: ArmRunV5, hop: Hop) -> ToolResultRecord | None:
@@ -1123,37 +1197,95 @@ def _leaf_carries(item: PiiItem, spec: FieldSpec | None, surfaces: Sequence[str]
     return carries_any(item.type, surfaces, text, own)
 
 
+def _leaf_value_ok(item: PiiItem, spec: FieldSpec | None, tool: str, path: str,
+                   produced: str) -> bool:
+    """`metrics.leaf_value_ok` — THE predicate that says «this leaf received what
+    it asks for» (R-53, and SPIKE-Е Е-7). Imported inside the call because
+    `metrics` imports THIS module: the cycle is real, and a second copy of the
+    predicate here is exactly what R-53 removed — two definitions of one fact
+    are one drift away from «the honest share» and «the headline» disagreeing
+    about the same leaf."""
+    from bench.agentpii5.metrics import leaf_value_ok
+
+    return leaf_value_ok(item, tool, path, produced)
+
+
 def _out_status(item: PiiItem, spec: FieldSpec | None, surfaces: Sequence[str],
                 minted: dict[str, str], written: str, restored: str,
-                own: frozenset[str]) -> str:
+                own: frozenset[str], tool: str, path: str) -> str:
     """The status of an OUT leaf, decided HERE and not by the engine's report.
 
-    Two readings that used to come from elsewhere are made in this file now.
-    `unmasked`: the leaf the agent wrote carried no substitute at all, so
-    `restored == written` and `form_match` compared a string with itself — a
-    gateway that masked NOTHING printed 100% on `form_hOUT`. `residual`: the
-    engine's own `ObservedCall.residual` said whether a substitute survived,
-    and a benchmark that asks the defendant whether it left a fake in the
-    customer's CRM is not measuring anything; the scan of the restored leaf
-    is the same one `residual_answer_items` runs on the reply.
+    ONE STATUS, ONE FACT, AND THE ORDER OF THE BRANCHES IS THE CONTRACT
+    (SPIKE-Е, Е-1). This function used to answer `unmasked` to three different
+    questions at once — the agent wrote nothing, the engine deliberately kept a
+    generic part real, a third value arrived — and the report had no cell in
+    which any of the three was named. The funnel now reads:
+
+      1. the leaf CARRIES the substitute → `residual` if the restoration left it
+         there, `observed` if the engine put the real value back;
+      2. the leaf does NOT carry it, and holds the CORRECT real value of this
+         leaf (`metrics.leaf_value_ok`, the ONE predicate the headline asks) →
+         `engine_kept` when the role is generic AND the mint record proves the
+         engine was awake for this entity (the settlement inside an address, the
+         generic street word, the domain, the gender — `vault._settlement_of`
+         keeps those real BY PRODUCT DECISION), else `not_masked` (nothing was
+         ever minted, or the leaf names no generic role: there was nothing to
+         restore);
+      3. neither → `leaf_foreign`: a third value stands where a datum was at
+         stake, and `form_match` cannot see it at all.
+
+    BOTH SIGNALS ARE NEEDED FOR `engine_kept`, and neither alone is enough.
+    The role alone would call every leaf of a passthrough gateway «deliberately
+    kept»; the mint record alone would excuse a city that leaked whole. This is
+    why a handwritten run with an empty `substitutes` cannot earn it — and why
+    the honest denominator must not be computed on one (SPIKE-Е risk 3).
+
+    `written` IS NON-EMPTY BY CONTRACT. The emptiness of the leaf is decided one
+    level up (`_out_call`, Е-2): a leaf the agent left blank is a fact about the
+    AGENT (`absent`, or nothing at all when the hop is optional), and no branch
+    here may be read as a gateway miss. The raise is the contract, not a
+    courtesy: an empty string reaching this funnel would be filed as
+    `leaf_foreign` and a slot nobody filled would read as a wrong value.
 
     TWO QUESTIONS, ONE PER SHAPE OF LEAF (contracts §4bis, N6). A leaf the tool
     schema names for ONE PART of a value — `address.building`, `person.series`,
     `contact.first_name` — is asked `leaf_holds`: no needle of a whole address
     can live in «79», so asking the whole value's needles made every decomposed
-    leaf `unmasked` for ever, un-earnable and un-failable at once (632 of 2 449
-    OUT leaves on a 400-case slice of the corpus, every LOC house, flat, city,
-    entrance and every PASSPORT series and number among them). A leaf that
-    carries the value WHOLE — a free-text SMS, a joined by-fields address — is
-    asked the needles, which is the question that fits a string with prose
-    around it."""
-    if not _leaf_carries(item, spec, surfaces, minted, written, own):
-        return "unmasked"
-    return "residual" if _leaf_carries(item, spec, surfaces, minted, restored, own) else "observed"
+    leaf un-earnable (632 of 2 449 OUT leaves on a 400-case slice of the corpus,
+    every LOC house, flat, city, entrance and every PASSPORT series and number
+    among them). A leaf that carries the value WHOLE — a free-text SMS, a joined
+    by-fields address — is asked the needles, which is the question that fits a
+    string with prose around it."""
+    if not written:
+        raise ObserveError(
+            f"{item.id}: _out_status was handed an EMPTY leaf; the emptiness of a leaf belongs "
+            f"to `_out_call` (contracts.Hop.optional), and `leaf_foreign` would misname it")
+    if _leaf_carries(item, spec, surfaces, minted, written, own):
+        return "residual" if _leaf_carries(item, spec, surfaces, minted, restored, own) else "observed"
+    if not _leaf_value_ok(item, spec, tool, path, written):
+        return "leaf_foreign"
+    if spec is not None and spec.role in contracts.GENERIC_PIECE_ROLES and (surfaces or minted):
+        return "engine_kept"
+    return "not_masked"
 
 
 def _out_call(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem,
-              own: frozenset[str]) -> HopObservation | None:
+              own: frozenset[str], claimed: set[tuple[int, str, int, str]]) -> HopObservation | None:
+    """One declared OUT/tool_arg hop, from the CALL to the status.
+
+    TWO RULES LIVE HERE AND THEY ARE THE ONES THE OLD FUNNEL GOT WRONG. The
+    emptiness of the LEAF decides `optional` (`contracts.Hop.optional`), not the
+    absence of the call; and a declared leaf the run never wrote is satisfied by
+    the semantically equal leaf it DID write, inside the declared turn
+    (`equivalent_out_leaf`). Everything after that — which of the six statuses
+    the leaf carries — is `_out_status`'s single decision.
+
+    A CLAIMED LEAF IS ADDED TO `claimed`. The crossing the declared hop was
+    satisfied by is ONE crossing: leaving it in the undeclared scan as well
+    would count one datum twice in every hop-level denominator
+    (`form_hOUT`, `residual`, the `out_*` counts) — a doubling that grows exactly
+    with the family the equivalence was written for.
+    """
     expected_owner = contracts.hop_owner_of_leaf(hop.tool_name, hop.path)
     if hop.owner != expected_owner:
         raise ObserveError(
@@ -1161,13 +1293,27 @@ def _out_call(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem,
             f"{hop.tool_name}.{hop.path}, which is a {expected_owner!r} leaf "
             f"(contracts.TEMPLATE_FIELDS / SUMMARY_FIELDS decide, not the case)")
     call = call_for_hop(run, hop)
-    if call is None:
+    path = hop.path
+    written = "" if call is None else leaf_text(flatten(call.written), hop.tool_name, path)
+    restored = "" if call is None else leaf_text(flatten(call.restored), hop.tool_name, path)
+    if not written:
+        # Е-2. `optional` IS READ OFF THE LEAF AND NOT OFF THE CALL. A hop whose
+        # call was made and whose slot was left empty is a hop that did NOT
+        # HAPPEN: it counts nowhere when the case says the agent may skip it,
+        # and it is `absent` — the fact `out_absent` exists for — when it may
+        # not. Reading it only when the CALL was missing put an unwritten leaf
+        # into every denominator the moment the call existed.
+        twin = equivalent_out_leaf(run, hop)
+        if twin is not None:
+            index, call, path = twin
+            claimed.add((hop.turn, call.name, call_ordinal_of(run, index), path))
+            written = leaf_text(flatten(call.written), call.name, path)
+            restored = leaf_text(flatten(call.restored), call.name, path)
+    if call is None or not written:
         return None if hop.optional else _flat(case, repeat, hop, True, item.type, "", "", "absent")
-    written = leaf_text(flatten(call.written), hop.tool_name, hop.path)
-    restored = leaf_text(flatten(call.restored), hop.tool_name, hop.path)
-    status = _out_status(item, spec_v5_for(hop.tool_name, hop.path),
-                         substitute_surfaces(run, item.id), minted_parts(run, item.id),
-                         written, restored, own)
+    spec = spec_v5_for(call.name, path)
+    status = _out_status(item, spec, substitute_surfaces(run, item.id), minted_parts(run, item.id),
+                         written, restored, own, call.name, path)
     if status == "observed":
         produced, reference = own_pair(item.type, restored, (item.canonical, item.value),
                                        written, substitute_surfaces(run, item.id))
@@ -1337,17 +1483,23 @@ def _synthetic(kind: str, owner: str, item_id: str, turn: int, tool_name: str,
 
 
 def _extra_call_hops(case: CaseV5, run: ArmRunV5, repeat: int, declared: Sequence[Hop],
-                     own: frozenset[str]) -> list[HopObservation]:
+                     own: frozenset[str],
+                     claimed: frozenset[tuple[int, str, int, str]]) -> list[HopObservation]:
+    """Crossings the agent made that the case never declared.
+
+    `claimed` NAMES THE LEAVES A DECLARED HOP WAS SATISFIED BY (they are declared
+    hops, read through `contracts.LEAF_EQUIVALENCE`): one crossing, one hop, and
+    a second reading of it as undeclared would double every hop-level
+    denominator by exactly the equivalence's own population."""
     taken = {(hop.turn, hop.tool_name, hop.call_ordinal, hop.path)
-             for hop in declared if hop.kind == "OUT" and hop.tool_name}
+             for hop in declared if hop.kind == "OUT" and hop.tool_name} | claimed
     surfaces = {item.id: substitute_surfaces(run, item.id) for item in case.base.pii}
     out: list[HopObservation] = []
     for index, call in enumerate(run.base.calls):
         if call.name not in REGISTRY_V5:
             continue
         turn = run.call_turns[index]
-        ordinal = sum(1 for other, one in enumerate(run.base.calls)
-                      if other < index and one.name == call.name and run.call_turns[other] == turn)
+        ordinal = call_ordinal_of(run, index)
         flat_written = flatten(call.written)
         flat_restored = flatten(call.restored)
         for path in sorted(flat_written):
@@ -1374,10 +1526,13 @@ def _extra_call_hops(case: CaseV5, run: ArmRunV5, repeat: int, declared: Sequenc
                              item_id, turn, call.name, ordinal, path)
             # No item's substitute is in this leaf: the agent wrote something
             # the gateway never touched. It is still a crossing of the form
-            # axis — and it has nothing to compare, so it is `unmasked`.
-            status = ("unmasked" if not item_id
+            # axis — and the value it carries belongs to no datum of the case,
+            # which is `leaf_foreign` (the third value the split named) and not
+            # a gateway miss on this item's behalf.
+            status = ("leaf_foreign" if not item_id
                       else _out_status(items_by_id(case)[item_id], spec, surfaces[item_id],
-                                       minted_parts(run, item_id), written, restored, own))
+                                       minted_parts(run, item_id), written, restored, own,
+                                       call.name, path))
             out.append(_observed(case, repeat, hop, False, spec.pii_type, restored, written)
                        if status == "observed"
                        else _flat(case, repeat, hop, False, spec.pii_type, restored, written, status))
@@ -1417,6 +1572,10 @@ def observe(case: CaseV5, run: ArmRunV5, ic: PairVerdict | None,
     # the same question («is this needle the substitute's or the customer's
     # own?») and the answer depends only on the case.
     own = own_stems(case)
+    # The leaves a declared hop was satisfied by through the equivalence table:
+    # filled while the declared hops are read, so the undeclared scan below does
+    # not count the same crossing a second time.
+    claimed: set[tuple[int, str, int, str]] = set()
     observations: list[HopObservation] = []
     for hop in case.hops:
         item = items.get(hop.item_id)
@@ -1438,14 +1597,14 @@ def observe(case: CaseV5, run: ArmRunV5, ic: PairVerdict | None,
         elif hop.kind == "OUT" and hop.owner == "answer":
             one = _out_answer(case, run, run.base.repeat, hop, item, spans, residual)
         elif hop.kind == "OUT":
-            one = _out_call(case, run, run.base.repeat, hop, item, own)
+            one = _out_call(case, run, run.base.repeat, hop, item, own, claimed)
         else:
             raise ObserveError(
                 f"{case.base.id}: hop {hop.hop_index} is {hop.kind}/{hop.owner}, which is not a "
                 f"pair of contracts.HOP_KINDS × HOP_OWNERS")
         if one is not None:
             observations.append(one)
-    observations += _extra_call_hops(case, run, run.base.repeat, case.hops, own)
+    observations += _extra_call_hops(case, run, run.base.repeat, case.hops, own, frozenset(claimed))
     observations += _extra_answer_hops(case, run, run.base.repeat, case.hops, spans)
     return RunObservation(case=case, repeat=run.base.repeat, hops=tuple(observations),
                           run=run, ic=ic, cc=cc)

@@ -151,12 +151,26 @@ class Hop:
     `FieldSpec.path`); "" for user, memory, answer.
 
     `optional` is True only for a hop the agent MAY legitimately skip (a
-    retry it did not need because its first attempt was accepted). An
-    optional hop that did not happen is not observed and counts nowhere; a
-    required hop that did not happen is `absent` and counts as a miss in
-    `multi_all_out` / `chain_value`. Defaulting everything to optional would
-    let an agent that calls nothing pass every form line — the v4 D3 defect
-    («did the arm act at all») in a new coat.
+    retry it did not need because its first attempt was accepted, or a leaf the
+    TOOL SCHEMA does not require). An optional hop that did not happen is not
+    observed and counts nowhere; a required hop that did not happen is `absent`
+    and counts as a miss in `multi_all_out` / `chain_value`. Defaulting
+    everything to optional would let an agent that calls nothing pass every form
+    line — the v4 D3 defect («did the arm act at all») in a new coat.
+
+    «DID NOT HAPPEN» IS A FACT ABOUT THE LEAF, NOT ABOUT THE CALL (SPIKE-Е,
+    Е-2). The observer read `optional` only when the CALL was missing, so a
+    declared optional hop whose call WAS made with an empty slot went into every
+    denominator — the promise on this field, broken by the branch one file away
+    that did not read it (`_out_answer` already obeyed it). A hop is skipped
+    when its leaf was left empty, whether or not a call was made.
+
+    AND THE CORPUS'S OWN BUILDERS READ THE ROLE. `scenarios5.common.arg_hop`
+    and `revise._arguments` set `optional = (not spec.required) or spec.role in
+    GENERIC_PIECE_ROLES`: `courier_book.address.locality` and
+    `delivery_create_order.to_location.city` are `required=True, role='city'`,
+    and the engine keeps the settlement real by product decision — a REQUIRED
+    hop there is a promise no correct gateway can keep.
     """
 
     kind: str            # HOP_KINDS
@@ -1091,7 +1105,145 @@ IDENTIFYING_ROLES: dict[str, tuple[str, ...]] = {
 # generic word. ONE list, where there used to be two that disagreed —
 # `observe.EXEMPT_ROLES` (what is not a LEAK) left `domain` in while the
 # comment beside it said a surviving «yandex.ru» is not a leak.
+#
+# IT DECIDES TWO THINGS AND THEY ARE THE SAME FACT READ TWICE. N4 says such a
+# piece is not a leak; the OUT funnel says the engine LEFT IT TRUE on purpose
+# (`pseudex/vault.py::_settlement_of`, «what the law does not protect stays
+# true»), so a leaf whose role is here is `engine_kept` rather than `not_masked`
+# when the mint record proves the engine was awake for that entity. And the
+# corpus's own builders must not demand a hop there
+# (`scenarios5.common.arg_hop`): a city inside an address cannot become
+# `observed` by any correct gateway, and a REQUIRED hop on it is a promise no
+# product can keep (g07, g01, g03, g04, g14).
 GENERIC_PIECE_ROLES: frozenset[str] = frozenset({"city", "gender", "domain", "street_type"})
+
+# --- the authorial leaf equivalence (SPIKE-Е, Е-6) ------------------------------------
+#
+# THE SAME DATUM UNDER TWO TOOL SCHEMAS IS ONE LEAF SEMANTICALLY, and the
+# instrument used to miss it because it looked for the corpus's TOOL NAME. The
+# corpus declares `courier_book.address.locality` and the agent writes
+# `crm_upsert_contact.contact.address.city` in the same turn: the settlement
+# crossed once and came back once, and the hop read `absent` (g08: 25 of the 30
+# `absent` of the group). The reading was about the corpus's spelling of the
+# leaf, not about the crossing.
+#
+# IT IS A TABLE AND NOT A MATCHER, deliberately. `actual_hops.py` warns that
+# matching events by TOOL NAME «can tie a re-search, a second delivery, or data
+# the agent had not been given to the wrong event»; the same warning applies to
+# a guess off a path's spelling. Every class below is AUTHORED, closed, and
+# grounded in the registry's own `FieldSpec.pii_type` / `.role` — the class key
+# IS the role the members declare, so a member of another role is refused (see
+# `equivalence_problems`). A class of one leaf folds nothing and is refused too.
+#
+# WHAT IS NOT HERE, AND WHY. `delivery_create_order.to_location.address` (the
+# whole address) and `courier_book.address` (the container) are not folded into
+# the parts: a whole is not a part, and counting a city leaf for an address leaf
+# would credit a value the agent never carried. `crm_find_contact.query.phone`
+# is not folded into `crm_upsert_contact.contact.phone`: both hold E.164 digits,
+# but a LOOKUP and a WRITE are different acts, and the spike's own warning is
+# about exactly that reading.
+LEAF_EQUIVALENCE: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("city", ("courier_book.address.locality",
+              "crm_upsert_contact.contact.address.city",
+              "crm_upsert_card.contact.address.city",
+              "delivery_create_order.to_location.city")),
+    ("street", ("courier_book.address.street",
+                "crm_upsert_contact.contact.address.street",
+                "crm_upsert_card.contact.address.street")),
+    ("house", ("courier_book.address.building",
+               "crm_upsert_contact.contact.address.house",
+               "crm_upsert_card.contact.address.house")),
+    ("flat", ("courier_book.address.sflat",
+              "crm_upsert_contact.contact.address.flat",
+              "crm_upsert_card.contact.address.flat")),
+)
+# `"tool.path"` → the class that folds it. A leaf in no class is equivalent to
+# no other leaf and the observer reads it exactly as it always has.
+LEAF_SEMANTICS: dict[str, str] = {leaf: name for name, leaves in LEAF_EQUIVALENCE
+                                  for leaf in leaves}
+
+
+def semantic_leaf(tool: str, path: str) -> str:
+    """The semantic leaf `(tool, path)` carries, or "" when it is in no class.
+
+    "" and not the path itself on purpose: a caller that treated «no class» as
+    a class of its own would fold every unknown leaf into one."""
+    return LEAF_SEMANTICS.get(f"{tool}.{path}", "")
+
+
+def equivalent_leaves(tool: str, path: str) -> tuple[tuple[str, str], ...]:
+    """Every OTHER `(tool, path)` that carries the same semantic leaf, in the
+    table's own order. Empty for a leaf in no class — including the declared
+    leaf itself, which the caller already holds and must not be handed back as
+    its own alternative."""
+    name = semantic_leaf(tool, path)
+    if not name:
+        return ()
+    own = f"{tool}.{path}"
+    out: list[tuple[str, str]] = []
+    for group, leaves in LEAF_EQUIVALENCE:
+        if group != name:
+            continue
+        for leaf in leaves:
+            if leaf == own:
+                continue
+            other_tool, other_path = leaf.split(".", 1)
+            out.append((other_tool, other_path))
+    return tuple(out)
+
+
+def equivalence_problems(spec_for: "Callable[[str, str], FieldSpec | None]",
+                         table: Sequence[tuple[str, tuple[str, ...]]] | None = None) -> list[str]:
+    """Every violation of the leaf-equivalence table, never the first one only.
+
+    THE LOOKUP IS A PARAMETER, the shape `tools.registry_problems` uses and for
+    the same reason: `tools` imports THIS module, so a checker that read
+    `REGISTRY_V5` itself would close the cycle — and a rule that cannot be shown
+    to fail is not a rule. `table` defaults to the landed one so the test can
+    hand a deliberately broken copy and demand a red.
+
+    WHAT IS CHECKED, and each clause is a way the table could lie: every member
+    names a leaf the registry knows; a member appears in exactly one class (a
+    leaf in two classes would make equivalence intransitive); every member
+    declares the class's own role; every member of a class declares ONE pii_type
+    (folding a LOC and a NAME leaf would let one value answer for another); and
+    no class folds fewer than two leaves (a class of one proves nothing and
+    would make `semantic_leaf` a lookup with no partner)."""
+    problems: list[str] = []
+    rows = LEAF_EQUIVALENCE if table is None else table
+    seen: dict[str, str] = {}
+    for name, leaves in rows:
+        if len(leaves) < 2:
+            problems.append(f"class {name!r} folds {len(leaves)} leaf — a class of one "
+                            f"folds nothing")
+        types: set[str] = set()
+        for leaf in leaves:
+            if "." not in leaf:
+                problems.append(f"class {name!r}: {leaf!r} is not a «tool.path» pair")
+                continue
+            if leaf in seen:
+                problems.append(f"class {name!r}: {leaf} is already in class {seen[leaf]!r}; "
+                                f"equivalence would not be transitive")
+                continue
+            seen[leaf] = name
+            tool, path = leaf.split(".", 1)
+            try:
+                spec = spec_for(tool, path)
+            except Exception as error:  # noqa: BLE001 - the exception IS the verdict
+                # A lookup that RAISES on an unknown tool (v4's `spec_for` indexes
+                # its registry) says the same thing a None does: the table names
+                # a leaf no tool carries, which is a typo in the table.
+                problems.append(f"class {name!r}: {leaf} resolves to nothing ({error!r})")
+                continue
+            if spec is None:
+                problems.append(f"class {name!r}: {leaf} is no argument leaf of {tool!r}")
+                continue
+            if spec.role != name:
+                problems.append(f"class {name!r}: {leaf} declares role {spec.role!r}")
+            types.add(spec.pii_type)
+        if len(types) > 1:
+            problems.append(f"class {name!r}: members carry several types {sorted(types)}")
+    return problems
 # A piece of a value short enough to stand inside an unrelated word is not
 # evidence that the value was there. Four characters is v4's own floor in
 # `residual` detection and the public harness's; a shorter one matched «Лев»
@@ -1303,9 +1455,17 @@ METRICS: tuple[MetricSpec, ...] = (
     MetricSpec("leak", "IN hops the gateway ALTERED before the model saw them", "IN hops shown to the model (observed ∪ leaked; `absent` was shown to nobody)", "hop", "public", False),
     MetricSpec("coverage", "IN hops of which NO piece survived — by the span the gateway replaced where the value stood in a MESSAGE, by what the model read where it did not (a seed value stood in no message, so «was its span masked» is a question about nothing); city / generic word / marker are not PII", "IN hops shown to the model (observed ∪ leaked)", "hop", "public", False),
     MetricSpec("typed", "IN/tool and IN/document hops the gateway typed as the declared type (DOB and DATE are ONE answer)", "IN/tool and IN/document hops whose slot a replaced piece covers, so a type was exposed", "hop", "public", False),
-    MetricSpec("round_trip", "OUT/tool_arg leaves the gateway RESTORED to the real value of THAT leaf (absolute, not paired); a leaf it never masked (`unmasked`) is a miss, and so is one the agent never wrote", "OUT/tool_arg leaves of items altered on the way in", "leaf", "public", False),
-    MetricSpec("round_trip_repaired", "the same, counting a value that arrived REPAIRED (the same `unmasked` and `absent` misses)", "OUT/tool_arg leaves of items altered on the way in", "leaf", "public", True),
-    MetricSpec("end_to_end", "declared OUT/tool_arg leaves the gateway RESTORED to the real value of THAT leaf — a leaf that carried no substitute (`unmasked`) is a MISS, so a passthrough scores 0 here and not 100 (F1.3)", "all declared OUT/tool_arg leaves", "leaf", "public", False),
+    MetricSpec("round_trip", "OUT/tool_arg leaves the gateway RESTORED to the real value of THAT leaf (absolute, not paired); a leaf it never masked (`engine_kept` / `not_masked` / `leaf_foreign`) is a miss, and so is one the agent never wrote", "OUT/tool_arg leaves of items altered on the way in", "leaf", "public", False),
+    MetricSpec("round_trip_repaired", "the same, counting a value that arrived REPAIRED (the same unmasked-and-`absent` misses)", "OUT/tool_arg leaves of items altered on the way in", "leaf", "public", True),
+    MetricSpec("end_to_end", "declared OUT/tool_arg leaves the gateway RESTORED to the real value of THAT leaf — a leaf that carried no substitute (now `engine_kept` / `not_masked`) is a MISS, so a passthrough scores 0 here and not 100 (F1.3)", "all declared OUT/tool_arg leaves", "leaf", "public", False),
+    # THE HONEST SHARE, BESIDE THE STRICT ONE AND NEVER INSTEAD OF IT (SPIKE-Е,
+    # Е-3). The strict line is the protection against a passthrough and the
+    # lesson of v4's D3; this one answers the question the strict denominator
+    # buries — of the leaves the ENGINE had something to do on, how many came
+    # back right. The two differ by the population and by NOTHING else: both
+    # read `metrics.leaf_value_ok` (Е-7), so a reader may print them side by
+    # side, and the strict line is printed FIRST (`report.beside_of`).
+    MetricSpec("end_to_end_written", "declared OUT/tool_arg leaves of the RESTORABLE population the gateway restored to the real value of THAT leaf — the engine's honest share; the strict `end_to_end` is its headline and prints first", "declared OUT/tool_arg leaves with status observed / residual / leaf_foreign (`absent` is the agent's, `engine_kept` and `not_masked` had nothing to restore and are printed by `out_no_mint`)", "leaf", "public", False),
     MetricSpec("overmask", "negatives NOT altered", "all negatives", "negative", "public", False),
     MetricSpec("consistency", "items whose every mention carried ONE substitute", "items the model met in more than one PLACE — a distinct (`msg`, `result_seq`) pair, so a message is a place and so is EACH tool result; keying on `msg` alone made every result one place and left the population empty on the whole corpus", "item", "public", False),
     MetricSpec("stability", "items whose substitute did not change between requests", "items mentioned in more than one request", "item", "public", False),
@@ -1328,8 +1488,18 @@ METRICS: tuple[MetricSpec, ...] = (
     # benchmark's). The `spoken` axis is where a reader sees that, so the
     # sub-100 figure is never read as an instrument defect.
     MetricSpec("form_hIN", "IN hops where form_match == same", "IN hops observed (not leaked); read on the `spoken` axis — the whole residue is dictated values against written substitutes (Б27), an ENGINE finding", "hop", "v5_new", False),
-    MetricSpec("form_hOUT", "OUT hops where form_match == same", "OUT hops the agent WROTE (observed ∪ unmasked; `absent` is printed beside the line by `out_absent`)", "hop", "v5_new", False),
+    MetricSpec("form_hOUT", "OUT hops where form_match == same", "OUT hops the agent WROTE (`contracts.OUT_HOP_WRITTEN_STATUSES`; `absent` is printed beside the line by `out_absent`, and the funnel's own counts by `out_written` / `out_no_mint`)", "hop", "v5_new", False),
     MetricSpec("out_absent", "declared OUT hops the agent never wrote", "all declared OUT hops", "hop", "v5_new", True),
+    # THE FUNNEL PRINTED, COUNT BY COUNT. `unmasked` used to be one cell for
+    # three facts and the report had no cell in which any of them was named:
+    # these are the four statuses the split created plus the population they
+    # were carved out of. They are DIAGNOSTIC the way `out_absent` is — a count
+    # beside the line it explains, not a success criterion of its own.
+    MetricSpec("out_written", "declared OUT hops the agent WROTE something in (`absent` is the only status outside) — the population `form_hOUT` counts and `out_absent` leaves out", "all declared OUT hops", "hop", "v5_new", True),
+    MetricSpec("out_no_mint", "declared OUT hops the engine had NOTHING to restore on — `engine_kept` (a generic part left real on purpose, with the mint recorded) plus `not_masked` (the leaf already held the real value); what `end_to_end_written` subtracts, printed as one count", "all declared OUT hops", "hop", "v5_new", True),
+    MetricSpec("out_engine_kept", "declared OUT hops where the engine DELIBERATELY left the real value: a generic role (settlement / generic word / domain / gender) and the mint record proves it was awake", "all declared OUT hops", "hop", "v5_new", True),
+    MetricSpec("out_not_masked", "declared OUT hops where the leaf already held the real value and no substitute was minted for it (a passthrough, or a leaf naming no generic role)", "all declared OUT hops", "hop", "v5_new", True),
+    MetricSpec("out_leaf_foreign", "declared OUT hops where a THIRD value stands: neither this datum's substitute nor its real value — invisible to `form_match` (`produced == reference`, no verdict)", "all declared OUT hops", "hop", "v5_new", True),
     MetricSpec("toolresult_masked", "declared tool results where no real value reached the model", "results the case DECLARES personal data in (`returns[].result_item_ids`) and the agent obtained", "result", "v5_new", False),
     MetricSpec("answer_real", "answers where every REQUIRED datum is the real value — any inflection of the part(s) the answer names — in the agent's form, and no substitute is left anywhere in the reply", "answers the case declares a REQUIRED OUT/answer hop for; an answer with nothing to require is outside it and counted by `answer_optional_only`", "answer", "v5_new", False),
     # THE V4 DISEASE, CAUGHT IN A NEW PLACE (J1.1). `all([])` is True, and 720
@@ -1345,7 +1515,16 @@ METRICS: tuple[MetricSpec, ...] = (
     MetricSpec("answer_optional_only", "answers whose case declares answer hops and obliges NONE of them — what `answer_real`'s denominator leaves out", "answers the case declares an OUT/answer hop for", "answer", "v5_new", True),
     MetricSpec("chain_value", "A→B transitions where the real value in B equals the real value from A", "all A→B transitions", "transition", "v5_new", False),
     MetricSpec("chain_form", "A→B transitions with form_match == same on OUT(B)", "all A→B transitions", "transition", "v5_new", False),
+    MetricSpec("chain_value_written", "the same, over the transitions whose OUT(B) leaf is RESTORABLE — the hand-over the engine was asked to perform", "A→B transitions with a restorable OUT(B) leaf (observed / residual / leaf_foreign)", "transition", "v5_new", False),
+    MetricSpec("chain_form_written", "the same, the FORM question", "A→B transitions with a restorable OUT(B) leaf", "transition", "v5_new", False),
     MetricSpec("multi_all_out", "turns where EVERY OUT argument is right in value and form", "turns with N ≥ 2 OUT hops", "turn", "v5_new", False),
+    # THE SAME TURNS, THE HONEST POPULATION (SPIKE-Е witness g02: 55 of 56
+    # multi-hop turns had NEITHER leaf written, and the strict line printed
+    # 0/56 — a fact about the scene, read as a defect of the engine). A turn in
+    # which nothing was restorable is outside this denominator; a turn with one
+    # restorable leaf is judged on that leaf. The strict line still counts the
+    # turn nobody wrote as a miss.
+    MetricSpec("multi_all_out_written", "turns where EVERY RESTORABLE OUT argument is right in value and form (a turn with nothing restorable is outside the denominator)", "turns with N ≥ 2 declared non-optional OUT hops and ≥ 1 restorable leaf", "turn", "v5_new", False),
     MetricSpec("multi_consistency", "turns where one value → one substitute across all its calls", "turns with N ≥ 2 calls", "turn", "v5_new", False),
     MetricSpec("retry_form", "retries where OUT form matched the agent's form on EVERY attempt", "retries of one tool", "retry", "v5_new", False),
     MetricSpec("memory_consistency", "values a `MemorySpec` names, mentioned in > 1 turn with ONE substitute", "values a `MemorySpec` names", "value", "v5_new", False),
@@ -1643,22 +1822,46 @@ class HopObservation:
     False for a crossing the agent made that the case did not declare — an
     extra call; it is observed (it is a real crossing of real data) but
     counts in `form_h*` only, never in `chain_*` / `multi_*` whose
-    denominators are declared hops. `status`: `observed` (compared),
-    `leaked` (IN: the real value reached the model unaltered — no form to
-    compare, counted by `leak`/`toolresult_masked`), `residual` (OUT: a
-    substitute reached the consumer — counted by `residual`), `unmasked`
-    (OUT: the leaf the agent wrote carried no substitute at all, so there is
-    nothing to restore and nothing to compare — a MISS everywhere a form or a
-    value is asked for, never a hit, never dropped), `absent` (a required hop
-    that did not happen). `verdict` is set iff status == "observed".
+    denominators are declared hops.
 
-    WHY `unmasked` IS ITS OWN STATUS AND NOT `observed`. When the gateway
-    missed the value on the way IN, the agent writes the REAL value, the
-    engine restores nothing, and `produced == reference` — so `form_match`
-    said «same» and a gateway that masked NOTHING printed 100% on
-    `form_hOUT`, `chain_form`, `chain_value` and `multi_all_out`. The hop
-    happened; there was simply no substitute in it, and a comparison of a
-    string with itself is not evidence about the product."""
+    `status` IS ONE FACT, NEVER THREE. The OUT leaf funnel of
+    `observe._out_status` answers a single question at a time and the ORDER of
+    its branches is the contract:
+
+    * `observed` — the leaf carried the substitute and the engine restored the
+      real value of THAT leaf (the compared, earnable state).
+    * `residual` — the leaf carried the substitute and the substitute is still
+      there: a fake reached the consumer (counted by `residual`).
+    * `engine_kept` — the leaf does NOT carry the substitute, it carries the
+      CORRECT real value, its role is generic (`GENERIC_PIECE_ROLES`) and the
+      run's mint record proves the engine was awake for this entity: the
+      settlement inside an address, the generic street word, the mail domain,
+      the gender. `pseudex/vault.py::_settlement_of` leaves those real BY
+      PRODUCT DECISION — «what the law does not protect stays true» — so this
+      is the engine working, and it is a MISS nowhere.
+    * `not_masked` — the same shape WITHOUT that proof: the agent wrote the
+      real value because the gateway never minted a substitute (a passthrough),
+      or the leaf names no generic role. There was nothing to restore.
+    * `leaf_foreign` — a THIRD value stands in the leaf: neither this datum's
+      substitute nor its real value. `form_match` cannot see it (`verdict` is
+      None, `produced == reference`), so before the split it was invisible.
+    * `absent` — the agent wrote NOTHING at the leaf: a required hop inside a
+      made call whose slot is empty, or a call the case declared and the agent
+      never made. A fact about the AGENT, counted by `out_absent`.
+    * `leaked`, `unmasked` — IN hops and the ANSWER leg, unchanged. `unmasked`
+      is still EMITTED by `_out_answer` (the reply held the real value because
+      the gateway never minted) and is still READ off every artifact on disk:
+      `records.py` checks this vocabulary on READ, so removing it would take a
+      saved replay down three weeks after the run that cost the money.
+
+    `verdict` is set iff status == "observed".
+
+    WHY `not_masked` IS NOT `observed`. When the gateway missed the value on
+    the way IN, the agent writes the REAL value, the engine restores nothing,
+    and `produced == reference` — so `form_match` said «same» and a gateway that
+    masked NOTHING printed 100% on `form_hOUT`, `chain_form`, `chain_value` and
+    `multi_all_out`. The hop happened; there was simply no substitute in it, and
+    a comparison of a string with itself is not evidence about the product."""
 
     case_id: str
     repeat: int
@@ -1671,7 +1874,31 @@ class HopObservation:
     verdict: FormVerdict | None
 
 
-HOP_STATUSES: tuple[str, ...] = ("observed", "leaked", "residual", "unmasked", "absent")
+# EVERY STATUS THE OBSERVER MAY EMIT, and the closed vocabulary a saved row is
+# READ against. The OUT funnel no longer emits `unmasked` (the three facts it
+# hid are `engine_kept` / `not_masked` / `leaf_foreign` now); the answer leg
+# still does, and so does every artifact written before this round.
+HOP_STATUSES: tuple[str, ...] = ("observed", "leaked", "residual", "unmasked", "absent",
+                                 "engine_kept", "not_masked", "leaf_foreign")
+# THE LEAVES THE AGENT WROTE SOMETHING IN: what `form_hOUT` counts, and what
+# `absent` is not. `residual` belongs here and used to be left out of that line
+# only because the old funnel spelled the pair from the other end («observed ∪
+# unmasked»); a leaf holding a fake the agent wrote IS written, and leaving it
+# out let the one state where a fake reached the customer's tool be the one
+# state the form line did not judge.
+OUT_HOP_WRITTEN_STATUSES: frozenset[str] = frozenset({
+    "observed", "residual", "engine_kept", "not_masked", "leaf_foreign"})
+# THE LEAVES THE ENGINE HAD SOMETHING TO DO ON — the honest denominator of
+# `end_to_end_written` and its siblings. `observed`/`residual` put a substitute
+# in the agent's hand, so the restoration was the engine's to perform;
+# `leaf_foreign` says a third value arrived where a datum was at stake, which is
+# a failure the strict line counts and a denominator that dropped it would hide.
+# `engine_kept` (nothing to restore) and `not_masked` (the leaf already held the
+# real value) are OUT: counting either would let a gateway that protected
+# nothing earn a share of the round trip, and both are printed beside the line
+# as counts (`out_engine_kept`, `out_not_masked`, `out_no_mint`).
+OUT_HOP_RESTORABLE_STATUSES: frozenset[str] = frozenset({
+    "observed", "residual", "leaf_foreign"})
 
 
 @dataclass(frozen=True)

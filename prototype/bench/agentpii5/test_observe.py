@@ -307,8 +307,8 @@ def test_out_unmasked_has_nothing_to_compare() -> list[str]:
         {"contact": {"last_name": REAL_NAME}}, {}, "", 0),), (0,)), {"p1": FAKE_NAME})
     problems: list[str] = []
     got = _one(case, missed).hops[0]
-    if got.status != "unmasked" or got.verdict is not None:
-        problems.append(f"a leaf with no substitute in it must be `unmasked`, got {got.status}")
+    if got.status != "leaf_foreign" or got.verdict is not None:
+        problems.append(f"a leaf with no substitute in it must be `leaf_foreign`, got {got.status}")
     if _one(case, worked).hops[0].status != "observed":
         problems.append("a leaf that DID carry a substitute must stay observed — the fixture "
                         "would otherwise separate on nothing")
@@ -824,7 +824,7 @@ def test_a_decomposed_leaf_is_judged_by_its_own_role() -> list[str]:
     for label, written, restored, want in (
             ("restored", "79", "46", "observed"),
             ("fake left standing", "79", "79", "residual"),
-            ("never masked", "46", "46", "unmasked")):
+            ("never masked", "46", "46", "not_masked")):
         got = _status(written, restored)
         if got != want:
             problems.append(f"house leaf, {label}: read {got!r}, must be {want!r}")
