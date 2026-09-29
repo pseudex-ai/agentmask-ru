@@ -139,10 +139,11 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual(agent.seen, [12345])
 
     def test_deepseek_output_cap_is_the_session_budget_not_a_floor(self) -> None:
-        """The per-response output cap is `connector_max_tokens`, not a 16000
-        floor: a long mail chain's single reply legitimately exceeds 16000 tokens
-        while `max_tokens` still bounds the whole session."""
-        self.assertEqual(h.deepseek_max_output_tokens(400000), 400000)
+        """The per-response output cap is `connector_max_tokens` clamped to the
+        provider's own `max_tokens` ceiling (393216), not a 16000 floor: a long
+        mail chain's single reply legitimately exceeds 16000 tokens while the
+        session check still bounds the whole conversation."""
+        self.assertEqual(h.deepseek_max_output_tokens(400000), 393216)
         self.assertEqual(h.deepseek_max_output_tokens(60000), 60000)
         self.assertEqual(h.deepseek_max_output_tokens(16000), 16000)
 
