@@ -1,0 +1,111 @@
+{
+ "run_id": "7ac47774-6ec4-4370-8e56-94cf47cd65f9",
+ "source_dir": "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/runs/2026-09-29/v5-live-rerun-final-18",
+ "archived_at": "2026-09-29T11:26:42+00:00",
+ "archived_on": "MacBook-Pro-Igor.local",
+ "files": [
+  {
+   "path": "7ac47774-6ec4-4370-8e56-94cf47cd65f9.agent.usage.jsonl",
+   "bytes": 16548,
+   "sha256": "a07d120d2722358c8f2403e9a5dfc3523ec731eef8114bcecaed5cf4a2ac7b88"
+  },
+  {
+   "path": "7ac47774-6ec4-4370-8e56-94cf47cd65f9.arms.jsonl",
+   "bytes": 493683,
+   "sha256": "842ba2773f1a75fb3c678db1719acba71af7dc452a284387295a514d3fb03c7b"
+  },
+  {
+   "path": "7ac47774-6ec4-4370-8e56-94cf47cd65f9.arms.v5.jsonl",
+   "bytes": 588469,
+   "sha256": "7d2567f63a6332e6f3d1708b7e841e7be6a02863880cc382d9797d04025ce4d9"
+  },
+  {
+   "path": "7ac47774-6ec4-4370-8e56-94cf47cd65f9.canary.jsonl",
+   "bytes": 9811056,
+   "sha256": "5eb379917ac553374cea8abb3a85805a3100591d186ab026610498bcac1518ce"
+  },
+  {
+   "path": "7ac47774-6ec4-4370-8e56-94cf47cd65f9.gate.json",
+   "bytes": 1799,
+   "sha256": "d9878839461b14bba6d4c51acaaf04450ec4e9b03eb33dc26c1ee7af7936e1cc"
+  },
+  {
+   "path": "7ac47774-6ec4-4370-8e56-94cf47cd65f9.hops.jsonl",
+   "bytes": 177557,
+   "sha256": "d87dd132280c4dd27faf3fb6f4abc32fe748115dea30a9b7456c67756c7143c2"
+  },
+  {
+   "path": "7ac47774-6ec4-4370-8e56-94cf47cd65f9.judge.jsonl",
+   "bytes": 5020,
+   "sha256": "941798e6c66a3c06fbb03660452d8dcae7243e681ec9652ebfd8938a5ef5ec29"
+  },
+  {
+   "path": "7ac47774-6ec4-4370-8e56-94cf47cd65f9.meta.json",
+   "bytes": 3186,
+   "sha256": "314690c1ea2c21e23dd8482eceb890246017d5296ec40acd7b1125263df73ade"
+  },
+  {
+   "path": "7ac47774-6ec4-4370-8e56-94cf47cd65f9.oracle.json",
+   "bytes": 683,
+   "sha256": "578be10ccf2b795550ab494ddbf5e85817de73d061f3cc521365ce3a6eb637a9"
+  },
+  {
+   "path": "7ac47774-6ec4-4370-8e56-94cf47cd65f9.public.json",
+   "bytes": 2533,
+   "sha256": "1c2223139fc23518c199a4034770d5341feb8b2c1e28b4618327e734a42f5fc4"
+  },
+  {
+   "path": "7ac47774-6ec4-4370-8e56-94cf47cd65f9.report.json",
+   "bytes": 217569,
+   "sha256": "7d24987135e632f03502e9422922c0cdac6808adbb1f211389c3a62c4302bbd3"
+  },
+  {
+   "path": "7ac47774-6ec4-4370-8e56-94cf47cd65f9.report.txt",
+   "bytes": 64972,
+   "sha256": "01f21404948920e7675487f2f49c568d3821d3622d77f403269aff16c3ea63d9"
+  },
+  {
+   "path": "7ac47774-6ec4-4370-8e56-94cf47cd65f9.spend.tsv",
+   "bytes": 1155,
+   "sha256": "64c4b4428db3d94e285990b7f0770e19e2605b45c9cc536c96f087d30396f85e"
+  },
+  {
+   "path": "7ac47774-6ec4-4370-8e56-94cf47cd65f9.triples.jsonl",
+   "bytes": 12237,
+   "sha256": "dc2025151ef34b71b0de312d2b2528e03222bef616b102ea6083155845e47b8f"
+  },
+  {
+   "path": "corpus.json",
+   "bytes": 145819,
+   "sha256": "d662cece00d53151786d6e4333db4b478b80eddbcdff7d1fa27114e6eb28ea58"
+  },
+  {
+   "path": "corpus.v5.json",
+   "bytes": 207528,
+   "sha256": "73396820ef47a179bdda63f8806107a7859ab746a52e56777839af278db9a161"
+  },
+  {
+   "path": "repairs.json",
+   "bytes": 3994,
+   "sha256": "39853806978c3348af8ae7b9e358bda120f9987ae3251a5d82d612b7c43ffee6"
+  }
+ ],
+ "files_total": 17,
+ "bytes_total": 11753808,
+ "run_sha256": "3d37dffada96567eea82f4f0db8388d4048f2b9338e69e954fa791df0d2d1c60",
+ "label": "v5-live-rerun-final-18",
+ "tarball": {
+  "path": "7ac47774-6ec4-4370-8e56-94cf47cd65f9.tar.gz",
+  "bytes": 339716,
+  "sha256": "9026d4749098dec06b52e11e977d0590fc99af30b1a570c16d67fd7728839e12"
+ },
+ "excluded_total": 3,
+ "excluded_cases": [
+  "memory_anaphora-028",
+  "memory_anaphora-079",
+  "sequential_chain:mail-006"
+ ],
+ "archive_dir": "/Users/igor/pseudex-run-archives/7ac47774-6ec4-4370-8e56-94cf47cd65f9",
+ "verified_files": 17,
+ "verify_failures": []
+}

@@ -1,0 +1,47 @@
+{
+ "run_id": "7ac47774-6ec4-4370-8e56-94cf47cd65f9",
+ "excluded_total": 3,
+ "excluded_cases": [
+  "memory_anaphora-028",
+  "memory_anaphora-079",
+  "sequential_chain:mail-006"
+ ],
+ "excluded": [
+  {
+   "case_id": "sequential_chain:mail-006",
+   "status": "excluded",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "register": "voice_itn",
+   "cluster": "PHONE:9278733186",
+   "reason": "C: timeout TimeoutError:",
+   "arm_reasons": {
+    "C": "TimeoutError: "
+   }
+  },
+  {
+   "case_id": "memory_anaphora-079",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "clean",
+   "cluster": "PHONE:9778736058",
+   "reason": "I: TimeoutError: ",
+   "arm_reasons": {
+    "I": "TimeoutError: "
+   }
+  },
+  {
+   "case_id": "memory_anaphora-028",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "clean",
+   "cluster": "PHONE:9252387434",
+   "reason": "C2: TimeoutError: ",
+   "arm_reasons": {
+    "C2": "TimeoutError: "
+   }
+  }
+ ]
+}
