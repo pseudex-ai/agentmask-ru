@@ -44,10 +44,15 @@ of the detector.
 """
 from __future__ import annotations
 
+import re
+
 from bench.agentpii4.mock import CallLog
 from bench.agentpii4.tools import Refusal
 from bench.agentpii4.writer import Slot, serialise
-from bench.agentpii5.mock import MIN_TAGGED_VALUE, BackendV5, digits_of, phone_canon
+from bench.agentpii5 import contracts
+from bench.agentpii5.metrics import NEG_TAG_PREFIX
+from bench.agentpii5.mock import (KB_SEARCH_K, MIN_TAGGED_VALUE, BackendV5, digits_of,
+                                  identity_digits, identity_stems, phone_canon, put_leaf)
 from bench.agentpii5.tools_v6 import TOOLS_V6, UNSCHEMED_TOOLS
 
 # --- the registry surface mock.py reaches with one line -------------------------
@@ -85,6 +90,12 @@ def call_v6(backend: "BackendV6", tool: str, arguments: dict[str, object]) -> Ca
     else:
         result, node, form = backend._apply_v6(tool, parsed)
         text, spans = serialise(node)
+        # THE v6 NEGATIVES RIDE THE FIRST RESULT (CQ-11, §6.3). A right gateway
+        # leaves a business identifier untouched, so `overmask_result` reads its
+        # coverage off the `neg:`-tagged slot exactly as `perfect._tool_results`
+        # lays the same negatives down for the perfect run — the live mock must
+        # not disagree with the perfect one about where a negative lives.
+        text, spans = backend._attach_negatives(text, spans)
         log = CallLog(tool, backend._seq, parsed, None, result, text, spans)
     backend._expand_prose(log)
     backend.calls.append(log)
@@ -100,8 +111,9 @@ class BackendV6(BackendV5):
     the write tools echo with; it does not use v5's tables.
     """
 
-    def __init__(self, now_iso: str) -> None:
-        super().__init__(now_iso, (), {})
+    def __init__(self, now_iso: str, forced: tuple[object, ...] = (),
+                 echo: dict[str, str] | None = None) -> None:
+        super().__init__(now_iso, forced, echo or {})
         self._item_real: dict[str, str] = {}            # item id -> real (canonical) value
         self._item_type: dict[str, str] = {}            # item id -> pii type
         self._item_identity: dict[str, str] = {}        # item id -> identity
@@ -112,13 +124,40 @@ class BackendV6(BackendV5):
         self._record_fields: dict[str, dict[str, object]] = {}  # record id -> tool-notation fields
         self._path_item: dict[tuple[str, str], str] = {}      # (record id, field) -> item id
         self._ambiguous: set[str] = set()
+        self._negatives: list[tuple[str, str]] = []           # (family, value), in case order
+        self._negatives_rendered: bool = False
 
     # --- calls -----------------------------------------------------------
 
+    def _forced_call_v6(self, tool: str, forced: object) -> CallLog:
+        """The v6 scripted refusal (`retry_same_tool`): an `error.subject` body
+        that echoes the item's canonical, tagged with the item id — the v6 analog
+        of `mock._forced_call` (which renders `error.message`)."""
+        value = self._echo[forced.echo_item_id]
+        node = {"error": {"code": forced.code, "subject": Slot(value, forced.echo_item_id)}}
+        self._seq += 1
+        text, spans = serialise(node)
+        log = CallLog(tool, self._seq, None, None, node, text, spans)
+        self.calls.append(log)
+        return log
+
     def call(self, tool: str, arguments: dict[str, object]) -> CallLog:
-        if tool in V6_NAMES:
-            return call_v6(self, tool, arguments)
-        return super().call(tool, arguments)
+        if tool not in V6_NAMES:
+            return super().call(tool, arguments)
+        # A v6 refusal IS an attempt: the ordinal counts every call of the tool,
+        # parsed or not, so a scripted error on ordinal 0 still answers there.
+        attempt = self._attempts.get(tool, 0)
+        self._attempts[tool] = attempt + 1
+        self._used = set()
+        self._prose = {}
+        self._last_form = ""
+        forced = self._forced_error(tool, attempt)
+        if forced is not None:
+            log = self._forced_call_v6(tool, forced)
+            self._expand_prose(log)
+            self.forms.append("error_with_value")
+            return log
+        return call_v6(self, tool, arguments)
 
     # --- seeding ---------------------------------------------------------
 
@@ -161,6 +200,42 @@ class BackendV6(BackendV5):
                 del index[key]
                 continue
             index[key] = item.id
+        # The IDENTITY SIGNATURE v5's `identities_in` reads (RAG `kb_search`
+        # `_by_identity` fallback): a seeded value stays recognisable by its
+        # digit tail / word stems even when a query rewrote it. `seed_v6_item`
+        # feeds the same by-value/by-digit indexes as `mock.seed_item`; this line
+        # feeds the third index that one also feeds.
+        self._signatures.append((item.id, identity_stems(value), identity_digits(value)))
+
+    def seed_v6_negatives(self, negatives: list[tuple[str, str]]) -> None:
+        """The case's v6 negatives, in case order, to render as `neg:` slots.
+
+        Only the registered v6 families are carried (`contracts.V6_NEGATIVE_
+        FAMILIES`) — a v4/v5 negative (an order number, a track) is a message
+        negative measured by `overmask`, never a `neg:` RESULT slot
+        (`overmask_result`)."""
+        self._negatives = list(negatives)
+
+    def _attach_negatives(self, text: str, spans: dict[str, tuple[int, int]]
+                          ) -> tuple[str, dict[str, tuple[int, int]]]:
+        """Append the v6 negatives to the FIRST rendered result and tag each one
+        `NEG_TAG_PREFIX + "n<index>"` — the same convention `perfect._tool_results`
+        uses for the perfect run (CQ-11). The span covers the value alone, never
+        the `{family}: ` prefix, so `overmask_result` measures the identifier
+        itself and not the label in front of it."""
+        if self._negatives_rendered or not self._negatives:
+            return text, spans
+        self._negatives_rendered = True
+        out = text
+        out_spans = dict(spans)
+        for ni, (family, value) in enumerate(self._negatives):
+            if out:
+                out += "\n"
+            prefix = f"{family}: "
+            start = len(out) + len(prefix)
+            out += prefix + value
+            out_spans[NEG_TAG_PREFIX + f"n{ni}"] = (start, start + len(value))
+        return out, out_spans
 
     # --- rendering helpers ------------------------------------------------
 
@@ -674,7 +749,11 @@ class BackendV6(BackendV5):
         }}, "nested"
 
     def _v6_flight_order_get(self, parsed: dict[str, object]) -> tuple[object, str]:
-        rid = self._find_record_by_value(str(parsed["flight_order_id"]))
+        # `flight_order_id` is a PLAIN business key. The corpus writes the record id
+        # (`_field_kind == "plain"`); the hand fixture writes the booking reference
+        # value — so accept EITHER the record id or a by-value match.
+        key = str(parsed["flight_order_id"])
+        rid = key if key in self._record_fields else self._find_record_by_value(key)
         if not rid:
             return self._error_v6("1797", str(parsed["flight_order_id"]))
         return {"data": {
@@ -771,8 +850,15 @@ class BackendV6(BackendV5):
         }]}, "list"
 
     def _v6_diploma_registry_check(self, parsed: dict[str, object]) -> tuple[object, str]:
-        rid = self._find_record_by_value(str(parsed["blank_number"])) \
-            or self._find_record_by_value(str(parsed["blank_series"]))
+        # ФИС ФРДО takes the series and number in two leaves. The corpus stores the
+        # DIPLOMA_NUMBER as ONE «series number» value (re-join before the by-digit
+        # lookup); the hand fixture stores series and number in SEPARATE fields —
+        # so try the joined identity first, then each half on its own.
+        series = str(parsed.get("blank_series", ""))
+        number = str(parsed.get("blank_number", ""))
+        rid = self._find_record_by_value(series + number) \
+            or self._find_record_by_value(number) \
+            or self._find_record_by_value(series)
         if not rid:
             return {"found": False}, "empty"
         return {"found": True, "document": {
@@ -913,7 +999,12 @@ class BackendV6(BackendV5):
         rid = self._find_record_by_value(str(parsed["deviceIdentifier"]))
         if not rid:
             return {"devices": []}, "empty"
-        return {"devices": [{"deviceIdentifier": self._field(rid, "imei")}]}, "list"
+        # The bare [C] IMEI stores the value at the ARGUMENT leaf (deviceIdentifier),
+        # the record/dossier at the field key (imei) — render the IMEI item by type,
+        # which is bound under whichever field the case chose.
+        item_id = self._record_type.get(rid, {}).get("IMEI", "")
+        return {"devices": [{"deviceIdentifier":
+                             self._slot_item(item_id, self._real(item_id))}]}, "list"
 
     def _v6_omnihss_subscriber_get(self, parsed: dict[str, object]) -> tuple[object, str]:
         rid = self._find_record_by_value(str(parsed["imsi"]))
@@ -928,7 +1019,9 @@ class BackendV6(BackendV5):
         return {"query": self._field(rid, "ip"), "status": "success"}, "single"
 
     def _v6_flight_order_manage_get(self, parsed: dict[str, object]) -> tuple[object, str]:
-        rid = self._find_record_by_value(str(parsed["flight_order_id"]))
+        # `flight_order_id` is an IDENTITY (PNR) leaf — the value, not a record id.
+        key = str(parsed["flight_order_id"])
+        rid = key if key in self._record_fields else self._find_record_by_value(key)
         if not rid:
             return {"data": None}, "empty"
         return {"data": {"associatedRecords": [{"reference": self._field(rid, "pnr")}]}}, "nested"
@@ -1083,13 +1176,250 @@ def seed_backend_v6(case: object) -> BackendV6:
     WRITE tool's echo resolves to the item it restores.
     """
     items = {item.id: item for item in case.base.pii}
-    backend = BackendV6(case.base.now)
+    echo: dict[str, str] = {}
+    for forced in case.forced:
+        item = items.get(forced.echo_item_id)
+        if item is None:
+            raise KeyError(f"forced error on {forced.tool_name} echoes "
+                           f"{forced.echo_item_id!r}, which is not an item of the case")
+        if not item.canonical:
+            raise ValueError(f"item {item.id} has no canonical form to echo")
+        echo[item.id] = item.canonical
+    backend = BackendV6(case.base.now, tuple(case.forced), echo)
     for record in case.base.seed_records:
         backend.seed_v6_record(record.id, dict(record.fields))
+        # A v5 TABLE the corpus still uses (kb_chunks for `kb_search`, documents
+        # for `file_read`) is read by the v5 tools off `_tables`, never off the v6
+        # `_record_fields` store — so seed it on BOTH sides. `v6_record` is not a
+        # v5 table and skips this leg.
+        in_v5 = record.table in backend._tables
+        if in_v5:
+            backend.seed_record(record.table, record.id, dict(record.fields))
         for item_id in record.pii_ids:
             item = items.get(item_id)
             if item is None:
                 raise KeyError(f"seed {record.id} names item {item_id!r}, "
                                f"which the case does not carry")
             backend.seed_v6_item(record.id, item)
+            if in_v5 and item.where.kind == "seed":
+                backend.seed_item(record.table, record.id, item.where.path, item.id)
+    backend.seed_v6_negatives([
+        (negative.family, negative.value) for negative in case.base.negatives
+        if negative.family in contracts.V6_NEGATIVE_FAMILIES])
     return backend
+
+
+# --- the build-time mock-transition proof (the v6 `render_problems`) -------------
+# The v6 analog of `mock.render_problems`: drive every declared return through the
+# real `BackendV6` and refuse a case whose declaration the backend cannot render.
+# `build_v6 --check` runs this over the corpus and `integrate_v6.l8` reads its
+# declared/proven/unprovable counts, so a crossing the mock cannot produce is a
+# RED at build time, never a permanent miss at run time (F4.1 / V02-V04).
+
+_ARRAY: re.Pattern[str] = re.compile(r"\[\d*\]")
+
+
+def _concrete_path(path: str) -> str:
+    """An argument leaf with its array indexes erased is written at `[0]` — the
+    case declares one item per position, so the first slot is the one it fills."""
+    return _ARRAY.sub("[0]", path)
+
+
+def _field_kind(tool: str, path: str) -> str:
+    """The `FieldSpec.kind` of an argument leaf, read off the v6 registry — the
+    plain/identity split decides whether a lookup leaf carries the RECORD key or
+    the VALUE."""
+    spec = V6_SPECS.get(tool)
+    if spec is None:
+        return ""
+    generic = re.sub(r"\[\d*\]", "[]", path)
+    for field in spec.base.fields:                        # type: ignore[attr-defined]
+        if field.path == generic or field.path == path:
+            return field.kind
+    return ""
+
+
+def _seed_item_for(case: object, item_id: str):
+    """The SEED item holding the same value as `item_id` (same type and canonical
+    key). A READ tool's lookup is answered with the stored surface — the TOOL's
+    own notation — not the stripped canonical the message item wears."""
+    items = {one.id: one for one in case.base.pii}
+    item = items[item_id]
+    key = item.canonical or item.value
+    for other in case.base.pii:
+        if other.where.kind == "seed" and other.type == item.type \
+                and (other.canonical or other.value) == key:
+            return other
+    return None
+
+
+# The business filler a v6 tool's strict parser demands and no OUT hop declares —
+# the same role `mock.CALL_FILLER`/`CALL_DEFAULT` play for the v5 tools. Every
+# value is a deterministic, non-real placeholder for a CONTEXT field the case is
+# not about (the surname of a diploma holder, the issue date of a licence, the
+# plate beside an СТС, the search field of a Moodle lookup); the IDENTITY leaf the
+# case DOES test always comes from the case's own hops, never from here.
+CALL_FILLER_V6: dict[str, dict[str, object]] = {
+    # gov: ФИС ФРДО wants the holder's surname beside the blank series/number.
+    "diploma_registry_check": {"last_name": "Иванов"},
+    # gov: «Проверка водителя» wants the issue date beside the licence number.
+    "driver_license_check": {"issue_date": "2019-06-11"},
+    # gov: «Проверка штрафов» wants the plate beside the СТС.
+    "traffic_fines_check": {"plate": "Р777ТТ18"},
+    # directory: Moodle's core_user_get_users_by_field wants the field selector.
+    "lms_user_get": {"field": "idnumber"},
+    "moodle_user_by_username": {"field": "username"},
+    # crm: Яндекс Аудитории wants the segment name and the hashed flag beside the rows.
+    "audience_segment_upload": {"segment_name": "Сегмент тестовый", "hashed": "false"},
+    # files: the synthetic court-document mirror wants the court that holds the case.
+    "court_document_fetch": {"court": "Ижевский районный суд"},
+    # clinic: СЭМД «Рецепт» wants the patient block and the drug/dosage text.
+    "e_prescription_create": {"patient": {"fio": "Иванов Пётр", "birth_date": "1987-03-14"},
+                              "drug": "Амоксициллин", "dosage": "500 мг"},
+    # bank: НБКИ/ОКБ want the consent id before the УИд subject key.
+    "credit_report_request": {"consent_id": "consent-1"},
+    # support: замена SIM wants the subscriber's MSISDN, ФИО and passport beside the new ICCID.
+    "sim_replace_request": {"msisdn": "79164021187", "fio": "Иванов Пётр",
+                            "passport": "4507 443564"},
+    # clinic: СФР ЭЛН wants the medical org's OGRN and the patient's СНИЛС beside the ln_code.
+    "eln_get": {"ogrn": "1234567890123", "snils": "10000000009"},
+}
+CALL_DEFAULT_V6: dict[str, dict[str, object]] = {}
+
+
+def call_arguments_v6(case: object, tool: str, ordinal: int) -> dict[str, object]:
+    """The call the case's own OUT hops describe, plus the filler the tool needs.
+
+    The value is the item's canonical (the stored/real form); a PLAIN lookup leaf
+    is the seed record id instead, because that is what a business-keyed READ tool
+    resolves. Array-erased paths are written at `[0]`."""
+    items = {one.id: one for one in case.base.pii}
+    arguments: dict[str, object] = {}
+    for hop in case.hops:
+        if hop.kind != "OUT" or hop.tool_name != tool or hop.call_ordinal != ordinal:
+            continue
+        item = items[hop.item_id]
+        seed = _seed_item_for(case, hop.item_id)
+        if _field_kind(tool, hop.path) == "plain":
+            # A business-key lookup leaf takes the RECORD the value lives under.
+            value = seed.where.record if seed is not None else (item.canonical or item.value)
+        else:
+            # An identity lookup takes the STORED surface — the tool's notation.
+            value = seed.value if seed is not None else (item.canonical or item.value)
+        put_leaf(arguments, _concrete_path(hop.path), value)
+    arguments.update(CALL_FILLER_V6.get(tool, {}))
+    for key, value in CALL_DEFAULT_V6.get(tool, {}).items():
+        arguments.setdefault(key, value)
+    if tool == "kb_search":
+        # HOW MANY CHUNKS IS THE CASE'S DECLARATION, NOT A DEFAULT. `RagSpec.k` is
+        # what the case declares one IN hop per; a driver that asked for three when
+        # the case declares five proves two thirds of a loop (the v5 rule, restated).
+        arguments["k"] = case.rag.k if case.rag is not None else KB_SEARCH_K
+        # The v6 rag chunk and its query share a TOPIC word (the v5 `TOPICS` rule),
+        # so the mock's word-overlap ranker returns the chunk even though the query
+        # names the customer and the chunk carries a stranger's identifier.
+        query = arguments.get("query")
+        if isinstance(query, str):
+            arguments["query"] = f"возврат {query}"
+    if tool == "diploma_registry_check":
+        # ФИС ФРДО splits the DIPLOMA_NUMBER «series number» into blank_series (6) +
+        # blank_number (7); the case declares ONE identity leaf (blank_number) and
+        # the seed stores the whole value, so split it here into the two leaves the
+        # parser demands. Neither parse is weakened — both leaves are the value.
+        digits = "".join(ch for ch in str(arguments.get("blank_number", "")) if ch.isdigit())
+        arguments["blank_series"] = digits[:6]
+        arguments["blank_number"] = digits[6:]
+    if tool in ("lms_user_get", "moodle_user_by_username"):
+        # Moodle's core_user_get_users_by_field `values` leaf is an ARRAY; the case
+        # declares one identity leaf, so wrap the scalar in the list the parser wants.
+        value = arguments.get("values")
+        arguments["values"] = [value] if not isinstance(value, list) and value not in (None, "") else value
+    if tool == "audience_segment_upload":
+        # Яндекс Аудитории refuses a file under 100 rows; the case declares ONE
+        # external_id (the CDP_CUSTOMER_ID), so pad the file with non-personal
+        # filler rows to the floor the parser demands. The first row stays the case's.
+        file = arguments.get("file")
+        rows = file.get("rows") if isinstance(file, dict) else None
+        if isinstance(rows, list):
+            while len(rows) < 100:
+                rows.append({"external_id": f"filler-{len(rows)}"})
+    if tool == "cdek_order_info":
+        # СДЭК's cdek_number accepts alphanumerics with no «+»; the delivery
+        # vertical looks the order up by the recipient's phone, which the case
+        # stores E.164 — strip the «+» to the notation the parser demands.
+        number = arguments.get("cdek_number")
+        if isinstance(number, str):
+            arguments["cdek_number"] = number.lstrip("+")
+    return arguments
+
+
+def drive_v6(case: object) -> tuple[tuple[str, int, str, str, tuple[tuple[str, str], ...]], ...]:
+    """Make every call the case declares a return for, and read the result back off
+    the `CallLog`. `(tool, ordinal, form, refusal, rendered)` per return.
+
+    A scripted refusal (`ForcedError`) is STILL CALLED — the refusal has to be
+    consumed for the next attempt to be the next attempt — and its `error.subject`
+    echo is recorded, so a `retry_same_tool` IN hop on that ordinal renders."""
+    backend = seed_backend_v6(case)
+    forced = {(one.tool_name, one.call_ordinal) for one in case.forced}
+    made: list[tuple[str, int, str, str, tuple[tuple[str, str], ...]]] = []
+
+    def record(tool: str, ordinal: int):
+        log = backend.call(tool, call_arguments_v6(case, tool, ordinal))
+        if log.refusal is not None:
+            return tool, ordinal, "", f"{log.refusal.path}: {log.refusal.rule}", ()
+        rendered = tuple(
+            (tag, log.result_text[start:end])
+            for tag, (start, end) in sorted(log.result_spans.items()))
+        return tool, ordinal, backend.form_of(log.seq), "", rendered
+
+    for expectation in case.returns:
+        for ordinal in range(expectation.call_ordinal + 1):
+            if (expectation.tool_name, ordinal) in forced:
+                made.append(record(expectation.tool_name, ordinal))
+        made.append(record(expectation.tool_name, expectation.call_ordinal))
+    return tuple(made)
+
+
+def render_problems_v6(case: object) -> list[str]:
+    """Every way the case's declaration and the v6 backend's rendering disagree.
+
+    Mirrors `mock.render_problems`: V01 a return never driven or refused, V02 a
+    wrong form, V03 a declared item the result never tags, V04 an IN/tool hop
+    whose item the result never renders."""
+    problems: list[str] = []
+    tag = case.base.id
+    by_call = {(tool, ordinal): (form, refusal, rendered)
+               for tool, ordinal, form, refusal, rendered in drive_v6(case)}
+    for expectation in case.returns:
+        made = by_call.get((expectation.tool_name, expectation.call_ordinal))
+        if made is None:
+            problems.append(f"V01 {tag}: {expectation.tool_name}#"
+                            f"{expectation.call_ordinal} was never driven")
+            continue
+        _form, refusal, rendered = made
+        if refusal:
+            problems.append(f"V01 {tag}: {expectation.tool_name}#"
+                            f"{expectation.call_ordinal} refused the call the hops "
+                            f"describe ({refusal})")
+            continue
+        if _form != expectation.return_form:
+            problems.append(f"V02 {tag}: {expectation.tool_name}#"
+                            f"{expectation.call_ordinal} answered {_form!r}, the case "
+                            f"declared {expectation.return_form!r}")
+        printed = {item_id for item_id, _text in rendered}
+        missing = [item_id for item_id in expectation.result_item_ids
+                   if item_id not in printed]
+        if missing:
+            problems.append(f"V03 {tag}: {expectation.tool_name}#"
+                            f"{expectation.call_ordinal} rendered none of {missing[:4]}")
+    for hop in case.hops:
+        if hop.kind != "IN" or hop.owner not in ("tool", "document"):
+            continue
+        made = by_call.get((hop.tool_name, hop.call_ordinal))
+        printed = {item_id for item_id, _text in made[2]} if made else set()
+        if hop.item_id not in printed:
+            problems.append(f"V04 {tag}: IN hop {hop.hop_index} reads {hop.item_id} from "
+                            f"{hop.tool_name}#{hop.call_ordinal}, which renders no span "
+                            f"for it")
+    return problems

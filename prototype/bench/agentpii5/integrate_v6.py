@@ -37,7 +37,7 @@ from pathlib import Path
 
 from bench.agentpii4.compare import ArmRun
 from bench.agentpii4.tools import flatten
-from bench.agentpii5 import checksum_v6, contracts, gen_v6, metrics, observe, perfect, pii_types
+from bench.agentpii5 import build_v6, checksum_v6, contracts, gen_v6, metrics, observe, perfect, pii_types
 from bench.agentpii5.contracts import ArmRunV5, CaseV5, Line
 from bench.agentpii5.form_tables import CYRILLIC_TO_LATIN
 from bench.agentpii5.schema import case_v5_from_json, corpus_digest_v5
@@ -103,8 +103,8 @@ def load_corpus_and_ladder(phase: str) -> tuple[list[CaseV5], dict[str, object],
         raise ValueError(f"phase {phase!r} is not one of {PHASES}")
     if not CORPUS_PATH.exists() or not LADDER_PATH.exists():
         cases = build_full.build_full()
-        digest = build_full.write_corpus(cases, V6_DIR)
-        build_full.write_ladder_v6(cases, V6_DIR)
+        digest = build_v6.write_corpus(cases, V6_DIR)
+        build_v6.write_ladder_v6(cases, V6_DIR)
         print(f"integrate_v6: rebuilt corpus {digest[:12]} and ladder (they were absent)")
     cases = _load_cases(CORPUS_PATH)
     ladder = json.loads(LADDER_PATH.read_text(encoding="utf-8"))
@@ -470,30 +470,16 @@ def l7_section() -> dict[str, object]:
 
 
 def l8_section(cases: Sequence[CaseV5]) -> dict[str, object]:
-    """Hops declared, proven (rendered by the perfect gateway), unprovable.
+    """Hops declared, proven and unprovable — the `build_v6 --check` mock-transition
+    proof, NOT the perfect-gateway observation.
 
-    `unprovable` is the G3 concept: a declared hop whose transition the
-    machinery CANNOT render at all (an observation that raises). It is empty for
-    a working gateway. A declared OUT hop the observation marks `absent` — the
-    agent never made the call — is the G4 `out_absent` finding, not a G3
-    unprovable transition, so it is reported in its own `absent` column and in
-    `l1.perfect.*.out_absent`, never folded into `unprovable`."""
-    declared = 0
-    proven = 0
-    absent = 0
-    unprovable: list[str] = []
-    seen = observations(cases, perfect.simulate)
-    for one in seen:
-        for hop in one.hops:
-            if not hop.declared:
-                continue
-            declared += 1
-            if hop.status in ("observed", "leaked", "residual", "unmasked"):
-                proven += 1
-            else:
-                absent += 1
-    return {"declared": declared, "proven": proven, "absent": absent,
-            "unprovable": unprovable}
+    `build_v6.proof_v6` drives every declared return through the real v6 mock
+    (`mock_v6.render_problems_v6`, the v6 analog of `mock.render_problems` / F4.1)
+    and reports `declared` (required hops), `proven` (hops the mock transition
+    declared and the result rendered) and `unprovable` (the crossings the mock
+    cannot render, V01-V04). A right gateway cannot make an unprovable crossing
+    happen, so `unprovable` must be empty for a shippable corpus."""
+    return build_v6.proof_v6(cases)
 
 
 def l9_section(cases: Sequence[CaseV5], phase: str, stamp: str | None) -> dict[str, object]:

@@ -38,7 +38,7 @@ from bench.agentpii4.tools import (FieldSpec, Refusal, ToolSpec, _first, _obj,
                                    parse_inn, parse_int, parse_iso_date,
                                    parse_name_word, parse_snils, parse_text,
                                    snils_ok)
-from bench.agentpii5 import checksum_v6
+from bench.agentpii5 import checksum_v6, gen_v6
 from bench.agentpii5.contracts import (NEW_TOOL_NAMES, NO_SUITE, RETURN_FORMS,
                                        V4_TOOL_NAMES, VERTICALS, ReturnForm,
                                        ToolSpecV5)
@@ -165,7 +165,12 @@ def _parse_vin(raw, tool, path):
     if not isinstance(raw, str) or not re.fullmatch(r"[0-9A-HJ-NPR-Z]{17}", raw.strip().upper()):
         return Refusal(tool, path, "vin_format", str(raw))
     up = raw.strip().upper()
-    if not checksum_v6.validate_vin(up):
+    # OD-62: the Russian-WMI half fills position 9 «as the manufacturer» (a random
+    # VIN-alphabet char, never the ISO 3779 check) — the parser accepts that half
+    # exactly where the card says «as the manufacturer», and only checks the
+    # world-WMI half against ISO 3779. `gen_v6.vin_is_russian_wmi` is the single
+    # source of truth for the RU-WMI set, not a third copy here.
+    if not gen_v6.vin_is_russian_wmi(up) and not checksum_v6.validate_vin(up):
         return Refusal(tool, path, "vin_checksum", str(raw))
     return up
 

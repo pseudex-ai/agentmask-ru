@@ -11,13 +11,16 @@ import json
 import random
 import sys
 import unicodedata
+from dataclasses import replace
 
 from bench.agentpii4 import pools
-from bench.agentpii4.schema import (Case, Expectation, Locus, Message, PiiItem,
+from bench.agentpii4.compare import ArmRun
+from bench.agentpii4.schema import (Case, Expectation, Locus, Message, Negative, PiiItem,
                                     Provenance, SeedRecord)
 from bench.agentpii4.writer import Slot, WriterError, serialise
 from bench.agentpii5 import gen_v6
-from bench.agentpii5.contracts import CaseV5
+from bench.agentpii5.contracts import ArmRunV5, CaseV5, RunObservation, ToolResultRecord
+from bench.agentpii5.metrics import NEG_TAG_PREFIX, overmask_result
 from bench.agentpii5.mock import digits_of, snils_spaced
 from bench.agentpii5.mock_v6 import (BackendV6, UNSCHEMED_NAMES, V6_NAMES,
                                      V6_SPECS, seed_backend_v6)
@@ -855,8 +858,56 @@ def test_unschemed_have_no_handler() -> list[str]:
     return problems
 
 
+def test_negatives_render_as_result_slots() -> list[str]:
+    """The live mock lays the case's v6 negatives down as `neg:`-tagged result
+    slots in the FIRST result, so a live-harness run's `overmask_result` is
+    populated rather than 0/0. The span covers the value alone — the
+    `{family}: ` label in front is not part of the measured identifier."""
+    problems: list[str] = []
+    case = _case()
+    negatives = (Negative("044525225", 0, 9, 1, "BIK", "бизнес-идентификатор"),
+                 Negative("7701342047", 0, 10, 1, "INN_LEGAL", "бизнес-идентификатор"))
+    case = replace(case, base=replace(case.base, negatives=negatives))
+    backend = seed_backend_v6(case)
+    log = backend.call("crm_requisite_get", {"inn": INN_REQ})
+    if log.refusal is not None:
+        return [f"crm_requisite_get refused its own fixture: {log.refusal.rule}"]
+    neg_spans = {tag: span for tag, span in log.result_spans.items()
+                 if tag.startswith(NEG_TAG_PREFIX)}
+    expected = {f"{NEG_TAG_PREFIX}n0", f"{NEG_TAG_PREFIX}n1"}
+    if set(neg_spans) != expected:
+        problems.append(f"expected neg slots {sorted(expected)}, got {sorted(neg_spans)}")
+    for ni, negative in enumerate(negatives):
+        span = neg_spans.get(f"{NEG_TAG_PREFIX}n{ni}")
+        if span is None:
+            continue
+        if log.result_text[span[0]:span[1]] != negative.value:
+            problems.append(f"neg:n{ni} spans {log.result_text[span[0]:span[1]]!r}, "
+                            f"not {negative.value!r}")
+    # THE METRIC, through the record the live harness writes from the CallLog. A
+    # right gateway leaves each negative untouched (no piece covers it), so the
+    # line is 2/2 — the number that was 0/0 before the mock rendered the slots.
+    record = ToolResultRecord(
+        tool_name="crm_requisite_get", seq=log.seq, call_ordinal=0, turn=1,
+        return_form="single", text_real=log.result_text, text_masked=log.result_text,
+        spans_real={str(tag): tuple(span) for tag, span in log.result_spans.items()},
+        pieces=(), forced=False)
+    base = ArmRun(case_id=case.base.id, arm="I", repeat=0, calls=(), state=(),
+                  reply="", termination="done", cost_usd=0.0, substitutes={},
+                  masked_spans={})
+    run = ArmRunV5(base=base, reply_raw="", control_reply="", tool_results=(record,),
+                   mentions=(), turn_replies=(), call_turns=(), request_count=1,
+                   stream_mismatch=False, reply_whole="", turn_residual=0)
+    observation = RunObservation(case=case, repeat=0, hops=(), run=run, ic=None, cc=None)
+    line = overmask_result((observation,))
+    if (line.hits, line.total) != (2, 2):
+        problems.append(f"overmask_result is {line.hits}/{line.total}, expected 2/2")
+    return problems
+
+
 CHECKS = (test_no_pseudex, test_every_v6_tool_renders, test_refusal_echoes_value,
-          test_one_tag_per_item, test_no_control_chars, test_unschemed_have_no_handler)
+          test_one_tag_per_item, test_no_control_chars, test_unschemed_have_no_handler,
+          test_negatives_render_as_result_slots)
 
 
 def main() -> int:

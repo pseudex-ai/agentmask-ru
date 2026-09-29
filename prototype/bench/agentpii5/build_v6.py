@@ -31,12 +31,14 @@ NOTHING HERE IMPORTS `pseudex`.
 import hashlib
 import json
 import re
+import sys
 from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
 
 from bench.agentpii4 import schema as v4
 from bench.agentpii5 import contracts_v6
+from bench.agentpii5 import mock_v6
 from bench.agentpii5 import pii_types
 from bench.agentpii5.contracts import CaseV5
 from bench.agentpii5.schema import case_v5_to_json, corpus_digest_v5
@@ -400,3 +402,52 @@ _ARRAY_INDEX = re.compile(r"\[\d+\]")
 
 def _erase_index(path: str) -> str:
     return _ARRAY_INDEX.sub("[]", path)
+
+
+# --- the mock-transition proof (l8, §7.2) -------------------------------------------
+# `build_v6 --check` proves, for every REQUIRED hop, that the v6 mock transition
+# is DECLARED and the result RENDERS it — the v6 analog of `build.proof_problems`
+# (`mock.render_problems`, F4.1). `integrate_v6.l8` reads this proof's
+# declared/proven/unprovable counts rather than the perfect-gateway observation,
+# so a crossing the mock cannot produce is a RED at build time, never a permanent
+# miss at run time (V02-V04).
+
+def proof_v6(cases: Sequence[CaseV5]) -> dict[str, object]:
+    """`declared`/`proven`/`unprovable` over the corpus's required hops.
+
+    `declared` counts every required hop (a hop the agent is not free to skip).
+    `unprovable` names each crossing the v6 mock cannot render (`render_problems_v6`,
+    V01-V04); `proven` is the declared hops minus those unprovable crossings.
+    """
+    declared = 0
+    unprovable: list[str] = []
+    for case in cases:
+        declared += sum(1 for hop in case.hops if not hop.optional)
+        unprovable.extend(mock_v6.render_problems_v6(case))
+    return {"declared": declared, "proven": declared - len(unprovable),
+            "absent": 0, "unprovable": unprovable}
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    """`python3 -m bench.agentpii5.build_v6 --check` — the corpus proof.
+
+    Rebuilds the corpus from `build_full` when the on-disk corpus is absent (the
+    same self-contained rebuild `integrate_v6` does), then prints the declared /
+    proven / unprovable counts and every unprovable crossing by name. Exits 1 when
+    anything is unprovable, 0 otherwise.
+    """
+    args = list(sys.argv[1:] if argv is None else argv)
+    check = "--check" in args
+    if not check:
+        print("build_v6: pass --check to prove the corpus through the v6 mock")
+        return 2
+    from bench.agentpii5.scenarios6 import build_full  # local: widens the registry
+    cases = build_full.build_full()
+    proof = proof_v6(cases)
+    print(f"build_v6 --check: declared {proof['declared']} · proven {proof['proven']} · "
+          f"unprovable {len(proof['unprovable'])}")
+    for problem in proof["unprovable"]:
+        print(f"RED {problem}")
+    ok = not proof["unprovable"]
+    print("build_v6 --check: PASS" if ok else "build_v6 --check: FAIL")
+    return 0 if ok else 1

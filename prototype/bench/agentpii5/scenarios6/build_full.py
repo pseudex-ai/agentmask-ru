@@ -176,9 +176,9 @@ def _chain_case(ctx, first: Recipe, second: Recipe, industry: str) -> CaseV5:
 
     draft = builder.draft()
     draft.say(opener(ctx)).say(first.cues[0].lower())
-    draft.value("val", a)
+    draft.value("val", _dictated(a))
     draft.say("и").say(second.cues[0].lower())
-    draft.value("b", b)
+    draft.value("b", _dictated(b))
     draft.punct(".")
     turn, said = told(builder.v5, draft,
                       {"val": (first.type_id, identity, "required", False),
@@ -199,16 +199,28 @@ def _mint(builder, type_id: str) -> Rendered:
     """Mint a value and guarantee non-empty `parts` (a whole canonical keeps the
     ground truth complete without inventing a digit run the value lacks).
 
-    The dictated SURFACE is stripped of sentence punctuation `[.,;:!?]` — the
-    `voice_itn` register forbids it (an IP «188.201.146.147» is dictated as
-    «188201146147») — while the canonical keeps its identity, and the mock still
-    matches by digit signature."""
+    The returned `surface` is the value in the TOOL'S OWN NOTATION — the formatted
+    form the parser demands (UUID with dashes, cadastral with colons, IP with dots,
+    «series number» with its space). The SEED stores this surface, so a format-
+    validating parser sees what it genuinely requires; the DICTATED message surface
+    is derived separately by `_dictated` (the canonical stripped of sentence
+    punctuation), and both share the canonical identity."""
     rendered = builder.mint(type_id)
-    surface = rendered.canonical or rendered.surface
-    surface = re.sub(r"[.,;:!?]", "", surface)
     if rendered.parts:
-        return Rendered(surface, rendered.canonical, rendered.spoken, dict(rendered.parts))
-    return Rendered(surface, rendered.canonical, rendered.spoken, {"whole": rendered.canonical})
+        return Rendered(rendered.surface, rendered.canonical, rendered.spoken,
+                        dict(rendered.parts))
+    return Rendered(rendered.surface, rendered.canonical, rendered.spoken,
+                    {"whole": rendered.canonical})
+
+
+def _dictated(rendered: Rendered) -> Rendered:
+    """The DICTATED message surface: the canonical stripped of sentence punctuation
+    `[.,;:!?]` — the `voice_itn` register forbids it (an IP «188.201.146.147» is
+    dictated as «188201146147») — while the canonical keeps its identity and the
+    mock still matches by digit signature. The seed keeps the tool's formatted
+    notation; the message keeps this stripped form."""
+    surface = re.sub(r"[.,;:!?]", "", rendered.canonical or rendered.surface)
+    return Rendered(surface, rendered.canonical, rendered.spoken, dict(rendered.parts))
 
 
 def _seeded_item(builder, record_id: str, recipe: Recipe, rendered: Rendered,
@@ -245,7 +257,7 @@ def _base_case(ctx, recipe: Recipe, industry: str, behaviour: str) -> CaseV5:
 
     draft = builder.draft()
     draft.say(opener(ctx)).say(recipe.cues[0].lower())
-    draft.value("val", rendered)
+    draft.value("val", _dictated(rendered))
     draft.punct(".")
     turn, said = told(builder.v5, draft, {"val": (recipe.type_id, identity, "required", False)})
 
@@ -275,7 +287,7 @@ def _bare_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
 
     draft = builder.draft()
     draft.say(opener(ctx)).say("проверьте вот это")
-    draft.value("val", rendered)
+    draft.value("val", _dictated(rendered))
     draft.punct(".")
     turn, said = told(builder.v5, draft, {"val": (recipe.type_id, identity, "required", False)})
 
@@ -316,27 +328,43 @@ def _dossier_case(ctx, type_ids: tuple[str, ...], industry: str) -> CaseV5:
     typed: dict[str, tuple[str, str, str, bool]] = {}
     for position, (recipe, r) in enumerate(rendered):
         draft.say(recipe.cues[0].lower())
-        draft.value(f"v{position}", r)
+        draft.value(f"v{position}", _dictated(r))
         typed[f"v{position}"] = (recipe.type_id, identity, "required", False)
     draft.punct(".")
     turn, said = told(builder.v5, draft, typed)
+
+    # `call_ordinal` is the ordinal of that TOOL's calls inside the turn
+    # (contracts.Hop), not the position in the fan-out. Several recipes share one
+    # read tool (OSAGO_POLICY/VIN → osago_policy_check, IBAN/OGRNIP →
+    # crm_requisite_get), so the global `position` disagreed with
+    # `observe.call_for_hop`, which filters calls by tool and indexes by this
+    # ordinal — 950 required OUT/tool_arg hops read `absent` for no reason but the
+    # index. The per-tool ordinal is computed once and used identically in the
+    # OUT hop, the IN/tool hop and the `ReturnExpectation`, so all three stay
+    # keyed on the same value.
+    ordinals: list[int] = []
+    seen: dict[str, int] = {}
+    for recipe, _ in rendered:
+        ordinal = seen.get(recipe.read_tool, 0)
+        seen[recipe.read_tool] = ordinal + 1
+        ordinals.append(ordinal)
 
     hops: list[Hop] = []
     for position, (recipe, _) in enumerate(rendered):
         hops.append(user_hop(said[f"v{position}"], len(hops), turn))
     for position, (recipe, _) in enumerate(rendered):
         hops.append(arg_hop(said[f"v{position}"], len(hops), turn, recipe.read_tool,
-                            position, recipe.lookup, 0, "g"))
+                            ordinals[position], recipe.lookup, 0, "g"))
     for position, (recipe, _) in enumerate(rendered):
         hops.append(tool_hop(seed_ids[position], len(hops), turn, recipe.read_tool,
-                             position, recipe.result))
+                             ordinals[position], recipe.result))
     first_in = len(rendered) * 2  # hop index of the first tool_hop
     hops.append(answer_hop(seed_ids[0], len(hops), turn, first_in, False))
 
     for hop in hops:
         builder.declare_hop(hop)
     for position, (recipe, _) in enumerate(rendered):
-        builder.expect_return(ReturnExpectation(recipe.read_tool, position,
+        builder.expect_return(ReturnExpectation(recipe.read_tool, ordinals[position],
                                                 recipe.return_form, (seed_ids[position],)))
     return builder.build("parallel")
 
@@ -354,7 +382,7 @@ def _retry_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
     item = _seeded_item(builder, f"rec-{ctx.index}", recipe, rendered, identity)
     draft = builder.draft()
     draft.say(opener(ctx)).say(recipe.cues[0].lower())
-    draft.value("val", rendered)
+    draft.value("val", _dictated(rendered))
     draft.punct(".")
     turn, said = told(builder.v5, draft, {"val": (recipe.type_id, identity, "required", False)})
     builder.force_error(ForcedError(recipe.read_tool, 0, "format", item,
@@ -379,7 +407,7 @@ def _memory_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
     item = _seeded_item(builder, f"rec-{ctx.index}", recipe, rendered, identity)
     d1 = builder.draft()
     d1.say(opener(ctx)).say("мой").say(recipe.cues[0].lower())
-    d1.value("val", rendered)
+    d1.value("val", _dictated(rendered))
     d1.punct(".")
     turn1, said = told(builder.v5, d1, {"val": (recipe.type_id, identity, "required", False)})
     d2 = builder.draft()
@@ -409,9 +437,9 @@ def _same_tool_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
     rb = _seeded_item(builder, f"rec-{ctx.index}-b", recipe, b, "p1")
     draft = builder.draft()
     draft.say(opener(ctx)).say(recipe.cues[0].lower())
-    draft.value("a", a)
+    draft.value("a", _dictated(a))
     draft.say("и ещё")
-    draft.value("b", b)
+    draft.value("b", _dictated(b))
     draft.punct(".")
     turn, said = told(builder.v5, draft,
                       {"a": (recipe.type_id, "p0", "required", False),
@@ -423,7 +451,9 @@ def _same_tool_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
     builder.declare_hop(arg_hop(said["b"], 4, turn, recipe.read_tool, 1, recipe.lookup, 1, ""))
     builder.declare_hop(tool_hop(rb, 5, turn, recipe.read_tool, 1, recipe.result))
     builder.declare_hop(answer_hop(ra, 6, turn, 3, False))
+    builder.declare_hop(answer_hop(rb, 7, turn, 5, False))
     builder.expect_return(ReturnExpectation(recipe.read_tool, 0, recipe.return_form, (ra,)))
+    builder.expect_return(ReturnExpectation(recipe.read_tool, 1, recipe.return_form, (rb,)))
     return builder.build("same_tool_other_target")
 
 
@@ -440,7 +470,7 @@ def _fanout_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
     rb = _seeded_item(builder, f"rec-{ctx.index}-b", recipe, b, "p1")
     draft = builder.draft()
     draft.say(opener(ctx)).say(recipe.cues[0].lower())
-    draft.value("a", a)
+    draft.value("a", _dictated(a))
     draft.say("найди и выбери первого")
     draft.punct(".")
     turn, said = told(builder.v5, draft, {"a": (recipe.type_id, "p0", "required", False)})
@@ -449,7 +479,10 @@ def _fanout_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
     builder.declare_hop(tool_hop(ra, 2, turn, recipe.read_tool, 0, recipe.result))
     builder.declare_hop(arg_hop(ra, 3, turn, recipe.read_tool, 0, recipe.lookup, 2, ""))
     builder.declare_hop(answer_hop(ra, 4, turn, 2, False))
-    builder.expect_return(ReturnExpectation(recipe.read_tool, 0, recipe.return_form, (ra, rb)))
+    # A v6 READ tool answers ONE record for a key lookup, not a ranked list — so
+    # the result carries only the picked candidate `ra`; `rb` stays a PickSpec
+    # candidate the model must NOT act on, but it is in no result leaf.
+    builder.expect_return(ReturnExpectation(recipe.read_tool, 0, recipe.return_form, (ra,)))
     builder.set_pick(PickSpec(list_tool=recipe.read_tool, candidate_identities=("p0", "p1"),
                               target_identity="p0", act_tool=recipe.read_tool))
     return builder.build("fanout_pick")
@@ -467,7 +500,7 @@ def _branch_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
     item = _seeded_item(builder, f"rec-{ctx.index}", recipe, rendered, "p0")
     draft = builder.draft()
     draft.say(opener(ctx)).say(recipe.cues[0].lower())
-    draft.value("val", rendered)
+    draft.value("val", _dictated(rendered))
     draft.punct(".")
     turn, said = told(builder.v5, draft, {"val": (recipe.type_id, "p0", "required", False)})
     builder.declare_hop(user_hop(said["val"], 0, turn))
@@ -491,7 +524,7 @@ def _loop_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
     item = _seeded_item(builder, f"rec-{ctx.index}", recipe, rendered, "p0")
     d1 = builder.draft()
     d1.say(opener(ctx)).say(recipe.cues[0].lower())
-    d1.value("val", rendered)
+    d1.value("val", _dictated(rendered))
     d1.say("покажите что нашли")
     d1.punct(".")
     turn1, said = told(builder.v5, d1, {"val": (recipe.type_id, "p0", "required", False)})
@@ -521,14 +554,19 @@ def _rag_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
     rendered = _mint(builder, recipe.type_id)
     item = _seeded_item(builder, f"rec-{ctx.index}", recipe, rendered, "p0")
     foreign = _mint(builder, recipe.type_id)
-    foreign_key = _spec(recipe.type_id).field_keys[0]
+    # The mock renders a chunk template on `{[a-z_]+}` slot names only, AND K6-16
+    # keys a seed item by its field-key path — so the foreign value sits under the
+    # first LOWERCASE field key (case_number, external_id, client_id, ln_code …),
+    # never a capitalised one like ClientId/lnCode.
+    slot = next((key for key in _spec(recipe.type_id).field_keys
+                 if re.fullmatch(r"[a-z_]+", key)), "value")
     chunk = seeded(builder.v5, f"chunk-{ctx.index}", "kb_chunks",
-                   {"template": f"клиент {{who}} с идентификатором {{{foreign_key}}}",
-                    "who": "другой человек", foreign_key: foreign.surface},
-                   {foreign_key: (recipe.type_id, "p1", foreign)})
+                   {"template": f"Заметка по теме возврат: клиент {{who}} с идентификатором {{{slot}}}",
+                    "who": "другой человек", slot: foreign.surface},
+                   {slot: (recipe.type_id, "p1", foreign)})
     draft = builder.draft()
     draft.say(opener(ctx)).say(recipe.cues[0].lower())
-    draft.value("val", rendered)
+    draft.value("val", _dictated(rendered))
     draft.say("найди в базе")
     draft.punct(".")
     turn, said = told(builder.v5, draft, {"val": (recipe.type_id, "p0", "required", False)})
@@ -536,10 +574,10 @@ def _rag_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
     builder.declare_hop(arg_hop(said["val"], 1, turn, recipe.read_tool, 0, recipe.lookup, 0, ""))
     builder.declare_hop(tool_hop(item, 2, turn, recipe.read_tool, 0, recipe.result))
     builder.declare_hop(arg_hop(said["val"], 3, turn, "kb_search", 0, "query", 0, ""))
-    builder.declare_hop(tool_hop(chunk[foreign_key], 4, turn, "kb_search", 0, "hits[].text"))
+    builder.declare_hop(tool_hop(chunk[slot], 4, turn, "kb_search", 0, "hits[].text"))
     builder.declare_hop(answer_hop(item, 5, turn, 2, False))
     builder.expect_return(ReturnExpectation(recipe.read_tool, 0, recipe.return_form, (item,)))
-    builder.expect_return(ReturnExpectation("kb_search", 0, "chunks", (chunk[foreign_key],)))
+    builder.expect_return(ReturnExpectation("kb_search", 0, "chunks", (chunk[slot],)))
     builder.set_rag(RagSpec(tool_name="kb_search", k=1, chunk_ids=(f"chunk-{ctx.index}",),
                             foreign_identities=("p1",), query_item_ids=(said["val"],)))
     return builder.build("rag")
@@ -557,7 +595,7 @@ def _document_case(ctx, recipe: Recipe, industry: str) -> CaseV5:
     item = _seeded_item(builder, f"rec-{ctx.index}", recipe, rendered, "p0")
     draft = builder.draft()
     draft.say(opener(ctx)).say(recipe.cues[0].lower()).say("прочитай файл и проверь")
-    draft.value("val", rendered)
+    draft.value("val", _dictated(rendered))
     draft.punct(".")
     turn, said = told(builder.v5, draft, {"val": (recipe.type_id, "p0", "required", False)})
     builder.declare_hop(user_hop(said["val"], 0, turn))
