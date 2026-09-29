@@ -115,6 +115,27 @@ JUDGE_SKIPPED_BUDGET: str = "судья пропущен (потолок)"
 # by construction. 16 would split «+7 900 000-00-00» the same way on every
 # phone in the corpus and a carry bug would hide behind the regularity.
 STREAM_CHUNK: int = 17
+# THE PER-CONVERSATION TOOL-CALL BUDGET. A long `sequential_chain` case makes
+# more calls than `3 * len(user turns) + 10` — search → read → write, with the
+# model's own retries and parallel calls on top — and that hardcoded floor was
+# excluding honest chains as `ConnectorLimit("tool call limit reached")`. The
+# guard must sit far above any honest chain, while `--agent-turn-limit` (the
+# request count) and the per-case timeout still bound a stuck model.
+DEFAULT_MAX_CALLS: int = 4096
+
+
+def deepseek_max_output_tokens(connector_max_tokens: int) -> int:
+    """The per-response output cap: the session token budget, NOT a fraction of it.
+
+    `max_tokens` bounds the cumulative SESSION — input plus output across every
+    request of one conversation (`deepseek_connector.py` checks it after each
+    response). `max_output_tokens` bounds ONE response's output. The old
+    `min(16000, …)` floor cut long mail chains short mid-answer
+    (`DeepSeek response ended incomplete`); one response may legitimately grow to
+    the session budget while the session check still holds the whole conversation
+    to it.
+    """
+    return connector_max_tokens
 
 
 @dataclass
@@ -770,8 +791,9 @@ def connector_tools(schemas: list[dict[str, object]]) -> tuple[ToolSpec, ...]:
 class ConnectedArms:
     """Run all three arms through one injected model connector."""
 
-    def __init__(self, connector: AgentConnector) -> None:
+    def __init__(self, connector: AgentConnector, max_calls: int = DEFAULT_MAX_CALLS) -> None:
         self.connector = connector
+        self.max_calls = max_calls
 
     async def _run(self, case: CaseV5, arm: str, repeat: int,
                    gateway: GatewayV5 | PassThrough, backend: BackendV5,
@@ -783,7 +805,7 @@ class ConnectedArms:
                         if message.role == 'user')
         result = await self.connector.converse(system, tools, indices, hooks,
                                                v4_harness._timeout(case.base),
-                                               3 * len(indices) + 10)
+                                               self.max_calls)
         if gateway.faults:
             raise HarnessError(f'{case.base.id}/{arm}: {gateway.faults[0]}')
         raw = next((reply for reply in reversed(result.replies) if reply.strip()), '')
@@ -2095,6 +2117,9 @@ def main() -> int:
                         help='observed cumulative tokens per session; one in-flight response may overshoot')
     parser.add_argument('--agent-turn-limit', type=int, default=12,
                         help='historical name: total DeepSeek Responses requests across agent sessions')
+    parser.add_argument('--max-calls', type=int, default=DEFAULT_MAX_CALLS,
+                        help='per-conversation tool-call budget: the loop guard a long chain '
+                             'must not trip, generous but bounded')
     parser.add_argument('--judge-request-limit', type=int, default=2)
     parser.add_argument('--codex-home', default=os.environ.get('AGENTPII5_CODEX_HOME', ''),
                         help='dedicated clean CODEX_HOME for the subscription judge')
@@ -2141,7 +2166,8 @@ def main() -> int:
         parser.error('--agent-connector deepseek requires --provider deepseek')
     if args.judge_connector == 'codex' and not args.no_judge and not args.codex_home:
         parser.error('--judge-connector codex requires --codex-home or AGENTPII5_CODEX_HOME')
-    if min(args.connector_max_tokens, args.agent_turn_limit, args.judge_request_limit) <= 0:
+    if min(args.connector_max_tokens, args.agent_turn_limit, args.judge_request_limit,
+           args.max_calls) <= 0:
         parser.error('connector limits must be positive')
     if args.retries < 0:
         parser.error('--retries must be >= 0')
@@ -2253,6 +2279,7 @@ def main() -> int:
         if args.agent_connector == 'deepseek' or args.judge_connector == 'codex':
             print(f'connectors: agent={args.agent_connector}, judge={args.judge_connector}; '
                   f'agent request limit={args.agent_turn_limit}, '
+                  f'tool-call limit={args.max_calls}, '
                   f'judge request limit={args.judge_request_limit} '
                   f'(worst case {required_judge_requests}); '
                   'subscription quota is separate from USD; token limits are checked after responses')
@@ -2410,9 +2437,10 @@ def main() -> int:
     if args.agent_connector == 'deepseek':
         arms = ConnectedArms(DeepSeekConnector(DeepSeekSettings(
             args.model, args.agent_effort, args.connector_max_tokens,
-            args.agent_turn_limit, min(16000, args.connector_max_tokens),
+            args.agent_turn_limit, deepseek_max_output_tokens(args.connector_max_tokens),
             out / f'{run_id}.agent.usage.jsonl',
-            os.environ.get('AGENTPII5_DEEPSEEK_BASE_URL', 'https://api.deepseek.com'))))
+            os.environ.get('AGENTPII5_DEEPSEEK_BASE_URL', 'https://api.deepseek.com'))),
+            args.max_calls)
     if config is not None and args.judge_connector == 'codex':
         config = ConnectedJudgeConfig(
             model=args.judge_model, ledger=ledger, query_cap_usd=QUERY_CAP_USD,
@@ -2447,6 +2475,7 @@ def main() -> int:
             'agent_effort': args.agent_effort,
             'judge_effort': args.judge_effort, 'max_tokens': args.connector_max_tokens,
             'agent_turn_limit': args.agent_turn_limit, 'judge_request_limit': args.judge_request_limit,
+            'max_calls': args.max_calls,
             'agent_cost_basis': ('deepseek_peak_estimate_2026-09-26' if args.agent_connector == 'deepseek'
                                  else 'claude_sdk_reported_usd'),
             'judge_cost_basis': ('chatgpt_subscription_quota_not_api_usd' if args.judge_connector == 'codex'

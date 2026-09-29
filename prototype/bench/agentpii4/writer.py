@@ -16,7 +16,6 @@ put each tagged value, so a tool RESULT the mock produces can carry gold spans
 for the detection axis.
 """
 import json
-import unicodedata
 from dataclasses import dataclass
 
 
@@ -97,24 +96,32 @@ class Slot:
     tag: str
 
 
-def _escape_free(text: str) -> str:
-    for character in text:
-        if character in '"\\' or unicodedata.category(character) == "Cc":
-            raise WriterError(
-                f"{text!r} needs JSON escaping, and an escaped value no longer "
-                f"equals its span; tool-result values stay free of quotes, "
-                f"backslashes and control characters")
-    return text
+def _escape(text: str) -> str:
+    """The content of one JSON string literal for `text`.
+
+    Every character JSON must escape — `"`, `\\`, newline and the rest of the
+    controls — is written as its escape; everything else, Cyrillic included,
+    stays raw. `ensure_ascii=False` is load-bearing: `True` would rewrite every
+    name in the corpus as `\\uXXXX`, and the span laid down beside it would no
+    longer equal it.
+
+    `json.dumps` is the escaper rather than a hand-rolled table because a second
+    spelling of «what JSON escapes» would drift from the parser the moment one of
+    the two changes. The old `_escape_free` REFUSED these values, which is what
+    turned a model's multi-line summary into an excluded triple rather than a
+    valid result.
+    """
+    return json.dumps(text, ensure_ascii=False)[1:-1]
 
 
 def _emit(node: object, indent: int, level: int) -> tuple[str, dict[str, tuple[int, int]]]:
     if isinstance(node, Slot):
-        body = _escape_free(node.text)
-        return f'"{body}"', {node.tag: (1, 1 + len(body))}
+        escaped = _escape(node.text)
+        return f'"{escaped}"', {node.tag: (1, 1 + len(escaped))}
     if isinstance(node, bool):
         return ("true" if node else "false"), {}
     if isinstance(node, str):
-        return f'"{_escape_free(node)}"', {}
+        return f'"{_escape(node)}"', {}
     if isinstance(node, int):
         return str(node), {}
     if node is None:
@@ -137,7 +144,7 @@ def _emit(node: object, indent: int, level: int) -> tuple[str, dict[str, tuple[i
             if index:
                 pieces.append(separator)
                 position += len(separator)
-            head = f'"{_escape_free(str(key))}": '
+            head = f'"{_escape(str(key))}": '
             pieces.append(head)
             position += len(head)
             body, inner = _emit(value, indent, level + 1)
@@ -170,7 +177,13 @@ def serialise(node: object, indent: int = 2) -> tuple[str, dict[str, tuple[int, 
     text, spans = _emit(node, indent, 0)
     json.loads(text)
     for tag, (start, end) in spans.items():
-        if json.loads('"' + text[start:end] + '"') != text[start:end]:
+        content = text[start:end]
+        # The span covers the ESCAPED bytes; round-trip it through the parser and
+        # the escaper, so a span that points one byte short or long of the literal
+        # is refused rather than masked wrong. An escaped value (two bytes for one
+        # newline) is accounted here, which is what the old byte-equality check
+        # could not express.
+        if _escape(json.loads('"' + content + '"')) != content:
             raise WriterError(f"slot {tag!r} does not round-trip as a JSON string")
     return text, spans
 
@@ -204,8 +217,26 @@ def main() -> int:
             print(f"FAIL json span {tag} -> {body[start:end]!r}")
     if json.loads(body)["client"]["phones"][0] != "+79164021187":
         failures += 1
+    failures += _multiline_check()
     print("writer: PASS" if not failures else f"writer: FAIL ({failures})")
     return 1 if failures else 0
+
+
+def _multiline_check() -> int:
+    """A multi-line value is EMITTED as escaped JSON, not refused: the span
+    covers the escaped bytes and round-trips back to the source text."""
+    failures = 0
+    value = "перенос\nвторой абзац \"цитата\" и \\ слэш"
+    body, spans = serialise({"text": Slot(value, "m")})
+    if json.loads(body)["text"] != value:
+        failures += 1
+        print(f"FAIL multiline value did not round-trip: {body!r}")
+    start, end = spans["m"]
+    if json.loads('"' + body[start:end] + '"') != value:
+        failures += 1
+        print(f"FAIL multiline span does not round-trip to the source: "
+              f"{body[start:end]!r}")
+    return failures
 
 
 if __name__ == "__main__":

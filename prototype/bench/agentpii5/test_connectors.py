@@ -57,6 +57,19 @@ class BrokenAgent:
         raise self.error
 
 
+class RecordingMaxCallsAgent:
+    """A double that records the `max_calls` `ConnectedArms._run` handed it."""
+
+    def __init__(self) -> None:
+        self.seen: list[int] = []
+
+    async def converse(self, system: str, tools: tuple[ToolSpec, ...],
+                       user_indices: tuple[int, ...], hooks: DialogueHooks,
+                       timeout_s: float, max_calls: int) -> Conversation:
+        self.seen.append(max_calls)
+        return Conversation((), Usage(1, 0, 1, 0, 0.0, 'fixture'), 0, 'fixture-session', 1)
+
+
 class RecordingHooks:
     def __init__(self) -> None:
         self.assistant_texts: list[str] = []
@@ -114,6 +127,24 @@ class ConnectorTests(unittest.TestCase):
             self.assertEqual(outcome.run.termination, termination)
             self.assertEqual(outcome.run.cost_usd, 0.15)
             self.assertIn(str(error), outcome.meta.reason)
+
+    def test_connected_arms_passes_the_configured_max_calls(self) -> None:
+        """`_run` no longer hands the connector a hardcoded `3 * len + 10`: the
+        tool-call budget the CLI named reaches the connector verbatim."""
+        cases, _ = h._load_corpus(Path(__file__).with_name('corpus.v5.json'))
+        case = next(case for case in cases if case.base.id == 'validate-000')
+        agent = RecordingMaxCallsAgent()
+        asyncio.run(h.ConnectedArms(agent, max_calls=12345).control(
+            case, 'C', 0, seed_backend_v5(case), 'fixture', 0.15, 'fixture-run'))
+        self.assertEqual(agent.seen, [12345])
+
+    def test_deepseek_output_cap_is_the_session_budget_not_a_floor(self) -> None:
+        """The per-response output cap is `connector_max_tokens`, not a 16000
+        floor: a long mail chain's single reply legitimately exceeds 16000 tokens
+        while `max_tokens` still bounds the whole session."""
+        self.assertEqual(h.deepseek_max_output_tokens(400000), 400000)
+        self.assertEqual(h.deepseek_max_output_tokens(60000), 60000)
+        self.assertEqual(h.deepseek_max_output_tokens(16000), 16000)
 
     def test_json_boundary(self) -> None:
         original = {'nested': [{'x': 1}]}

@@ -1198,11 +1198,12 @@ class BackendV5(Backend):
         """A document as running prose.
 
         CSV ROWS ARE JOINED WITH « | », NOT WITH A NEWLINE, and that is a
-        constraint of the instrument rather than of JSON: `writer._escape_free`
-        refuses a control character inside a slot, because an escaped value no
-        longer equals the span that was laid down for it. A document read as
-        TEXT is therefore one line; a document read as a TABLE comes back as
-        `file_read`'s `list` form, with a row per record and no joining at all."""
+        constraint of the instrument rather than of JSON: a composed string's
+        inner spans are laid down in SOURCE-character offsets and `writer` now
+        escapes a newline as two bytes, so a newline inside a composed slot would
+        shift every span laid after it. A document read as TEXT is therefore one
+        line; a document read as a TABLE comes back as `file_read`'s `list` form,
+        with a row per record and no joining at all."""
         fmt = str(record.fields.get("format", "free_text"))
         rng = random.Random(f"scan:{record.id}") if fmt == "scan" else None
         # WHAT `doc_append` WROTE IS PART OF THE DOCUMENT FROM THEN ON, which is
