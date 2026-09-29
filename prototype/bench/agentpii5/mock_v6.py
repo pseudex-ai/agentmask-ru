@@ -873,6 +873,84 @@ class BackendV6(BackendV5):
             return {"personOid": None}, "empty"
         return {"personOid": self._field(rid, "oid")}, "single"
 
+    # --- the 12 WEB-STUDY both-ways tools -------------------------------------
+
+    def _v6_gis_gmp_charge_find(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["SupplierBillID"]))
+        if not rid:
+            return {"fines": []}, "empty"
+        return {"fines": [{"uin": self._field(rid, "uin")}]}, "list"
+
+    def _v6_gis_gkh_utility_account_get(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["AccountID"]))
+        if not rid:
+            return {"account": None}, "empty"
+        return {"account": {"personal_account": self._field(rid, "personal_account")}}, "single"
+
+    def _v6_device_provisioning_find(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["deviceIdentifier"]))
+        if not rid:
+            return {"devices": []}, "empty"
+        return {"devices": [{"deviceIdentifier": self._field(rid, "imei")}]}, "list"
+
+    def _v6_omnihss_subscriber_get(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["imsi"]))
+        if not rid:
+            return {"sim": None}, "empty"
+        return {"sim": {"imsi": self._field(rid, "imsi")}}, "single"
+
+    def _v6_ip_api_lookup(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["query"]))
+        if not rid:
+            return {"query": self._slot(str(parsed["query"])), "status": "success"}, "single"
+        return {"query": self._field(rid, "ip"), "status": "success"}, "single"
+
+    def _v6_flight_order_manage_get(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["flight_order_id"]))
+        if not rid:
+            return {"data": None}, "empty"
+        return {"data": {"associatedRecords": [{"reference": self._field(rid, "pnr")}]}}, "nested"
+
+    def _v6_metrica_offline_conversion_upload(self, parsed: dict[str, object]) -> tuple[object, str]:
+        return {"status": "uploaded", "ClientId": self._slot(str(parsed["ClientId"]))}, "single"
+
+    def _v6_moodle_user_by_username(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = ""
+        for value in parsed["values"]:                                   # type: ignore[union-attr]
+            rid = self._find_record_by_value(str(value))
+            if rid:
+                break
+        if not rid:
+            return [], "empty"
+        return [{"id": 412, "username": self._field(rid, "username")}], "list"
+
+    def _v6_appmetrica_event_import(self, parsed: dict[str, object]) -> tuple[object, str]:
+        key = next(k for k in ("google_aid", "ios_ifa") if k in parsed)
+        rid = self._find_record_by_value(str(parsed[key]))
+        if not rid:
+            return {"google_aid": self._slot(str(parsed[key])), "ios_ifa": ""}, "single"
+        return {"google_aid": self._field(rid, "google_aid"),
+                "ios_ifa": self._field(rid, "ios_ifa")}, "single"
+
+    def _v6_appmetrica_device_id_lookup(self, parsed: dict[str, object]) -> tuple[object, str]:
+        key = next(k for k in ("appmetrica_device_id", "ios_ifv") if k in parsed)
+        rid = self._find_record_by_value(str(parsed[key]))
+        if not rid:
+            return {"appmetrica_device_id": None}, "empty"
+        return {"appmetrica_device_id": self._field(rid, "appmetrica_device_id")}, "single"
+
+    def _v6_mikrotik_dhcp_lease_get(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["mac-address"]))
+        if not rid:
+            return {"mac-address": None}, "empty"
+        return {"mac-address": self._field(rid, "mac")}, "single"
+
+    def _v6_uhppote_card_get(self, parsed: dict[str, object]) -> tuple[object, str]:
+        rid = self._find_record_by_value(str(parsed["cardNumber"]))
+        if not rid:
+            return {"cardNumber": None}, "empty"
+        return {"cardNumber": self._field(rid, "card_number")}, "single"
+
 
 def seed_backend_v6(case: object) -> BackendV6:
     """The world one v6 case starts in: every seeded record and its items.

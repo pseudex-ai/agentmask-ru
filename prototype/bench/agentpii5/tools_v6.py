@@ -2303,6 +2303,341 @@ ESIA_ROLES_GET = ToolSpec(
     result_pii=('personOid',))
 
 
+# --- the 12 WEB-STUDY both-ways tools (review/v6-tools-web-study.md) ------------
+# Each carries the study's arg_field as a typed FieldSpec AND the study's
+# result_field as result_pii, verbatim (the two $tsv/$csv approximations follow
+# the established `web_visits_export` free_text `text` precedent). `source` is
+# the study URL; `evidence`/`industry` ride in V6_META below.
+
+_LOGIN_HANDLE_RE = re.compile(r"[A-Za-z0-9._-]{3,}")
+_UUID_RE = re.compile(r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
+
+
+def _parse_ipv4(raw, tool, path):
+    if not isinstance(raw, str) or not re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", raw.strip()):
+        return Refusal(tool, path, "ip_format", str(raw))
+    if any(int(part) > 255 for part in raw.strip().split(".")):
+        return Refusal(tool, path, "ip_format", str(raw))
+    return raw.strip()
+
+
+def _parse_uuid(raw, tool, path):
+    if not isinstance(raw, str) or not _UUID_RE.fullmatch(raw.strip()):
+        return Refusal(tool, path, "uuid_format", str(raw))
+    return raw.strip()
+
+
+def _parse_mac(raw, tool, path):
+    if not isinstance(raw, str):
+        return Refusal(tool, path, "mac_format", str(raw))
+    value = raw.strip()
+    if (re.fullmatch(r"(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}", value)
+            or re.fullmatch(r"(?:[0-9A-Fa-f]{4}\.){2}[0-9A-Fa-f]{4}", value)
+            or re.fullmatch(r"[0-9A-Fa-f]{12}", value)):
+        return value.lower()
+    return Refusal(tool, path, "mac_format", str(raw))
+
+
+def _parse_app_device_id(raw, tool, path):
+    if not isinstance(raw, str):
+        return Refusal(tool, path, "device_id_format", str(raw))
+    value = raw.strip()
+    if re.fullmatch(r"\d{18}", value) or _UUID_RE.fullmatch(value):
+        return value
+    return Refusal(tool, path, "device_id_format", str(raw))
+
+
+def _parse_access_pass(raw, tool, path):
+    if not isinstance(raw, str):
+        return Refusal(tool, path, "card_format", str(raw))
+    value = raw.strip()
+    if re.fullmatch(r"\d{4,10}", value) or re.fullmatch(r"[0-9A-Fa-f]{8}|[0-9A-Fa-f]{14}", value):
+        return value.lower() if re.fullmatch(r"[0-9A-Fa-f]+", value) else value
+    return Refusal(tool, path, "card_format", str(raw))
+
+
+def _gis_gmp_charge_find_parse(args):
+    tool = "gis_gmp_charge_find"
+    miss = _required(args, tool, "", ("SupplierBillID",))
+    if miss:
+        return miss
+    uin = _parse_uin(args["SupplierBillID"], tool, "SupplierBillID")
+    if isinstance(uin, Refusal):
+        return uin
+    return {"SupplierBillID": uin}
+
+
+GIS_GMP_CHARGE_FIND = ToolSpec(
+    name='gis_gmp_charge_find',
+    source='https://piter.roskazna.gov.ru/storage/page-files/57176/',
+    schema=_schema('gis_gmp_charge_find', 'ГИС ГМП (Форматы взаимодействия v2.7) — начисление по УИН: параметр «@SupplierBillID»',
+        {'SupplierBillID': {'type': 'string', 'description': 'UIN — 20/25 цифр'}},
+        ('SupplierBillID',)),
+    fields=(FieldSpec('SupplierBillID', "identity", 'UIN', 'digits', required=True),),
+    parse=_gis_gmp_charge_find_parse, mutating=False,
+    result_pii=('fines[].uin',))
+
+
+def _gis_gkh_utility_account_get_parse(args):
+    tool = "gis_gkh_utility_account_get"
+    miss = _required(args, tool, "", ("AccountID",))
+    if miss:
+        return miss
+    acct = _shaped(args["AccountID"], tool, "AccountID", r"\d{6,12}", "account_format")
+    if isinstance(acct, Refusal):
+        return acct
+    return {"AccountID": acct}
+
+
+GIS_GKH_UTILITY_ACCOUNT_GET = ToolSpec(
+    name='gis_gkh_utility_account_get',
+    source='https://centerjkh.ru/',
+    schema=_schema('gis_gkh_utility_account_get', 'ГИС ЖКХ / Приказ МинЖКХ 153-ОД — лицевой счёт по уникальному идентификатору (AccountID)',
+        {'AccountID': {'type': 'string', 'description': 'UTILITY_ACCOUNT — 6-12 цифр'}},
+        ('AccountID',)),
+    fields=(FieldSpec('AccountID', "identity", 'UTILITY_ACCOUNT', 'digits', required=True),),
+    parse=_gis_gkh_utility_account_get_parse, mutating=False,
+    result_pii=('account.personal_account',))
+
+
+def _device_provisioning_find_parse(args):
+    tool = "device_provisioning_find"
+    miss = _required(args, tool, "", ("deviceIdentifier",))
+    if miss:
+        return miss
+    imei = _parse_imei(args["deviceIdentifier"], tool, "deviceIdentifier")
+    if isinstance(imei, Refusal):
+        return imei
+    return {"deviceIdentifier": imei}
+
+
+DEVICE_PROVISIONING_FIND = ToolSpec(
+    name='device_provisioning_find',
+    source='https://developers.google.com/zero-touch/reference/provisioning/rest/v1/partners.devices/findByIdentifier',
+    schema=_schema('device_provisioning_find', 'Google Android Device Provisioning Partners API — partners.devices.findByIdentifier (поиск устройств по IMEI)',
+        {'deviceIdentifier': {'type': 'string', 'description': 'IMEI — 15 цифр'}},
+        ('deviceIdentifier',)),
+    fields=(FieldSpec('deviceIdentifier', "identity", 'IMEI', 'digits', required=True),),
+    parse=_device_provisioning_find_parse, mutating=False,
+    result_pii=('devices[].deviceIdentifier',))
+
+
+def _omnihss_subscriber_get_parse(args):
+    tool = "omnihss_subscriber_get"
+    miss = _required(args, tool, "", ("imsi",))
+    if miss:
+        return miss
+    imsi = _shaped(args["imsi"], tool, "imsi", r"\d{14,15}", "imsi_format")
+    if isinstance(imsi, Refusal):
+        return imsi
+    return {"imsi": imsi}
+
+
+OMNIHSS_SUBSCRIBER_GET = ToolSpec(
+    name='omnihss_subscriber_get',
+    source='https://docs.omnitouch.com.au/assets/files/omnihss-*.pdf',
+    schema=_schema('omnihss_subscriber_get', 'OmniHSS (HLR/HSS) — запись абонента по IMSI',
+        {'imsi': {'type': 'string', 'description': 'IMSI — 14-15 цифр'}},
+        ('imsi',)),
+    fields=(FieldSpec('imsi', "identity", 'IMSI', 'digits', required=True),),
+    parse=_omnihss_subscriber_get_parse, mutating=False,
+    result_pii=('sim.imsi',))
+
+
+def _ip_api_lookup_parse(args):
+    tool = "ip_api_lookup"
+    miss = _required(args, tool, "", ("query",))
+    if miss:
+        return miss
+    ip = _parse_ipv4(args["query"], tool, "query")
+    if isinstance(ip, Refusal):
+        return ip
+    return {"query": ip}
+
+
+IP_API_LOOKUP = ToolSpec(
+    name='ip_api_lookup',
+    source='https://ip-api.com/docs/api:json',
+    schema=_schema('ip_api_lookup', 'ip-api.com JSON endpoint — http://ip-api.com/json/{query}; query — IP адрес',
+        {'query': {'type': 'string', 'description': 'IP_ADDRESS — IPv4'}},
+        ('query',)),
+    fields=(FieldSpec('query', "identity", 'IP_ADDRESS', '', required=True),),
+    parse=_ip_api_lookup_parse, mutating=False,
+    result_pii=('query',))
+
+
+def _flight_order_manage_get_parse(args):
+    tool = "flight_order_manage_get"
+    miss = _required(args, tool, "", ("flight_order_id",))
+    if miss:
+        return miss
+    pnr = _shaped(args["flight_order_id"], tool, "flight_order_id",
+                  r"[A-Za-z0-9]{5,6}", "pnr_format")
+    if isinstance(pnr, Refusal):
+        return pnr
+    return {"flight_order_id": pnr.strip().upper()}
+
+
+FLIGHT_ORDER_MANAGE_GET = ToolSpec(
+    name='flight_order_manage_get',
+    source='https://amadeus4dev.github.io/amadeus-python/_modules/amadeus/booking/_flight_order.html',
+    schema=_schema('flight_order_manage_get', 'Amadeus Flight Order Management GET /v1/booking/flight-orders/{id} — бронь по flight_order_id (PNR)',
+        {'flight_order_id': {'type': 'string', 'description': 'PNR — 5-6 символов'}},
+        ('flight_order_id',)),
+    fields=(FieldSpec('flight_order_id', "identity", 'PNR', '', required=True),),
+    parse=_flight_order_manage_get_parse, mutating=False,
+    result_pii=('data.associatedRecords[].reference',))
+
+
+def _metrica_offline_conversion_upload_parse(args):
+    tool = "metrica_offline_conversion_upload"
+    miss = _required(args, tool, "", ("ClientId",))
+    if miss:
+        return miss
+    cid = _shaped(args["ClientId"], tool, "ClientId", r"\d{18}", "client_id_format")
+    if isinstance(cid, Refusal):
+        return cid
+    return {"ClientId": cid}
+
+
+METRICA_OFFLINE_CONVERSION_UPLOAD = ToolSpec(
+    name='metrica_offline_conversion_upload',
+    source='https://www.yandex.com/dev/metrika/doc/api2/management/offline_conversion/upload.html',
+    schema=_schema('metrica_offline_conversion_upload', 'Яндекс Метрика — офлайн-конверсии (upload): CSV-колонка «ClientId», client_id_type=CLIENT_ID; результат — $tsv[ym:s:clientID]',
+        {'ClientId': {'type': 'string', 'description': 'METRICA_CLIENT_ID — 18 цифр'}},
+        ('ClientId',)),
+    fields=(FieldSpec('ClientId', "identity", 'METRICA_CLIENT_ID', 'digits', required=True),),
+    parse=_metrica_offline_conversion_upload_parse, mutating=True,
+    result_pii=('ClientId',))
+
+
+def _moodle_user_by_username_parse(args):
+    tool = "moodle_user_by_username"
+    miss = _required(args, tool, "", ("field", "values"))
+    if miss:
+        return miss
+    field = str(args["field"]).strip().lower()
+    if field != "username":
+        return Refusal(tool, "field", "field_enum", field)
+    values = args["values"]
+    if not isinstance(values, list) or not values:
+        return Refusal(tool, "values", "missing_required", str(values))
+    out = []
+    for index, one in enumerate(values):
+        if not isinstance(one, str) or not _LOGIN_HANDLE_RE.fullmatch(one.strip()):
+            return Refusal(tool, f"values[{index}]", "login_format", str(one))
+        out.append(one.strip())
+    return {"field": "username", "values": out}
+
+
+MOODLE_USER_BY_USERNAME = ToolSpec(
+    name='moodle_user_by_username',
+    source='https://github.com/moodle/moodle/blob/master/user/externallib.php',
+    schema=_schema('moodle_user_by_username', 'Moodle Web Service core_user_get_users_by_field — field="username", values[] = логины',
+        {'field': {'type': 'string', 'description': 'значение из закрытого списка'}, 'values': {'type': 'string', 'description': 'LOGIN'}},
+        ('field', 'values')),
+    fields=(
+        FieldSpec('field', 'enum', required=True),
+        FieldSpec('values', "identity", 'LOGIN', '', required=True),
+    ),
+    parse=_moodle_user_by_username_parse, mutating=False,
+    result_pii=('[].username',))
+
+
+def _appmetrica_event_import_parse(args):
+    tool = "appmetrica_event_import"
+    keys = [k for k in ("google_aid", "ios_ifa") if args.get(k) not in (None, "")]
+    if len(keys) != 1:
+        return Refusal(tool, "", "exactly_one_key", ", ".join(keys))
+    value = _parse_uuid(args[keys[0]], tool, keys[0])
+    if isinstance(value, Refusal):
+        return value
+    return {keys[0]: value}
+
+
+APPMETRICA_EVENT_IMPORT = ToolSpec(
+    name='appmetrica_event_import',
+    source='https://appmetrica.yandex.kz/docs/en/mobile-api/post/post-import-events.html',
+    schema=_schema('appmetrica_event_import', 'AppMetrica Post API «Uploading events» — google_aid / ios_ifa',
+        {'google_aid': {'type': 'string', 'description': 'MOBILE_AD_ID — GAID (UUID)'}, 'ios_ifa': {'type': 'string', 'description': 'MOBILE_AD_ID — IFA (UUID)'}},
+        ()),
+    fields=(
+        FieldSpec('google_aid', "identity", 'MOBILE_AD_ID', '', required=False),
+        FieldSpec('ios_ifa', "identity", 'MOBILE_AD_ID', '', required=False),
+    ),
+    parse=_appmetrica_event_import_parse, mutating=False,
+    result_pii=('google_aid', 'ios_ifa'))
+
+
+def _appmetrica_device_id_lookup_parse(args):
+    tool = "appmetrica_device_id_lookup"
+    keys = [k for k in ("appmetrica_device_id", "ios_ifv") if args.get(k) not in (None, "")]
+    if len(keys) != 1:
+        return Refusal(tool, "", "exactly_one_key", ", ".join(keys))
+    value = _parse_app_device_id(args[keys[0]], tool, keys[0])
+    if isinstance(value, Refusal):
+        return value
+    return {keys[0]: value}
+
+
+APPMETRICA_DEVICE_ID_LOOKUP = ToolSpec(
+    name='appmetrica_device_id_lookup',
+    source='https://appmetrica.yandex.kz/docs/en/mobile-api/post/post-import-events.html',
+    schema=_schema('appmetrica_device_id_lookup', 'AppMetrica Post API — appmetrica_device_id / ios_ifv',
+        {'appmetrica_device_id': {'type': 'string', 'description': 'APP_DEVICE_ID — 18 цифр или UUID'}, 'ios_ifv': {'type': 'string', 'description': 'APP_DEVICE_ID — UUID (IFV)'}},
+        ()),
+    fields=(
+        FieldSpec('appmetrica_device_id', "identity", 'APP_DEVICE_ID', '', required=False),
+        FieldSpec('ios_ifv', "identity", 'APP_DEVICE_ID', '', required=False),
+    ),
+    parse=_appmetrica_device_id_lookup_parse, mutating=False,
+    result_pii=('appmetrica_device_id',))
+
+
+def _mikrotik_dhcp_lease_get_parse(args):
+    tool = "mikrotik_dhcp_lease_get"
+    miss = _required(args, tool, "", ("mac-address",))
+    if miss:
+        return miss
+    mac = _parse_mac(args["mac-address"], tool, "mac-address")
+    if isinstance(mac, Refusal):
+        return mac
+    return {"mac-address": mac}
+
+
+MIKROTIK_DHCP_LEASE_GET = ToolSpec(
+    name='mikrotik_dhcp_lease_get',
+    source='https://github.com/terraform-routeros/terraform-provider-routeros/blob/v1.98.0/routeros/datasource_ip_dhcp_server_leases.go',
+    schema=_schema('mikrotik_dhcp_lease_get', 'MikroTik RouterOS API ip/dhcp-server/lease — запись аренды по mac-address',
+        {'mac-address': {'type': 'string', 'description': 'MAC — EUI-48'}},
+        ('mac-address',)),
+    fields=(FieldSpec('mac-address', "identity", 'MAC', '', required=True),),
+    parse=_mikrotik_dhcp_lease_get_parse, mutating=False,
+    result_pii=('mac-address',))
+
+
+def _uhppote_card_get_parse(args):
+    tool = "uhppote_card_get"
+    miss = _required(args, tool, "", ("cardNumber",))
+    if miss:
+        return miss
+    card = _parse_access_pass(args["cardNumber"], tool, "cardNumber")
+    if isinstance(card, Refusal):
+        return card
+    return {"cardNumber": card}
+
+
+UHPPOTE_CARD_GET = ToolSpec(
+    name='uhppote_card_get',
+    source='https://www.npmjs.com/package/uhppoted',
+    schema=_schema('uhppote_card_get', 'UHPPOTE controller API (uhppoted, СКУД) — карта доступа по cardNumber',
+        {'cardNumber': {'type': 'string', 'description': 'ACCESS_PASS_NUMBER — цифры или hex'}},
+        ('cardNumber',)),
+    fields=(FieldSpec('cardNumber', "identity", 'ACCESS_PASS_NUMBER', '', required=True),),
+    parse=_uhppote_card_get_parse, mutating=False,
+    result_pii=('cardNumber',))
+
+
 TOOLS_V6: tuple[ToolSpecV5, ...] = (
     ToolSpecV5(base=CRM_REQUISITE_GET, vertical='crm',
                return_forms=(
@@ -2774,6 +3109,120 @@ TOOLS_V6: tuple[ToolSpecV5, ...] = (
                          ()),
                ),
                differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=GIS_GMP_CHARGE_FIND, vertical='government',
+               return_forms=(
+                   _form('list',
+                         '{"fines":[{"uin":"18810123456789012345"}]}',
+                         ('fines[].uin',)),
+                   _form('empty',
+                         '{"fines":[]}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=GIS_GKH_UTILITY_ACCOUNT_GET, vertical='government',
+               return_forms=(
+                   _form('single',
+                         '{"account":{"personal_account":"1234567890"}}',
+                         ('account.personal_account',)),
+                   _form('empty',
+                         '{"account":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=DEVICE_PROVISIONING_FIND, vertical='directory',
+               return_forms=(
+                   _form('list',
+                         '{"devices":[{"deviceIdentifier":"260531793113837"}]}',
+                         ('devices[].deviceIdentifier',)),
+                   _form('empty',
+                         '{"devices":[]}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=OMNIHSS_SUBSCRIBER_GET, vertical='crm',
+               return_forms=(
+                   _form('single',
+                         '{"sim":{"imsi":"250991234567890"}}',
+                         ('sim.imsi',)),
+                   _form('empty',
+                         '{"sim":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=IP_API_LOOKUP, vertical='search',
+               return_forms=(
+                   _form('single',
+                         '{"query":"95.165.12.34","status":"success"}',
+                         ('query',)),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=FLIGHT_ORDER_MANAGE_GET, vertical='calendar',
+               return_forms=(
+                   _form('nested',
+                         '{"data":{"associatedRecords":[{"reference":"2ZYVAL"}]}}',
+                         ('data.associatedRecords[].reference',)),
+                   _form('empty',
+                         '{"data":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=METRICA_OFFLINE_CONVERSION_UPLOAD, vertical='crm',
+               return_forms=(
+                   _form('single',
+                         '{"status":"uploaded","ClientId":"250987654321098765"}',
+                         ('ClientId',)),
+                   _form('error_with_value',
+                         '{"error":{"code":"invalid_parameter","message":"Invalid ClientId in line 1: 25098765432109876"}}',
+                         ()),
+               ),
+               differs_from_user_form=False, suite=NO_SUITE),
+    ToolSpecV5(base=MOODLE_USER_BY_USERNAME, vertical='directory',
+               return_forms=(
+                   _form('list',
+                         '[{"id":412,"username":"ivanov_d85"}]',
+                         ('[].username',)),
+                   _form('empty',
+                         '[]',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=APPMETRICA_EVENT_IMPORT, vertical='crm',
+               return_forms=(
+                   _form('single',
+                         '{"google_aid":"6D92078A-8246-4BA4-AE5B-76104861E7DC","ios_ifa":"6D92078A-8246-4BA4-AE5B-76104861E7DC"}',
+                         ('google_aid', 'ios_ifa')),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=APPMETRICA_DEVICE_ID_LOOKUP, vertical='crm',
+               return_forms=(
+                   _form('single',
+                         '{"appmetrica_device_id":"123456789012345678"}',
+                         ('appmetrica_device_id',)),
+                   _form('empty',
+                         '{"appmetrica_device_id":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=MIKROTIK_DHCP_LEASE_GET, vertical='search',
+               return_forms=(
+                   _form('single',
+                         '{"mac-address":"00:1a:2b:3c:4d:5e"}',
+                         ('mac-address',)),
+                   _form('empty',
+                         '{"mac-address":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
+    ToolSpecV5(base=UHPPOTE_CARD_GET, vertical='directory',
+               return_forms=(
+                   _form('single',
+                         '{"cardNumber":"0034561"}',
+                         ('cardNumber',)),
+                   _form('empty',
+                         '{"cardNumber":null}',
+                         ()),
+               ),
+               differs_from_user_form=True, suite=NO_SUITE),
 )
 
 
@@ -2828,6 +3277,18 @@ V6_RESULT_TYPES: dict[str, tuple[str, ...]] = {
     'fssp_proceedings_search': ('NAME', 'DOB', 'FSSP_IP_NO', 'COURT_CASE_NO_SOU'),
     'court_document_fetch': ('NAME', 'LOC', 'COURT_CASE_NO_SOU'),
     'esia_roles_get': ('ESIA_OID',),
+    'gis_gmp_charge_find': ('UIN',),
+    'gis_gkh_utility_account_get': ('UTILITY_ACCOUNT',),
+    'device_provisioning_find': ('IMEI',),
+    'omnihss_subscriber_get': ('IMSI',),
+    'ip_api_lookup': ('IP_ADDRESS',),
+    'flight_order_manage_get': ('PNR',),
+    'metrica_offline_conversion_upload': ('METRICA_CLIENT_ID',),
+    'moodle_user_by_username': ('LOGIN',),
+    'appmetrica_event_import': ('MOBILE_AD_ID',),
+    'appmetrica_device_id_lookup': ('APP_DEVICE_ID',),
+    'mikrotik_dhcp_lease_get': ('MAC',),
+    'uhppote_card_get': ('ACCESS_PASS_NUMBER',),
 }
 
 
@@ -2882,6 +3343,18 @@ V6_META: dict[str, V6ToolMeta] = {
     'fssp_proceedings_search': V6ToolMeta('secondary', 'closed', 'banks_mfo_collectors'),
     'court_document_fetch': V6ToolMeta('summary', 'synthetic', 'legal'),
     'esia_roles_get': V6ToolMeta('primary', 'official', 'government_services'),
+    'gis_gmp_charge_find': V6ToolMeta('primary', 'official', 'government_services'),
+    'gis_gkh_utility_account_get': V6ToolMeta('secondary', 'official', 'government_services'),
+    'device_provisioning_find': V6ToolMeta('primary', 'official', 'telecom'),
+    'omnihss_subscriber_get': V6ToolMeta('secondary', 'official', 'telecom'),
+    'ip_api_lookup': V6ToolMeta('primary', 'official', 'telecom'),
+    'flight_order_manage_get': V6ToolMeta('primary', 'official', 'hospitality'),
+    'metrica_offline_conversion_upload': V6ToolMeta('primary', 'official', 'marketing_cdp'),
+    'moodle_user_by_username': V6ToolMeta('primary', 'official', 'education'),
+    'appmetrica_event_import': V6ToolMeta('primary', 'official', 'marketing_cdp'),
+    'appmetrica_device_id_lookup': V6ToolMeta('primary', 'official', 'marketing_cdp'),
+    'mikrotik_dhcp_lease_get': V6ToolMeta('secondary', 'official', 'telecom'),
+    'uhppote_card_get': V6ToolMeta('secondary', 'official', 'hr'),
 }
 
 

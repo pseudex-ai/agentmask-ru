@@ -88,6 +88,20 @@ IBAN_WRITE = _v6("IBAN")
 FSSP_IP_READ = _v6("FSSP_IP_NO")
 COURT_CASE_READ = _v6("COURT_CASE_NO_SOU")
 ESIA_OID_READ = _v6("ESIA_OID")
+# --- the 12 WEB-STUDY both-ways tools -----------------------------------------
+UIN_GMP = _v6("UIN")
+UTILITY_ACCT = _v6("UTILITY_ACCOUNT")
+IMEI_PROV = _v6("IMEI")
+IMSI_OMNI = _v6("IMSI")
+IP_API = _v6("IP_ADDRESS")
+PNR_MANAGE = _v6("PNR")
+METRICA_CID = _v6("METRICA_CLIENT_ID")
+LOGIN_MOODLE = _v6("LOGIN")
+MOBILE_AD = _v6("MOBILE_AD_ID")
+MOBILE_AD_IFA = _v6("MOBILE_AD_ID")
+APP_DEV = _v6("APP_DEVICE_ID")
+MAC_DHCP = _v6("MAC")
+ACCESS_PASS = _v6("ACCESS_PASS_NUMBER")
 
 # The rubric account/bik pair is the tool's documented acceptance (`test_tools_v6`).
 RUBLE_ACCOUNT = "40602810700000000025"
@@ -138,6 +152,7 @@ RECORDS: tuple[tuple[str, dict[str, object], tuple[tuple[str, str, str, str, str
         ("w_rub_acc", "BANK_ACCOUNT", "grom", RUBLE_ACCOUNT, ""),
         ("w_status", "NAME", "grom", "Открыт", ""),
         ("w_cdp", "CDP_CUSTOMER_ID", "grom", "c-000184523", ""),
+        ("w_metrica", "METRICA_CLIENT_ID", "grom", METRICA_CID, ""),
     )),
     ("req-1", {"rq_inn": INN_REQ, "ogrnip": OGRNIP_REQ, "iban": IBAN_REQ,
                "rq_ident_doc_ser": "4501", "rq_ident_doc_num": "100001"}, (
@@ -413,6 +428,40 @@ RECORDS: tuple[tuple[str, dict[str, object], tuple[tuple[str, str, str, str, str
     ("esia-1", {"oid": ESIA_OID_READ}, (
         ("es_oid", "ESIA_OID", "grom", ESIA_OID_READ, "oid"),
     )),
+    ("gmp-1", {"uin": UIN_GMP}, (
+        ("gm_uin", "UIN", "grom", UIN_GMP, "uin"),
+    )),
+    ("util-1", {"personal_account": UTILITY_ACCT}, (
+        ("ut_pa", "UTILITY_ACCOUNT", "grom", UTILITY_ACCT, "personal_account"),
+    )),
+    ("prov-1", {"imei": IMEI_PROV}, (
+        ("pv_imei", "IMEI", "grom", IMEI_PROV, "imei"),
+    )),
+    ("omnihss-1", {"imsi": IMSI_OMNI}, (
+        ("oh_imsi", "IMSI", "grom", IMSI_OMNI, "imsi"),
+    )),
+    ("ipapi-1", {"ip": IP_API}, (
+        ("ip_ip", "IP_ADDRESS", "grom", IP_API, "ip"),
+    )),
+    ("fom-1", {"pnr": PNR_MANAGE}, (
+        ("fo_pnr", "PNR", "grom", PNR_MANAGE, "pnr"),
+    )),
+    ("moodle-1", {"username": LOGIN_MOODLE}, (
+        ("mo_login", "LOGIN", "grom", LOGIN_MOODLE, "username"),
+    )),
+    ("am-1", {"google_aid": MOBILE_AD, "ios_ifa": MOBILE_AD_IFA}, (
+        ("am_aid", "MOBILE_AD_ID", "grom", MOBILE_AD, "google_aid"),
+        ("am_ifa", "MOBILE_AD_ID", "grom", MOBILE_AD_IFA, "ios_ifa"),
+    )),
+    ("appdev-1", {"appmetrica_device_id": APP_DEV}, (
+        ("ad_dev", "APP_DEVICE_ID", "grom", APP_DEV, "appmetrica_device_id"),
+    )),
+    ("dhcp-1", {"mac": MAC_DHCP}, (
+        ("dh_mac", "MAC", "grom", MAC_DHCP, "mac"),
+    )),
+    ("uhppote-1", {"card_number": ACCESS_PASS}, (
+        ("uh_card", "ACCESS_PASS_NUMBER", "grom", ACCESS_PASS, "card_number"),
+    )),
 )
 
 
@@ -515,6 +564,18 @@ RENDERS: tuple[tuple[str, dict[str, object], str], ...] = (
     ("court_document_fetch", {"court": "Индустриальный районный суд",
                                "case_number": COURT_CASE_READ}, "free_text"),
     ("esia_roles_get", {"prn_oid": ESIA_OID_READ}, "single"),
+    ("gis_gmp_charge_find", {"SupplierBillID": UIN_GMP}, "list"),
+    ("gis_gkh_utility_account_get", {"AccountID": UTILITY_ACCT}, "single"),
+    ("device_provisioning_find", {"deviceIdentifier": IMEI_PROV}, "list"),
+    ("omnihss_subscriber_get", {"imsi": IMSI_OMNI}, "single"),
+    ("ip_api_lookup", {"query": IP_API}, "single"),
+    ("flight_order_manage_get", {"flight_order_id": PNR_MANAGE}, "nested"),
+    ("metrica_offline_conversion_upload", {"ClientId": METRICA_CID}, "single"),
+    ("moodle_user_by_username", {"field": "username", "values": [LOGIN_MOODLE]}, "list"),
+    ("appmetrica_event_import", {"google_aid": MOBILE_AD}, "single"),
+    ("appmetrica_device_id_lookup", {"appmetrica_device_id": APP_DEV}, "single"),
+    ("mikrotik_dhcp_lease_get", {"mac-address": MAC_DHCP}, "single"),
+    ("uhppote_card_get", {"cardNumber": ACCESS_PASS}, "single"),
 )
 
 

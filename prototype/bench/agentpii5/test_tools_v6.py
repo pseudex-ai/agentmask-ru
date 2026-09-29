@@ -495,6 +495,71 @@ def test_parsers_good_bad() -> list[str]:
             (({}, "missing_required"),
              ({"prn_oid": "abc"}, "oid_format")),
         ),
+        # --- the 12 WEB-STUDY both-ways tools ---------------------------------
+        "gis_gmp_charge_find": (
+            ({"SupplierBillID": "91417776317066907430"},),
+            (({}, "missing_required"),
+             ({"SupplierBillID": "9141777631706690743"}, "uin_format"),
+             ({"SupplierBillID": "91417776317066907431"}, "uin_checksum")),
+        ),
+        "gis_gkh_utility_account_get": (
+            ({"AccountID": "9141777"},),
+            (({}, "missing_required"),
+             ({"AccountID": "91417"}, "account_format")),
+        ),
+        "device_provisioning_find": (
+            ({"deviceIdentifier": "291417776317061"},),
+            (({}, "missing_required"),
+             ({"deviceIdentifier": "29141777631706"}, "imei_format"),
+             ({"deviceIdentifier": "291417776317062"}, "imei_checksum")),
+        ),
+        "omnihss_subscriber_get": (
+            ({"imsi": "250291417776317"},),
+            (({}, "missing_required"),
+             ({"imsi": "2502914177763"}, "imsi_format")),
+        ),
+        "ip_api_lookup": (
+            ({"query": "68.32.130.60"},),
+            (({}, "missing_required"),
+             ({"query": "999.32.130.60"}, "ip_format")),
+        ),
+        "flight_order_manage_get": (
+            ({"flight_order_id": "4G7YV"},),
+            (({}, "missing_required"),
+             ({"flight_order_id": "4G7"}, "pnr_format")),
+        ),
+        "metrica_offline_conversion_upload": (
+            ({"ClientId": "291417776317066907"},),
+            (({}, "missing_required"),
+             ({"ClientId": "29141777631706690"}, "client_id_format")),
+        ),
+        "moodle_user_by_username": (
+            ({"field": "username", "values": ["szyci_d17"]},),
+            (({"field": "email", "values": ["szyci_d17"]}, "field_enum"),
+             ({"field": "username", "values": ["ab"]}, "login_format")),
+        ),
+        "appmetrica_event_import": (
+            ({"google_aid": "4283FEFC-63F0-CD0E-873A-0000C6D07EF7"},
+             {"ios_ifa": "4283FEFC-63F0-CD0E-873A-0000C6D07EF7"}),
+            (({}, "exactly_one_key"),
+             ({"google_aid": "4283FEFC-63F0-CD0E-873A-0000C6D07E"}, "uuid_format")),
+        ),
+        "appmetrica_device_id_lookup": (
+            ({"appmetrica_device_id": "141777631706690743"},
+             {"ios_ifv": "4283FEFC-63F0-CD0E-873A-0000C6D07EF7"}),
+            (({}, "exactly_one_key"),
+             ({"appmetrica_device_id": "14177763170669074"}, "device_id_format")),
+        ),
+        "mikrotik_dhcp_lease_get": (
+            ({"mac-address": "42:83:fe:fc:63:f0"},),
+            (({}, "missing_required"),
+             ({"mac-address": "42:83:fe:fc:63"}, "mac_format")),
+        ),
+        "uhppote_card_get": (
+            ({"cardNumber": "1417776317"},),
+            (({}, "missing_required"),
+             ({"cardNumber": "141"}, "card_format")),
+        ),
     }
     by_name = {spec.base.name: spec for spec in TOOLS_V6}
     for name in sorted(by_name):
