@@ -829,8 +829,8 @@ Identifiers DICTATED ALOUD: numeral runs → digit strings, then the SAME
 validators as the digit path (Luhn, mod 101, ИНН, libphonenumber). Spoken dates,
 e-mails, plates. The typo table is MINED from real transcripts; fuzzy matching on
 numerals is forbidden.
-- **API:** `is_numeral_word`, `numeral_alternation`, `canonical_numeral`, `date_from_words`, `date_to_words`, `run_to_digits`, `digits_in_words_like`, `numeral_runs`, `detect_spoken_ids`, `email_from_words`, `detect_spoken_email`, `plate_from_words`, `detect_spoken_plate`, `main`
-- **Uses:** agent_form, assets, detect, fuzzy, ru_pii · **Used by:** address, date_form, detect_all, morph_places, names, redact, vault
+- **API:** `is_numeral_word`, `numeral_alternation`, `canonical_numeral`, `date_from_words`, `date_to_words`, `run_to_digits`, `digits_in_words_like`, `numeral_runs`, `detect_spoken_ids`, `email_from_words`, `detect_spoken_email`, `plate_from_words`, `plate_in_words_like`, `detect_spoken_plate`, `main`
+- **Uses:** agent_form, assets, detect, fuzzy, ru_pii · **Used by:** address, date_form, detect_all, morph_places, names, notation, redact, vault
 - **Tests:** test_product · via detect_all → test_overmasking (dictated order numbers), test_hard_cases; `bench/voice/`
 - **Docs:** `bench/voice/README.md`, `docs/known-issues.md` (Б1, Б6) · rules: INVARIANTS.md#spoken
 
@@ -869,7 +869,7 @@ with the generic word, `split_roles` (city / street / house / flat / entrance �
 the one parser every consumer must reuse), keys for the vault, `in_form_of` for
 restoring a tool argument in the agent's own form.
 - **API:** `looks_like_street`, `to_nominative`, `phrase_to_nominative`, `inflect_place`, `detect_case`, `place_gender`, `generic_forms`, `region_prefix_end`, `address_key`, `generic_full`, `street_house_key`, `strip_flat`, `strip_leading_city`, `place_shape`, `agree_with_generic`, `match_signature`, `signature_parts`, `is_generic_word`, `street_case`, `split_roles`, `role_spans`, `field_role`, `role_of_field`, `city_case`, `address_from_fields`, `part_in_form_of`, `house_digits`, `in_form_of`, `reduce_address`
-- **Uses:** agent_form, assets, morph, spoken · **Used by:** address, assets, envelope, redact, structured, vault
+- **Uses:** agent_form, assets, morph, spoken · **Used by:** address, assets, envelope, notation, redact, structured, vault
 - **Tests:** test_hard_cases, test_product, test_unload_scrub; `bench/agentpii4/harness.py`, `bench/agentpii4/microscope.py`
 - **Docs:** `docs/known-issues.md` (§2, Б2, Б10), `research/2026-09-02-agent-form-benchmark.md` · rules: INVARIANTS.md#address, INVARIANTS.md#agent-form
 
@@ -920,7 +920,7 @@ the model's per-unit choice from the substitute, `render` applies it to the real
 name, `fold` is the vault index key of one rendering, and `declared_keys` is the
 set of keys the mint indexes so that no rendering `UNITS` declares can miss it.
 - **API:** `apply`, `is_cyrillic_word`, `units_of`, `align`, `render`, `variants`, `table_for`, `fold`, `folded`, `declared_keys`, `match_case`, `squeezed_initials`, `main`
-- **Uses:** assets · **Used by:** redact, vault
+- **Uses:** assets · **Used by:** notation, redact, vault
 - **Tests:** test_derived_forms, test_prose_fragments
 - **Docs:** `research/2026-09-02-agent-form-benchmark.md` · rules: INVARIANTS.md#derived-forms
 
@@ -932,8 +932,8 @@ two-digit year, ISO, month in words with or without the year, spoken),
 mirrors the customer's notation at the mint, the restorer renders the real
 date in the agent's.
 - **API:** `notation_of`, `same_notation`, `render_like`, `main`
-- **Uses:** spoken · **Used by:** redact, vault
-- **Tests:** `python3 -m pseudex.date_form` (self-test) · via redact → test_argument_form (`_forms_follow`), test_product, test_hard_cases
+- **Uses:** spoken · **Used by:** notation, vault
+- **Tests:** `python3 -m pseudex.date_form` (self-test) · via redact → test_argument_form (`_forms_follow`), test_product, test_hard_cases; test_notation_symmetry
 - **Docs:** `docs/known-issues.md` (Б24) · rules: INVARIANTS.md#swap
 
 #### `pseudex/agent_form.py` — 135 lines · `live`
@@ -943,9 +943,30 @@ case out. A NAME is cased as a whole class (`lower`/`upper`/`title`), never
 word by word — mirroring a lower-case particle onto the fake's patronymic
 produced a run the windows could not read back (Б24).
 - **API:** `cased_like`, `case_class`, `name_cased_like`, `main`
-- **Uses:** — · **Used by:** morph_places, redact, spoken
+- **Uses:** — · **Used by:** morph_places, notation, redact, spoken
 - **Tests:** none direct · via redact → test_argument_form
 - **Docs:** `research/2026-09-02-agent-form-benchmark.md` · rules: INVARIANTS.md#agent-form
+
+#### `pseudex/notation.py` — 434 lines · `live`
+ONE interface for notation: «the value in the notation of whoever wrote it».
+`render_like(value, surface, kind, target=None, for_tool=False)` is the single
+decision point every restore seam and every mint must use — `surface` is the
+notation SAMPLE, `value` is the content from the vault, `target` is the leaf's
+notation (class Ж `FieldSpec`), and `for_tool` says which leg the mention is on
+(the tool cannot execute a dictated phrase, so there the leaf's/register's
+written form wins). `notation_of(surface, kind)` names the notation CLASS. The
+per-type renderers stay where they belong (PHONE/SNILS/card/date/email in
+`redact`/`date_form`, the address in `morph_places.in_form_of`, the plate here);
+they are reached ONLY through this interface, because seven separate decisions
+was exactly the class А defect. `plate_signature` is the content signature a
+plate resolves by (letters + digits, both Latin readings folded). `redact`,
+`translit` and `vault` are reached by LAZY imports inside the type-specific
+renderers — `redact` imports this module, and `vault`/`translit` would make the
+ring.
+- **API:** `script_of`, `case_of`, `looks_dictated`, `notation_of`, `render_like`, `plate_content`, `plate_signature`, `plate_notation_of`, `plate_in_form_of`, `plate_laid_like`, `written_place`, `place_in_form_of`, `name_in_form_of`, `name_in_script`
+- **Uses:** agent_form, date_form, morph_places, redact (lazy), spoken, translit (lazy), vault (lazy) · **Used by:** redact, vault
+- **Tests:** test_notation_symmetry; via redact/vault → the hop-form suites
+- **Docs:** `research/hop-format-audit/SPIKE-А.md`, `research/hop-format-audit/DECISIONS-SPRINT.md` · rules: INVARIANTS.md#notation
 
 ### 1.2 Swap and vault
 
@@ -958,8 +979,8 @@ sender on both legs. Streaming detokenizer with one carry per
 (two arguments, the shape the benchmark's own gateway calls) and the leg-aware
 `surviving_substitutes` for substitutes that failed to resolve.
 - **API:** `mask_text`, `is_own_substitute`, `vault_value`, `tokenize_span`, `unmask_text`, `unmask_stream_chunk`, `unmask_arguments`, `residual_tokens`, `surviving_substitutes`, `StreamDetokenizer`
-- **Uses:** address, agent_form, assets, date_form, detect, morph_names, morph_places, normalize, profiling, spoken, translit, vault · **Used by:** envelope, proxy, service
-- **Tests:** test_argument_form, test_collisions, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_phone_hop_form, test_error_echo_privacy, test_product, test_prose_fragments, bench_masking, profile_latency; `bench/agentpii{2,3,4}`, `bench/agentrun/roundtrip.py`
+- **Uses:** address, agent_form, assets, detect, morph_names, morph_places, normalize, notation, profiling, spoken, translit, vault · **Used by:** envelope, notation, proxy, service
+- **Tests:** test_argument_form, test_collisions, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_phone_hop_form, test_error_echo_privacy, test_product, test_prose_fragments, bench_masking, profile_latency; `bench/agentpii{2,3,4}`, `bench/agentrun/roundtrip.py`
 - **Docs:** `docs/how-it-works.md`, `docs/known-issues.md` (§0, §1, Б8, Б11, Б12) · rules: INVARIANTS.md#swap, INVARIANTS.md#streaming
 
 #### `pseudex/vault.py` — 3 397 lines · `live`
@@ -970,9 +991,9 @@ impossible ranges; the conversation scope (`for_conversation`, `with_pseudonym_s
 the digit-signature and translit reindexes; the collision guards at mint time.
 `Vault.resolve_digit_signatures_typed` preserves type and exact-over-tail
 precedence for PHONE rendering without a new schema or database query.
-- **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `looks_dictated`, `name_key`, `fold_key`, `place_key`, `token_re`, `create_tables`, `create_indexes`, `Vault` (+ `VAULT_MIGRATIONS`)
-- **Uses:** assets, credentials, date_form, fuzzy, morph_names, morph_places, normalize, profiling, ru_pii, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, proxy, redact, service, schema (lazy)
-- **Tests:** vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
+- **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `name_key`, `fold_key`, `place_key`, `token_re`, `create_tables`, `create_indexes`, `Vault` (+ `VAULT_MIGRATIONS`)
+- **Uses:** assets, credentials, date_form, fuzzy, morph_names, morph_places, normalize, notation, profiling, ru_pii, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, notation, proxy, redact, service, schema (lazy)
+- **Tests:** vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
 - **Docs:** `docs/tz-vault-encryption.md`, `docs/tz-name-gender-canonical.md`, `docs/how-it-works.md`, `research/2026-09-03-checksum-valid-substitutes.md` · rules: INVARIANTS.md#vault, INVARIANTS.md#collisions, INVARIANTS.md#conversation-scope
 
 #### `pseudex/envelope.py` — 326 lines · `live`
@@ -1285,6 +1306,7 @@ Run from `prototype/`; each loads the dev bundle itself.
 | `test_pseudexctl.py` | the ops CLI: command shapes, doctor verdicts (incl. the version ladder), the rekey proof, `upgrade` (order, secrets never in argv, both rollback branches, dry-run leaves nothing) |
 | `test_collisions.py` | a substitute equal to a real value — both halves (backwards at mint, forwards via `minted_in`), and BOTH sides of the `pseudonym_scope` trade |
 | `test_derived_forms.py` | transliteration and initials in a tool argument — in the model's own convention, resolved by the conversation |
+| `test_notation_symmetry.py` | class А: the substitute inherits the SOURCE's notation (dictation, case, separators and region position, script) and the argument is rendered in the AGENT's, or the leaf's when the tool cannot execute a phrase; one interface (`notation.render_like`) for every seam, with the PHONE/СНИЛС/DOB controls that already worked |
 | `test_argument_form.py` | a tool argument is restored VERBATIM in the agent's form (case, generic words); prose in agreement |
 | `test_phone_hop_form.py` | fixed PHONE mint: three input forms × four numeric agent forms × both output legs; copied typo, separate identities, tenant and typed-numeric controls |
 | `test_other_hop_forms.py` | current-hop form for SNILS, INN, CARD, PASSPORT, DOB, EMAIL and PLATE; fixed mints and literal expected values |

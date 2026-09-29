@@ -586,6 +586,47 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   the floor. The type word is a marker of the same class as «д.» and «кв.»,
   which `in_form_of` already takes from the agent verbatim. UNPINNED.
 
+## Notation
+
+- **ONE INTERFACE DECIDES NOTATION — there are not seven decisions.** Every restore
+  seam (verbatim, token, reformatted, spoken, cue-gated, case, fragment) and every
+  mint asks `notation.render_like(value, surface, kind, target, for_tool)`; a seam
+  that renders on its own is the class А defect returning, and it returns silently
+  because the symptoms of two seams disagreeing look like a model's mistake. The
+  per-type renderers (`_phone_in_form_of`, `_digits_in_form_of`, `_same_shape`,
+  `plate_in_form_of`, `morph_places.in_form_of`, `date_form.render_like`,
+  `agent_form`, `translit`) stay implementations BEHIND the interface and are not
+  called around it. Pins: `test_notation_symmetry.py`.
+- **THE SUBSTITUTE INHERITS THE SOURCE'S NOTATION, AND AT THE MINT IS WHEN IT IS
+  DECIDED.** Dictation, letter case, separators (including the position of a
+  plate's region), the script (Latin source → Latin substitute) and the numeric
+  notation are all the customer's; a canonical-looking substitute where the
+  customer dictated or typed something else is the defect, not a tidier form.
+  A later renderer cannot put back a notation the mint threw away. Pins:
+  `test_notation_symmetry.py`, `test_hard_cases.py`.
+- **THE ARGUMENT CARRIES THE AGENT'S NOTATION; WHERE THE TOOL CANNOT EXECUTE A
+  PHRASE, THE REGISTER'S.** A dictated rendering (a word-plate, an address said
+  aloud) is a sentence no validator accepts, so on the tool leg it yields to the
+  written form — ГОСТ for a plate, a digit address for a LOC — while the letter
+  case and the alphabet stay the agent's. A WRITTEN value is not re-notated: it
+  goes to the tool as it stands (`test_location_hop_form` §4.2 two addresses),
+  because rendering it into the case of our own substitute would change what the
+  customer wrote. Pins: `test_notation_symmetry.py`, `test_location_hop_form.py`,
+  `test_atomic_form_adversarial.py`.
+- **A SUBSTITUTE RESOLVES BY ITS CONTENT, NOT BY ITS SPELLING.** A plate gets a
+  content signature (letters AND digits, both Latin readings folded) and is
+  indexed by it, so spacing, case, alphabet and «the agent spelled it out» all
+  resolve; the mint's written mirror changes PRESENTATION ONLY and never a letter
+  or a digit, or the signature stops finding the row and a fake reaches the
+  validator. Pins: `test_notation_symmetry.py`, `test_hard_cases.py`.
+- **THE LEAK GUARD COMPARES WHOLE VALUES, NOT WORD SETS.** `_mirror_leaks_nothing`
+  reads both strings back as address ROLES with numbers folded to digits; a
+  dictated mirror is legitimate (the notation rewrites its own digits as words)
+  and a surviving real word or real number is not — it flips a role and the safe
+  canonical is shown instead. A word-set comparison refused the flawless dictated
+  mirror while a real house could still slip through the digits it compared by
+  membership. Pins: `test_notation_symmetry.py`, `test_location_form_adversarial.py`.
+
 ## Vault
 
 - **Canonicalization collapses spellings to one key → one token**: `+7 999…` /

@@ -10,7 +10,7 @@ import re
 from typing import NamedTuple
 
 from pseudex.detect import NameSpan, PartSpan, Span
-from pseudex import agent_form, date_form, morph_names, morph_places, spoken, translit
+from pseudex import agent_form, morph_names, morph_places, notation, spoken, translit
 from pseudex.assets import ASSETS
 from pseudex.normalize import normalize
 from pseudex.profiling import stage
@@ -205,34 +205,56 @@ def _agree_settlement(token: str, original: str) -> str:
 # and «Ачинск, б-р Вишнёвый 30» got different keys and a flawless mirror was
 # refused. Local to this check, one line of it, so the index stays where it is.
 _SETTLEMENT_MARKERS = frozenset({"г", "гор", "город", "с", "пос"})
-_ADDRESS_WORD = re.compile(r"[А-Яа-яЁёA-Za-z][А-Яа-яЁёA-Za-z-]*")
 _DIGIT_RUN = re.compile(r"\d+")
 
 
 def _mirror_leaks_nothing(shown: str, agreed: str) -> bool:
     """Whether the mirrored form shows the model nothing real.
 
-    THE PROPERTY, STATED DIRECTLY: every alphabetic word and every digit run of
-    the shown string belongs to the FAKE, or is a structural marker that names a
-    field rather than a place. `place_key` equality used to stand in for it, and
-    a proxy lies in both directions — it refused a mirror that leaked nothing
-    (the two strings differed only by the «г» its noise list lacks) while the
-    property it was meant to guard is about WORDS, which a key of sorted lemmas
-    can only approximate. The digits are checked apart and exactly: a real house
-    or flat number surviving in the shown form is the leak that matters most and
-    the one `in_form_of` mis-alignment produces.
+    THE PROPERTY IS ABOUT THE WHOLE VALUE, NOT ABOUT WORDS. The shown string must
+    READ BACK to the fake — the same address parts, the same numbers — because a
+    notation legitimately rewrites its numbers as words and a comparison by WORD
+    SETS cannot see that: «шесть» and «сто тридцать два» are not words of the
+    fake, they are its digits SPOKEN, and the guard called a flawless dictated
+    mirror a leak. That false red is what made `LOC spoken` 0 of 26 while the
+    phone was 26 of 26 (g01 P1): the renderer worked, the mirror was refused.
 
-    The generic word is the agent's own («проспект» where the fake carries
-    «улица») and is admitted by the shared reader, not a second list."""
-    fake_words = {_fold_word(word) for word in _ADDRESS_WORD.findall(agreed)}
-    for word in _ADDRESS_WORD.findall(shown):
-        if _fold_word(word) in fake_words or _fold_word(word) in _SETTLEMENT_MARKERS:
-            continue
-        if morph_places.is_generic_word(word):
-            continue
+    What it still refuses is what matters: a real street word surviving gives a
+    different role, a real house or flat surviving gives a different NUMBER, and
+    either one flips the comparison to False and the safe canonical fake is
+    shown instead. The generic word is the agent's own («проспект» where the fake
+    carries «улица») and is dropped by the shared reader, not by a second list."""
+    if not shown or not agreed:
         return False
-    fake_digits = set(_DIGIT_RUN.findall(agreed))
-    return all(run in fake_digits for run in _DIGIT_RUN.findall(shown))
+    theirs = _place_values(shown)
+    ours = _place_values(agreed)
+    if not ours or theirs != ours:
+        return False
+    return _spoken_numbers(shown) <= _spoken_numbers(agreed)
+
+
+def _place_values(phrase: str) -> dict[str, str]:
+    """An address as a VALUE: role -> its content, numbers read as digits.
+
+    Names are compared by signature (stems, order-free) and numbers by
+    `house_digits` — the same readers the vault keys and the restorer renders
+    with, so the guard cannot drift from what it guards."""
+    values: dict[str, str] = {}
+    for role, part in morph_places.split_roles(phrase).items():
+        values[role] = (morph_places.match_signature(part)
+                        if role in ("street", "city")
+                        else _fold_word(morph_places.house_digits(part)))
+    return values
+
+
+def _spoken_numbers(phrase: str) -> set[str]:
+    """Every number the phrase names, with numeral runs read back to digits.
+
+    Read by `_fold_cardinals`, the reader the vault already uses to compare two
+    houses one of which was dictated — a second words-to-digits rule here would
+    disagree with it on exactly the forms it was written for."""
+    tokens = re.findall(r"[А-Яа-яЁё]+|\d+", phrase)
+    return set(_DIGIT_RUN.findall(" ".join(morph_places._fold_cardinals(tokens))))
 
 
 def _fold_word(word: str) -> str:
@@ -793,7 +815,7 @@ def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
         resolved_spans = _restore_inflected_candidates(text, vault, inflect, for_tool)
         inflected_spans: list[tuple[int, int, str]] = [
             (span.start, span.end, span.value) for span in resolved_spans]
-        verbatim_spans = _restore_verbatim_spans(text, literals.forms)
+        verbatim_spans = _restore_verbatim_spans(text, literals.forms, for_tool)
         token_spans = _restore_tokens_spans(text, vault, for_tool)
         # A resolved composite address owns its entire range. Restoring a
         # copied house/flat first would prevent the overlapping street+house
@@ -1033,7 +1055,9 @@ _PLATE_SOUND = str.maketrans("AVEKMNORSTUHavekmnorstuh", "АВЕКМНОРСТУ
 # d/m/y and m/d/y are both offered when the year is last, and whichever resolves
 # wins, because only one of them can be a token this customer holds.
 _DATE_ANY = re.compile(r"^(\d{1,4})[.\-/ ](\d{1,2})[.\-/ ](\d{2,4})$")
-_PLATE_SHAPE = re.compile(r"(?i)[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]\d{3}[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]{2}\d{2,3}")
+_PLATE_SHAPE = re.compile(
+    r"(?i)[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY][ \t,\-]{0,2}\d{3}[ \t,\-]{0,2}"
+    r"[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]{2}[ \t,\-]{0,2}\d{2,3}")
 # A value that could be a date in digits — the cheap test before `_date_canonical`
 # is asked, so a phone or a card number is never parsed as one.
 _DATE_SHAPE = re.compile(r"^\s*\d{1,4}[.\-/ ]\d{1,2}[.\-/ ]\d{2,4}\s*$|^\s*\d{1,2}\s+[а-яёА-ЯЁ]+(?:\s+\d{4})?")
@@ -1058,16 +1082,32 @@ def _date_readings(value: str) -> list[str]:
 
 
 def _restore_verbatim_spans(text: str, shown_forms: list[tuple[str, str, str]],
-                            ) -> list[tuple[int, int, str]]:
+                            for_tool: bool = False) -> list[tuple[int, int, str]]:
     """Every occurrence of a form this conversation was shown, as the
     customer's literal string. Longest shown form first, non-overlapping,
-    whole-word: «Ольховая 10» must not match inside «Ольховая 105»."""
+    whole-word: «Ольховая 10» must not match inside «Ольховая 105».
+
+    THE SEAM KNOWS ITS LEG. It used to be one seam for prose and for the tool
+    argument, so an agent that copied a substitute character for character and an
+    agent that changed one character in it received DIFFERENT values for the same
+    field — the asymmetry that named the class. In PROSE the customer's literal
+    string is the answer (it is what he would have got without us); in an
+    ARGUMENT the value is the vault's and the notation is the agent's, rendered
+    through the same interface every other seam uses."""
     spans: list[tuple[int, int, str]] = []
     for shown, original, kind in shown_forms:
-        if not shown or shown not in text:
+        if not shown:
             continue
-        for match in re.finditer(re.escape(shown), text):
+        matches = list(re.finditer(re.escape(shown), text))
+        if not matches and kind == "PLATE":
+            # A PLATE IS THE SAME CAR IN EITHER CASE — `canonicalize` says so —
+            # and a substitute shown in words or in the customer's lower case
+            # comes back upper-cased. The case is not a different form here, as
+            # it would be for a name; it is the same number.
+            matches = list(re.finditer(re.escape(shown), text, re.IGNORECASE))
+        for match in matches:
             start, end = match.start(), match.end()
+            written: str = text[start:end]
             # A malformed country-code sign is not a form to restore under: the
             # shown «+79795553322» inside «++79795553322» would put the real
             # digits under the doubled sign (C02). Leave the agent's string.
@@ -1079,14 +1119,30 @@ def _restore_verbatim_spans(text: str, shown_forms: list[tuple[str, str, str]],
                 continue
             if any(start < b and a < end for a, b, _ in spans):
                 continue
+            if shown == original:
+                # A self-mapping is the sticky ambiguity marker, not a value.
+                spans.append((start, end, original))
+                continue
+            if for_tool:
+                # THE VALUE IS THE VAULT'S, THE NOTATION IS THE AGENT'S. The
+                # literal is kept only where the notation question does not
+                # arise: a dictated rendering of a document whose leading zeroes
+                # the copy carries exactly (see below) is not improved by being
+                # re-parsed, and the tool-leg renderer is what decides the rest.
+                copied_words: bool = kind in {"PHONE", "SNILS", "INN", "CARD", "PASSPORT"} and not any(
+                    character.isdigit() for character in written + original)
+                restored: str = (original if copied_words
+                                 else _atomic_in_form_of(written, original, kind, for_tool=True))
+                spans.append((start, end, restored))
+                continue
             # A copied dictated rendering has stronger evidence than a new
             # parse: leading zeroes can split one original group into several
             # spoken groups. Reconstructing it loses the sender's original
             # grouping. Numeric output from a spoken original still renders
             # numerically; that is a changed form, not this literal-copy case.
-            copied_words: bool = kind in {"PHONE", "SNILS", "INN", "CARD", "PASSPORT"} and not any(
+            copied_words = kind in {"PHONE", "SNILS", "INN", "CARD", "PASSPORT"} and not any(
                 character.isdigit() for character in shown + original)
-            restored: str = original if copied_words or shown == original else _atomic_in_form_of(shown, original, kind)
+            restored = original if copied_words else _atomic_in_form_of(written, original, kind)
             spans.append((start, end, restored))
     return spans
 
@@ -1134,6 +1190,26 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> li
     typed = vault.detokenize_many_typed(asked, for_tool)
     values = {written: value for written, (_, value) in typed.items()}
     types = {written: kind for written, (kind, _) in typed.items()}
+    # A PLATE RESOLVES BY ITS CONTENT, NOT BY ITS SPELLING — the same second line
+    # of defence the phone got from its digit signature. A plate is quoted with
+    # the customer's separators and letter case (`_token_for_text` mirrors them),
+    # the agent rewrites it into the ГОСТ glued form or spells it in another
+    # alphabet, and the exact surface is then no token at all: the fake left for
+    # the customer's validator with a 200 and an empty log. One indexed point
+    # query per plate-shaped candidate; a miss costs the same as the lookup that
+    # already ran.
+    plates: dict[str, tuple[str, str]] = {}
+    signatures = {notation.plate_signature(value) for value in candidates
+                  if _PLATE_SHAPE.fullmatch(value)}
+    signatures.discard("")
+    if signatures:
+        # `resolve_digit_signatures_typed` отдаёт (ТИП, ЗНАЧЕНИЕ), а шов ниже
+        # работает парой (значение, тип) — как `resolved()`. Порядок здесь и есть
+        # то место, где перепутанная пара отдала бы инструменту строку «PLATE»
+        # вместо номера: тест `test_notation_symmetry` ловит именно её.
+        plates = {signature: (hit[1], hit[0]) for signature, hit in
+                  vault.resolve_digit_signatures_typed(signatures, for_tool).items()
+                  if hit[0] == "PLATE"}
     # A DATE THE VAULT HOLDS IN WORDS. The agent writes «1955-08-17» for the
     # substitute «семнадцатого августа пятьдесят пятого года»; the reading
     # «17.08.1955» is no token, but it is the canonical the vault indexed the
@@ -1152,6 +1228,10 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> li
         for alternate in readings.get(written, ()):
             if alternate in values:
                 return values[alternate], types.get(alternate)
+        if plates and _PLATE_SHAPE.fullmatch(written):
+            signature = notation.plate_signature(written)
+            if signature in plates:
+                return plates[signature]
         return None
 
     spans: list[tuple[int, int, str]] = []
@@ -1175,9 +1255,9 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> li
             # into the surface's slots padded «10.4.82» to «10.04.82».
             canonical = _date_canonical(value) if kind in {"DOB", "DATE"} else ""
             if len(canonical) == 10 and _date_canonical(surface):
-                value = _atomic_in_form_of(surface, value, kind)
+                value = _atomic_in_form_of(surface, value, kind, for_tool=for_tool)
             elif kind in {"PHONE", "SNILS", "INN", "CARD", "PASSPORT", "EMAIL", "PLATE"}:
-                value = _atomic_in_form_of(surface, value, kind)
+                value = _atomic_in_form_of(surface, value, kind, for_tool=for_tool)
             elif for_tool and kind == "NAME":
                 # THE EXACT TOKEN, RE-CASED OR NOT: the agent wrote the
                 # nominative it was shown («Николай Сорокин» for a substitute
@@ -1250,7 +1330,8 @@ def _restore_reformatted_spans(text: str, vault: Vault,
             hit = resolved.get(digits[-10:])
         if hit is not None:
             kind, value = hit
-            value = _atomic_in_form_of(text[match.start():match.end()], value, kind)
+            value = _atomic_in_form_of(text[match.start():match.end()], value, kind,
+                                       for_tool=for_tool)
             spans.append((match.start(), match.end(), value))
             continue
         # КУСОК ПОДМЕНЫ — ТОЖЕ НАША ПОДМЕНА. Схема просит серию паспорта без
@@ -1315,7 +1396,7 @@ def _restore_spoken_identifier_spans(text: str, vault: Vault,
                                     for_tool: bool) -> list[tuple[int, int, str]]:
     """Apply the current spoken form after whole-identity resolution."""
     return [(hit.start, hit.end, _atomic_in_form_of(
-        text[hit.start:hit.end], hit.value, hit.entity_type))
+        text[hit.start:hit.end], hit.value, hit.entity_type, for_tool=for_tool))
         for hit in _spoken_identifier_hits(text, vault, for_tool)]
 
 
@@ -1342,37 +1423,35 @@ def _same_shape(model: str, digits: str) -> str:
 _NUMERIC_FORM = re.compile(r"[+(]?\d[\d\s().\-/]*\d")
 
 
-def _plate_in_form_of(written: str, value: str) -> str:
-    """Mirror each plate letter's alphabet and case without changing its role."""
-    latin: str = "ABEKMHOPCTYX"
-    cyrillic: str = "АВЕКМНОРСТУХ"
-    to_latin: dict[int, str] = str.maketrans(cyrillic, latin)
-    samples: list[str] = [char for char in written if char.isalpha()]
-    letters: list[str] = [char for char in value if char.isalpha()]
-    if len(samples) != len(letters):
-        return value
-    rendered: list[str] = []
-    index: int = 0
-    for char in value:
-        if not char.isalpha():
-            rendered.append(char)
-            continue
-        sample: str = samples[index]
-        normalized: str = char.upper().translate(_PLATE_FOLD)
-        if sample.upper() in latin:
-            normalized = normalized.translate(to_latin)
-        rendered.append(normalized.lower() if sample.islower() else normalized)
-        index += 1
-    return "".join(rendered)
+def _plate_in_form_of(written: str, value: str, for_tool: bool = False) -> str:
+    """Plate notation — the interface's answer, kept under its old name.
+
+    The renderer moved to `notation` (one decision point for every type); this
+    alias exists so no caller keeps a second implementation of the same
+    question."""
+    return notation.plate_in_form_of(written, value, for_tool=for_tool)
 
 
-def _atomic_in_form_of(written: str, value: str, kind: str) -> str:
+def _atomic_in_form_of(written: str, value: str, kind: str,
+                       for_tool: bool = False) -> str:
     """Render resolved content in a mention's form, independent of its consumer.
 
-    Identity resolution supplies the type. Numeric identifiers never borrow a
-    PHONE prefix or DATE interpretation merely because their digits resemble it.
-    NAME and LOC keep their role-aware renderers; this function does not infer
-    identity, expand a partial value, or select an owner.
+    THE SEAM, NOT THE DECISION. Identity resolution supplies the type; the
+    NOTATION is decided in `notation.render_like` and nowhere else, so the
+    verbatim seam, the token seam and the mint cannot disagree about the same
+    field — the disagreement that was class А. `for_tool` says which leg the
+    mention is on: the tool cannot execute a dictated phrase, so there the
+    leaf's notation wins over the sender's words.
+    """
+    return notation.render_like(value, written, kind, for_tool=for_tool)
+
+
+def _numeric_in_form_of(written: str, value: str, kind: str) -> str:
+    """Процифровые документы — эталон, работавший и до класса А.
+
+    PHONE, СНИЛС, ИНН, карта, паспорт: диктовка (`digits_in_words_like`) и
+    разделители агента (`_same_shape`). Ничего не решает про нотацию листа —
+    это делает `notation.render_like`, который сюда и приходит.
     """
     if kind == "PHONE":
         return _phone_in_form_of(written, value)
@@ -1386,20 +1465,6 @@ def _atomic_in_form_of(written: str, value: str, kind: str) -> str:
             rendered: str = _numeric_glyphs_like(written, _same_shape(model, digits))
             return value if normalize(value) == rendered else rendered
         return value
-    if kind in {"DOB", "DATE"}:
-        canonical: str = _date_canonical(value)
-        if len(canonical) == 10 and date_form.notation_of(written) is not None:
-            return date_form.render_like(canonical, written)
-        return value
-    if kind == "EMAIL":
-        local, separator, domain = value.partition("@")
-        model_local, model_separator, model_domain = written.partition("@")
-        if separator and model_separator:
-            return (agent_form.cased_like(local, model_local) + "@"
-                    + agent_form.cased_like(domain, model_domain))
-        return value
-    if kind == "PLATE":
-        return _plate_in_form_of(written, value)
     return value
 
 

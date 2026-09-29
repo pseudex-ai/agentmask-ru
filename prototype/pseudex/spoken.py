@@ -764,6 +764,49 @@ _PLATE_LETTER_SOUND: dict[str, str] = {
 }
 
 
+# Имя буквы, которым её НАЗЫВАЮТ. Обратная к `_PLATE_LETTER_SOUND`, и таблица
+# отдельная намеренно: у «В» два произношения («вэ» и «ве»), а писать нужно
+# одно — то, которое читает обратно тот же `_PLATE_LETTER_SOUND`.
+_PLATE_LETTER_WORD: dict[str, str] = {
+    "А": "а", "В": "вэ", "Е": "е", "К": "ка", "М": "эм", "Н": "эн",
+    "О": "о", "Р": "эр", "С": "эс", "Т": "тэ", "У": "у", "Х": "ха",
+}
+_PLATE_CONTENT = re.compile(r"^([A-Za-zА-Яа-яЁё])(\d{3})([A-Za-zА-Яа-яЁё]{2})(\d{2,3})$")
+_PLATE_LATIN_TO_CYR = str.maketrans("ABEKMHOPCTYXabekmhopctyx", "АВЕКМНОРСТУХавекмнорстух")
+
+
+def plate_in_words_like(plate: str, model: str) -> str | None:
+    """Госномер, ПРОИЗНЕСЁННЫЙ так, как произносят его в `model`.
+
+    ОБРАТНАЯ К `plate_from_words`, и это требование обратимости, а не удобство:
+    подмена, наследующая диктовку источника, должна читаться обратно, иначе она
+    перестаёт разрешаться. Числа пишет `_spell_identifier_group` — та же
+    функция, которой чеканятся цифровые группы в диктовке телефона, а буквы
+    называет `_PLATE_LETTER_WORD`.
+
+    ЧТЕНИЕ ПРОВЕРЯЕТСЯ ЗДЕСЬ ЖЕ. `plate_from_words` — единственный читатель этой
+    формы, и если он не возвращает исходный номер, рендер отказывается: лучше
+    письменная форма, чем фраза, которую никто не прочитает.
+    """
+    content = re.sub(r"[^0-9A-Za-zА-Яа-яЁё]", "", plate)
+    match = _PLATE_CONTENT.fullmatch(content)
+    if match is None:
+        return None
+    head, digits, pair, region = match.groups()
+    head, pair = head.upper(), pair.upper()
+    if any(letter.upper() not in _PLATE_LETTER_WORD for letter in (head, pair[0], pair[1])):
+        return None
+    words = [_PLATE_LETTER_WORD[head], _spell_identifier_group(digits),
+             _PLATE_LETTER_WORD[pair[0]], _PLATE_LETTER_WORD[pair[1]]]
+    if re.search(r"(?i)\bрегион", model):
+        words.append("регион")
+    words.append(_spell_identifier_group(region))
+    text = " ".join(words)
+    if plate_from_words(text) != content.upper().translate(_PLATE_LATIN_TO_CYR):
+        return None
+    return cased_like(text, model)
+
+
 def plate_from_words(phrase: str) -> str:
     """Госномер, продиктованный вслух, в той форме, в какой его ждёт ГИБДД.
 

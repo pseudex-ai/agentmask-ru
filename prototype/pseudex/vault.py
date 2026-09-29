@@ -25,7 +25,8 @@ import threading
 import time
 
 from pseudex.fuzzy import within_one_typo
-from pseudex import date_form, morph_names, morph_places, spoken, translit
+from pseudex import date_form, morph_names, morph_places, notation, spoken, translit
+from pseudex.notation import looks_dictated
 from pseudex.spoken import (email_from_words, numeral_runs,
                             plate_from_words, run_to_digits)
 from pseudex.profiling import stage
@@ -511,28 +512,15 @@ _DIGIT_FRAGMENT_PROBE = 16
 # написанной» из-за случайного совпадения двух цифр.
 _WHOLE_SIGNATURE_MIN = 6
 
-_SPOKEN_WORD = re.compile(r"[А-Яа-яЁё]{2,}")
 # Типы, у которых канонизация даёт САМО ЗНАЧЕНИЕ в нормальной форме, а не ключ
 # для поиска. Для них и только для них аргументу отдаётся канон.
 # DOB is here for the same reason as a phone: a birth date said aloud is a
 # phrase the tool cannot store, and the agent's schema asks for a date.
 _CANONICAL_IS_THE_VALUE = frozenset(_NUMERIC_TYPES) | {"EMAIL", "PLATE", "DOB"}
 
-
-def looks_dictated(original: str, canonical: str) -> bool:
-    """Написанное — это ФРАЗА, произнесённая вслух, а не значение.
-
-    Продиктованный идентификатор — всегда прогон русских слов: «восемь девятьсот
-    двадцать шесть…», «ситникова собака мэйл точка ру», «а двести шестьдесят три
-    о ка регион шестьдесят шесть». Записанное значение таким не бывает ни у
-    одного типа, кроме имени, — а имя решается отдельной веткой выше.
-
-    Двух слов достаточно и меньше нельзя: одно кириллическое слово встречается
-    в написанном адресе («Ленина 14»), а два подряд — только в диктовке.
-    """
-    if original == canonical:
-        return False
-    return len(_SPOKEN_WORD.findall(original)) >= 2
+# `looks_dictated` переехал в `notation` вместе с остальными вопросами о нотации
+# (импорт выше): «это фраза или значение» — вопрос о НОТАЦИИ, и вторая его
+# читалка разошлась бы с первой ровно так, как расходятся все вторые читалки.
 
 
 def _pick_value(entity_type: str, canonical: str, original: str,
@@ -712,7 +700,19 @@ def _digit_signatures(token: str, entity_type: str) -> tuple[str | None, str | N
     """Digit signature of a NUMERIC token, so a token the model reformatted
     (separators stripped, +7 rewritten as 8) still resolves. Phones also key on
     their last 10 digits because the country code varies. Non-numeric types get
-    NULL so they stay out of the signature indexes."""
+    NULL so they stay out of the signature indexes.
+
+    A PLATE IS NOT DIGITS, AND IT WAS NULL — which is why «е 079 он 583» (the
+    agent spaced the substitute out) resolved to nothing and the fake drove into
+    the customer's validator. Its content signature is letters AND digits with
+    the alphabet folded (both Latin readings, see `notation.plate_signature`),
+    so any rewriting — separators, case, alphabet, dictation — finds the row.
+    The signature is asked of the token's CONTENT, not of its spelling: a plate
+    the mint showed in words has no digits at all, and a signature read off the
+    words themselves would be a string of letters nobody could ever match."""
+    if entity_type == "PLATE":
+        signature = notation.plate_signature(notation.plate_content(token))
+        return (signature, None) if signature else (None, None)
     if entity_type not in _NUMERIC_TYPES:
         return None, None
     digits = re.sub(r"\D", "", token)
@@ -1841,7 +1841,15 @@ def _token_re(version: str) -> re.Pattern[str]:
         # — V for «В», N for «Н», S for «С», U for «У», R for «Р». Those forms never
         # became candidates, so the fold that resolves them never ran.
         # …AND A PLATE IN LOWER CASE, for the same reason («е940ае613»).
-        r"(?i:[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]\d{3}[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]{2}\d{2,3})",  # PLATE
+        # …AND WITH THE SEPARATORS THE CUSTOMER WROTE. The substitute now mirrors
+        # the source's notation (`notation.plate_laid_like`), so «у 493 са 23»
+        # mints «х 731 кх 616» — and a shape that demands the glued form would
+        # stop recognising our own token, which is the one failure this pattern
+        # exists to prevent. Spaces, tabs, commas and hyphens, at most two of
+        # them, are notation here; letters and digits are content.
+        r"(?i:[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY][ \t,\-]{0,2}\d{3}[ \t,\-]{0,2}"
+        r"[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]{2}[ \t,\-]{0,2}\d{2,3})",  # PLATE, нотация клиента
+        r"(?i:[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]\d{3}[АВЕКМНОРСТУХABCEHKMNOPRSTUVXY]{2}\d{2,3})",  # PLATE, ГОСТ
         # FOURS WITH THE REMAINDER LAST, 13..19 digits: the shape must cover
         # every length the generator above can mint, because a token that
         # escapes it stops being reversible and a FAKE reaches the tool. `{2,4}`
@@ -2800,6 +2808,25 @@ class Vault:
                 # EVERY OTHER IDENTIFIER, THE SAME WAY: the customer's
                 # grouping, not the register's. See `_digits_laid_like`.
                 token = _digits_laid_like(value, token)
+            elif entity_type == "PLATE":
+                # А ГОСНОМЕР ЗЕРКАЛИТСЯ ЦЕЛИКОМ, А НЕ ТОЛЬКО ЦИФРАМИ: у него
+                # нотация — это ещё и РЕГИСТР, АЛФАВИТ, РАЗДЕЛИТЕЛИ и ДИКТОВКА.
+                # ГОСТ-канон «А123ВС777» показывался там, где клиент написал
+                # «у493са 23» или продиктовал «о сто пятнадцать у ка девяносто
+                # девять»: 1 из 10 листьев у g03, 27 листьев IN/user в одной
+                # группе g05. Нотация решается в `notation` — здесь только
+                # вызов, потому что минт задаёт её ПЕРВЫМ и невозвратно
+                # (SPIKE-А, механизм 1 и 6).
+                token = notation.plate_laid_like(value, token)
+            elif entity_type == "NAME":
+                # СКРИПТ — ТАКАЯ ЖЕ ОСЬ, КАК РЕГИСТР. `Evgeniy Volnov` получал
+                # кириллическую подмену, и модель вела себя иначе, чем без нас:
+                # латинское имя — признак другого человека для агента, который
+                # читает карточку (g15 office-002). Подмена наследует скрипт
+                # источника, а минт индексирует скриптовое написание
+                # (`token_parts` ниже), иначе латинская подмена молча перестала
+                # бы разрешаться.
+                token = notation.name_in_script(token, value)
             digits, digits10 = _digit_signatures(token, entity_type)
             # `value` (not `canonical`) — the surface form the user actually
             # typed, which is what the tool must receive. First writer wins: the
@@ -2917,6 +2944,15 @@ class Vault:
                     # string-level fold can replace it (see its docstring).
                     if translit.is_cyrillic_word(word):
                         fake_parts |= translit.declared_keys(word)
+                    else:
+                        # И САМА ЛАТИНСКАЯ ПОДМЕНА. Подмена наследует скрипт
+                        # источника (`notation.name_in_script`), и её слова —
+                        # латинские, поэтому `declared_keys` над ними молчит, а
+                        # `residual_of` спрашивает латинское слово ФОЛДОМ, а не
+                        # написанием. Без этой строки латинская подмена
+                        # индексировалась бы одним написанием и не находилась
+                        # бы ни одним из своих объявленных чтений.
+                        fake_parts.add(translit.fold(word))
                 fake_shape = morph_names.name_shape(token)
                 fake_words = token.split()
                 if len(fake_shape) == len(fake_words):
