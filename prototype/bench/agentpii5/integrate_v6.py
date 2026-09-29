@@ -596,13 +596,13 @@ def build_report(cases: Sequence[CaseV5], ladder: dict[str, object], phase: str,
     return report
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--phase", default="full", choices=PHASES)
     parser.add_argument("--dry-run", action="store_true",
                         help="print the per-tier cost estimate and exit; write nothing")
-    args = parser.parse_args(argv)
+    args = parser.parse_args(sys.argv[1:])
 
     cases, ladder, ladder_path = load_corpus_and_ladder(args.phase)
     if not cases:

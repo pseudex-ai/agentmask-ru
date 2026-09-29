@@ -41,6 +41,10 @@ NOT_COMMANDS: dict[str, str] = {
                   "вторая дверь к одному отчёту",
     "regress_print": "офлайн-принтер пути продукта (G4/L9) — приёмочный инструмент, "
                      "гоняется напрямую как python3 -m bench.agentpii5.regress_print",
+    "build_v6": "приёмочный инструмент v6 (proof/--check корпуса), гоняется напрямую как "
+                "python3 -m bench.agentpii5.build_v6 --check",
+    "integrate_v6": "приёмочный инструмент v6 (отчёт интеграции), гоняется напрямую как "
+                    "python3 -m bench.agentpii5.integrate_v6 --phase full",
 }
 
 

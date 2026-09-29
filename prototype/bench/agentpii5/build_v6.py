@@ -428,7 +428,7 @@ def proof_v6(cases: Sequence[CaseV5]) -> dict[str, object]:
             "absent": 0, "unprovable": unprovable}
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main() -> int:
     """`python3 -m bench.agentpii5.build_v6 --check` — the corpus proof.
 
     Rebuilds the corpus from `build_full` when the on-disk corpus is absent (the
@@ -436,7 +436,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     proven / unprovable counts and every unprovable crossing by name. Exits 1 when
     anything is unprovable, 0 otherwise.
     """
-    args = list(sys.argv[1:] if argv is None else argv)
+    args = sys.argv[1:]
     check = "--check" in args
     if not check:
         print("build_v6: pass --check to prove the corpus through the v6 mock")

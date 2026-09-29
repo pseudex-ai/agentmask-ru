@@ -634,6 +634,210 @@ live**; v1–v3 stay for the numbers cited from them and are not developed.
 | `bench/voice/` | `frozen` | real taxi-dispatch transcripts (RuDevices), addresses hand-labelled in two strata (400 marker-carrying + 250 of 4 805 number-only; weight the second 250/4805); `bench/voice/score.py` filters to LOC | `~/.cache/pseudex-bench/rudevices_addresses.json` | `bench/voice/README.md` |
 | `bench/runs/` | `frozen` | measurement outputs by date (2026-09-01 … ); `README.md` says what each run answered. Never edit. | — | `bench/runs/README.md` |
 
+### 4.1.1 AgentPII-RU v6 — the new modules in `bench/agentpii5/`
+
+v6 (`branch bench/agentpii6`) is built **inside** the `bench/agentpii5/` package,
+mirroring v5 and importing it; it does not replace v5. The 55-type registry that
+was one table in `bench/agentpii5/pii_types.py` is now split across
+`bench/agentpii5/pii_types_a.py` / `bench/agentpii5/pii_types_b.py` /
+`bench/agentpii5/pii_types_c.py` (`GROUP_A`/`GROUP_B`/`GROUP_C`, re-assembled by
+`bench/agentpii5/pii_types.py` into `TYPE_REGISTRY`). Spec `docs/tz-agentpii6.md`, registry
+`docs/tz-agentpii6-registry.md`. `Uses` / `Used by` are the real import edges
+inside `bench/`; the v5 modules that gained a v6 branch are listed at the end.
+
+#### `bench/agentpii5/contracts_v6.py` — 331 lines · `live`
+The v6 tables that are NOT about PII types: the axis vocabulary (`INDUSTRIES`,
+`V6_AXES`, `V6_PROVENANCE_KINDS`), `CaseV6Meta` (what `CaseV5.v6` carries),
+`ProcedureRecord`, `V6_DIR`, the v6 negative families and `neg_value`. Pure and
+self-contained — imports nothing from `contracts`/`pseudex`/`licensing`;
+`bench/agentpii5/contracts.py` imports IT, never the reverse.
+- **API:** `INDUSTRIES`, `V6_PROVENANCE_KINDS`, `ProcedureRecord`, `CaseV6Meta`, `V6_AXES`, `V6_DIR`, `V6_NEGATIVE_FAMILIES`, `neg_value`
+- **Uses:** — · **Used by:** contracts, build_v6, scenarios6/build_full
+- **Tests:** test_contracts_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/pii_types_a.py` — 396 lines · `live`
+`GROUP_A`, the first third of the v6 `TypeSpec` registry — one `TypeSpec` per
+v6 type, imported by `bench/agentpii5/pii_types.py` (which re-assembles
+`TYPE_REGISTRY`). Split out of `bench/agentpii5/pii_types.py` so each type table
+stays one definition.
+- **API:** `GROUP_A`
+- **Uses:** pii_types · **Used by:** pii_types
+- **Tests:** via pii_types → test_pii_types
+- **Docs:** `docs/tz-agentpii6-registry.md`
+
+#### `bench/agentpii5/pii_types_b.py` — 360 lines · `live`
+`GROUP_B`, the second third of the v6 `TypeSpec` registry.
+- **API:** `GROUP_B`
+- **Uses:** pii_types · **Used by:** pii_types
+- **Tests:** via pii_types → test_pii_types
+- **Docs:** `docs/tz-agentpii6-registry.md`
+
+#### `bench/agentpii5/pii_types_c.py` — 538 lines · `live`
+`GROUP_C`, the last third of the v6 `TypeSpec` registry.
+- **API:** `GROUP_C`
+- **Uses:** pii_types · **Used by:** pii_types
+- **Tests:** via pii_types → test_pii_types
+- **Docs:** `docs/tz-agentpii6-registry.md`
+
+#### `bench/agentpii5/checksum_v6.py` — 397 lines · `live`
+The v6 checksum validators — IMEI, OMS/ENP, ICCID, bank account/IBAN (CBR 515),
+ОГРНИП, ЭПТС, УИН, VIN, loyalty card, ICAO-731 international passport, S10
+track, GS1. `validate(type_id, value)` is the one entry point every consumer
+calls.
+- **API:** `validate`, `validate_luhn`, `validate_imei`, `validate_oms_enp`, `validate_iccid`, `validate_account`, `validate_iban`, `validate_ogrnip`, `validate_epts_number`, `validate_uin`, `validate_vin`, `validate_intl_passport`, `validate_loyalty_card_number`, `validate_s10_track`
+- **Uses:** — · **Used by:** tools_v6, metrics, perfect, report, integrate_v6
+- **Tests:** test_checksum_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/gen_v6.py` — 728 lines · `live`
+The deterministic v6 value mint: `generate(type_id, seed)` builds a
+checksum-VALID value from the seed — never a search of a finished string (the
+R6-26 discipline). ~50 private `_gen_*` minters, one per type.
+- **API:** `generate`, `vin_is_russian_wmi`
+- **Uses:** pii_types · **Used by:** tools_v6, integrate_v6, scenarios6/common6, scenarios6/build_full
+- **Tests:** test_gen_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/form_v6.py` — 308 lines · `live`
+The v6 form-feature extractors and `FEATURE_EXTRACTORS`; `bench/agentpii5/form.py` unpacks the
+whole table into the v5 form matcher (`form_v6.FEATURE_EXTRACTORS`) so the v6
+types get a `form_match` with no second copy.
+- **API:** `separators`, `case_class`, `script`, `by_fields`, `padding`, `notation`, `FEATURE_EXTRACTORS`
+- **Uses:** contracts, pii_types · **Used by:** form
+- **Tests:** via form → test_form_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/tools_v6.py` — 4 098 lines · `live`
+The v6 tool registry: `TOOLS_V6` (78 `ToolSpecV5` over the v6 verticals with
+exact producer/consumer fields), `V6_META` (a `V6ToolMeta` per tool),
+`UNSCHEMED_TOOLS`.
+- **API:** `V6ToolMeta`, `TOOLS_V6`, `V6_META`, `UNSCHEMED_TOOLS`
+- **Uses:** checksum_v6, gen_v6, contracts · **Used by:** schema_v6, build_v6, mock_v6, scenarios6/common6, scenarios6/build_full
+- **Tests:** test_tools_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/mock_v6.py` — 1 425 lines · `live`
+The v6 seeded backend the arms share: `BackendV6` (extends `BackendV5`),
+`seed_backend_v6`, `call_v6`, `call_arguments_v6`, `drive_v6`,
+`render_problems_v6`.
+- **API:** `BackendV6`, `seed_backend_v6`, `call_v6`, `call_arguments_v6`, `drive_v6`, `render_problems_v6`, `V6_SPECS`, `V6_NAMES`, `UNSCHEMED_NAMES`
+- **Uses:** contracts, metrics, mock, tools_v6 · **Used by:** build_v6
+- **Tests:** test_mock_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/schema_v6.py` — 786 lines · `live`
+The v6 corpus rules (K6-01…K6-22): type/industry/register floors,
+`merged_registry` (v5+v6 tools), `validate_corpus_v6`, `type_floor_table`,
+`PILOT_INDUSTRIES`.
+- **API:** `FLOORS`, `PILOT_INDUSTRIES`, `REGISTER_SHARES_V6`, `INDUSTRY_WEIGHTS`, `merged_registry`, `type_floor_table`, `validate_corpus_v6`
+- **Uses:** contracts, pii_types, tools, tools_v6 · **Used by:** build_v6, integrate_v6, scenarios6/plan_v6, scenarios6/build_full
+- **Tests:** test_schema_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/build_v6.py` — 453 lines · `live`
+Assemble, check and freeze the v6 corpus and ladder: `build_ladder_v6`,
+`draw_holdout_v6`, `stratified_order_v6`, `write_corpus`, `write_ladder_v6`,
+`proof_v6` (the L8 unprovable → 0 gate), `main`.
+- **API:** `stratified_order_v6`, `draw_holdout_v6`, `build_ladder_v6`, `ladder_problems_v6`, `write_corpus`, `write_ladder_v6`, `proof_v6`, `main`
+- **Uses:** contracts_v6, mock_v6, pii_types, contracts, schema, schema_v6, tools_v6 · **Used by:** integrate_v6, scenarios6/build_full
+- **Tests:** test_build_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/integrate_v6.py` — 636 lines · `live`
+The v6 integration report and acceptance (G1): `measure` (single-arm metrics),
+`MUTANTS` (12 wrong-gateway mutants the metrics must fail), `build_report`,
+`dry_run_cost`, `regress_section`, `main`.
+- **API:** `measure`, `MUTANTS`, `l1_section`, `l7_section`, `l8_section`, `l9_section`, `dry_run_cost`, `regress_section`, `build_report`, `main`
+- **Uses:** build_v6, checksum_v6, contracts, gen_v6, metrics, observe, perfect, pii_types, form_tables, schema, schema_v6, scenarios6/common6, scenarios6/build_full · **Used by:** — (entry point)
+- **Tests:** test_integration_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/regress_print.py` — 192 lines · `live`
+The offline product-path printer for the v6 corpus (no model, no spend): the
+same masking path as the gateway arm — one of the two modules that import
+`pseudex` (vault, audit, detect_all, maskcache) plus `harness.GatewayV5`. Run
+`python3 -m bench.agentpii5.regress_print`.
+- **API:** `main`
+- **Uses:** pseudex (vault, audit, detect_all, maskcache), contracts, harness, mock, schema, testkit · **Used by:** — (entry point)
+- **Tests:** test_pii_types (R6-42), test_cli
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/scenarios6/__init__.py` — 9 lines · `live`
+The v6 case-family package — one module per behaviour of `contracts.BEHAVIOURS`
+that v6 authors anew. Mirrors v5, does not replace it.
+- **Used by:** integrate_v6, test_scenarios6, test_scenarios6_plan (import the submodules)
+
+#### `bench/agentpii5/scenarios6/common6.py` — 472 lines · `live`
+What every v6 family shares: `CaseBuilderV6` (HOLDS a v5 `CaseBuilderV5`, adds
+`CaseV6Meta` + `gen_v6.generate`), `PROCEDURES`/`procedure_records`, the
+`bench/agentpii5/v6/skeletons.json` loader, `v6_parts`/`v6_rendered`, and the family entry points
+(`single_case`, `sequential_chain_case`, `memory_anaphora_case`).
+- **API:** `CaseBuilderV6`, `new_builder_v6`, `procedure_records`, `load_skeletons`, `skeleton_ids`, `v6_parts`, `v6_rendered`, `single_case`, `sequential_chain_case`, `memory_anaphora_case`
+- **Uses:** gen_v6, pii_types, contracts, tools, tools_v6, scenarios5/common · **Used by:** scenarios6/build_full, integrate_v6
+- **Tests:** test_scenarios6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/scenarios6/plan_v6.py` — 236 lines · `live`
+The deterministic 500-case allocation (`PlanRow`, `PLAN_V6`): every admitted
+type in 34 distinct cases, the industry axis steered toward `INDUSTRY_CASES`,
+the `sequential_chain` pairs.
+- **API:** `PlanRow`, `PLAN_V6`, `INDUSTRY_CASES`, `CHAIN_PAIRS`, `plan_type_table`, `plan_industry_table`, `main`
+- **Uses:** contracts, pii_types, schema_v6 · **Used by:** scenarios6/build_full
+- **Tests:** test_scenarios6_plan
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/scenarios6/build_full.py` — 803 lines · `live`
+Instantiate every `plan_v6.PlanRow` into a `CaseV5` (`Recipe`, `RECIPES`,
+`CHAIN_SPECS`, `build_full`); the value source is always `gen_v6.generate`,
+never a search of a finished string.
+- **API:** `Recipe`, `RECIPES`, `CHAIN_SPECS`, `build_full`, `main`
+- **Uses:** build_v6, contracts_v6, gen_v6, pii_types, schema_v6, contracts, scenarios5/common, scenarios6/plan_v6, scenarios6/common6, tools_v6 · **Used by:** integrate_v6
+- **Tests:** test_scenarios6_plan
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/v6/` — the generated v6 corpus and ladder · `generated`
+`bench/agentpii5/v6/corpus.v5.json` (the 500-case v6 corpus in the v5 shape),
+`bench/agentpii5/v6/corpus.json`, `bench/agentpii5/v6/ladder.json`
+(nano/small/medium/pool/max tiers), `bench/agentpii5/v6/denylist.json`, and
+`bench/agentpii5/v6/skeletons.json` (the authored skeleton registry `common6`
+loads). Written by `bench/agentpii5/build_v6.py`; never edit by hand.
+
+#### The v6 test files · `live`
+
+| test | pins |
+|---|---|
+| `bench/agentpii5/test_checksum_v6.py` | `checksum_v6` — every v6 validator on valid + broken values |
+| `bench/agentpii5/test_gen_v6.py` | `gen_v6` — minted values pass checksum_v6/pii_types |
+| `bench/agentpii5/test_form_v6.py` | `form_v6` via `form` — the v6 form features |
+| `bench/agentpii5/test_observe_v6.py` | `observe`'s v6 branch — IPv6 types and `survives_in` |
+| `bench/agentpii5/test_tools_v6.py` | `tools_v6` — producer/consumer fields, forms |
+| `bench/agentpii5/test_mock_v6.py` | `mock_v6` — the v6 seeded backend |
+| `bench/agentpii5/test_schema_v6.py` | `schema_v6` — the K6 corpus rules |
+| `bench/agentpii5/test_build_v6.py` | `build_v6` — build/check/freeze the ladder |
+| `bench/agentpii5/test_metrics_v6.py` | `metrics`' v6 branch — `V6_METRIC_FUNCTIONS` |
+| `bench/agentpii5/test_perfect_v6.py` | `perfect`'s v6 branch — `mint_v6` |
+| `bench/agentpii5/test_report_v6.py` | `report`'s v6 branch — the v6 axes/rows |
+| `bench/agentpii5/test_judge_v6.py` | `judge`'s v6 branch — `_V6_SPECS` |
+| `bench/agentpii5/test_calibration_v6.py` | `calibration`'s v6 branch — new v6 item types |
+| `bench/agentpii5/test_scenarios6.py` | `bench/agentpii5/scenarios6/common6.py` — the family builder |
+| `bench/agentpii5/test_scenarios6_plan.py` | `bench/agentpii5/scenarios6/plan_v6.py` + `bench/agentpii5/scenarios6/build_full.py` |
+| `bench/agentpii5/test_integration_v6.py` | `integrate_v6` — the G1 acceptance |
+| `bench/agentpii5/test_contracts_v6.py` | `contracts_v6` — the axis tables |
+
+#### The v5 modules that gained a v6 branch
+`bench/agentpii5/form.py` (imports `form_v6`, unpacks `form_v6.FEATURE_EXTRACTORS`),
+`bench/agentpii5/observe.py` (`IPV6_TYPES`, `_is_ipv6`, `_ipv6_spans`),
+`bench/agentpii5/metrics.py` (`V6_AXES`, `V6_METRIC_FUNCTIONS`, `_v6_value_matches`),
+`bench/agentpii5/perfect.py` (`mint_v6`, `_v6_checksum_valid`),
+`bench/agentpii5/fixtures.py` (`V6_FIXTURES`), `bench/agentpii5/report.py`
+(`has_v6_case`, `v6_axis_rows`, `v6_new_row_lines`), `bench/agentpii5/judge.py`
+(`_V6_SPECS`), `bench/agentpii5/calibration.py` (samples the new v6 item types,
+`origin == "v6"`), `bench/agentpii5/records.py` (`CaseV5.v6` omitted at None — a
+v5 record stays byte-for-byte), `bench/agentpii5/harness.py` (reached by
+`regress_print`'s product path, `GatewayV5`), `bench/agentpii5/build.py` (reached
+by `bench/agentpii5/report.py`'s v6 path, `run_provenance`).
+
 ### 4.2 Evals on corpora we did not write
 
 | script | corpus | question |
