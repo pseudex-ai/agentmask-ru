@@ -414,7 +414,7 @@ class BackendV6(BackendV5):
         return {"requisite": {
             "id": 7,
             "rq_inn": self._field(rid, "rq_inn"),
-            "rq_ogrnip": self._field(rid, "rq_ogrnip"),
+            "rq_ogrnip": self._field(rid, "ogrnip"),
             "rq_ident_doc_ser": self._field(rid, "rq_ident_doc_ser"),
             "rq_ident_doc_num": self._field(rid, "rq_ident_doc_num"),
         }}, "single"
@@ -452,7 +452,7 @@ class BackendV6(BackendV5):
             "phones": [self._field(rid, "phone")],
             "reg_address": self._field(rid, "reg_address"),
         }, "loan": {
-            "contract": self._field(rid, "loan_contract"),
+            "contract": self._field(rid, "contract_number"),
             "uid": self._field(rid, "loan_uid"),
         }, "third_parties": [{
             "fio": self._field(rid, "tp_fio"),
@@ -556,7 +556,7 @@ class BackendV6(BackendV5):
             return {"policy": None, "message": "Сведения о договоре ОСАГО не найдены"}, "empty"
         return {"policy": {
             "series": self._field(rid, "series"),
-            "number": self._field(rid, "number"),
+            "number": self._field(rid, "osago_number"),
             "status": "Действует",
         }, "vehicle": {
             "plate": self._field(rid, "plate"),
@@ -662,7 +662,7 @@ class BackendV6(BackendV5):
                 "dateOfBirth": self._field(rid, "date_of_birth"),
                 "name": {"firstName": self._field(rid, "first_name"),
                          "lastName": self._field(rid, "last_name")},
-                "documents": [{"number": self._field(rid, "document_number")}],
+                "documents": [{"number": self._field(rid, "passport_number")}],
                 "contact": {"emailAddress": self._field(rid, "email"),
                             "phones": [{"number": self._field(rid, "phone")}]},
             }],
@@ -756,7 +756,7 @@ class BackendV6(BackendV5):
             return {"found": False}, "empty"
         return {"found": True, "document": {
             "series": self._field(rid, "series"),
-            "number": self._field(rid, "number"),
+            "number": self._field(rid, "diploma_number"),
             "reg_number": self._field(rid, "reg_number"),
             "holder": self._field(rid, "holder"),
         }}, "single"

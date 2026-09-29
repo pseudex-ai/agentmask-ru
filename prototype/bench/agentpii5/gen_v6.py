@@ -145,6 +145,18 @@ def _epts_check(body14: str) -> str:
     return "0" if r == 10 else str(r)
 
 
+def _ogrn_ok(digits: str) -> bool:
+    """The v5 contract checksum K6-21 guards against (ОГРН 13 mod 11 / ОГРНИП
+    15 mod 13), restated locally so a generated value is never ambiguous with it.
+    `gen_v6` may not import `schema_v6`, so this reuses the module's own
+    `_ogrnip_check` / `_epts_check` arithmetic rather than a third copy."""
+    if len(digits) == 13:
+        return _epts_check(digits[:12]) == digits[12]
+    if len(digits) == 15:
+        return _ogrnip_check(digits[:14]) == digits[14]
+    return False
+
+
 def _uin_check(body: str) -> str:
     """УИН: weights 1..10 cyclic from the MOST significant digit, sum mod 11.
     Remainder ≤ 9 is the digit; remainder 10 re-runs with the sequence shifted
@@ -333,8 +345,13 @@ def _gen_vin(rng):
 def _gen_epts_number(rng):
     # `[123]\d{3}0[1-4]\d{9}`: the trailing `\d{9}` spans positions 7–15, so the
     # check digit IS the 15th char and the body is positions 1–14 (…\d{8}).
-    body = rng.choice("123") + _digits(rng, 3) + "0" + rng.choice("1234") + _digits(rng, 8)
-    return body + _epts_check(body)
+    # K6-21: a 15-digit value must NOT also be a valid ОГРНИП (mod 13), so re-mint
+    # (advancing the seed-derived rng) until it fails that contract check.
+    while True:
+        body = rng.choice("123") + _digits(rng, 3) + "0" + rng.choice("1234") + _digits(rng, 8)
+        value = body + _epts_check(body)
+        if not _ogrn_ok(value):
+            return value
 
 
 def _gen_uin(rng):
@@ -379,7 +396,12 @@ def _gen_driver_license(rng):
 
 
 def _gen_cadastral_number(rng):
-    return f"{_digits(rng, 2)}:{_digits(rng, 2)}:{_digits(rng, rng.choice((6, 7)))}:{_digits(rng, rng.randint(1, 5))}"
+    # K6-21: the digit run can land on 11/12/13/15/16, and a 13- or 15-digit run
+    # must NOT pass the v5 ОГРН/ОГРНИП contract check, so re-mint until it does not.
+    while True:
+        value = f"{_digits(rng, 2)}:{_digits(rng, 2)}:{_digits(rng, rng.choice((6, 7)))}:{_digits(rng, rng.randint(1, 5))}"
+        if not _ogrn_ok("".join(ch for ch in value if ch.isdigit())):
+            return value
 
 
 def _gen_gis_zhkh_els(rng):
@@ -445,7 +467,12 @@ def _gen_referral_number(rng):
 
 
 def _gen_diploma_number(rng):
-    return f"1{rng.choice('01234')}{_digits(rng, 4)} {_digits(rng, 7)}"
+    # K6-21: a 13-digit value must NOT pass the v5 ОГРН (mod 11) contract check,
+    # so re-mint (advancing the seed-derived rng) until it does not.
+    while True:
+        value = f"1{rng.choice('01234')}{_digits(rng, 4)} {_digits(rng, 7)}"
+        if not _ogrn_ok("".join(ch for ch in value if ch.isdigit())):
+            return value
 
 
 def _gen_school_cert_number(rng):

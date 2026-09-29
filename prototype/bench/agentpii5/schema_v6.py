@@ -119,6 +119,8 @@ _V5_CHECKSUM_BY_LENGTH: dict[int, tuple[str, object]] = {
 }
 _LUHN_V6_TYPES: frozenset[str] = frozenset(
     t.id for t in pii_types.TYPE_REGISTRY if t.generated_checksum == "luhn")
+_OGRNIP_V6_TYPES: frozenset[str] = frozenset(
+    t.id for t in pii_types.TYPE_REGISTRY if t.generated_checksum == "ogrnip")
 
 
 # --- the floor table (K6-23: pilot is a strict subset of full) --------------------
@@ -491,8 +493,14 @@ def _undeclared_result_paths_v6(cases: Sequence[CaseV5]) -> list[str]:
 
 def _unread_verticals_v6(cases: Sequence[CaseV5]) -> list[str]:
     """K6-15's K16 half: a vertical whose READING tool (non-mutating, result_pii
-    non-empty) the corpus OFFERS carries no IN/tool hop — its return notation is
-    checked by nothing. A mutating-only vertical is exempt and named."""
+    non-empty) the corpus OFFERS is crossed by no case (any PII type) — its return
+    notation is checked by nothing. A mutating-only vertical is exempt and named.
+
+    VERTICAL COVERAGE IS COUNTED BY CASE, NOT BY HOP, AND BY ANY PII TYPE. A
+    vertical whose reader returns v5 NAME/PHONE is still read back by a case, so
+    it crosses the vertical exactly as a v6 type does; counting IN/tool hops of
+    v6 types only would call a vertical «unread» while cases read its v5 results
+    back, which is coverage, not a gap."""
     registry = merged_registry()
     vertical = _merged_vertical()
     offered: set[str] = {name for case in cases for name in case.base.tools}
@@ -501,22 +509,22 @@ def _unread_verticals_v6(cases: Sequence[CaseV5]) -> list[str]:
         if spec.base.mutating or not spec.base.result_pii or name not in offered:
             continue
         readable.setdefault(vertical.get(name, ""), []).append(name)
-    crossed: Counter[str] = Counter()
+    crossed: dict[str, set[str]] = {}
     for case in cases:
         for hop in case.hops:
             if hop.kind != "IN" or hop.owner != "tool":
                 continue
             vert = vertical.get(hop.tool_name, "")
             if vert:
-                crossed[vert] += 1
+                crossed.setdefault(vert, set()).add(case.base.id)
     problems: list[str] = []
     for vert, readers in sorted(readable.items()):
         if not vert:
             continue
-        if crossed.get(vert, 0) < c.MIN_TYPE_DENOMINATOR:
+        if len(crossed.get(vert, set())) < 1:
             problems.append(
-                f"K6-15 vertical {vert!r} carries {crossed.get(vert, 0)} IN/tool hops, "
-                f"below {c.MIN_TYPE_DENOMINATOR}, while {readers} read personal data back")
+                f"K6-15 vertical {vert!r} is crossed by {len(crossed.get(vert, set()))} "
+                f"cases, below 1, while {readers} read personal data back")
     return problems
 
 
@@ -531,6 +539,15 @@ def _bare_problems(cases: Sequence[CaseV5], admitted: Sequence[str]) -> list[str
     field keys». The three assertions it can still make are: [C] types owe ≥20%
     bare cases, a `bare_typed` type owes ≥20% bare, and any other [K] type owes
     0% bare positives.
+
+    THE CUE MATCH IS CUE-SIMILAR, NOT EXACT-ONLY (K6-16). The sloppy register
+    typos a cue word by one edit (`pools.typo`: swap/drop/double/transpose), so
+    «огррнип» must still cue ОГРНИП, «эпьс» cue ЭПТС and «диплм» cue
+    DIPLOMA_NUMBER. `_cue_hit` treats a cue as present when it appears exactly OR
+    when its tokens appear as a CONTIGUOUS run of message tokens, each token
+    matching exactly or — for tokens of four characters or more, the only length
+    `pools.typo` edits — within one Damerau edit. A bare digit/hex value shares
+    no characters with any cue token, so a genuinely bare value stays bare.
     """
     problems: list[str] = []
     by_type: dict[str, int] = Counter()
@@ -575,13 +592,87 @@ def _type_spec(type_id: str):
     return None
 
 
+_WORD_RE = re.compile(r"[a-zа-яё0-9]+")
+
+
+def _tokenize(text: str) -> list[str]:
+    """The lower-cased word tokens of a message or a cue, split on any run of
+    non-alphanumeric characters. A hyphenated cue («вин-код») and the same words
+    written with a space or another separator become the same token list."""
+    return _WORD_RE.findall(text.lower())
+
+
+def _damerau(a: str, b: str) -> int:
+    """Optimal string alignment distance — insertion, deletion, substitution and
+    adjacent transposition each cost 1, exactly `pools.typo`'s four edits.
+
+    Capped at «far apart»: `_cue_hit` only ever asks «within one edit», and a
+    length gap larger than one already answers no, so the DP never runs over a
+    long digit run against a long cue token.
+    """
+    if a == b:
+        return 0
+    if abs(len(a) - len(b)) > 1:
+        return 99
+    prevprev: list[int] | None = None
+    prev = list(range(len(b) + 1))
+    curr = [0] * (len(b) + 1)
+    for i in range(1, len(a) + 1):
+        curr[0] = i
+        for j in range(1, len(b) + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            curr[j] = min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost)
+            if i > 1 and j > 1 and a[i - 1] == b[j - 2] and a[i - 2] == b[j - 1]:
+                curr[j] = min(curr[j], prevprev[j - 2] + 1)  # type: ignore[index]
+        prevprev, prev, curr = prev, curr, [0] * (len(b) + 1)
+    return prev[len(b)]
+
+
+def _word_match(cue_word: str, text_word: str) -> bool:
+    """A cue token matches a message token exactly, or within one edit when the
+    token is long enough for the sloppy register to have typo'd it — `pools.typo`
+    never edits a word shorter than four characters, so a short cue token only
+    counts when it is written verbatim."""
+    if cue_word == text_word:
+        return True
+    return len(cue_word) >= 4 and _damerau(cue_word, text_word) <= 1
+
+
+def _cue_hit(cue: str, text: str) -> bool:
+    """Whether a registered cue is present in a message, allowing the sloppy
+    register's per-word one-edit typo (a CUE-SIMILAR match).
+
+    Exact substring first — the common case, and the only case for a cue whose
+    words are written verbatim. Otherwise every cue token must appear as a
+    CONTIGUOUS run of message tokens, each matching exactly or within one
+    Damerau edit. A bare value is a digit/hex/glyph run that shares no token
+    with any cue, so it is never falsely cued by this rule.
+    """
+    cue = cue.strip().lower()
+    if not cue:
+        return False
+    text = text.lower()
+    if cue in text:
+        return True
+    cue_words = _tokenize(cue)
+    text_words = _tokenize(text)
+    if not cue_words or len(text_words) < len(cue_words):
+        return False
+    for start in range(len(text_words) - len(cue_words) + 1):
+        window = text_words[start:start + len(cue_words)]
+        if all(_word_match(cue_word, text_word)
+               for cue_word, text_word in zip(cue_words, window)):
+            return True
+    return False
+
+
 def _is_bare(item, spec, messages: Sequence[str]) -> bool:
     """Whether one item's value is carried with neither a cue nor a key."""
     if item.where.kind == "seed" and item.where.path in spec.field_keys:
         return False
     if item.where.kind == "message" and item.where.msg < len(messages):
         text = messages[item.where.msg]
-        if any(cue and cue.lower() in text.lower() for cue in spec.cues):
+        if any(cue and _cue_hit(cue, text) for cue in spec.cues):
             return False
     return True
 
@@ -682,6 +773,8 @@ def _check_digit_value(case_id: str, type_id: str, value: str) -> list[str]:
     if not checker(digits):                       # type: ignore[operator]
         return []
     if v5_name == "CARD" and type_id in _LUHN_V6_TYPES:
+        return []
+    if v5_name == "OGRNIP" and type_id in _OGRNIP_V6_TYPES:
         return []
     return [f"K6-21 {case_id}: {type_id or 'negative'} value {digits!r} is a valid "
             f"{v5_name} checksum of length {len(digits)} — the contract mask would "

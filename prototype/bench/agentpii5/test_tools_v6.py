@@ -49,6 +49,8 @@ RESULT_PII_APPROX: dict[str, str] = {
     "payroll_card_registry": "result_set rows[][N] -> named rows[].<col>",
     "bi_chart_export": "$csv -> free_text text leaf",
     "web_visits_export": "$tsv[col] -> free_text text leaf",
+    "diploma_registry_check": "error.subject declared for retry_same_tool; apis.json has no error form",
+    "hr_employee_get": "error.subject declared for retry_same_tool; apis.json has no error form",
 }
 
 

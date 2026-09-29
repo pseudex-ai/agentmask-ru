@@ -1586,7 +1586,7 @@ HR_EMPLOYEE_GET = ToolSpec(
             FieldSpec('fio', "identity", 'NAME', '', required=False),
     ),
     parse=_hr_employee_get_parse, mutating=False,
-    result_pii=('value[].Description', 'value[].ТабельныйНомер', 'value[].ФизическоеЛицо.ДатаРождения', 'value[].ФизическоеЛицо.ИНН', 'value[].ФизическоеЛицо.СтраховойНомерПФР'))
+    result_pii=('value[].Description', 'value[].ТабельныйНомер', 'value[].ФизическоеЛицо.ДатаРождения', 'value[].ФизическоеЛицо.ИНН', 'value[].ФизическоеЛицо.СтраховойНомерПФР', 'error.subject'))
 
 
 # --- resume_get (search, hr, evidence=summary, mutating=False) ---
@@ -1890,7 +1890,7 @@ DIPLOMA_REGISTRY_CHECK = ToolSpec(
             FieldSpec('issue_date', 'plain', required=False),
     ),
     parse=_diploma_registry_check_parse, mutating=False,
-    result_pii=('document.series', 'document.number', 'document.reg_number', 'document.holder'))
+    result_pii=('document.series', 'document.number', 'document.reg_number', 'document.holder', 'error.subject'))
 
 
 # --- exam_results_check (government, education, evidence=summary, mutating=False) ---
@@ -2457,6 +2457,9 @@ TOOLS_V6: tuple[ToolSpecV5, ...] = (
                    _form('empty',
                          '{"value":[]}',
                          ()),
+                   _form('error_with_value',
+                         '{"error":{"code":"TAB_NOT_FOUND","subject":"Громова Марина Борисовна"}}',
+                         ('error.subject',)),
                ),
                differs_from_user_form=True, suite=NO_SUITE),
     ToolSpecV5(base=RESUME_GET, vertical='search',
@@ -2534,6 +2537,9 @@ TOOLS_V6: tuple[ToolSpecV5, ...] = (
                    _form('empty',
                          '{"found":false}',
                          ()),
+                   _form('error_with_value',
+                         '{"error":{"code":"DIPLOMA_NOT_FOUND","subject":"Громова Марина Борисовна"}}',
+                         ('error.subject',)),
                ),
                differs_from_user_form=True, suite=NO_SUITE),
     ToolSpecV5(base=EXAM_RESULTS_CHECK, vertical='government',
