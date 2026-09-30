@@ -23,8 +23,9 @@ from pseudex.detect import Span
 from pseudex.detect_all import Detector
 from pseudex.maskcache import MaskCache, content_key
 from pseudex.profiling import stage
-from pseudex.redact import (_digits_in_form_of, is_own_substitute, mask_text,
-                            tokenize_span, unmask_arguments, unmask_text)
+from pseudex.redact import (_atomic_in_form_of, _digits_in_form_of,
+                            is_own_substitute, mask_text, tokenize_span,
+                            unmask_arguments, unmask_text)
 from pseudex.vault import Vault, canonicalize, fold_key, _settlement_of
 
 
@@ -207,6 +208,15 @@ _ECHO_DIGIT_BOUNDARY_DEFAULT: tuple[int, int] = (_ECHO_DIGIT_FLOOR, 10)
 # dictated PHONE word is digit material — «д…» for «девятьсот» — and a mid-word
 # cut there still leaks digits, so the reading is per type rather than global.
 _ECHO_INITIAL_TYPES: frozenset[str] = frozenset({"NAME"})
+# The ATOMIC types an echoed result may re-case or re-notate. Their substitute is
+# laid into the CURRENT surface's form by the same seam the scorer uses
+# (`_atomic_in_form_of` -> `notation.render_like`), so a tool result that echoes a
+# value in another case/notation answers with a substitute in THAT form, not the
+# form the first hop happened to mint. PHONE is absent: the echo leg already
+# re-notates it through `_digits_in_form_of`/`_phone_echo_is_a_cut`, where a cut's
+# no-notation reading differs from the token seam's.
+_ECHO_ATOMIC_TYPES: frozenset[str] = frozenset(
+    {"SNILS", "INN", "CARD", "PASSPORT", "DOB", "DATE", "EMAIL", "PLATE"})
 # A rendered number: the digits of an identifier with the separators a person or
 # a tool writes between them — space, `-`, `(`, `)`, `.` and `/` are all in use —
 # bounded on BOTH sides so it can never be a slice of a longer token
@@ -998,6 +1008,18 @@ def _project_echo(value: _InjectedValue, fragment: str, as_is: bool) -> str:
     if value.entity_type == "PHONE":
         return (substitute if _phone_echo_is_a_cut(fragment, real)
                 else _digits_in_form_of(fragment, substitute))
+    if value.entity_type in _ECHO_ATOMIC_TYPES:
+        # THE SUBSTITUTE INHERITS THE FORM OF ANY HOP, NOT OF THE FIRST. A tool
+        # result re-cases/re-notates the value it echoed — a plate UPPER where the
+        # call leaf was lower, a СНИЛС re-spaced — and the substitute is laid into
+        # THIS surface's form by the same seam `_token_for_text` uses, so the echo
+        # leg and the scorer cannot disagree (`as_is` and `fragment == real` say
+        # nothing about the case/notation the RESULT wrote). A truncation is not a
+        # form `render_like` recognises for the numeric/date types and falls back
+        # to the whole rendering; a PLATE cut keeps the substitute's content and
+        # only mirrors the surface's alphabet/case, which is the fail-closed
+        # direction (content never changes, only presentation).
+        return _atomic_in_form_of(fragment, substitute, value.entity_type)
     if as_is or fragment == real or not real.startswith(fragment.lstrip("+")):
         return substitute
     if value.entity_type != "NAME":
@@ -1215,7 +1237,12 @@ def _replace_echoes(text: str,
         # half-redacted string and split production from the scorer.
         return not any(start < cend and cbegin < end for cbegin, cend in covered)
 
-    specific = [(start, end, value.substitute)
+    # The SAME form rule as the reserve pass (`_project_echo`), so the fallback
+    # leg and the reserve leg cannot disagree: a re-cased/re-notated atomic echo
+    # answers in the surface's own form, a PHONE keeps its re-notation, a NAME
+    # cut keeps the positional projection.
+    specific = [(start, end, _project_echo(value, text[start:end],
+                                           value.substitute in renderings))
                 for value, digits in echoes
                 for start, end in _typed_echo_spans(text, value, digits)
                 if _free(start, end)]
