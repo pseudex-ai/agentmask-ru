@@ -116,7 +116,11 @@ def main() -> None:
             page.on("console", lambda message: broken.append(f"csp: {message.text}")
                     if "Content Security Policy" in message.text else None)
 
-            page.goto(f"http://127.0.0.1:{_PORT}/#configurator", wait_until="networkidle")
+            # КОНФИГУРАТОР ЖИВЁТ НА /detection — ТАМ ЖЕ, КУДА ХОДИТ ЧЕЛОВЕК.
+            # Он стоял на главной четвёртым интерактивным блоком подряд и
+            # отвечал на вопрос «чего у вас нет» до того, как сказано, что есть.
+            page.goto(f"http://127.0.0.1:{_PORT}/detection#configurator",
+                      wait_until="networkidle")
             page.wait_for_timeout(800)
             check("ни одной ошибки исполнения и ни одного запрета CSP",
                   not broken, "; ".join(broken[:2]))

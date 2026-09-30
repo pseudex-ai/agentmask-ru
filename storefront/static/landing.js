@@ -23,45 +23,40 @@ const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").match
  * контакты. `text` — куски реплики; пара из двух строк это «настоящее» и
  * «подмена» одного значения, одиночная строка — обычный текст.
  * ──────────────────────────────────────────────────────────────────────────── */
-const HERO_STEPS = ["", "СООБЩЕНИЕ КЛИЕНТА", "НАХОДИМ", "ПОДМЕНЯЕМ",
-                    "МОДЕЛЬ ПОНЯЛА ЗАДАЧУ", "ВАША СИСТЕМА ПОЛУЧИЛА", "ГОТОВО"];
+const HERO_STEPS = ["", "КЛИЕНТ", "НАХОДИМ", "ПОДМЕНЯЕМ",
+                    "МОДЕЛЬ", "СИСТЕМА", "ГОТОВО"];
 
 const HERO_CASES = [
   {
-    source: "МЕССЕНДЖЕР · КЛИЕНТ ПИШЕТ САМ",
+    source: "КЛИЕНТ ПИШЕТ",
     text: [["здрасте! это "], ["волков дмитрий", "шилов виктор"],
-           [", заказ 4471\nможно завтра привезти? адрес "],
+           [", заказ 4471\nпривезти завтра? адрес "],
            ["мончгорская 12 кв 84", "чистопольская 41 кв 57"],
-           ["\nтел "], ["89178347030", "89035571942"], [", он же в заказе"]],
-    decision: "Клиент просит перенести доставку на завтра и даёт адрес с телефоном.",
+           ["\nтел "], ["89178347030", "89035571942"]],
+    decision: "Перенести доставку на завтра.",
     system: "ЗАЯВКА НА ПЕРЕНОС",
-    record: [["Клиент", "Волков Дмитрий"], ["Телефон", "+7 917 834-70-30"],
-             ["Адрес", "Мончегорская 12, кв. 84"]],
-    done: "Опечатка в улице исправлена до того, как адрес ушёл в CRM. Модель видела другую улицу.",
+    record: [["Клиент", "Волков Дмитрий"], ["Адрес", "Мончегорская 12, кв. 84"]],
+    done: "Опечатку в улице исправил словарь — до CRM.",
   },
   {
-    source: "ЗВОНОК · РАСШИФРОВКА ОПЕРАТОРА",
-    text: [["звонила "], ["ерёмина ольга", "соколова марина"], [", адрес записал со слов\n"],
-           ["фруктовая сто двадцать шесть", "грушевая шестьдесят три"], [", "],
-           ["тридцать четвёртая квартира", "пятьдесят седьмая квартира"],
-           ["\nдомофон не работает, звонить в дверь"]],
-    decision: "Создать обращение и предупредить курьера про домофон.",
+    source: "ЗВОНОК · РАСШИФРОВКА",
+    text: [["звонила "], ["ерёмина ольга", "соколова марина"], [", адрес "],
+           ["фруктовая сто двадцать шесть", "грушевая шестьдесят три"],
+           [", кв. "], ["тридцать четыре", "пятьдесят семь"]],
+    decision: "Создать обращение, предупредить курьера.",
     system: "ОБРАЩЕНИЕ В CRM",
-    record: [["Клиент", "Ерёмина Ольга Тимуровна"], ["Адрес", "Фруктовая 126, кв. 34"],
-             ["Примечание", "домофон не работает"]],
-    done: "Числа словами легли в базу цифрами — в том виде, в каком их ждёт CRM.",
+    record: [["Клиент", "Ерёмина Ольга"], ["Адрес", "Фруктовая 126, кв. 34"]],
+    done: "Числа словами легли в базу цифрами.",
   },
   {
-    source: "ОПЕРАТОР · КОПИЯ ИЗ ФОРМЫ",
-    text: [["оформляем полис\n"], ["BITYUKOVA E. A.", "SOKOLOVA M. I."], [" (в паспорте "],
-           ["Битюкова Елена Андреевна", "Соколова Марина Игоревна"], [")\nснилс "],
-           ["112-233-445 95", "284-119-703 41"], [" инн "],
-           ["770512345678", "771903845206"]],
-    decision: "Заполнить черновик полиса — имя пришло в двух видах, но человек один.",
+    source: "ОПЕРАТОР · ФОРМА",
+    text: [["полис на "], ["BITYUKOVA E. A.", "SOKOLOVA M. I."], ["\nв паспорте "],
+           ["Битюкова Елена Андреевна", "Соколова Марина Игоревна"]],
+    decision: "Заполнить черновик: имя пришло в двух видах.",
     system: "ЧЕРНОВИК ПОЛИСА",
-    record: [["Страхователь", "Битюкова Елена Андреевна"], ["СНИЛС", "112-233-445 95"],
-             ["ИНН", "770512345678"]],
-    done: "Латиница из формы и имя из паспорта опознаны как один человек, контрольные суммы сошлись.",
+    record: [["Страхователь", "Битюкова Елена Андреевна"],
+             ["Телефон", "+7 916 214-88-03"]],
+    done: "Латиница и паспорт — один человек.",
   },
 ];
 
@@ -111,7 +106,7 @@ function heroBuild(index) {
   const dialog = node("div", "hero-dialog");
   const bubbles = [
     heroBubble(example.source, "muted", said),
-    heroBubble("МОДЕЛЬ ПОНЯЛА", "accent", node("span", "hero-prose", example.decision)),
+    heroBubble("МОДЕЛЬ", "accent", node("span", "hero-prose", example.decision)),
     heroBubble(example.system, "green", heroRecord(example.record)),
     heroBubble("ГОТОВО", "green", node("span", "hero-prose hero-prose--dim", example.done)),
   ];
@@ -135,49 +130,142 @@ function heroApply(parts, phase) {
   parts.dialog.classList.toggle("is-filed", phase >= 5);
 }
 
+/* ВЫДЕРЖКА У КАЖДОГО ШАГА СВОЯ, И ЭТО И ЕСТЬ «КИНО». Ровный интервал читается
+   как слайд-шоу: сообщение, подсветка и подмена пролетают с одной скоростью, и
+   глаз не успевает заметить, ЧТО произошло. Здесь сообщение читается дольше,
+   подмена — самый короткий и резкий кадр, финал держится дольше всех. */
+const HERO_DWELL = { 1: 1650, 2: 1150, 3: 1250, 4: 1750, 5: 1850, 6: 2300, 0: 900 };
+
 function heroStart() {
   const stage = document.getElementById("hero-dialog");
   const phaseLabel = document.getElementById("hero-phase");
+  const rail = document.getElementById("hero-rail");
+  const panel = document.getElementById("hero-panel");
   if (!stage) return;
 
   let index = 0;
   let phase = reduceMotion ? 6 : 1;
   let parts = heroBuild(index);
+  let timer = 0;
+  let idle = 0;
+  let paused = false;
   stage.replaceChildren(parts.dialog);
-  if (phaseLabel) phaseLabel.textContent = HERO_STEPS[phase];
+
+  /* ШКАЛА-ТАЙМЛАЙН: шесть сегментов, по одному на шаг. Она отвечает на вопрос
+     «сколько это ещё будет идти» — без неё панель читается как бесконечная
+     карусель, и человек уходит раньше самого интересного кадра. */
+  const segments = rail ? Array.from({ length: 6 }, () => {
+    const seg = node("i");
+    rail.appendChild(seg);
+    return seg;
+  }) : [];
+
+  const paint = () => {
+    if (phaseLabel) {
+      phaseLabel.textContent = phase === 0
+        ? "СЛЕДУЮЩАЯ ЗАЯВКА"
+        : `${phase}/6 · ${HERO_STEPS[phase]}`;
+    }
+    segments.forEach((seg, i) => {
+      seg.classList.toggle("is-on", phase > i + 1);
+      seg.classList.toggle("is-current", phase === i + 1);
+    });
+  };
+
   /* БЕЗ ДВИЖЕНИЯ — СРАЗУ ФИНАЛ, А НЕ ПУСТАЯ ПАНЕЛЬ. Человек, который попросил
      систему не двигать картинку, просил об этом, а не о том, чтобы остаться без
      содержимого. */
   if (reduceMotion) {
     heroApply(parts, phase);
+    paint();
     return;
   }
   /* Класс, включающий переход, нельзя ставить в том же тике, где узел только
      что вставлен в DOM: браузер ещё не отрисовал скрытое начальное состояние
      (opacity:0) и просто перескочит к финалу без анимации. Два кадра растра
-     дают ему этот кадр — иначе самое первое сообщение появляется не плавно, а
-     сразу целиком. */
-  requestAnimationFrame(() => requestAnimationFrame(() => heroApply(parts, phase)));
+     дают ему этот кадр. */
+  requestAnimationFrame(() => requestAnimationFrame(() => { heroApply(parts, phase); paint(); }));
 
-  const FADE_MS = 750; // = длительность .hero-bubble transition в landing.css
-  setInterval(() => {
+  const schedule = (ms) => { clearTimeout(timer); timer = setTimeout(step, ms); };
+
+  function step() {
+    if (paused) return;
+    /* СМЕНА ТЕМЫ ЗАБИРАЕТ СЦЕНУ СЕБЕ. Пока идёт маска, реплики не меняются:
+       две анимации в одном кадре — это и есть та дёрганность, которую видно
+       «через раз». Просто ждём и возвращаемся, ничего не пропуская. */
+    if (document.documentElement.dataset.themeBusy) {
+      schedule(220);
+      return;
+    }
     phase = (phase + 1) % 7;
-    if (phaseLabel) phaseLabel.textContent = HERO_STEPS[phase];
-    /* Кадр 0 — пауза между заявками. Сначала гасим текущие реплики и ждём,
-       пока затухание доиграет, и только потом подменяем DOM на следующий
-       пример — иначе узлы исчезают вместе со сменой разметки, минуя переход,
-       и смена примера выглядит как рывок, а не как затухание. */
     if (phase === 0) {
+      /* Расходимся: сначала гасим реплики, ждём затухание и только потом меняем
+         пример — иначе узлы исчезают вместе со сменой разметки, минуя переход, и
+         смена заявки выглядит рывком, а не затуханием. */
       heroApply(parts, phase);
+      paint();
       setTimeout(() => {
         index = (index + 1) % HERO_CASES.length;
         parts = heroBuild(index);
         stage.replaceChildren(parts.dialog);
-      }, FADE_MS);
+        phase = 1;
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          heroApply(parts, phase);
+          paint();
+        }));
+        schedule(HERO_DWELL[1]);
+      }, 750);
       return;
     }
     heroApply(parts, phase);
-  }, 1700);
+    paint();
+    schedule(HERO_DWELL[phase] || 1700);
+  }
+
+  /* НАВЕДЕНИЕ ОСТАНАВЛИВАЕТ ПОКАЗ. Панель — не баннер, её читают: тот, кто вёл
+     курсором к строке с подменой, не должен ловить её уже подменённой обратно.
+     Ушли — показ продолжается сам. */
+  if (panel) {
+    panel.addEventListener("mouseenter", () => { paused = true; clearTimeout(timer); });
+    panel.addEventListener("mouseleave", () => { if (paused) { paused = false; schedule(500); } });
+  }
+
+  /* ШАГ НАЗАД И ВПЕРЁД. Показ идёт сам, но панель не телевизор: тот, кто хочет
+     разглядеть кадр — или показать его коллеге, — должен мочь к нему вернуться.
+     Переход через край идёт в соседнюю заявку (назад с первого шага — финал
+     предыдущей), иначе стрелка упиралась бы в невидимую стену. После ручного
+     шага показ сам не возобновляется сразу: шесть секунд панель стоит, чтобы
+     её успели прочитать, и только потом едет дальше. */
+  const controls = Array.from(document.querySelectorAll("[data-hero-step]"));
+  const go = (delta) => {
+    clearTimeout(timer);
+    clearTimeout(idle);
+    paused = true;
+    let next = phase + delta;
+    let rebuilt = false;
+    if (next < 1) {
+      index = (index - 1 + HERO_CASES.length) % HERO_CASES.length;
+      next = 6;
+      rebuilt = true;
+    } else if (next > 6) {
+      index = (index + 1) % HERO_CASES.length;
+      next = 1;
+      rebuilt = true;
+    }
+    phase = next;
+    if (rebuilt) {
+      parts = heroBuild(index);
+      stage.replaceChildren(parts.dialog);
+      requestAnimationFrame(() => requestAnimationFrame(() => { heroApply(parts, phase); paint(); }));
+    } else {
+      heroApply(parts, phase);
+      paint();
+    }
+    idle = setTimeout(() => { paused = false; schedule(HERO_DWELL[phase] || 1700); }, 6000);
+  };
+  controls.forEach((button) => button.addEventListener("click", () => go(Number(button.dataset.heroStep))));
+
+  schedule(HERO_DWELL[phase]);
 }
 
 heroStart();
@@ -213,6 +301,83 @@ if (!("IntersectionObserver" in window)) {
     });
   }, { rootMargin: "-40px 0px -10% 0px" });
   revealable.forEach((element) => shower.observe(element));
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * КАСКАДНОЕ ПОЯВЛЕНИЕ КАРТОЧЕК
+ *
+ * Обычный `[data-reveal]` поднимает блок ЦЕЛИКОМ. Для сеток это скучно: шесть
+ * карточек появляются одним клином. Здесь появляются ПО ОДНОЙ, с нарастающей
+ * задержкой 70 мс (до 420 мс), — страница читается как очередь, а не как плитка.
+ * ──────────────────────────────────────────────────────────────────────────── */
+const staggerGroups = Array.from(document.querySelectorAll("[data-reveal-stagger]"));
+if (!("IntersectionObserver" in window)) {
+  staggerGroups.forEach((group) =>
+    Array.from(group.children).forEach((child) => child.classList.add("is-in")));
+} else {
+  const st = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      Array.from(entry.target.children).forEach((child) => child.classList.add("is-in"));
+      st.unobserve(entry.target);
+    });
+  }, { rootMargin: "-40px 0px -8% 0px" });
+  staggerGroups.forEach((group) => {
+    Array.from(group.children).forEach((child, i) => {
+      child.classList.add("reveal-item");
+      child.style.transitionDelay = `${Math.min(i * 70, 420)}ms`;
+    });
+    st.observe(group);
+  });
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * СВОП ПО СКРОЛЛУ
+ *
+ * Разметка та же, что у hero-token (настоящее поверх подмены в одной ячейке),
+ * но узел стоит прямо в шаблоне и помечен `data-swap`. Когда он попадает в кадр,
+ * сначала подсвечивается (нашёл), затем значение перетекает в подмену (подменил).
+ * ──────────────────────────────────────────────────────────────────────────── */
+const swapables = Array.from(document.querySelectorAll("[data-swap]"));
+if (!("IntersectionObserver" in window)) {
+  swapables.forEach((el) => el.classList.add("is-found", "is-swapped"));
+} else {
+  const so = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      entry.target.classList.add("is-found");
+      setTimeout(() => entry.target.classList.add("is-swapped"), 280);
+      so.unobserve(entry.target);
+    });
+  }, { threshold: 0.65 });
+  swapables.forEach((el) => so.observe(el));
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * ЛЁГКИЙ ПАРАЛЛАКС
+ *
+ * Панель едет навстречу скроллу на ±16 px. Только translateY, только когда
+ * элемент в кадре, с rAF-троттлингом; при reduced-motion не подключается вовсе.
+ * ──────────────────────────────────────────────────────────────────────────── */
+const parallaxEls = Array.from(document.querySelectorAll("[data-parallax]"));
+if (parallaxEls.length && !reduceMotion && "IntersectionObserver" in window) {
+  let ticking = false;
+  const drift = () => {
+    parallaxEls.forEach((el) => {
+      const r = el.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > window.innerHeight) return;
+      const center = r.top + r.height / 2 - window.innerHeight / 2;
+      const shift = Math.max(-1, Math.min(1, center / window.innerHeight)) * 16;
+      el.style.transform = `translateY(${shift.toFixed(1)}px)`;
+    });
+    ticking = false;
+  };
+  window.addEventListener("scroll", () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(drift);
+  }, { passive: true });
+  drift();
 }
 
 
@@ -651,3 +816,4 @@ document.querySelectorAll("#faq details").forEach((details) => {
     }
   });
 });
+

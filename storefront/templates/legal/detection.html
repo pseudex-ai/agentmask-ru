@@ -1,5 +1,11 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}{{ page_title }}{% endblock %}
+{% comment %}КОНФИГУРАТОР ЖИВЁТ ЗДЕСЬ, А НЕ НА ГЛАВНОЙ. Он отвечает на вопрос «чего у
+   вас нет» — то есть на той странице, где перечислено, что есть. Стили сетки
+   (`.cards--n12`) и логика отметок приезжают из landing.css/landing.js: второй
+   экземпляр разметки конфигуратора разошёлся бы с первым на первой правке.{% endcomment %}
+{% block head %}<link rel="stylesheet" href="{% static 'landing.css' %}">{% endblock %}
 {% block content %}
 <section>
   <div class="eyebrow"><i></i><span>ДЕТЕКЦИЯ</span></div>
@@ -29,7 +35,7 @@
     <h2>Чего мы не находим</h2>
     <div class="sec-meta">ЭТОТ РАЗДЕЛ ВАЖНЕЕ ПРЕДЫДУЩЕГО</div>
   </div>
-  <p class="sub">Список честный и открытый. Если нужного вам типа здесь нет — <a href="/#configurator">отметьте его в конфигураторе</a>, это меняет очередь работ: мы делаем то, за что платят, а не то, что красивее выглядит в таблице.</p>
+  <p class="sub">Список честный и открытый. Если нужного вам типа здесь нет — <a href="#configurator">отметьте его в конфигураторе</a> ниже, это меняет очередь работ: мы делаем то, за что платят, а не то, что красивее выглядит в таблице.</p>
 
   <div class="rows" style="margin-top:36px">
     <div class="sec-meta">ОБЩИЕ</div>
@@ -97,6 +103,42 @@
      `{# #}` ЗДЕСЬ НЕ ГОДИТСЯ: он однострочный, и многострочный вариант
      отрендерился бы как видимый текст. Поймано проверкой, а не глазами.
   {% endcomment %}
-  <a class="btn accent lg" href="/#configurator">ОТМЕТИТЬ, ЧТО НУЖНО ВАМ</a>
+  <a class="btn accent lg" href="#configurator">ОТМЕТИТЬ, ЧТО НУЖНО ВАМ</a>
+</section>
+
+{% comment %}
+   КОНФИГУРАТОР — НА ЭТОЙ ЖЕ СТРАНИЦЕ, НИЖЕ КНОПКИ, КОТОРАЯ НА НЕГО ВЕДЁТ.
+   Он стоял на главной четвёртым интерактивным блоком подряд и отвечал на
+   вопрос «чего у вас нет» там, где ещё не сказано, что есть. Здесь он читается
+   как продолжение таблицы: список типов → отметка того, чего не хватает.
+   Заголовок набран классами страницы, а не инлайном главной: два словаря
+   одного заголовка разъезжаются при первой правке темы.
+{% endcomment %}
+<section id="configurator">
+  <div class="sec-head">
+    <h2>Что у вас в переписке</h2>
+    <div class="sec-meta">ОТМЕТКА = ЗАЯВКА НА ТИП</div>
+  </div>
+  <p class="sub">Отметьте свои группы данных. Скажем, что находим сегодня, что в разработке и чего не планируем — последнее честнее первого. Отметки складываются в счётчик спроса: по нему мы строим очередь работ.</p>
+  <div id="cfg" class="cards cards--n12" style="border:1px solid var(--line-3)">
+    {% for group in groups %}
+      <label class="cfg-item hv-tint" style="display:flex;align-items:center;gap:13px;padding:16px 20px;cursor:pointer;min-width:0;">
+        <input type="checkbox" data-group="{{ group.code }}"
+               data-covered="{{ group.covered|yesno:"1,0" }}"
+               data-verdict="{{ group.verdict }}"
+               style="flex:none;width:15px;height:15px;accent-color:var(--accent)">
+        <span class="cfg-label" style="flex:1;font-size:15px;color:var(--text-2);min-width:0">{{ group.label }}</span>
+        <span style="flex:none;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;color:{% if group.covered %}var(--green){% else %}var(--amber){% endif %}">{% if group.covered %}находим{% else %}в разработке{% endif %}</span>
+      </label>
+    {% endfor %}
+  </div>
+  <div id="cfg-out" hidden style="margin-top:28px;border-top:1px solid var(--line);padding-top:24px">
+    <div id="cfg-note" style="font-size:15.5px;line-height:1.65;color:var(--text-2);max-width:70ch"></div>
+    <div id="cfg-verdicts"></div>
+    <button id="cfg-send" type="button" hidden class="hv-btn"
+            style="margin-top:20px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:12px 18px;border:1px solid var(--accent);background:transparent;color:var(--accent-2);cursor:pointer">ОТПРАВИТЬ КАК ЗАЯВКУ</button>
+  </div>
 </section>
 {% endblock %}
+{% block script %}<script src="{% static 'landing.js' %}"></script>{% endblock %}
+

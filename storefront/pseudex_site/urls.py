@@ -56,6 +56,11 @@ urlpatterns = [
     path("requisites", views.requisites, name="requisites"),
     path("architecture", views.architecture, name="architecture"),
     path("detection", views.detection, name="detection"),
+    path("how", views.how, name="how"),
+    path("faq", views.faq, name="faq"),
+    # Раздел «База знаний»: страницы под поисковые запросы, а не под продукт.
+    path("baza-znaniy", views.kb, name="kb"),
+    path("baza-znaniy/<slug:slug>", views.kb_article, name="kb_article"),
     path("resend", views.resend_activation, name="resend"),
 
     path("app/", views.cabinet, name="cabinet"),

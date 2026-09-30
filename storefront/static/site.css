@@ -2,7 +2,15 @@
    Kept as one stylesheet rather than the prototype's inline styles: the landing
    and the cabinet share every token, and two copies drift. */
 
-:root {
+/* ТЁМНАЯ ПАЛИТРА — И ПО УМОЛЧАНИЮ, И КАК ИМЕНОВАННАЯ. Селектор перечисляет
+   `:root` (страница без атрибута — работает даже с выключенным JS) и
+   `[data-theme="dark"]` — чтобы ту же палитру можно было навесить на ОТДЕЛЬНЫЙ
+   элемент. Без второго селектора палитры были асимметричны: светлая жила под
+   `[data-theme="light"]` и на любой элемент ложилась, а тёмная — только на
+   `:root`, поэтому `data-theme="dark"` на кнопке не делал ничего. Значения при
+   этом не дублируются: это один и тот же блок объявлений. */
+:root,
+[data-theme="dark"] {
   --bg: #17171a;
   --panel: #1c1c20;
   --panel-2: #1e1e23;
@@ -12,10 +20,11 @@
   --edge: #3d3d45;
   --text: #e8e7ec;
   --text-2: #cfced6;
-  --text-3: #a9a8b3;
-  --dim: #8f8e99;
-  --dim-2: #74737e;
-  --dim-3: #5c5c66;
+  --text-3: #b5b4bf;
+  --dim: #a9a8b3;
+  --dim-2: #94939e;
+  --dim-3: #82818d;
+  --faint: #43434c;
   --accent: #b3a0ea;
   --accent-2: #cec0f2;
   --accent-bg: #242134;
@@ -23,9 +32,70 @@
   --green: #93cfaa;
   --amber: #dcbd85;
   --amber-bg: #3b3427;
+  --warn-bg-deep: #221d12;
+  --warn-line: #3f3728;
+  --ok-line: #2c3f34;
+  --ok-bg: #17211b;
+  --bad-line: #4a2f3c;
+  --bad-bg: #241a1f;
   --pink: #e293b4;
   --pink-2: #e5aec6;
+  /* ЧТО ЗАВИСИТ ОТ ТЕМЫ, А НЕ ОТ ОТТЕНКА: фон карточки, шапка, чертёжная сетка.
+     Карточка в тёмной теме — тот же фон, что у страницы (линии рисует зазор),
+     а в светлой — БЕЛАЯ БУМАГА: на бумажном фоне карточка цвета страницы
+     перестала бы читаться карточкой. */
+  --card-bg: #17171a;
+  --header-bg: rgba(23,23,26,.88);
+  --grid-line: rgba(232,231,236,.032);
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* СВЕТЛАЯ ТЕМА. Не «инверсия»: тёмная палитра — ночная, светлая — бумажная.
+   Акцент взят из брендбука буквально — там уже написано «акцент на светлом
+   (документы, счета) #6f6486»: на белом #b3a0ea не читается как текст, а
+   #6f6486 читается и остаётся тем же лиловым. Линии и тени пересчитаны ОТ
+   БУМАГИ, а не вывернуты из тьмы: вывернутая палитра даёт серую грязь, а
+   бумажная — воздух. */
+[data-theme="light"] {
+  --bg: #f7f7f9;
+  --panel: #ffffff;
+  --panel-2: #fcfcfe;
+  --line: #e4e4ea;
+  --line-2: #d6d6de;
+  --line-3: #ececf1;
+  --edge: #c3c3cd;
+  --text: #16161a;
+  --text-2: #3b3b45;
+  --text-3: #55555f;
+  --dim: #5c5c68;
+  --dim-2: #5f5f6b;
+  --dim-3: #6c6c78;
+  --faint: #c9c9d2;
+  --accent: #6f6486;
+  --accent-2: #564d6b;
+  --accent-bg: #eeeaf6;
+  --accent-bg-2: #e5dfef;
+  --green: #2f7d52;
+  --amber: #8a6a1f;
+  --amber-bg: #f2e9d2;
+  --warn-bg-deep: #fbf4e2;
+  --warn-line: #e6d9b6;
+  --ok-line: #bfdcc9;
+  --ok-bg: #eef7f1;
+  --bad-line: #e8c3cf;
+  --bad-bg: #fbeef2;
+  --pink: #b04a72;
+  --pink-2: #9c3f63;
+  --card-bg: #ffffff;
+  --header-bg: rgba(247,247,249,.86);
+  --grid-line: rgba(22,22,26,.05);
+}
+
+/* СВЕТ — ТОТ ЖЕ, ИСТОЧНИК ДРУГОЙ. В тёмной теме виньетка акцентная, а низ
+   темнеет; на бумаге затемнять нечего, поэтому снизу бумага чуть теплеет, а
+   виньетка остаётся той же формы, но слабее. */
+[data-theme="light"] body {
+  background-image: linear-gradient(180deg, transparent 62%, rgba(22,22,26,.04) 100%);
 }
 
 /* Self-hosted, no CDN: a font request to a third party from a page a customer
@@ -66,26 +136,120 @@ html { background: var(--bg); scroll-behavior: smooth; }
   html { scroll-behavior: auto; }
 }
 body {
-  margin: 0; background: var(--bg); color: var(--text);
+  margin: 0; color: var(--text);
   font-family: Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased;
+  /* СВЕТ И ГЛУБИНА БЕЗ «ДОРОГОГО ГРАДИЕНТА». Плоская заливка читается как
+     заливка; дорогая поверхность — это когда у света есть ИСТОЧНИК. Два слоя:
+     слабая радиальная виньетка сверху (акцент, ≤7%) и мягкое затемнение к низу
+     (≤14%). Оба лежат В ФОНЕ САМОГО body — значит гарантированно под контентом,
+     без возни со стеками; оба неподвижны (fixed), поэтому свет не «плывёт» при
+     прокрутке. Границы размыты настолько, что градиент не читается градиентом:
+     видно свет, а не переход цвета. */
+  background-color: var(--bg);
+  background-image: linear-gradient(180deg, transparent 62%, rgba(0,0,0,.13) 100%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+/* ЗЕРНО — стратегическая шероховатость вместо глянца. Лёгкая плёнка из шума
+   поверх страницы делает поверхность «материальной»: при 3–4% это читается как
+   бумага/терминал, а не как фиолетовый градиент «дорого выглядит». Позади
+   шапки и кнопок (z-индексы у них выше), не перехватывает клики. */
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: 2; pointer-events: none;
+  opacity: .035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 140px 140px;
 }
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--accent-2); }
 ::selection { background: var(--accent); color: var(--bg); }
 pre, code, .mono, input, textarea, select { font-family: var(--mono); }
 
-.frame { max-width: 1440px; margin: 0 auto; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+/* ЧЕРТЁЖНАЯ СЕТКА — 12 КОЛОНОК ПО ШИРИНЕ КОНТЕНТА, И ЭТО НЕ ОБОИ.
+
+   Первая версия была квадратами 56 px от левого края рамки: красивый узор,
+   который ничего не значит, потому что ни один элемент в него не попадал. Здесь
+   сетка построена ОТ КОНТЕНТА: 12 колонок ровно на ширину (100% − 2×36 px),
+   начиная с 36 px — то есть с того же отступа, которым отбит весь контент.
+
+   ПОЧЕМУ 12: ширины всех карточных сеток уже кратны ей. С .cards--n2 (6 колонок),
+   --n3 и --n6 (4), --n4 (3) карточки ложатся на линии сетки сами, без единой
+   правки в вёрстке. Сетка, по которой встаёт содержимое, читается системой;
+   сетка, мимо которой оно стоит, — обоями.
+
+   РЯДЫ 96 px — крупнее прежних 56: реже линии, спокойнее фон. Отступы секций и
+   шапки приведены к тем же 36 px, иначе края контента с линиями не совпадали бы
+   и «не все элементы в сетке» осталось бы правдой. */
+.frame {
+  max-width: 1600px; margin: 0 auto;
+  border-left: 1px solid var(--line); border-right: 1px solid var(--line);
+  background-image: linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: calc((100% - 72px) / 12) 100%;
+  background-position: 36px 0;
+}
 
 header.top {
   display: flex; align-items: center; justify-content: space-between; gap: 32px;
-  padding: 0 28px; height: 76px; border-bottom: 1px solid var(--line);
-  position: sticky; top: 0; background: rgba(23,23,26,.9); backdrop-filter: blur(12px); z-index: 20;
+  padding: 0 36px; height: 76px; border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; background: var(--header-bg); backdrop-filter: blur(12px); z-index: 20;
 }
 .brand { display: flex; align-items: center; gap: 11px; }
 .brand b { font-size: 20px; font-weight: 700; letter-spacing: -.025em; }
-header.top nav { display: flex; align-items: center; gap: 30px; font-family: var(--mono); font-size: 12px; letter-spacing: .12em; }
+
+/* ЛОГОТИП ЖИВЁТ, ПОТОМУ ЧТО ОН И ЕСТЬ ПРОДУКТ: два прямоугольника внахлёст —
+   настоящее и подменённое. ОБА едут при загрузке (расходятся-сходятся, как
+   подмена значения) и оба меняются местами по наведению. Раньше двигался
+   только второй, и знак читался как картинка, а не как схема.
+   `backwards`, а не `both`: с `both` заливка удерживает конечный кадр и
+   перебивает :hover — наведение не срабатывало бы вовсе. */
+.brand svg rect { transition: transform .42s cubic-bezier(.2,.7,.2,1); }
+.brand svg .logo-a { animation: logoSwapA 1.15s cubic-bezier(.2,.7,.2,1) backwards; }
+.brand svg .logo-b { animation: logoSwapB 1.15s cubic-bezier(.2,.7,.2,1) backwards; }
+@keyframes logoSwapA { from { transform: translate(12px, -12px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes logoSwapB { from { transform: translate(-12px, 12px); opacity: 0; } to { transform: none; opacity: 1; } }
+.brand:hover svg .logo-a { transform: translate(9px, -9px); }
+.brand:hover svg .logo-b { transform: translate(-9px, 9px); }
+@media (prefers-reduced-motion: reduce) {
+  .brand svg rect { transition: none; animation: none; }
+  .brand:hover svg .logo-a, .brand:hover svg .logo-b { transform: none; }
+}
+/* НАВИГАЦИЯ: БЕЗ ПЕРЕНОСА И БЕЗ ИСЧЕЗНОВЕНИЯ.
+
+   Ссылки были обычными флекс-элементами, поэтому на 1000–1100 px они
+   переносились на две-три строки ВНУТРИ шапки высотой 72 px: «КАК РАБОТАЕТ»
+   ломалось пополам, ряд разъезжался вправо, и это читалось как сломанная
+   вёрстка. Запрещаю перенос совсем, а место освобождаю честно: сначала
+   сокращаю зазор, потом убираю ВТОРОСТЕПЕННЫЕ ссылки (152-ФЗ и FAQ — обе есть
+   в подвале и в теле страниц), а на узких экранах оставляю ряд прокручиваемым.
+   Раньше на ≤900 px навигация просто исчезала: попасть на другую страницу с
+   телефона было нельзя. */
+header.top nav {
+  display: flex; align-items: center; gap: 30px; flex-wrap: nowrap;
+  font-family: var(--mono); font-size: 12px; letter-spacing: .12em;
+}
+header.top nav a { flex: none; white-space: nowrap; }
+@media (max-width: 1240px) {
+  header.top nav { gap: 18px; font-size: 11.5px; }
+}
+@media (max-width: 1080px) {
+  header.top nav .nav-secondary { display: none; }
+}
+@media (max-width: 900px) {
+  header.top { gap: 16px; }
+  header.top nav { gap: 16px; overflow-x: auto; scrollbar-width: none; }
+  header.top nav::-webkit-scrollbar { display: none; }
+}
 header.top nav a { color: var(--dim); }
 header.top nav a:hover { color: var(--text); }
+/* ПОДЧЁРКИВАНИЕ НАВИГАЦИИ рисуется, а не появляется рывком: тонкая акцентная
+   линия выезжает слева направо. Это «состояние», а не украшение — та же линия
+   отмечает активный пункт на вложенных страницах (см. `style="color:var(--accent-2)"`). */
+header.top nav a { position: relative; }
+header.top nav a::after {
+  content: ""; position: absolute; left: 0; bottom: -7px; height: 1px; width: 0;
+  background: var(--accent); transition: width .22s ease;
+}
+header.top nav a:hover::after { width: 100%; }
 .head-cta { display: flex; align-items: center; gap: 10px; }
 
 /* `[hidden]` ПРОИГРЫВАЕТ ЛЮБОМУ СВОЕМУ `display`, и это ловушка, а не тонкость:
@@ -101,8 +265,13 @@ header.top nav a:hover { color: var(--text); }
   display: inline-block; font-family: var(--mono); font-size: 12px; letter-spacing: .12em;
   padding: 11px 16px; border: 1px solid var(--line-2); color: var(--dim);
   background: transparent; cursor: pointer;
+  /* ТАКТИЛЬНОСТЬ: нажатие чувствуется, а не просто меняет цвет. Переход общий,
+     чтобы hover и :active не спорили двумя разными кривыми. */
+  transition: background .18s ease, color .18s ease, border-color .18s ease,
+              transform .1s ease;
 }
 .btn:hover { color: var(--text); border-color: var(--edge); }
+.btn:active { transform: translateY(1px); }
 .btn.solid { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 700; }
 .btn.accent { background: var(--accent); color: var(--bg); border: 0; font-weight: 700; }
 .btn.accent:hover { background: var(--accent-2); color: var(--bg); }
@@ -111,10 +280,39 @@ header.top nav a:hover { color: var(--text); }
 /* «НАЧАТЬ» в шапке — та же кнопка, что в шапке лендинга: фиолетовая рамка,
    при наведении фон и свечение (как `.hv-btn-glow` в landing.css). Здесь, а не
    в landing.css, потому что шапка base.html есть на каждой странице. */
-.btn.cta { font-size: 11.5px; letter-spacing: .14em; padding: 10px 15px; border-color: var(--accent); color: var(--accent-2); transition: background .25s, box-shadow .25s; }
-.btn.cta:hover { background: var(--accent-bg); box-shadow: 0 0 22px rgba(179,160,234,.28); border-color: var(--accent); color: var(--accent-2); }
+.btn.cta { font-size: 11.5px; letter-spacing: .14em; padding: 10px 15px; border-color: var(--accent); color: var(--accent-2); transition: background .25s, border-color .25s; }
+.btn.cta:hover { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-2); }
+/* ПЕРЕКЛЮЧАТЕЛЬ ТЕМЫ. Оформление живёт здесь, а не в шапке, потому что кнопка
+   стоит в ДВУХ шапках (у лендинга своя), и стиль, привязанный к одной, во
+   второй потерялся бы. Ширина фиксирована: подпись меняется между «СВЕТ» и
+   «ТЬМА», и без этого соседние кнопки прыгали бы на каждом нажатии. Подпись
+   называет то, что БУДЕТ, а не то, что есть. */
+.theme-toggle {
+  display: inline-block; min-width: 76px; text-align: center;
+  font-family: var(--mono); font-size: 11.5px; letter-spacing: .14em;
+  padding: 10px 15px; border: 1px solid var(--line-2); color: var(--dim);
+  background: transparent; cursor: pointer;
+  transition: background .18s ease, color .18s ease, border-color .18s ease, transform .1s ease;
+}
+/* НАВЕДЕНИЕ ПОКАЗЫВАЕТ ТО, ЧТО БУДЕТ, — И БЕЗ ЕДИНОГО ПРОДУБЛИРОВАННОГО ЦВЕТА.
+   `theme.js` вешает на саму кнопку атрибут целевой темы (`data-theme="light"`
+   в тёмной теме и наоборот). Для элемента с этим атрибутом переменные
+   резолвятся в палитру ЦЕЛЕВОЙ темы, поэтому одни и те же строки ниже дают
+   ровно тот вид, который кнопка будет иметь в той теме. Плодить «светлые»
+   литералы не нужно: источник цвета остаётся один — блок `[data-theme]`.
+   Правило `[data-theme]` без `:hover` — для активации с клавиатуры: там
+   наведения нет, а показать целевую тему тоже надо. */
+.theme-toggle:hover,
+.theme-toggle[data-theme] {
+  color: var(--text); background: var(--panel); border-color: var(--edge);
+}
+.theme-toggle:active { transform: translateY(1px); }
+@media (prefers-reduced-motion: reduce) {
+  .theme-toggle { transition: none; }
+  .theme-toggle:active { transform: none; }
+}
 
-section { border-top: 1px solid var(--line); padding: 80px 28px; }
+section { border-top: 1px solid var(--line); padding: 80px 36px; }
 section:first-of-type { border-top: 0; }
 h1.hero { margin: 0; font-size: clamp(40px, 7vw, 104px); line-height: .92; font-weight: 900; letter-spacing: -.04em; max-width: 1180px; text-wrap: balance; }
 h1.hero span { color: var(--accent); }
@@ -160,13 +358,13 @@ h2 { margin: 0; font-size: clamp(30px, 4vw, 46px); font-weight: 900; letter-spac
 
 .rows { display: grid; grid-template-columns: 260px minmax(0,1fr); gap: 56px; }
 .numbered { display: grid; grid-template-columns: 64px minmax(0,1fr); gap: 24px; padding: 26px 0; border-bottom: 1px solid var(--line); align-items: start; }
-.numbered .n { font-family: var(--mono); font-size: 13px; color: #43434c; font-weight: 700; }
+.numbered .n { font-family: var(--mono); font-size: 13px; color: var(--faint); font-weight: 700; }
 .numbered h3 { margin: 0 0 10px; font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
 .numbered p { margin: 0; font-size: 16px; line-height: 1.6; color: var(--dim); max-width: 760px; text-wrap: pretty; }
 
 .flow { border: 1px solid var(--line-2); background: var(--panel-2); padding: 28px 26px; font-family: var(--mono); font-size: 13.5px; line-height: 2.4; color: var(--dim); overflow-x: auto; }
 .flow em { color: var(--accent); font-style: normal; }
-.flow i { color: #43434c; font-style: normal; }
+.flow i { color: var(--faint); font-style: normal; }
 .trio { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1px; background: var(--line-2); border: 1px solid var(--line-2); margin-top: 32px; }
 .trio > div { background: var(--panel); padding: 26px 24px 30px; }
 .trio .step { font-family: var(--mono); font-size: 12px; letter-spacing: .16em; color: var(--accent); margin-bottom: 20px; }
@@ -174,6 +372,7 @@ h2 { margin: 0; font-size: clamp(30px, 4vw, 46px); font-weight: 900; letter-spac
 .trio p { margin: 0; font-size: 15px; line-height: 1.62; color: var(--dim); text-wrap: pretty; }
 
 .split { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 56px; align-items: start; }
+.boundary, .gap-table { background: var(--card-bg); }
 .boundary { border: 1px solid var(--line-2); }
 .boundary .row { display: grid; grid-template-columns: minmax(120px,1fr) minmax(70px,.5fr) minmax(80px,.6fr); border-bottom: 1px solid var(--line); align-items: center; }
 .boundary .row > * { padding: 14px 18px; }
@@ -181,7 +380,7 @@ h2 { margin: 0; font-size: clamp(30px, 4vw, 46px); font-weight: 900; letter-spac
 .boundary .head { background: var(--panel); border-bottom: 0; }
 .boundary .head > * { padding: 12px 18px; font-family: var(--mono); font-size: 11px; letter-spacing: .16em; color: var(--dim-2); }
 .yes { color: var(--green); } .no { color: var(--pink); }
-.warnbox { border: 1px solid #3b3427; background: #221d12; padding: 22px; margin-top: 20px; }
+.warnbox { border: 1px solid var(--amber-bg); background: var(--warn-bg-deep); padding: 22px; margin-top: 20px; }
 .warnbox .label { color: var(--amber); margin-bottom: 14px; }
 .warnbox p { margin: 0; font-size: 15px; line-height: 1.65; color: var(--text-2); text-wrap: pretty; }
 
@@ -252,12 +451,12 @@ table.list th { text-align: left; font-family: var(--mono); font-size: 10.5px; l
 table.list td { padding: 12px 0; border-bottom: 1px solid var(--line-3); color: var(--text-2); }
 table.list td.mono { font-family: var(--mono); font-size: 12.5px; }
 .pill { display: inline-block; font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; padding: 4px 8px; border: 1px solid var(--line-2); color: var(--dim); }
-.pill.ok { color: var(--green); border-color: #2c3f34; }
-.pill.warn { color: var(--amber); border-color: #3f3728; }
-.pill.bad { color: var(--pink); border-color: #4a2f3c; }
+.pill.ok { color: var(--green); border-color: var(--ok-line); }
+.pill.warn { color: var(--amber); border-color: var(--warn-line); }
+.pill.bad { color: var(--pink); border-color: var(--bad-line); }
 .msg { padding: 14px 18px; border: 1px solid var(--line-2); margin-bottom: 20px; font-size: 14px; }
-.msg.error { border-color: #4a2f3c; background: #241a1f; color: var(--pink-2); }
-.msg.success { border-color: #2c3f34; background: #17211b; color: var(--green); }
+.msg.error { border-color: var(--bad-line); background: var(--bad-bg); color: var(--pink-2); }
+.msg.success { border-color: var(--ok-line); background: var(--ok-bg); color: var(--green); }
 
 .keybox { border: 1px solid var(--accent); background: var(--accent-bg); padding: 22px; margin: 24px 0; }
 .keybox .value { font-family: var(--mono); font-size: 17px; color: var(--accent-2); word-break: break-all; margin: 12px 0; }
@@ -267,7 +466,6 @@ table.list td.mono { font-family: var(--mono); font-size: 12.5px; }
   .hero-grid, .demo, .notes, .rows, .split, .signup { grid-template-columns: 1fr; }
   .steps > div { grid-template-columns: 1fr; }
   .steps button { border-left: 0; border-top: 1px solid var(--line-2); padding: 14px; }
-  header.top nav { display: none; }
 }
 
 /* The setup tutorial. `.tabs` is reused from the demo, so only the note and the
@@ -419,3 +617,63 @@ table.list td.mono { font-family: var(--mono); font-size: 12.5px; }
 .usebar > i.warn { background:var(--amber); }
 .usebar > i.stop { background:var(--pink); }
 .usebar > span { position:absolute; top:-4px; bottom:-4px; width:1px; }
+
+/* ── смена темы как маска, исходящая от кнопки ───────────────────────────────
+   Новая тема накрывает старую кругом из кнопки; форма шага и длина приходят из
+   `theme.js` (clip-path ставится на `::view-transition-new`). Базовый кроссфейд
+   браузера выключен намеренно: он идёт ОДНОВРЕМЕННО с clip-path, и переход
+   читается двойным — сначала наплыв, потом маска.
+
+   Порядок слоёв обязателен: новая тема сверху (z-index 2), старая снизу (1).
+   Без этого браузер кладёт их в порядке объявления, и на половине переходов
+   маска открывала бы старую тему вместо новой. */
+::view-transition-old(root),
+::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-old(root) { z-index: 1; }
+
+/* ЗДЕСЬ ЖЕ ЛЕЖИТ НАЧАЛЬНЫЙ КЛИП, И БЕЗ НЕГО БЫЛО МИГАНИЕ. Анимация приезжает
+   не мгновенно: браузер сначала снимает снимки, и только потом разрешается
+   `transition.ready`, где мы навешиваем движение. Всё это время
+   `::view-transition-new(root)` показывался БЕЗ клипа — новая тема на ~100 мс
+   вставала на весь экран целиком, и уже потом её накрывала маска. Замер это
+   подтверждал: первые кадры давали `clip = None`.
+
+   Радиус старта — `--theme-r0`, то есть круг, описанный вокруг КНОПКИ: кнопка
+   целиком внутри, она первой получает новый цвет, и только потом свет идёт
+   наружу. Тот же радиус стоит первым кадром анимации в theme.js, поэтому
+   стык «до анимации / в анимации» не виден — значения совпадают.
+
+   `fill: "forwards"` в theme.js обязателен — без него после анимации вернулось
+   бы это же значение и новая тема исчезла бы в конце. */
+::view-transition-new(root) {
+  z-index: 2;
+  /* Начальная форма — ПРЯМОУГОЛЬНИК КНОПКИ, тот же, что в первом кадре
+     анимации (theme.js кладёт его в переменную). Пока анимация не приехала,
+     новая тема занимает ровно кнопку: она получает свой цвет первой, и стык
+     «до анимации / в анимации» не виден, потому что форма совпадает. */
+  clip-path: var(--theme-shape-start,
+    circle(var(--theme-r0, 0px) at var(--theme-x, 50%) var(--theme-y, 0%)));
+}
+
+/* КУДА ИДЁТ ТЕМА — ТУДА ИДЁТ И МАСКА, И ЭТО НЕ СИММЕТРИЯ РАДИ СИММЕТРИИ.
+   К светлому свет РАСХОДИТСЯ от кнопки; к тёмному — СХОДИТСЯ к ней, как
+   гаснущая лампа. Поэтому роли снимков меняются местами: в обратную сторону
+   сворачивается СТАРАЯ (светлая) тема, а тёмная ждёт под ней — значит старая
+   обязана лежать СВЕРХУ, а новая снизу, иначе маска открывала бы не то.
+
+   Начальные клипы стоят здесь по той же причине, что и выше: к моменту
+   прихода анимации (~100 мс) экран уже обязан выглядеть правильно. В обратную
+   сторону это `circle(var(--theme-r))` на старой теме — полный круг, то есть
+   ровно та светлая страница, которая и была на экране; без него снова мигало
+   бы, только теперь тёмным. */
+html[data-theme-direction="to-dark"]::view-transition-new(root) {
+  z-index: 1;
+  clip-path: none;
+}
+html[data-theme-direction="to-dark"]::view-transition-old(root) {
+  z-index: 2;
+  clip-path: circle(var(--theme-r, 150%) at var(--theme-x, 50%) var(--theme-y, 0%));
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+}

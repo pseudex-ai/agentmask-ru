@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block body_class %}v2{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'landing.css' %}">{% endblock %}
+{% block nav %}
+<nav>
+  <a href="/#how">КАК РАБОТАЕТ</a>
+  <a href="/how" style="color:var(--accent-2)">ПОЧЕМУ ЭТО СЛОЖНЕЕ</a>
+  <a href="/detection">ЧТО НАХОДИМ</a>
+  <a href="/architecture" class="nav-secondary">152-ФЗ</a>
+  <a href="/#pricing">ЦЕНЫ</a>
+  <a href="/faq" class="nav-secondary">FAQ</a>
+</nav>
+{% endblock %}
+{% block content %}
+<section style="padding:88px 36px 0">
+  <div class="eyebrow"><i></i><span>МАСКИРОВАНИЕ — ПОЛОВИНА ЗАДАЧИ</span></div>
+  <h1 class="hero" style="font-size:clamp(30px,4.4vw,54px);max-width:24ch">Спрятать данные умеют все. Вернуть их в вызов инструмента — нет</h1>
+  <p class="lede" style="margin-top:26px">Односторонняя подмена не помнит, что подменяла, и не знает, куда подставлять обратно. Ниже — три вещи, которые у неё не получаются, и почему «найти подмену поиском по тексту» ломается на первом же склонении.</p>
+</section>
+  {% comment %}ЗДЕСЬ БЫЛ ДУБЛЬ ЗАГОЛОВКА. Этот блок переехал с главной вместе с
+  таблицей, и у него остался свой заголовок — тот же самый, что у шапки страницы
+  десятью строками выше, только кеглем меньше. Два одинаковых заголовка подряд
+  читаются как ошибка вёрстки, а не как два раздела. Заголовок и лид отсюда
+  убраны: страница уже сказала это в шапке, а таблице достаточно своей строки.
+  Секция и её id остаются — на них ведут ссылки.{% endcomment %}
+  <section id="gap" style="padding:88px 36px 0">
+    <div class="gap-table" style="border:1px solid var(--line)" data-reveal>
+      <div class="gap-row" style="display:grid;grid-template-columns:minmax(220px,1fr) 130px 130px;background:var(--panel);border-bottom:1px solid var(--line)">
+        <div style="padding:14px 22px;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--dim-2)">ЧТО НУЖНО АГЕНТУ В ПРОДЕ</div>
+        <div style="padding:14px 18px;border-left:1px solid var(--line);font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--dim-2)">ТОЛЬКО МАСКИРОВАНИЕ</div>
+        <div style="padding:14px 18px;border-left:1px solid var(--line);font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--accent)">PSEUDEX</div>
+      </div>
+              <div class="gap-row hv-row" style="display:grid;grid-template-columns:minmax(220px,1fr) 130px 130px;border-bottom:1px solid var(--line-3);align-items:center;transition:background .25s,box-shadow .25s">
+          <div style="padding:18px 22px;font-size:16px;line-height:1.45;color:var(--text-2)">Спрятать телефон, email и ФИО от модели</div>
+          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--green)">да</div>
+          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--green)">да</div>
+        </div>
+      
+        <div class="gap-row hv-row" style="display:grid;grid-template-columns:minmax(220px,1fr) 130px 130px;border-bottom:1px solid var(--line-3);align-items:center;transition:background .25s,box-shadow .25s">
+          <div style="padding:18px 22px;font-size:16px;line-height:1.45;color:var(--text-2)">Настоящее значение в аргументе вызова инструмента</div>
+          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--pink)">нет</div>
+          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--green)">да</div>
+        </div>
+      
+        <div class="gap-row hv-row" style="display:grid;grid-template-columns:minmax(220px,1fr) 130px 130px;border-bottom:1px solid var(--line-3);align-items:center;transition:background .25s,box-shadow .25s">
+          <div style="padding:18px 22px;font-size:16px;line-height:1.45;color:var(--text-2)">Один человек — один токен завтра и в соседнем диалоге</div>
+          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--pink)">нет</div>
+          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--green)">да</div>
+        </div>
+      
+        <div class="gap-row hv-row" style="display:grid;grid-template-columns:minmax(220px,1fr) 130px 130px;border-bottom:1px solid var(--line-3);align-items:center;transition:background .25s,box-shadow .25s">
+          <div style="padding:18px 22px;font-size:16px;line-height:1.45;color:var(--text-2)">СНИЛС, ИНН, паспорт, ОМС с проверкой контрольной суммы</div>
+          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--pink)">нет</div>
+          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--green)">да</div>
+        </div>
+      
+        <div class="gap-row hv-row" style="display:grid;grid-template-columns:minmax(220px,1fr) 130px 130px;border-bottom:1px solid var(--line-3);align-items:center;transition:background .25s,box-shadow .25s">
+          <div style="padding:18px 22px;font-size:16px;line-height:1.45;color:var(--text-2)">ФИО в падежах, отчества, уменьшительные имена</div>
+          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--amber)">частично</div>
+          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--green)">да</div>
+        </div>
+      
+        <div class="gap-row hv-row" style="display:grid;grid-template-columns:minmax(220px,1fr) 130px 130px;border-bottom:1px solid var(--line-3);align-items:center;transition:background .25s,box-shadow .25s">
+          <div style="padding:18px 22px;font-size:16px;line-height:1.45;color:var(--text-2)">Раскрыть значение по токену — с записью, кто и когда</div>
+          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--pink)">нет</div>
+          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--green)">да</div>
+        </div>
+      
+    </div>
+    <div style="margin-top:16px;font-size:13px;line-height:1.6;color:var(--dim-3);max-width:70ch">В левой колонке — маскирование как подход, а не конкретный продукт: односторонняя подмена без состояния между запросами.</div>
+  </section>
+  <section id="first" style="padding:120px 0 0">
+    <div style="background:var(--panel-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:88px 36px">
+      <div style="" data-reveal>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.2em;color:var(--accent);margin-bottom:28px">ЧТО ОСТАЁТСЯ В ВАШЕЙ БАЗЕ</div>
+        <h2 style="margin:0 0 28px;font-size:clamp(30px,4.4vw,56px);font-weight:900;letter-spacing:-.04em;max-width:22ch;text-wrap:balance">Подмена без возврата заканчивается в вашей CRM</h2>
+        <p style="margin:0 0 18px;font-size:18px;line-height:1.6;color:var(--text-2);max-width:62ch">Маскирование задумано как операция в одну сторону: текст вошёл, подмена вышла. Дальше она живёт своей жизнью — в памяти диалога, в аргументе вызова и в записи, которую ваш агент создал.</p>
+        <p style="margin:0;font-size:16px;line-height:1.6;color:var(--dim);max-width:62ch">Вот одна и та же заявка после обработки. Слева — если настоящие значения никто не вернул.</p>
+      </div>
+      <div class="cards cards--n2" style="border:1px solid var(--line);margin-top:48px" data-reveal>
+        <div style="min-width:0;padding:26px 24px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--pink)">БЕЗ ОБРАТНОЙ ПОДСТАНОВКИ</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--edge)">ЗАЯВКА №A-4471</div>
+          </div>
+          <div style="display:grid;gap:14px">
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;color:var(--dim-3);margin-bottom:5px">КЛИЕНТ</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:14.5px;color:var(--pink-2)">Виктор Шилов</div>
+              <div style="font-size:12.5px;color:var(--dim-2);margin-top:4px">такого человека нет</div>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;color:var(--dim-3);margin-bottom:5px">ТЕЛЕФОН</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:14.5px;color:var(--pink-2)">+7 903 557-19-42</div>
+              <div style="font-size:12.5px;color:var(--dim-2);margin-top:4px">номер не отвечает</div>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;color:var(--dim-3);margin-bottom:5px">АДРЕС ДОСТАВКИ</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:14.5px;color:var(--pink-2)">улица Грушевая, 63</div>
+              <div style="font-size:12.5px;color:var(--dim-2);margin-top:4px">нет в справочнике</div>
+            </div>
+          </div>
+          <div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--line-3);font-size:14.5px;line-height:1.6;color:var(--pink-2)">Заказ оформлен, курьер назначен, клиент ждёт звонка. Ничего из этого не произойдёт — и узнаете вы об этом от клиента.</div>
+        </div>
+        <div style="min-width:0;padding:26px 24px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--green)">С PSEUDEX</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--edge)">ЗАЯВКА №A-4471</div>
+          </div>
+          <div style="display:grid;gap:14px">
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;color:var(--dim-3);margin-bottom:5px">КЛИЕНТ</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:14.5px;color:var(--green)">Иванов Пётр Сергеевич</div>
+              <div style="font-size:12.5px;color:var(--dim-2);margin-top:4px">как в вашей базе</div>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;color:var(--dim-3);margin-bottom:5px">ТЕЛЕФОН</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:14.5px;color:var(--green)">+7 916 214-88-03</div>
+              <div style="font-size:12.5px;color:var(--dim-2);margin-top:4px">тот, с которого он написал</div>
+            </div>
+            <div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;color:var(--dim-3);margin-bottom:5px">АДРЕС ДОСТАВКИ</div>
+              <div style="font-family:'JetBrains Mono',monospace;font-size:14.5px;color:var(--green)">Ленинский пр-т 42, кв. 118</div>
+              <div style="font-size:12.5px;color:var(--dim-2);margin-top:4px">есть в справочнике</div>
+            </div>
+          </div>
+          <div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--line-3);font-size:14.5px;line-height:1.6;color:var(--text-2)">Заявка рабочая. При этом модель не видела ни одного из этих значений — ни в запросе, ни в ответе инструмента.</div>
+        </div>
+      </div>
+      <div style="margin-top:20px;font-size:13.5px;line-height:1.6;color:var(--dim-2);max-width:78ch">Речь о свойстве подхода, а не о конкретных продуктах: односторонняя подмена не помнит, что подменяла, и не знает, куда подставлять обратно.</div>
+    </div>
+  </section>
+  <section id="cases" style="padding:120px 36px 0">
+    <div data-reveal>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.2em;color:var(--dim-2);margin-bottom:26px">ПОЧЕМУ ПРОСТОЕ РЕШЕНИЕ НЕ РАБОТАЕТ</div>
+      <h2 style="margin:0 0 20px;font-size:clamp(28px,3.6vw,46px);font-weight:900;letter-spacing:-.035em;max-width:26ch;text-wrap:balance">Заменить подмену обратно поиском по тексту — и курьер поедет по выдуманному адресу</h2>
+      <p style="margin:0 0 16px;font-size:17px;line-height:1.6;color:var(--text-2);max-width:62ch">Простое решение выглядит так: запомнили пару «настоящее ↔ подмена», модель ответила, нашли подмену в тексте и вернули настоящее. Это работает, пока модель повторяет подмену буква в букву. В аргументах вызова инструмента она этого почти никогда не делает.</p>
+      <p style="margin:0 0 36px;font-size:17px;line-height:1.6;color:var(--dim);max-width:62ch">Требовать от модели аккуратности бессмысленно — она пишет так, как ей удобно, и это правильное поведение. Поэтому подстраиваемся мы: узнаём свою подмену в любой форме, в которую её превратила модель.</p>
+    </div>
+    <div class="cards cards--n2" style="border:1px solid var(--line-3)" data-reveal>
+      <div style="min-width:0;background:var(--panel);padding:26px 24px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--dim-2);margin-bottom:20px">ПОИСК ПО ТЕКСТУ · КАК ЭТО ЛОМАЕТСЯ</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:2;color:var(--dim)">
+          <div>запомнили: <span class="hero-token" data-swap><span class="hero-token-real">Ленинский пр-т 42</span><span class="hero-token-fake">улица Грушевая, 63</span></span></div>
+          <div>модель написала в аргументе: <span style="color:var(--amber)">«грушевую 63»</span></div>
+          <div>ищем <span style="color:var(--accent-2)">«улица Грушевая, 63»</span> — <span style="color:var(--pink);animation:flashBad 2.6s ease-in-out both">не найдено</span></div>
+        </div>
+        <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--line-3);font-size:14.5px;line-height:1.6;color:var(--pink-2)">В CRM уходит «грушевую 63». Такого адреса нет — заказ уедет в никуда, и в базе останется человек, которого не существует.</div>
+      </div>
+      <div style="min-width:0;background:var(--panel);padding:26px 24px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--accent);margin-bottom:20px">PSEUDEX · КАК ЭТО РАБОТАЕТ</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:2;color:var(--dim)">
+          <div>помним не строку, а <span style="color:var(--text-2)">какое значение чем подменили</span></div>
+          <div>в аргументе узнаём <span style="color:var(--amber)">«грушевую 63»</span> как ту же подмену</div>
+          <div>подставляем <span style="color:var(--green)">Ленинский пр-т 42</span> — в исходной форме</div>
+        </div>
+        <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--line-3);font-size:14.5px;line-height:1.6;color:var(--text-2)">CRM получает адрес, который есть в справочнике. Модель этого адреса не видела ни на одном шаге.</div>
+      </div>
+    </div>
+    <div style="margin-top:44px" data-reveal>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--dim-2);margin-bottom:18px">ТАК ОНА ПИШЕТ НА САМОМ ДЕЛЕ · СЛУЧАИ ИЗ ПРАКТИКИ</div>
+      <div class="cards cards--n6" style="border:1px solid var(--line-3)">
+                  <div style="min-width:0;padding:22px 22px 24px;display:flex;flex-direction:column;gap:14px;transition:background .25s" class="hv-cell">
+            <div style="font-size:15px;line-height:1.45;color:var(--text-2)">Просклоняла подмену</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.5;color:var(--amber);padding:10px 12px;background:var(--panel-2);border-left:1px solid var(--amber-bg)">«ленина пятидесяти»</div>
+            <div style="display:grid;gap:7px;margin-top:2px">
+              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--pink)">✕</span>
+                <span style="font-size:13.5px;line-height:1.5;color:var(--pink-2)">поиск по тексту: не совпало</span>
+              </div>
+              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green)">→</span>
+                <span style="font-size:13.5px;line-height:1.5;color:var(--green)">Ленина 50</span>
+              </div>
+            </div>
+          </div>
+        
+          <div style="min-width:0;padding:22px 22px 24px;display:flex;flex-direction:column;gap:14px;transition:background .25s" class="hv-cell">
+            <div style="font-size:15px;line-height:1.45;color:var(--text-2)">Написала латиницей</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.5;color:var(--amber);padding:10px 12px;background:var(--panel-2);border-left:1px solid var(--amber-bg)">BITYUKOVA</div>
+            <div style="display:grid;gap:7px;margin-top:2px">
+              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--pink)">✕</span>
+                <span style="font-size:13.5px;line-height:1.5;color:var(--pink-2)">поиск по тексту: не совпало</span>
+              </div>
+              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green)">→</span>
+                <span style="font-size:13.5px;line-height:1.5;color:var(--green)">Битюкова</span>
+              </div>
+            </div>
+          </div>
+        
+          <div style="min-width:0;padding:22px 22px 24px;display:flex;flex-direction:column;gap:14px;transition:background .25s" class="hv-cell">
+            <div style="font-size:15px;line-height:1.45;color:var(--text-2)">Разнесла имя по трём полям</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.5;color:var(--amber);padding:10px 12px;background:var(--panel-2);border-left:1px solid var(--amber-bg)">last / first / middle</div>
+            <div style="display:grid;gap:7px;margin-top:2px">
+              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--pink)">✕</span>
+                <span style="font-size:13.5px;line-height:1.5;color:var(--pink-2)">поиск по тексту: совпала только фамилия</span>
+              </div>
+              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green)">→</span>
+                <span style="font-size:13.5px;line-height:1.5;color:var(--green)">Три части одного человека</span>
+              </div>
+            </div>
+          </div>
+        
+          <div style="min-width:0;padding:22px 22px 24px;display:flex;flex-direction:column;gap:14px;transition:background .25s" class="hv-cell">
+            <div style="font-size:15px;line-height:1.45;color:var(--text-2)">Сократила до инициалов</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.5;color:var(--amber);padding:10px 12px;background:var(--panel-2);border-left:1px solid var(--amber-bg)">«Т. О.»</div>
+            <div style="display:grid;gap:7px;margin-top:2px">
+              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--pink)">✕</span>
+                <span style="font-size:13.5px;line-height:1.5;color:var(--pink-2)">поиск по тексту: искать нечего</span>
+              </div>
+              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green)">→</span>
+                <span style="font-size:13.5px;line-height:1.5;color:var(--green)">Тарасова Ольга</span>
+              </div>
+            </div>
+          </div>
+        
+          <div style="min-width:0;padding:22px 22px 24px;display:flex;flex-direction:column;gap:14px;transition:background .25s" class="hv-cell">
+            <div style="font-size:15px;line-height:1.45;color:var(--text-2)">Склеила две подмены дефисом</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.5;color:var(--amber);padding:10px 12px;background:var(--panel-2);border-left:1px solid var(--amber-bg)">«Мухина-Бирюкова»</div>
+            <div style="display:grid;gap:7px;margin-top:2px">
+              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--pink)">✕</span>
+                <span style="font-size:13.5px;line-height:1.5;color:var(--pink-2)">поиск по тексту: не совпало ни с одной</span>
+              </div>
+              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green)">→</span>
+                <span style="font-size:13.5px;line-height:1.5;color:var(--green)">Обе половины настоящими</span>
+              </div>
+            </div>
+          </div>
+        
+          <div style="min-width:0;padding:22px 22px 24px;display:flex;flex-direction:column;gap:14px;transition:background .25s" class="hv-cell">
+            <div style="font-size:15px;line-height:1.45;color:var(--text-2)">Исправила опечатку клиента</div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.5;color:var(--amber);padding:10px 12px;background:var(--panel-2);border-left:1px solid var(--amber-bg)">«Мончегорская»</div>
+            <div style="display:grid;gap:7px;margin-top:2px">
+              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--pink)">✕</span>
+                <span style="font-size:13.5px;line-height:1.5;color:var(--pink-2)">поиск по тексту: не совпало</span>
+              </div>
+              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green)">→</span>
+                <span style="font-size:13.5px;line-height:1.5;color:var(--green)">Как пишет реестр</span>
+              </div>
+            </div>
+          </div>
+        
+      </div>
+      <div style="margin-top:20px;font-size:13.5px;line-height:1.6;color:var(--dim-2);max-width:78ch">Каждый случай — класс ошибок, найденный измерением и закрытый. То, что не закрыто, мы публикуем тоже: остаются имена и улицы, которых нет ни в одном словаре.</div>
+    </div>
+    <div class="cards cards--n3" style="margin-top:56px;border:1px solid var(--line-3)" data-reveal>
+      <div style="min-width:0;background:var(--panel);padding:26px 24px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--accent);margin-bottom:16px">ПОДМЕНА НЕ МЕШАЕТ МОДЕЛИ</div>
+        <p style="margin:0;font-size:15px;line-height:1.65;color:var(--dim);text-wrap:pretty">Женское имя подменяется женским, улица — улицей, падеж сохраняется, у СНИЛС сходится контрольная сумма. Рассогласованную подмену модель замечает и начинает править сама — и вот тогда агент действительно ломается.</p>
+      </div>
+      <div style="min-width:0;background:var(--panel);padding:26px 24px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--accent);margin-bottom:16px">А МОДЕЛЬ НЕ МЕШАЕТ НАМ</div>
+        <p style="margin:0;font-size:15px;line-height:1.65;color:var(--dim);text-wrap:pretty">Просклоняла, сократила до инициалов, разнесла по трём полям, написала латиницей — мы узнаём своё значение в любой из этих форм и подставляем настоящее в том виде, в котором его ждёт ваша база.</p>
+      </div>
+      <div style="min-width:0;background:var(--accent-bg);padding:26px 24px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--accent-2);margin-bottom:16px">ЭТО И ЕСТЬ ВСЯ РАБОТА</div>
+        <p style="margin:0;font-size:15px;line-height:1.65;color:var(--text-2);text-wrap:pretty">Обе половины — про русский язык, падежи и документы РФ. Готового решения для этого мы не нашли, поэтому сделали сами. Если знаете второе — напишите, правда интересно.</p>
+      </div>
+    </div>
+  </section>
+
+<section style="padding:120px 36px 140px">
+  <div style="border:1px solid var(--accent);background:var(--accent-bg);padding:32px;display:flex;align-items:center;justify-content:space-between;gap:32px;flex-wrap:wrap" data-reveal>
+    <div style="max-width:60ch">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--accent-2);margin-bottom:14px">ДАЛЬШЕ — ДЕЛО</div>
+      <div style="font-size:22px;font-weight:700;letter-spacing:-.02em;color:var(--text)">Пятнадцать минут до первого замаскированного запроса.</div>
+      <div style="margin-top:10px;font-size:15px;line-height:1.6;color:var(--text-3)">Бесплатный тариф не спрашивает карту. Ключ работает сразу.</div>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <a href="/#start" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:16px 26px;border:1px solid var(--accent);color:var(--accent-2)" class="hv-btn">НАЧАТЬ</a>
+      <a href="/detection" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:16px 26px;border:1px solid var(--line);color:var(--dim)" class="hv-btn-ghost">ЧТО МЫ НАХОДИМ</a>
+    </div>
+  </div>
+</section>
+{% endblock %}
+{% block script %}<script src="{% static 'landing.js' %}"></script>{% endblock %}

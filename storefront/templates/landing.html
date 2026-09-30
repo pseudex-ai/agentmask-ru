@@ -91,17 +91,18 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
 
 {% block nav %}
 <nav style="align-items:center;gap:28px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em">
-  <a href="#gap" style="color:var(--dim)" class="hv-text">РАЗНИЦА</a>
-  <a href="#video" style="color:var(--dim)" class="hv-text">ВИДЕО</a>
   <a href="#how" style="color:var(--dim)" class="hv-text">КАК РАБОТАЕТ</a>
-  <a href="#legal" style="color:var(--dim)" class="hv-text">152-ФЗ</a>
-  <a href="#start" style="color:var(--dim)" class="hv-text">СТАРТ</a>
+  <a href="/how" style="color:var(--dim)" class="hv-text">ПОЧЕМУ ЭТО СЛОЖНЕЕ</a>
+  <a href="/detection" style="color:var(--dim)" class="hv-text">ЧТО НАХОДИМ</a>
   <a href="#pricing" style="color:var(--dim)" class="hv-text">ЦЕНЫ</a>
+  <a href="#legal" style="color:var(--dim)" class="hv-text nav-secondary">152-ФЗ</a>
+  <a href="/faq" style="color:var(--dim)" class="hv-text nav-secondary">FAQ</a>
 </nav>
 {% endblock %}
 
 {% block head_cta %}
 <div class="head-cta" style="display:flex;align-items:center;gap:10px">
+  {% include "_theme_toggle.html" %}
   {% if user.is_staff %}<a href="{% url 'ops_fleet' %}" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:10px 15px;border:1px solid var(--line);color:var(--dim)" class="hv-btn-ghost">ОПЕРАЦИИ</a>{% endif %}
   {% if user.is_authenticated %}
     <a href="{% url 'cabinet' %}" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:10px 15px;border:1px solid var(--line);color:var(--dim)" class="hv-btn-ghost">КАБИНЕТ</a>
@@ -117,138 +118,129 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
 
 {% block content %}
 <section id="top" style="padding:32px 36px 0;position:relative">
-    <div style="position:absolute;top:-180px;left:-6%;width:70%;height:620px;pointer-events:none;background:radial-gradient(45% 50% at 40% 45%,rgba(179,160,234,.16),rgba(179,160,234,.05) 45%,transparent 72%);filter:blur(24px);animation:glowDrift 19s ease-in-out infinite"></div>
     <div style="display:flex;align-items:center;gap:16px;margin-bottom:18px;position:relative">
       <svg width="20" height="20" viewBox="0 0 32 32" fill="none" style="display:block;flex:none">
         <rect x="3" y="11" width="18" height="18" rx="5" fill="none" stroke="var(--accent)" stroke-width="2.4" style="animation:markPulse 5.5s ease-in-out infinite"></rect>
         <rect x="11" y="3" width="18" height="18" rx="5" fill="var(--bg)" stroke="var(--accent)" stroke-width="2.4"></rect>
       </svg>
-      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;color:var(--accent)">ШЛЮЗ ПЕРСОНАЛЬНЫХ ДАННЫХ ДЛЯ LLM-АГЕНТОВ · 152-ФЗ</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;color:var(--accent)">ОБЕЗЛИЧИВАНИЕ ПЕРСОНАЛЬНЫХ ДАННЫХ ДЛЯ ИИ-АГЕНТОВ · 152-ФЗ</span>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:clamp(32px,4vw,64px);align-items:start">
       <div>
-        <h1 style="margin:0;font-size:clamp(28px,4.6vw,60px);line-height:1;font-weight:900;letter-spacing:-.04em;max-width:15ch;text-wrap:balance;position:relative"><span style="display:block;animation:lineIn 1.1s cubic-bezier(.16,.84,.26,1) both">Модель не видит данных.</span><span style="display:block;color:var(--accent);animation:lineIn 1.1s cubic-bezier(.16,.84,.26,1) .22s both">Инструменты видят.</span></h1>
-        <p style="margin:24px 0 0;max-width:52ch;font-size:18px;line-height:1.5;color:var(--text-2);text-wrap:pretty">Агент звонит на настоящий номер и доставляет на настоящий адрес. Модель при этом работает только с подменой.</p>
-        <p style="margin:14px 0 0;max-width:52ch;font-size:15px;line-height:1.55;color:var(--dim);text-wrap:pretty">Контейнер стоит внутри вашего периметра. К нам уходят счётчики — ни текстов, ни значений.</p>
-        <div style="display:flex;gap:12px;margin-top:26px;flex-wrap:wrap">
+        <h1 style="margin:0;font-size:clamp(28px,4.6vw,60px);line-height:1;font-weight:900;letter-spacing:-.04em;max-width:15ch;text-wrap:balance;position:relative"><span style="display:block;font-weight:300;animation:lineIn 1.1s cubic-bezier(.16,.84,.26,1) both">Модель не видит данных.</span><span style="display:block;font-weight:900;color:var(--accent);animation:lineIn 1.1s cubic-bezier(.16,.84,.26,1) .22s both">Инструменты видят.</span></h1>
+        <p style="margin:26px 0 0;max-width:46ch;font-size:18px;line-height:1.55;color:var(--text-2);text-wrap:pretty">Агент звонит на настоящий номер и доставляет на настоящий адрес. Модель видит только подмену.</p>
+        <div style="display:flex;gap:12px;margin-top:28px;flex-wrap:wrap">
           <a href="#start" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:14px 24px;border:1px solid var(--accent);color:var(--accent-2)" class="hv-btn">НАЧАТЬ ЗА 15 МИНУТ</a>
           <a href="#video" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:14px 24px;border:1px solid var(--line);color:var(--dim)" class="hv-btn-ghost">ПОСМОТРЕТЬ КАК РАБОТАЕТ</a>
         </div>
         <div style="display:flex;border:1px solid var(--line);max-width:620px;margin-top:22px">
           <code data-copy="docker run -d -p 8000:8000 -p 127.0.0.1:8081:8081 {{ image }}"
-                style="flex:1;padding:12px 18px;font-size:12.5px;color:var(--text-3);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-family:'JetBrains Mono',monospace"><span style="color:var(--accent)">$</span> docker run -d -p 8000:8000 {{ image }}</code>
+                style="flex:1;padding:12px 18px;font-size:12.5px;color:var(--text-3);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-family:'JetBrains Mono',monospace"><span style="color:var(--accent)">$</span><span class="caret" aria-hidden="true"></span> docker run -d -p 8000:8000 {{ image }}</code>
           <button type="button" data-copy-btn style="border:0;border-left:1px solid var(--line);background:transparent;color:var(--dim-2);font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.16em;padding:0 18px;cursor:pointer" class="hv-text">КОПИРОВАТЬ</button>
         </div>
-        <div style="margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--dim-3);letter-spacing:.04em">{{ trial_days }} ДНЕЙ ПРОБЫ · КАРТА НЕ НУЖНА · ХОСТИНГ В РФ</div>
+        <div style="margin-top:16px;font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--dim-3);letter-spacing:.04em;line-height:1.9">{{ trial_days }} ДНЕЙ ПРОБЫ · КАРТА НЕ НУЖНА · КОНТЕЙНЕР В ВАШЕМ ПЕРИМЕТРЕ · ХОСТИНГ В РФ</div>
       </div>
-      <div style="border:1px solid var(--line);background:var(--panel);min-height:456px;margin-right:-14px;display:flex;flex-direction:column">
+      <div id="hero-panel" style="border:1px solid var(--line);background:var(--panel);min-height:456px;margin-right:-14px;display:flex;flex-direction:column">
         <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 18px;border-bottom:1px solid var(--line-3)">
           <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--dim-2)">ОДИН ЗАКАЗ, ЦЕЛИКОМ</div>
-          <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--accent)" id="hero-phase"></div>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--accent)" id="hero-phase"></div>
+            <div class="hero-ctl">
+              <button type="button" data-hero-step="-1" aria-label="Предыдущий шаг">‹</button>
+              <button type="button" data-hero-step="1" aria-label="Следующий шаг">›</button>
+            </div>
+          </div>
         </div>
+        <div class="hero-rail" id="hero-rail" aria-hidden="true"></div>
         <div style="padding:16px;flex:1" id="hero-dialog"></div>
         <div style="padding:10px 18px;border-top:1px solid var(--line-3);font-size:12.5px;line-height:1.5;color:var(--dim-2)">Настоящие значения не выходили за периметр: модель работала с подменой, инструмент — с реальными данными.</div>
       </div>
     </div>
-    <div style="margin-top:80px;border-top:1px solid var(--line);padding-top:28px;display:flex;align-items:baseline;justify-content:space-between;gap:32px;flex-wrap:wrap" data-reveal>
-      <div style="max-width:52ch;display:grid;gap:14px">
-        <div style="font-size:19px;line-height:1.55;color:var(--text-2)">Чат-боту достаточно спрятать данные: он только отвечает текстом. Агент вызывает инструменты — звонит, оформляет заказ, пишет в CRM, — и инструментам нужны настоящий номер и настоящий адрес.</div>
-        <div style="font-size:19px;line-height:1.55;color:var(--text);border-left:1px solid var(--accent);padding-left:16px">Поэтому маскирование — половина задачи. Вторая половина — вернуть настоящие значения в вызов инструмента, не сломав работу агента: в любой форме, в которую их превратила модель, по-русски, с падежами и документами РФ.</div>
-        <div style="font-size:17px;line-height:1.55;color:var(--dim)">Мы искали такое решение как покупатели. Не нашли — сделали сами.</div>
+    <div class="hero-why" style="margin-top:80px;border-top:1px solid var(--line);padding-top:32px;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,340px);gap:clamp(28px,4vw,64px);align-items:start" data-reveal>
+      <div style="display:grid;gap:14px">
+        <div style="font-size:19px;line-height:1.6;max-width:54ch;color:var(--text-2)">Чат-боту достаточно спрятать данные. Агенту — нет: инструментам нужны настоящий номер и настоящий адрес.</div>
+        <div style="font-size:19px;line-height:1.6;max-width:54ch;color:var(--text);border-left:1px solid var(--accent);padding-left:16px">Маскирование — половина задачи. Вторая — вернуть настоящие значения в вызов инструмента, не сломав работу агента.</div>
+        <div style="font-size:17px;line-height:1.6;max-width:54ch;color:var(--dim)">Мы искали такое решение как покупатели. Не нашли — сделали сами.</div>
       </div>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;color:var(--dim-2);max-width:34ch;line-height:1.9">ЕСЛИ ЗНАЕТЕ ВТОРОЕ ТАКОЕ РЕШЕНИЕ В СНГ — НАПИШИТЕ, ПРАВДА ИНТЕРЕСНО</div>
+      {% comment %}
+      КАРТОЧКА ЗАНИМАЕТ ПУСТОТУ СМЫСЛОМ, А НЕ ДЕКОРАЦИЕЙ. Здесь было две
+      колонки с зияющей серединой: текст слева, приписка справа, между ними
+      ничего. Карточка показывает ровно тот факт, ради которого существует
+      продукт — одно значение в двух формах, — и повторяет знак логотипа:
+      два прямоугольника внахлёст, меняющиеся местами по наведению.
+      {% endcomment %}
+      <div class="swap-card" style="border:1px solid var(--line-2);background:var(--panel)">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 16px;border-bottom:1px solid var(--line-3)">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--dim-2)">ПОДМЕНА ТОГО ЖЕ РОДА</span>
+          <svg class="swap-mark" width="18" height="18" viewBox="0 0 32 32" fill="none" aria-hidden="true" style="display:block;flex:none">
+            <rect class="sm-a" x="3" y="11" width="18" height="18" rx="5" fill="var(--accent)"></rect>
+            <rect class="sm-b" x="11" y="3" width="18" height="18" rx="5" fill="var(--panel)" stroke="var(--accent)" stroke-width="2.6"></rect>
+          </svg>
+        </div>
+        <div style="padding:18px 16px 20px;display:grid;gap:14px">
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.18em;color:var(--dim-3)">НАСТОЯЩЕЕ · У ВАС</div>
+            <div style="margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--text-2)">Соколова Марина Игоревна</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="height:1px;flex:1;background:var(--line-2)"></span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;color:var(--accent)">⇅</span>
+            <span style="height:1px;flex:1;background:var(--line-2)"></span>
+          </div>
+          <div>
+            <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;letter-spacing:.18em;color:var(--accent)">ПОДМЕНА · У МОДЕЛИ</div>
+            <div style="margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--accent-2)">Битюкова Елена Андреевна</div>
+          </div>
+          <div style="font-size:13px;line-height:1.6;color:var(--dim)">Женское имя, три части, тот же падеж.</div>
+        </div>
+        {% comment %}Здесь стояла реплика «знаете второе такое решение — напишите,
+        правда интересно». Это не сведения о продукте, а шутка в технической
+        подписи; на месте, где человек читает про формат-сохраняющую подмену, она
+        читается как неуместность. Вместо неё — ссылка туда, где эта половина
+        задачи разобрана целиком.{% endcomment %}
+        <a href="/how" class="hv-text" style="display:block;padding:12px 16px;border-top:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.12em;color:var(--dim-2);text-decoration:none">ПОЧЕМУ ЭТО СЛОЖНЕЕ →</a>
+      </div>
     </div>
-    <div class="cards cards--n6" style="border:1px solid var(--line-3);margin-top:32px" data-reveal data-counters>
+    <div class="cards cards--n6" style="border:1px solid var(--line-3);margin-top:32px" data-reveal-stagger data-counters>
       <div class="metric metric--lead">
         <div class="metric-label">НЕ ДОШЛО</div>
         <div class="metric-num" style="font-size:34px;font-weight:900;letter-spacing:-.035em;color:var(--accent-2)" data-count-to="99.7" data-count-dec="1" data-count-suffix="%">99,7%</div>
-        <div class="metric-note">Доля персональных значений, которые не дошли до модели на самых трудных формах. Остаток мы печатаем.</div>
+        <div class="metric-note">На самых трудных формах. Остаток называем.</div>
       </div>
       <div class="metric">
         <div class="metric-label">ТИПОВ ПД</div>
         <div class="metric-num" style="font-size:34px;font-weight:900;letter-spacing:-.035em" data-count-to="{{ found_count }}">{{ found_count }}</div>
-        <div class="metric-note">СНИЛС, ИНН, паспорт, ОМС, карта, счёт — четыре из них с проверкой контрольной суммы, а не по маске.</div>
+        <div class="metric-note">Четыре из них — по контрольной сумме, а не по маске.</div>
       </div>
       <div class="metric">
         <div class="metric-label">ЧАСА АВТОНОМИИ</div>
         <div class="metric-num" style="font-size:34px;font-weight:900;letter-spacing:-.035em" data-count-to="48">48</div>
-        <div class="metric-note">Аренда суточная, плюс 48 часов отсрочки, если недоступны мы: контейнер работает на предоплаченном резерве и предупреждает.</div>
+        <div class="metric-note">Если недоступны мы — контейнер работает на резерве.</div>
       </div>
       <div class="metric">
         <div class="metric-label">ДАННЫХ У НАС</div>
         <div class="metric-num" style="font-size:34px;font-weight:900;letter-spacing:-.035em">0</div>
-        <div class="metric-note">Ни текстов, ни токенов, ни значений. К нам уходят только счётчики — и счёт от них не зависит.</div>
+        <div class="metric-note">Только счётчики, и счёт от них не зависит.</div>
       </div>
       <div class="metric">
         <div class="metric-label">СЕКУНДЫ</div>
         <div class="metric-num" style="font-size:34px;font-weight:900;letter-spacing:-.035em" data-count-to="0.2" data-count-dec="1" data-count-prefix="+">+0,2</div>
-        <div class="metric-note">Столько добавляется к вызову модели. На фоне 1,5–2 секунд самого вызова агент работает как раньше.</div>
+        <div class="metric-note">К вызову модели, на фоне 1,5–2 секунд самого вызова.</div>
       </div>
       <div class="metric">
         <div class="metric-label">МИНУТ</div>
         <div class="metric-num" style="font-size:34px;font-weight:900;letter-spacing:-.035em" data-count-to="15">15</div>
-        <div class="metric-note">От ключа до первого замаскированного запроса. Код приложения не меняется — только переменная окружения.</div>
+        <div class="metric-note">Код приложения не меняется — только переменная окружения.</div>
       </div>
     </div>
   </section>
 
-  <section id="gap" style="padding:120px 36px 0">
-    <div style="max-width:1100px" data-reveal>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.2em;color:var(--dim-2);margin-bottom:26px">РАЗНИЦА</div>
-      <h2 style="margin:0 0 20px;font-size:clamp(30px,4.2vw,52px);font-weight:900;letter-spacing:-.035em;max-width:24ch;text-wrap:balance">Спрятать данные умеют все. Вернуть их в вызов инструмента — нет</h2>
-      <p style="margin:0;font-size:17px;line-height:1.6;color:var(--dim);max-width:62ch">Маскирование по дороге в модель — бесплатная функция шлюза. Работающему агенту нужна обратная операция, и она начинается там, где фильтр заканчивается.</p>
-    </div>
-    <div style="border:1px solid var(--line);margin-top:44px" data-reveal>
-      <div class="gap-row" style="display:grid;grid-template-columns:minmax(220px,1fr) 130px 130px;background:var(--panel);border-bottom:1px solid var(--line)">
-        <div style="padding:14px 22px;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--dim-2)">ЧТО НУЖНО АГЕНТУ В ПРОДЕ</div>
-        <div style="padding:14px 18px;border-left:1px solid var(--line);font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--dim-2)">ТОЛЬКО МАСКИРОВАНИЕ</div>
-        <div style="padding:14px 18px;border-left:1px solid var(--line);font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--accent)">PSEUDEX</div>
-      </div>
-              <div class="gap-row hv-row" style="display:grid;grid-template-columns:minmax(220px,1fr) 130px 130px;border-bottom:1px solid var(--line-3);align-items:center;transition:background .25s,box-shadow .25s">
-          <div style="padding:18px 22px;font-size:16px;line-height:1.45;color:var(--text-2)">Спрятать телефон, email и ФИО от модели</div>
-          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--green)">да</div>
-          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--green)">да</div>
-        </div>
-      
-        <div class="gap-row hv-row" style="display:grid;grid-template-columns:minmax(220px,1fr) 130px 130px;border-bottom:1px solid var(--line-3);align-items:center;transition:background .25s,box-shadow .25s">
-          <div style="padding:18px 22px;font-size:16px;line-height:1.45;color:var(--text-2)">Настоящее значение в аргументе вызова инструмента</div>
-          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--pink)">нет</div>
-          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--green)">да</div>
-        </div>
-      
-        <div class="gap-row hv-row" style="display:grid;grid-template-columns:minmax(220px,1fr) 130px 130px;border-bottom:1px solid var(--line-3);align-items:center;transition:background .25s,box-shadow .25s">
-          <div style="padding:18px 22px;font-size:16px;line-height:1.45;color:var(--text-2)">Один человек — один токен завтра и в соседнем диалоге</div>
-          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--pink)">нет</div>
-          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--green)">да</div>
-        </div>
-      
-        <div class="gap-row hv-row" style="display:grid;grid-template-columns:minmax(220px,1fr) 130px 130px;border-bottom:1px solid var(--line-3);align-items:center;transition:background .25s,box-shadow .25s">
-          <div style="padding:18px 22px;font-size:16px;line-height:1.45;color:var(--text-2)">СНИЛС, ИНН, паспорт, ОМС с проверкой контрольной суммы</div>
-          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--pink)">нет</div>
-          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--green)">да</div>
-        </div>
-      
-        <div class="gap-row hv-row" style="display:grid;grid-template-columns:minmax(220px,1fr) 130px 130px;border-bottom:1px solid var(--line-3);align-items:center;transition:background .25s,box-shadow .25s">
-          <div style="padding:18px 22px;font-size:16px;line-height:1.45;color:var(--text-2)">ФИО в падежах, отчества, уменьшительные имена</div>
-          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--amber)">частично</div>
-          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--green)">да</div>
-        </div>
-      
-        <div class="gap-row hv-row" style="display:grid;grid-template-columns:minmax(220px,1fr) 130px 130px;border-bottom:1px solid var(--line-3);align-items:center;transition:background .25s,box-shadow .25s">
-          <div style="padding:18px 22px;font-size:16px;line-height:1.45;color:var(--text-2)">Раскрыть значение по токену — с записью, кто и когда</div>
-          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--pink)">нет</div>
-          <div style="padding:18px;border-left:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.1em;color:var(--green)">да</div>
-        </div>
-      
-    </div>
-    <div style="margin-top:16px;font-size:13px;line-height:1.6;color:var(--dim-3);max-width:70ch">В левой колонке — маскирование как подход, а не конкретный продукт: односторонняя подмена без состояния между запросами.</div>
-  </section>
 
   <section id="video" style="padding:120px 36px 0">
     <div data-reveal>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.2em;color:var(--dim-2);margin-bottom:26px">ЗАПИСЬ ЭКРАНА · 4 МИНУТЫ · БЕЗ МОНТАЖНЫХ ФОКУСОВ</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.2em;color:var(--dim-2);margin-bottom:26px">ЗАПИСЬ ЭКРАНА · 4 МИНУТЫ</div>
       <h2 style="margin:0 0 20px;font-size:clamp(28px,3.6vw,46px);font-weight:900;letter-spacing:-.035em;max-width:24ch;text-wrap:balance">Посмотрите, как это работает — от подключения до вызова инструмента</h2>
-      <p style="margin:0 0 40px;font-size:17px;line-height:1.6;color:var(--text-2);max-width:62ch">Запись реального экрана: подключение, проверка, что модель действительно не видит данных, и круг с вызовом инструмента, где инструмент получает настоящее значение. Ничего не ускорено и не вырезано.</p>
+      <p style="margin:0 0 40px;font-size:17px;line-height:1.6;color:var(--text-2);max-width:62ch">Подключение, проверка, круг с вызовом инструмента. Ничего не ускорено.</p>
       <div style="border:1px solid var(--line);background:#000;padding:10px;border-radius:16px">
         <video controls preload="none" playsinline poster="{% static 'media/setup-poster.jpg' %}"
                style="display:block;width:100%;height:100%;aspect-ratio:16/9;object-fit:contain;border-radius:10px">
@@ -262,26 +254,30 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
   <section id="demo" style="padding:120px 36px 0">
     <div data-reveal>
       <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.2em;color:var(--dim-2);margin-bottom:26px">СКОЛЬКО НЕ ДОХОДИТ ДО МОДЕЛИ</div>
-      <h2 style="margin:0 0 20px;font-size:clamp(28px,3.6vw,46px);font-weight:900;letter-spacing:-.035em;max-width:26ch;text-wrap:balance">99,7% персональных значений не доходят до модели. Оставшиеся 0,3% мы печатаем</h2>
-      <p style="margin:0 0 16px;font-size:17px;line-height:1.6;color:var(--text-2);max-width:62ch">Меряем не на чистых шаблонах, а на том, как люди пишут в живых чатах и звонят в поддержку: опечатки, латинская раскладка, числа словами, падежи, уменьшительные имена, значение, размазанное по трём репликам.</p>
-      <p style="margin:0 0 40px;font-size:16px;line-height:1.6;color:var(--dim);max-width:62ch">Именно на таком тексте готовые библиотеки теряют больше всего: на чистом «Иванов Иван Иванович» работает любая, а реальные диалоги так не выглядят почти никогда.</p>
+      <h2 style="margin:0 0 20px;font-size:clamp(28px,3.6vw,46px);font-weight:900;letter-spacing:-.035em;max-width:26ch;text-wrap:balance">99,7% персональных значений не доходят до модели. Оставшиеся 0,3% мы называем</h2>
+      <p style="margin:0 0 16px;font-size:17px;line-height:1.6;color:var(--text-2);max-width:62ch">Меряем на живых чатах и звонках: опечатки, раскладка, числа словами, падежи, имена.</p>
+      <p style="margin:0 0 40px;font-size:16px;line-height:1.6;color:var(--dim);max-width:62ch">На чистом «Иванов Иван Иванович» работает любая библиотека. Живые диалоги так не выглядят.</p>
     </div>
-    <div class="cards cards--n4" style="border:1px solid var(--line-3);margin-bottom:56px" data-reveal>
-      <div style="min-width:0;background:var(--panel);padding:24px;">
-        <div style="font-size:30px;font-weight:900;letter-spacing:-.035em;color:var(--accent-2)">Живые диалоги</div>
-        <div style="margin-top:10px;font-size:13.5px;line-height:1.55;color:var(--dim)">Не чистые шаблоны, а формы из настоящих переписок поддержки и колл-центров: как люди пишут, а не как удобно детектору.</div>
+    <div class="cards cards--n4" style="border:1px solid var(--line-3);margin-bottom:56px" data-reveal-stagger>
+      <div style="min-width:0;background:var(--panel);padding:28px 26px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--accent)">01</div>
+        <div style="margin-top:12px;font-size:23px;font-weight:800;letter-spacing:-.03em;color:var(--text)">Живые диалоги</div>
+        <div style="margin-top:10px;font-size:14.5px;line-height:1.6;color:var(--dim)">Формы из настоящих переписок поддержки, а не удобные детектору.</div>
       </div>
-      <div style="min-width:0;padding:24px;">
-        <div style="font-size:30px;font-weight:900;letter-spacing:-.035em;color:var(--green)">Грязный текст</div>
-        <div style="margin-top:10px;font-size:13.5px;line-height:1.55;color:var(--dim)">Опечатки, перепутанная раскладка, распознанная речь, числа словами. Ни одной утечки и ни одного ложного срабатывания.</div>
+      <div style="min-width:0;padding:28px 26px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--accent)">02</div>
+        <div style="margin-top:12px;font-size:23px;font-weight:800;letter-spacing:-.03em;color:var(--text)">Грязный текст</div>
+        <div style="margin-top:10px;font-size:14.5px;line-height:1.6;color:var(--dim)">Опечатки, раскладка, распознанная речь, числа словами.</div>
       </div>
-      <div style="min-width:0;padding:24px;">
-        <div style="font-size:30px;font-weight:900;letter-spacing:-.035em;color:var(--green)">Документы РФ</div>
-        <div style="margin-top:10px;font-size:13.5px;line-height:1.55;color:var(--dim)">СНИЛС, ИНН, паспорт, карта — по контрольной сумме, а не по маске. Номер, которого не бывает, в подмену не уйдёт.</div>
+      <div style="min-width:0;padding:28px 26px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--accent)">03</div>
+        <div style="margin-top:12px;font-size:23px;font-weight:800;letter-spacing:-.03em;color:var(--text)">Документы РФ</div>
+        <div style="margin-top:10px;font-size:14.5px;line-height:1.6;color:var(--dim)">Четыре документа РФ — по контрольной сумме, а не по маске.</div>
       </div>
-      <div style="min-width:0;padding:24px;">
-        <div style="font-size:30px;font-weight:900;letter-spacing:-.035em;color:var(--amber)">Что осталось</div>
-        <div style="margin-top:10px;font-size:13.5px;line-height:1.55;color:var(--dim)">Имена и улицы, которых нет ни в одном словаре. Их мы называем, а не округляем до ста процентов.</div>
+      <div style="min-width:0;padding:28px 26px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--accent)">04</div>
+        <div style="margin-top:12px;font-size:23px;font-weight:800;letter-spacing:-.03em;color:var(--text)">Что осталось</div>
+        <div style="margin-top:10px;font-size:14.5px;line-height:1.6;color:var(--dim)">Имена и улицы вне словарей. Их мы называем, а не округляем.</div>
       </div>
     </div>
     <div style="display:flex;align-items:baseline;justify-content:space-between;gap:32px;flex-wrap:wrap;margin-bottom:20px" data-reveal>
@@ -295,14 +291,14 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       <button role="tab" aria-selected="false" data-demo="3" style="flex:1;min-width:150px;border:0;border-right:1px solid var(--line);padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">ПО РЕПЛИКАМ</button>
       <button role="tab" aria-selected="false" data-demo="4" style="flex:1;min-width:150px;border:0;border-right:1px solid var(--line);padding:15px 18px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;cursor:pointer;text-align:left">ФИО И ДАТА РОЖДЕНИЯ</button>
     </div>
-    <div class="demo-panes" style="display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-top:0">
+    <div class="demo-panes" data-parallax style="display:grid;grid-template-columns:1fr 1fr;border:1px solid var(--line);border-top:0">
       <div style="padding:28px 26px 32px;border-right:1px solid var(--line)">
         <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--dim-2);margin-bottom:20px">ЧТО НАПИСАЛ КЛИЕНТ</div>
         <div style="font-family:'JetBrains Mono',monospace;font-size:14px;line-height:2.1;color:var(--text-2);white-space:pre-wrap" id="demo-orig"></div>
       </div>
       <div style="padding:28px 26px 32px;background:var(--panel)">
         <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--accent);margin-bottom:20px">ЧТО УВИДИТ МОДЕЛЬ</div>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:14px;line-height:2.1;color:var(--text-2);white-space:pre-wrap" id="demo-masked"></div>
+        <div class="mask-cursor" style="font-family:'JetBrains Mono',monospace;font-size:14px;line-height:2.1;color:var(--text-2);white-space:pre-wrap" id="demo-masked"></div>
       </div>
     </div>
     <div style="margin-top:18px;display:grid;grid-template-columns:minmax(0,1fr);gap:10px;max-width:82ch">
@@ -312,7 +308,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       </div>
       <div style="display:grid;grid-template-columns:16px minmax(0,1fr);gap:10px;align-items:baseline">
         <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--edge)">→</span>
-        <span style="font-size:14px;line-height:1.6;color:var(--dim)">Подмена формат-сохраняющая: модель видит такой же телефон, такой же адрес и такую же грамматику — и продолжает работать как обычно.</span>
+        <span style="font-size:14px;line-height:1.6;color:var(--dim)">Модель видит такой же телефон, адрес и грамматику.</span>
       </div>
     </div>
   </section>
@@ -320,11 +316,11 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
   <section id="how" style="padding:120px 36px 0">
     <div data-reveal>
       <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.2em;color:var(--dim-2);margin-bottom:26px">КАК РАБОТАЕТ</div>
-      <h2 style="margin:0 0 20px;font-size:clamp(28px,3.4vw,42px);font-weight:900;letter-spacing:-.035em;max-width:26ch;text-wrap:balance">Агент — это модель плюс ваши функции. Данные нужны функциям, а не модели</h2>
-      <p style="margin:0 0 16px;font-size:17px;line-height:1.6;color:var(--text-2);max-width:62ch">Модель сама ничего не делает. Она читает переписку и решает, какую вашу функцию вызвать: «оформить доставку», «найти клиента в CRM». Звонит и привозит заказ ваш код — ему нужен настоящий номер и настоящий адрес.</p>
-      <p style="margin:0 0 36px;font-size:17px;line-height:1.6;color:var(--dim);max-width:62ch">Модели они не нужны нигде: чтобы понять «клиент просит доставку на завтра», достаточно любого правдоподобного имени. Значит настоящие данные должны попадать ровно в одно место — в ваш код. Pseudex стоит на этой границе и три раза за один заказ решает, что кому показать.</p>
+      <h2 style="margin:0 0 20px;font-size:clamp(28px,3.4vw,42px);font-weight:900;letter-spacing:-.035em;max-width:26ch;text-wrap:balance">Данные нужны функциям, а не модели</h2>
+      <p style="margin:0 0 16px;font-size:17px;line-height:1.6;color:var(--text-2);max-width:62ch">Модель читает переписку и решает, какую вашу функцию вызвать.</p>
+      <p style="margin:0 0 36px;font-size:17px;line-height:1.6;color:var(--dim);max-width:62ch">Модели хватит правдоподобного имени —<span class="hero-token" data-swap><span class="hero-token-real">Волков Дмитрий</span><span class="hero-token-fake">Шилов Виктор</span></span>Настоящие данные нужны ровно в одном месте — в вашем коде.</p>
     </div>
-    <div class="cards cards--n3" style="border:1px solid var(--line-3)" data-reveal>
+    <div class="cards cards--n3" style="border:1px solid var(--line-3)" data-reveal-stagger>
       <div style="min-width:0;background:var(--panel);padding:28px 26px 30px;display:flex;flex-direction:column;gap:18px;">
         <div style="display:flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:var(--dim-2)">КЛИЕНТ <span style="color:var(--edge)">→</span> МОДЕЛЬ</div>
         <div style="font-size:24px;line-height:1.15;letter-spacing:-.025em;color:var(--accent-2);font-weight:700">Ставим подмену</div>
@@ -333,12 +329,12 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       <div style="min-width:0;background:var(--panel);padding:28px 26px 30px;display:flex;flex-direction:column;gap:18px;">
         <div style="display:flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:var(--dim-2)">МОДЕЛЬ <span style="color:var(--edge)">→</span> ВАШ КОД</div>
         <div style="font-size:24px;line-height:1.15;letter-spacing:-.025em;color:var(--accent-2);font-weight:700">Снимаем подмену</div>
-        <p style="margin:0;font-size:15px;line-height:1.65;color:var(--dim);text-wrap:pretty">Модель вызывает вашу функцию и передаёт в неё подмену — в том виде, в каком написала сама. Мы узнаём своё значение в любой форме и подставляем настоящее: курьер едет по реальному адресу.</p>
+        <p style="margin:0;font-size:15px;line-height:1.65;color:var(--dim);text-wrap:pretty">Модель передаёт в функцию подмену. Мы узнаём её в любой форме и подставляем настоящее.</p>
       </div>
       <div style="min-width:0;background:var(--panel);padding:28px 26px 30px;display:flex;flex-direction:column;gap:18px;">
         <div style="display:flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:var(--dim-2)">ВАШ КОД <span style="color:var(--edge)">→</span> МОДЕЛЬ</div>
         <div style="font-size:24px;line-height:1.15;letter-spacing:-.025em;color:var(--accent-2);font-weight:700">Ставим ту же подмену</div>
-        <p style="margin:0;font-size:15px;line-height:1.65;color:var(--dim);text-wrap:pretty">Функция вернула настоящие данные из CRM, и они снова идут в модель. Для неё это тот же Виктор Шилов — иначе агент за один разговор познакомился бы с клиентом дважды.</p>
+        <p style="margin:0;font-size:15px;line-height:1.65;color:var(--dim);text-wrap:pretty">Ответ функции снова идёт в модель — под той же подменой.</p>
       </div>
     </div>
   </section>
@@ -348,7 +344,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       <h2 style="margin:0;font-size:clamp(28px,3.4vw,42px);font-weight:900;letter-spacing:-.035em">Цены</h2>
       <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">ЦЕНЫ НА САЙТЕ · ENTERPRISE — ПО ДОГОВОРУ</div>
     </div>
-    <p style="margin:0 0 40px;font-size:16px;line-height:1.6;color:var(--dim);max-width:62ch">Абонплата по числу контейнеров, сверх включённого — по запросам. Запрос виден в логе вашего же шлюза, поэтому наш счёт можно сверить со своей записью.</p>
+    <p style="margin:0 0 40px;font-size:16px;line-height:1.6;color:var(--dim);max-width:62ch">Абонплата по контейнерам, сверх включённого — по запросам. Сверяется с логом вашего шлюза.</p>
     {% comment %}
 ЧИСЛО КОЛОНОК ЗНАЕТ ШАБЛОН, А НЕ ШИРИНА ОКНА. Тарифы — единственная
        сетка, число карточек в которой меняется; `auto-fit` на пяти тарифах оставлял
@@ -364,7 +360,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
         идёт на них. Теперь бесплатный — товар с собственными лимитами, а
         платные покупаются.
 {% endcomment %}
-        <div style="min-width:0;background:var(--bg);padding:32px 28px;display:flex;flex-direction:column;gap:22px;">
+        <div style="min-width:0;background:var(--card-bg);padding:32px 28px;display:flex;flex-direction:column;gap:22px;">
           <div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">{{ free_plan.title|upper }}</div>
             <div style="font-size:38px;font-weight:900;letter-spacing:-.035em;margin-top:20px">0 ₽</div>
@@ -399,7 +395,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
         </div>
       {% endfor %}
       {% if enterprise %}
-        <div style="min-width:0;background:var(--bg);padding:32px 28px;display:flex;flex-direction:column;gap:22px;">
+        <div style="min-width:0;background:var(--card-bg);padding:32px 28px;display:flex;flex-direction:column;gap:22px;">
           <div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">{{ enterprise.title|upper }}</div>
             <div style="font-size:28px;font-weight:900;letter-spacing:-.035em;margin-top:24px">по договору</div>
@@ -414,221 +410,32 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
         </div>
       {% endif %}
     </div>
-    <div style="border:1px solid var(--line-3);border-top:0;padding:20px 28px;display:flex;gap:40px;flex-wrap:wrap;font-size:13.5px;line-height:1.6;color:var(--dim-2)">
-      <div style="max-width:46ch">Запрос — один вызов модели через шлюз. В агентском цикле одно сообщение клиента обычно даёт несколько вызовов: считайте по вызовам, а не по диалогам.</div>
-      <div style="max-width:40ch">Ставка убывает с тарифом, поэтому перейти на больший всегда дешевле, чем расти перерасходом. Превышение — это счёт, а не рубильник.</div>
-      <div style="max-width:44ch">Счёт выставляется в конце периода: срок оплаты {{ due_days }} дней, и ещё {{ grace_days }} дня идут запасом — платёж по безналу в пятницу вечером не должен останавливать прод в субботу. Акты и закрывающие — в кабинете.</div>
+    {% comment %}
+    МЕЛКИЙ ШРИФТ ТАРИФОВ — ТОЙ ЖЕ СЕТКОЙ, ЧТО РЯД ФАКТОВ. Три фразы стояли
+    флексом, каждая со своей шириной (46/40/44 знака): на широком экране они
+    разъезжались, а разная длина давала разное число строк — строка читалась
+    рваной. Равные колонки с волосяными разделителями выравнивают и края, и
+    ритм. Третья фраза заодно сокращена: она была втрое длиннее соседей и
+    именно она задавала рваность.
+    {% endcomment %}
+    <div style="border:1px solid var(--line-3);border-top:0;padding:0 28px 22px;font-size:13.5px;color:var(--dim-2)">
+      <div class="trust-row" style="margin-top:0;border-top:0">
+        <div>Запрос — один вызов модели. Считаем по вызовам, а не по диалогам.</div>
+        <div>Ставка убывает с тарифом. Превышение — счёт, а не рубильник.</div>
+        <div>Счёт в конце периода: {{ due_days }} дней на оплату плюс {{ grace_days }} дня запаса. Акты — в кабинете.</div>
+      </div>
     </div>
   </section>
 
-  <section id="first" style="padding:120px 0 0">
-    <div style="background:var(--panel-2);border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:88px 36px">
-      <div style="" data-reveal>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.2em;color:var(--accent);margin-bottom:28px">ЧТО ОСТАЁТСЯ В ВАШЕЙ БАЗЕ</div>
-        <h2 style="margin:0 0 28px;font-size:clamp(30px,4.4vw,56px);font-weight:900;letter-spacing:-.04em;max-width:22ch;text-wrap:balance">Подмена без возврата заканчивается в вашей CRM</h2>
-        <p style="margin:0 0 18px;font-size:18px;line-height:1.6;color:var(--text-2);max-width:62ch">Маскирование задумано как операция в одну сторону: текст вошёл, подмена вышла. Дальше она живёт своей жизнью — в памяти диалога, в аргументе вызова и в записи, которую ваш агент создал.</p>
-        <p style="margin:0;font-size:16px;line-height:1.6;color:var(--dim);max-width:62ch">Вот одна и та же заявка после обработки. Слева — если настоящие значения никто не вернул.</p>
-      </div>
-      <div class="cards cards--n2" style="border:1px solid var(--line);margin-top:48px" data-reveal>
-        <div style="min-width:0;padding:26px 24px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px">
-            <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--pink)">БЕЗ ОБРАТНОЙ ПОДСТАНОВКИ</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--edge)">ЗАЯВКА №A-4471</div>
-          </div>
-          <div style="display:grid;gap:14px">
-            <div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;color:var(--dim-3);margin-bottom:5px">КЛИЕНТ</div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:14.5px;color:var(--pink-2)">Виктор Шилов</div>
-              <div style="font-size:12.5px;color:var(--dim-2);margin-top:4px">такого человека нет</div>
-            </div>
-            <div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;color:var(--dim-3);margin-bottom:5px">ТЕЛЕФОН</div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:14.5px;color:var(--pink-2)">+7 903 557-19-42</div>
-              <div style="font-size:12.5px;color:var(--dim-2);margin-top:4px">номер не отвечает</div>
-            </div>
-            <div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;color:var(--dim-3);margin-bottom:5px">АДРЕС ДОСТАВКИ</div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:14.5px;color:var(--pink-2)">улица Грушевая, 63</div>
-              <div style="font-size:12.5px;color:var(--dim-2);margin-top:4px">нет в справочнике</div>
-            </div>
-          </div>
-          <div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--line-3);font-size:14.5px;line-height:1.6;color:var(--pink-2)">Заказ оформлен, курьер назначен, клиент ждёт звонка. Ничего из этого не произойдёт — и узнаете вы об этом от клиента.</div>
-        </div>
-        <div style="min-width:0;padding:26px 24px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px">
-            <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--green)">С PSEUDEX</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--edge)">ЗАЯВКА №A-4471</div>
-          </div>
-          <div style="display:grid;gap:14px">
-            <div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;color:var(--dim-3);margin-bottom:5px">КЛИЕНТ</div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:14.5px;color:var(--green)">Иванов Пётр Сергеевич</div>
-              <div style="font-size:12.5px;color:var(--dim-2);margin-top:4px">как в вашей базе</div>
-            </div>
-            <div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;color:var(--dim-3);margin-bottom:5px">ТЕЛЕФОН</div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:14.5px;color:var(--green)">+7 916 214-88-03</div>
-              <div style="font-size:12.5px;color:var(--dim-2);margin-top:4px">тот, с которого он написал</div>
-            </div>
-            <div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.16em;color:var(--dim-3);margin-bottom:5px">АДРЕС ДОСТАВКИ</div>
-              <div style="font-family:'JetBrains Mono',monospace;font-size:14.5px;color:var(--green)">Ленинский пр-т 42, кв. 118</div>
-              <div style="font-size:12.5px;color:var(--dim-2);margin-top:4px">есть в справочнике</div>
-            </div>
-          </div>
-          <div style="margin-top:22px;padding-top:18px;border-top:1px solid var(--line-3);font-size:14.5px;line-height:1.6;color:var(--text-2)">Заявка рабочая. При этом модель не видела ни одного из этих значений — ни в запросе, ни в ответе инструмента.</div>
-        </div>
-      </div>
-      <div style="margin-top:20px;font-size:13.5px;line-height:1.6;color:var(--dim-2);max-width:78ch">Речь о свойстве подхода, а не о конкретных продуктах: односторонняя подмена не помнит, что подменяла, и не знает, куда подставлять обратно.</div>
-    </div>
-  </section>
 
-  <section id="cases" style="padding:120px 36px 0">
-    <div data-reveal>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.2em;color:var(--dim-2);margin-bottom:26px">ПОЧЕМУ ПРОСТОЕ РЕШЕНИЕ НЕ РАБОТАЕТ</div>
-      <h2 style="margin:0 0 20px;font-size:clamp(28px,3.6vw,46px);font-weight:900;letter-spacing:-.035em;max-width:26ch;text-wrap:balance">Заменить подмену обратно поиском по тексту — и курьер поедет по выдуманному адресу</h2>
-      <p style="margin:0 0 16px;font-size:17px;line-height:1.6;color:var(--text-2);max-width:62ch">Простое решение выглядит так: запомнили пару «настоящее ↔ подмена», модель ответила, нашли подмену в тексте и вернули настоящее. Это работает, пока модель повторяет подмену буква в букву. В аргументах вызова инструмента она этого почти никогда не делает.</p>
-      <p style="margin:0 0 36px;font-size:17px;line-height:1.6;color:var(--dim);max-width:62ch">Требовать от модели аккуратности бессмысленно — она пишет так, как ей удобно, и это правильное поведение. Поэтому подстраиваемся мы: узнаём свою подмену в любой форме, в которую её превратила модель.</p>
-    </div>
-    <div class="cards cards--n2" style="border:1px solid var(--line-3)" data-reveal>
-      <div style="min-width:0;background:var(--panel);padding:26px 24px;">
-        <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--dim-2);margin-bottom:20px">ПОИСК ПО ТЕКСТУ · КАК ЭТО ЛОМАЕТСЯ</div>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:2;color:var(--dim)">
-          <div>запомнили: <span style="color:var(--text-2)">Ленинский пр-т 42</span> ↔ <span style="color:var(--accent-2)">улица Грушевая, 63</span></div>
-          <div>модель написала в аргументе: <span style="color:var(--amber)">«грушевую 63»</span></div>
-          <div>ищем <span style="color:var(--accent-2)">«улица Грушевая, 63»</span> — <span style="color:var(--pink);animation:flashBad 2.6s ease-in-out both">не найдено</span></div>
-        </div>
-        <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--line-3);font-size:14.5px;line-height:1.6;color:var(--pink-2)">В CRM уходит «грушевую 63». Такого адреса нет — заказ уедет в никуда, и в базе останется человек, которого не существует.</div>
-      </div>
-      <div style="min-width:0;background:var(--panel);padding:26px 24px;">
-        <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--accent);margin-bottom:20px">PSEUDEX · КАК ЭТО РАБОТАЕТ</div>
-        <div style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:2;color:var(--dim)">
-          <div>помним не строку, а <span style="color:var(--text-2)">какое значение чем подменили</span></div>
-          <div>в аргументе узнаём <span style="color:var(--amber)">«грушевую 63»</span> как ту же подмену</div>
-          <div>подставляем <span style="color:var(--green)">Ленинский пр-т 42</span> — в исходной форме</div>
-        </div>
-        <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--line-3);font-size:14.5px;line-height:1.6;color:var(--text-2)">CRM получает адрес, который есть в справочнике. Модель этого адреса не видела ни на одном шаге.</div>
-      </div>
-    </div>
-    <div style="margin-top:44px" data-reveal>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--dim-2);margin-bottom:18px">ТАК ОНА ПИШЕТ НА САМОМ ДЕЛЕ · СЛУЧАИ ИЗ ПРАКТИКИ</div>
-      <div class="cards cards--n6" style="border:1px solid var(--line-3)">
-                  <div style="min-width:0;padding:22px 22px 24px;display:flex;flex-direction:column;gap:14px;transition:background .25s" class="hv-cell">
-            <div style="font-size:15px;line-height:1.45;color:var(--text-2)">Просклоняла подмену</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.5;color:var(--amber);padding:10px 12px;background:var(--panel-2);border-left:1px solid var(--amber-bg)">«ленина пятидесяти»</div>
-            <div style="display:grid;gap:7px;margin-top:2px">
-              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--pink)">✕</span>
-                <span style="font-size:13.5px;line-height:1.5;color:var(--pink-2)">поиск по тексту: не совпало</span>
-              </div>
-              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green)">→</span>
-                <span style="font-size:13.5px;line-height:1.5;color:var(--green)">Ленина 50</span>
-              </div>
-            </div>
-          </div>
-        
-          <div style="min-width:0;padding:22px 22px 24px;display:flex;flex-direction:column;gap:14px;transition:background .25s" class="hv-cell">
-            <div style="font-size:15px;line-height:1.45;color:var(--text-2)">Написала латиницей</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.5;color:var(--amber);padding:10px 12px;background:var(--panel-2);border-left:1px solid var(--amber-bg)">BITYUKOVA</div>
-            <div style="display:grid;gap:7px;margin-top:2px">
-              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--pink)">✕</span>
-                <span style="font-size:13.5px;line-height:1.5;color:var(--pink-2)">поиск по тексту: не совпало</span>
-              </div>
-              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green)">→</span>
-                <span style="font-size:13.5px;line-height:1.5;color:var(--green)">Битюкова</span>
-              </div>
-            </div>
-          </div>
-        
-          <div style="min-width:0;padding:22px 22px 24px;display:flex;flex-direction:column;gap:14px;transition:background .25s" class="hv-cell">
-            <div style="font-size:15px;line-height:1.45;color:var(--text-2)">Разнесла имя по трём полям</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.5;color:var(--amber);padding:10px 12px;background:var(--panel-2);border-left:1px solid var(--amber-bg)">last / first / middle</div>
-            <div style="display:grid;gap:7px;margin-top:2px">
-              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--pink)">✕</span>
-                <span style="font-size:13.5px;line-height:1.5;color:var(--pink-2)">поиск по тексту: совпала только фамилия</span>
-              </div>
-              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green)">→</span>
-                <span style="font-size:13.5px;line-height:1.5;color:var(--green)">Три части одного человека</span>
-              </div>
-            </div>
-          </div>
-        
-          <div style="min-width:0;padding:22px 22px 24px;display:flex;flex-direction:column;gap:14px;transition:background .25s" class="hv-cell">
-            <div style="font-size:15px;line-height:1.45;color:var(--text-2)">Сократила до инициалов</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.5;color:var(--amber);padding:10px 12px;background:var(--panel-2);border-left:1px solid var(--amber-bg)">«Т. О.»</div>
-            <div style="display:grid;gap:7px;margin-top:2px">
-              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--pink)">✕</span>
-                <span style="font-size:13.5px;line-height:1.5;color:var(--pink-2)">поиск по тексту: искать нечего</span>
-              </div>
-              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green)">→</span>
-                <span style="font-size:13.5px;line-height:1.5;color:var(--green)">Тарасова Ольга</span>
-              </div>
-            </div>
-          </div>
-        
-          <div style="min-width:0;padding:22px 22px 24px;display:flex;flex-direction:column;gap:14px;transition:background .25s" class="hv-cell">
-            <div style="font-size:15px;line-height:1.45;color:var(--text-2)">Склеила две подмены дефисом</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.5;color:var(--amber);padding:10px 12px;background:var(--panel-2);border-left:1px solid var(--amber-bg)">«Мухина-Бирюкова»</div>
-            <div style="display:grid;gap:7px;margin-top:2px">
-              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--pink)">✕</span>
-                <span style="font-size:13.5px;line-height:1.5;color:var(--pink-2)">поиск по тексту: не совпало ни с одной</span>
-              </div>
-              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green)">→</span>
-                <span style="font-size:13.5px;line-height:1.5;color:var(--green)">Обе половины настоящими</span>
-              </div>
-            </div>
-          </div>
-        
-          <div style="min-width:0;padding:22px 22px 24px;display:flex;flex-direction:column;gap:14px;transition:background .25s" class="hv-cell">
-            <div style="font-size:15px;line-height:1.45;color:var(--text-2)">Исправила опечатку клиента</div>
-            <div style="font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.5;color:var(--amber);padding:10px 12px;background:var(--panel-2);border-left:1px solid var(--amber-bg)">«Мончегорская»</div>
-            <div style="display:grid;gap:7px;margin-top:2px">
-              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--pink)">✕</span>
-                <span style="font-size:13.5px;line-height:1.5;color:var(--pink-2)">поиск по тексту: не совпало</span>
-              </div>
-              <div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:9px;align-items:baseline">
-                <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--green)">→</span>
-                <span style="font-size:13.5px;line-height:1.5;color:var(--green)">Как пишет реестр</span>
-              </div>
-            </div>
-          </div>
-        
-      </div>
-      <div style="margin-top:20px;font-size:13.5px;line-height:1.6;color:var(--dim-2);max-width:78ch">Каждый случай — класс ошибок, найденный измерением и закрытый. То, что не закрыто, мы публикуем тоже: остаются имена и улицы, которых нет ни в одном словаре.</div>
-    </div>
-    <div class="cards cards--n3" style="margin-top:56px;border:1px solid var(--line-3)" data-reveal>
-      <div style="min-width:0;background:var(--panel);padding:26px 24px;">
-        <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--accent);margin-bottom:16px">ПОДМЕНА НЕ МЕШАЕТ МОДЕЛИ</div>
-        <p style="margin:0;font-size:15px;line-height:1.65;color:var(--dim);text-wrap:pretty">Женское имя подменяется женским, улица — улицей, падеж сохраняется, у СНИЛС сходится контрольная сумма. Рассогласованную подмену модель замечает и начинает править сама — и вот тогда агент действительно ломается.</p>
-      </div>
-      <div style="min-width:0;background:var(--panel);padding:26px 24px;">
-        <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--accent);margin-bottom:16px">А МОДЕЛЬ НЕ МЕШАЕТ НАМ</div>
-        <p style="margin:0;font-size:15px;line-height:1.65;color:var(--dim);text-wrap:pretty">Просклоняла, сократила до инициалов, разнесла по трём полям, написала латиницей — мы узнаём своё значение в любой из этих форм и подставляем настоящее в том виде, в котором его ждёт ваша база.</p>
-      </div>
-      <div style="min-width:0;background:var(--accent-bg);padding:26px 24px;">
-        <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--accent-2);margin-bottom:16px">ЭТО И ЕСТЬ ВСЯ РАБОТА</div>
-        <p style="margin:0;font-size:15px;line-height:1.65;color:var(--text-2);text-wrap:pretty">Обе половины — про русский язык, падежи и документы РФ. Готового решения для этого мы не нашли, поэтому сделали сами. Если знаете второе — напишите, правда интересно.</p>
-      </div>
-    </div>
-  </section>
 
   <section id="legal" style="padding:120px 36px 0">
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:clamp(32px,4vw,64px);align-items:stretch">
       <div style="min-width:0" data-reveal>
         <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.2em;color:var(--dim-2);margin-bottom:26px">152-ФЗ</div>
         <h2 style="margin:0 0 24px;font-size:clamp(28px,3.6vw,46px);font-weight:900;letter-spacing:-.035em;max-width:22ch">Мы не становимся обработчиком ваших данных</h2>
-        <p style="margin:0 0 20px;font-size:17px;line-height:1.6;color:var(--text-2);max-width:56ch">Маскирование, волт и раскрытие значений живут на вашем железе. К нам уходит одно тело запроса — агрегатные счётчики в составе продления аренды.</p>
-        <p style="margin:0;font-size:16px;line-height:1.6;color:var(--dim);max-width:56ch">Поэтому у нас нет и не может быть экрана, на котором видно ваше сообщение, токен или значение. Оператор персональных данных — вы, и остаётесь им один.</p>
+        <p style="margin:0 0 20px;font-size:17px;line-height:1.6;color:var(--text-2);max-width:56ch">Маскирование, волт и раскрытие живут на вашем железе. К нам — только счётчики.</p>
+        <p style="margin:0;font-size:16px;line-height:1.6;color:var(--dim);max-width:56ch">У нас нет и не может быть экрана с вашим сообщением, токеном или значением. Оператор — вы.</p>
       </div>
       <div style="display:flex;flex-direction:column" data-reveal>
         <div style="border:1px solid var(--line);background:var(--panel);padding:22px;margin-top:41px">
@@ -644,46 +451,27 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
         </div>
       </div>
     </div>
-    <div class="cards cards--n3" style="border:1px solid var(--line-3);margin-top:36px" data-reveal>
-      <div style="min-width:0;padding:18px 22px;font-size:15px;line-height:1.55;color:var(--text-3);">Описание архитектуры «мы не обработчик» — <a href="/architecture">документом для безопасника</a></div>
-      <div style="min-width:0;padding:18px 22px;font-size:15px;line-height:1.55;color:var(--text-3);">Подпись образа проверяется: <span style="font-family:'JetBrains Mono',monospace;color:var(--accent)">cosign verify</span></div>
-      <div style="min-width:0;padding:18px 22px;font-size:15px;line-height:1.55;color:var(--text-3)">Волт — в зашифрованном томе внутри вашего периметра, читаете только вы</div>
+    {% comment %}
+    РЯД ФАКТОВ — СЕТКОЙ, А НЕ РАСТЯНУТЫМ ФЛЕКСОМ. Три коротких факта стояли
+    флексом с зазором 36 px и на широком экране разъезжались на всю ширину
+    редкими островками: текст не «съедался», но читался как обрывки, потому что
+    между словами не было ни ритма, ни границ. Здесь три равные колонки и
+    волосяные разделители — язык таблицы, тот же, что у остальных строк сайта.
+    {% endcomment %}
+    <div class="trust-row">
+      <a href="/architecture">Архитектура «мы не обработчик» — документом для безопасника →</a>
+      <span>образ проверяется: <b>cosign verify</b></span>
+      <span>волт — в вашем периметре</span>
     </div>
   </section>
 
-  <section id="configurator" style="padding:120px 36px 0">
-    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:32px;flex-wrap:wrap;margin-bottom:14px" data-reveal>
-      <h2 style="margin:0;font-size:clamp(28px,3.4vw,42px);font-weight:900;letter-spacing:-.035em">Что у вас в переписке</h2>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">ОТМЕТКА = ЗАЯВКА НА ТИП</div>
-    </div>
-    <p style="margin:0 0 32px;font-size:16px;line-height:1.6;color:var(--dim);max-width:62ch">Отметьте свои группы данных. Скажем, что находим сегодня, что в разработке и чего не планируем — последнее честнее первого. Отметки складываются в счётчик спроса: по нему мы строим очередь работ.</p>
-    <div id="cfg" class="cards cards--n12" style="border:1px solid var(--line-3)">
-      {% for group in groups %}
-        <label class="cfg-item hv-tint" style="display:flex;align-items:center;gap:13px;padding:16px 20px;cursor:pointer;min-width:0;">
-          <input type="checkbox" data-group="{{ group.code }}"
-                 data-covered="{{ group.covered|yesno:"1,0" }}"
-                 data-verdict="{{ group.verdict }}"
-                 style="flex:none;width:15px;height:15px;accent-color:var(--accent)">
-          <span class="cfg-label" style="flex:1;font-size:15px;color:var(--text-2);min-width:0">{{ group.label }}</span>
-          <span style="flex:none;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;color:{% if group.covered %}var(--green){% else %}var(--amber){% endif %}">{% if group.covered %}находим{% else %}в разработке{% endif %}</span>
-        </label>
-      {% endfor %}
-    </div>
-    <div id="cfg-out" hidden style="margin-top:28px;border-top:1px solid var(--line);padding-top:24px">
-      <div id="cfg-note" style="font-size:15.5px;line-height:1.65;color:var(--text-2);max-width:70ch"></div>
-      <div id="cfg-verdicts"></div>
-      <button id="cfg-send" type="button" hidden class="hv-btn"
-              style="margin-top:20px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:12px 18px;border:1px solid var(--accent);background:transparent;color:var(--accent-2);cursor:pointer">ОТПРАВИТЬ КАК ЗАЯВКУ</button>
-    </div>
-    <div style="margin-top:18px;font-size:13.5px;color:var(--dim-2)"><a href="/detection">Полный список типов и то, чем каждый держится →</a></div>
-  </section>
 
   <section id="start" style="padding:120px 36px 0">
     <div style="display:flex;align-items:baseline;justify-content:space-between;gap:32px;flex-wrap:wrap;margin-bottom:14px" data-reveal>
       <h2 style="margin:0;font-size:clamp(28px,3.4vw,42px);font-weight:900;letter-spacing:-.035em">Быстрый старт</h2>
       <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">БЕСПЛАТНЫЙ ТАРИФ · {{ trial_days }} ДНЕЙ · ИЛИ СРАЗУ ПЛАТНЫЙ</div>
     </div>
-    <p style="margin:0 0 40px;font-size:16px;line-height:1.6;color:var(--dim);max-width:62ch">После регистрации приходит письмо со ссылкой. На бесплатном тарифе по ней выпускается и показывается один раз ключ — до всякой оплаты; на платном она ведёт в кабинет с оплатой, и ключ выпускается сразу после неё. Команда запуска придёт уже с подставленным ключом.</p>
+    <p style="margin:0 0 40px;font-size:16px;line-height:1.6;color:var(--dim);max-width:62ch">На бесплатном тарифе ключ виден один раз и до оплаты; на платном — в кабинете сразу после неё.</p>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:clamp(32px,4vw,56px);align-items:start">
       <form method="post" action="{% url 'signup' %}" id="signup-form"
@@ -712,7 +500,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
         </label>
         <button type="submit" data-label-free="ПОЛУЧИТЬ КЛЮЧ" data-label-paid="ЗАРЕГИСТРИРОВАТЬСЯ И ОПЛАТИТЬ" style="grid-column:1 / -1;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:16px;border:1px solid var(--accent);color:var(--accent-2);cursor:pointer;transition:background .25s,box-shadow .25s" class="hv-btn-glow">ПОЛУЧИТЬ КЛЮЧ</button>
         <div data-when="free" style="grid-column:1 / -1;font-size:13px;color:var(--dim-3);line-height:1.6">Карта не спрашивается. Ключ работает сразу и {{ trial_days }} дней бесплатно{% if free_plan %} — {{ free_plan.included_requests }} запросов, {{ free_plan.max_instances }} {{ free_plan.max_instances|plural:"контейнер,контейнера,контейнеров" }}{% endif %}. Потом — любой тариф из кабинета.</div>
-        <div data-when="paid" hidden style="grid-column:1 / -1;font-size:13px;color:var(--dim-3);line-height:1.6">Ключ выпускается сразу после оплаты — картой или по счёту. К первому оплаченному месяцу добавляются дни в подарок — сколько, написано на карточке тарифа.</div>
+        <div data-when="paid" hidden style="grid-column:1 / -1;font-size:13px;color:var(--dim-3);line-height:1.6">Ключ выпускается сразу после оплаты — картой или по счёту.</div>
       </form>
       <div data-reveal>
         <div style="border:1px solid var(--accent);padding:24px">
@@ -724,7 +512,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
             <span class="claude-prompt" hidden data-copy="{{ claude_prompt }}"></span>
             <button type="button" data-copy-btn style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:11px 16px;border:1px solid var(--accent);color:var(--accent-2);cursor:pointer" class="hv-btn">СКОПИРОВАТЬ ПРОМПТ</button>
           </div>
-          <p style="margin:16px 0 0;font-size:14.5px;line-height:1.6;color:var(--dim)">Он сам найдёт, куда проект ходит за моделью, поднимет контейнер, переключит переменную окружения и проверит, что маскирование сработало. Если нет — остановится и скажет.</p>
+          <p style="margin:16px 0 0;font-size:14.5px;line-height:1.6;color:var(--dim)">Сам найдёт, куда проект ходит за моделью, поднимет контейнер и проверит, что маскирование сработало.</p>
         </div>
       </div>
     </div>
@@ -732,74 +520,56 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
     {% include "_setup.html" %}
   </section>
 
+  {% comment %}ВХОД В БАЗУ ЗНАНИЙ С ГЛАВНОЙ. Ссылка в подвале есть, но вход
+  нужен там, где человек дочитал до вопросов и ему мало. Блок называет статью
+  словами закона — тем самым оборотом, который люди ищут, а не названием
+  продукта: сюда приходят не за нами.{% endcomment %}
+  <section id="znaniya" style="padding:120px 36px 0">
+    <div style="border:1px solid var(--line-3);padding:28px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,320px);gap:clamp(24px,3vw,48px);align-items:start" class="kb-teaser">
+      <div>
+        <div class="eyebrow" style="margin-bottom:18px"><i></i><span>БАЗА ЗНАНИЙ</span></div>
+        <h2 style="margin:0;font-size:clamp(22px,2.6vw,32px);font-weight:800;letter-spacing:-.03em;max-width:30ch">Разборы закона: что требуется и что из этого закрывает контейнер</h2>
+        <p style="margin:16px 0 0;font-size:16px;line-height:1.7;color:var(--dim);max-width:62ch">Пишем о том, что спрашивают перед внедрением. Ссылки на первоисточники, без «узнайте больше» и без обещаний полного соответствия.</p>
+      </div>
+      <a href="/baza-znaniy/kak-obezlichit-personalnye-dannye" style="display:block;border:1px solid var(--line-2);background:var(--panel);padding:22px 24px;text-decoration:none" class="hv-row">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--accent)">СТАТЬЯ · 9 МИНУТ</div>
+        <div style="margin-top:12px;font-size:19px;font-weight:700;letter-spacing:-.02em;color:var(--text)">Как обезличить персональные данные</div>
+        <div style="margin-top:10px;font-size:14px;line-height:1.6;color:var(--dim)">Методы по приказу Роскомнадзора № 140 и требования, которые он выставляет оператору.</div>
+        <div class="card-go" style="margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--accent-2)">ЧИТАТЬ →</div>
+      </a>
+    </div>
+  </section>
+
   <section id="faq" style="padding:120px 36px 0">
     <div style="display:grid;grid-template-columns:minmax(0,280px) minmax(0,3fr);gap:clamp(28px,3vw,64px)" class="faq-grid">
       <div data-reveal>
         <h2 style="margin:0;font-size:clamp(28px,3.4vw,42px);font-weight:900;letter-spacing:-.035em">Вопросы</h2>
-        <p style="margin:18px 0 0;font-size:15px;line-height:1.6;color:var(--dim)">Поддержка — {% if support_bot %}в Telegram (<a href="https://t.me/{{ support_bot }}" rel="noopener">@{{ support_bot }}</a>){% if support_email %} или {% endif %}{% endif %}{% if support_email %}на почте (<a href="mailto:{{ support_email }}">{{ support_email }}</a>){% endif %}, отвечаем сами в рабочие часы по Москве. Настоящие значения клиентов присылать не нужно: они нам не видны, достаточно токена из журнала и времени.</p>
+        <p style="margin:18px 0 0;font-size:15px;line-height:1.6;color:var(--dim)">Отвечаем сами, в рабочие часы по Москве. Значения присылать не нужно — достаточно токена и времени.</p>
+        {% comment %}ЛЕВАЯ КОЛОНКА БЫЛА ПОЛУПУСТОЙ. Под заголовком оставалось
+        полэкрана пустоты — колонка вопросов справа длинная, а слева после
+        абзаца не было ничего, и блок читался незаконченным. Здесь встаёт
+        то, что и должно там стоять: как с нами связаться. Ссылки те же, что
+        были в тексте абзаца, — вынесены в кнопки, потому что в строке текста
+        их было не найти.{% endcomment %}
+        {% if support_bot or support_email %}
+        <div style="margin-top:30px;border:1px solid var(--line);padding:20px 22px">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--dim-2)">НАПИСАТЬ НАМ</div>
+          <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px;align-items:flex-start">
+            {% if support_bot %}<a href="https://t.me/{{ support_bot }}" rel="noopener" class="hv-btn-ghost" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:10px 15px;border:1px solid var(--line);color:var(--dim)">TELEGRAM-БОТ</a>{% endif %}
+            {% if support_email %}<a href="mailto:{{ support_email }}" class="hv-btn-ghost" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:10px 15px;border:1px solid var(--line);color:var(--dim)">ПОЧТА</a>{% endif %}
+          </div>
+          <div style="margin-top:16px;font-size:13px;line-height:1.55;color:var(--dim-2)">Отвечает человек, который собирал движок.</div>
+        </div>
+        {% endif %}
       </div>
-      <div style="border-top:1px solid var(--line)">
-                  <details style="border-bottom:1px solid var(--line-3)">
-            <summary style="list-style:none;cursor:pointer;padding:24px 0;font-size:18px;font-weight:600;letter-spacing:-.015em;display:flex;justify-content:space-between;gap:24px;color:var(--text)">Что вы видите со своей стороны?<span class="faq-mark" style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--dim-3);flex:none"></span></summary>
-            <div class="faq-a"><p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">Только тело отчёта, показанное выше: идентификатор организации и инстанса, число запросов и счётчики по типам сущностей. Ни текстов, ни токенов, ни значений — их физически нет на нашей стороне.</p></div>
-          </details>
-
-          <details style="border-bottom:1px solid var(--line-3)">
-            <summary style="list-style:none;cursor:pointer;padding:24px 0;font-size:18px;font-weight:600;letter-spacing:-.015em;display:flex;justify-content:space-between;gap:24px;color:var(--text)">Чем это отличается от бесплатного маскирования в шлюзе?<span class="faq-mark" style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--dim-3);flex:none"></span></summary>
-            <div class="faq-a"><p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">По дороге в модель — ничем, и мы этого не скрываем: спрятать телефон умеет открытый фильтр, который ставится одной строкой конфига. Разница в обратной операции: когда модель вызывает ваш инструмент, аргументы содержат подмену, и кто-то должен вернуть в них настоящие значения. Плюс устойчивость токенов между диалогами и разбор русских документов с контрольными суммами.</p></div>
-          </details>
-
-          <details style="border-bottom:1px solid var(--line-3)">
-            <summary style="list-style:none;cursor:pointer;padding:24px 0;font-size:18px;font-weight:600;letter-spacing:-.015em;display:flex;justify-content:space-between;gap:24px;color:var(--text)">Что с производительностью?<span class="faq-mark" style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--dim-3);flex:none"></span></summary>
-            <div class="faq-a"><p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">Само маскирование — единицы миллисекунд: детекция около 2 мс, подмена 0,4 мс, восстановление 2 мс. Сквозная надбавка больше, потому что запрос идёт лишним сетевым плечом: в наших замерах медиана выросла с 1 696 до 1 880 мс, у клиентов на своих стендах — до +0,5 секунды.</p></div>
-          </details>
-
-          <details style="border-bottom:1px solid var(--line-3)">
-            <summary style="list-style:none;cursor:pointer;padding:24px 0;font-size:18px;font-weight:600;letter-spacing:-.015em;display:flex;justify-content:space-between;gap:24px;color:var(--text)">Сколько ресурсов нужно машине?<span class="faq-mark" style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--dim-3);flex:none"></span></summary>
-            <div class="faq-a"><p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">По одному рабочему процессу на ядро, каждый держит стек морфологии: на восьмиядерной машине это 2–2,5 ГБ памяти. Рабочих можно ограничить — <code>PSEUDEX_WORKERS=2</code> даёт около 400 МБ и справляется с потоком небольшого бота. Ориентир: 2 ядра и 1 ГБ на старте, 4 ядра и 4 ГБ под нагрузку.</p></div>
-          </details>
-
-          <details style="border-bottom:1px solid var(--line-3)">
-            <summary style="list-style:none;cursor:pointer;padding:24px 0;font-size:18px;font-weight:600;letter-spacing:-.015em;display:flex;justify-content:space-between;gap:24px;color:var(--text)">Можно ли on-prem без интернета?<span class="faq-mark" style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--dim-3);flex:none"></span></summary>
-            <div class="faq-a"><p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">Пока нет. Контейнеру нужен исходящий HTTPS до лицензионного сервера: он берёт словари детекции в аренду и пополняет ёмкость. При нашей недоступности он работает на предоплаченном запасе примерно шесть часов вашего обычного трафика — это покрывает наши сбои, но не изолированный контур. Нужен такой режим — напишите, обсудим отдельно.</p></div>
-          </details>
-
-          <details style="border-bottom:1px solid var(--line-3)">
-            <summary style="list-style:none;cursor:pointer;padding:24px 0;font-size:18px;font-weight:600;letter-spacing:-.015em;display:flex;justify-content:space-between;gap:24px;color:var(--text)">Какие модели поддерживаются?<span class="faq-mark" style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--dim-3);flex:none"></span></summary>
-            <div class="faq-a"><p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">Любые, к которым вы ходите по HTTP: OpenAI-совместимые API, Anthropic, LiteLLM как прокси, собственный шлюз. Pseudex стоит до модели и ничего о ней не знает.</p></div>
-          </details>
-
-          <details style="border-bottom:1px solid var(--line-3)">
-            <summary style="list-style:none;cursor:pointer;padding:24px 0;font-size:18px;font-weight:600;letter-spacing:-.015em;display:flex;justify-content:space-between;gap:24px;color:var(--text)">Как вы считаете объём, если контейнер стоит у меня?<span class="faq-mark" style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--dim-3);flex:none"></span></summary>
-            <div class="faq-a"><p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">Мы не берём число, которое сообщает ваш контейнер. Он обслуживает столько запросов, на сколько мы выдали ёмкость, и за следующей порцией обязан прийти к нам. Ваш отчёт о фактическом расходе работает в обратную сторону — уменьшает начисление до фактического, то есть это ваша защита, а не наша.</p>
-            <p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">Чего мы не обещаем: что это невозможно обойти. Учёт исполняет код на вашем оборудовании. Мы не утверждаем, что его нельзя изменить — мы делаем так, чтобы это требовало правки релизного бинарника и оставляло у нас датированный след.</p></div>
-          </details>
-
-          <details style="border-bottom:1px solid var(--line-3)">
-            <summary style="list-style:none;cursor:pointer;padding:24px 0;font-size:18px;font-weight:600;letter-spacing:-.015em;display:flex;justify-content:space-between;gap:24px;color:var(--text)">Где стоят ваши серверы и почему это важно?<span class="faq-mark" style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--dim-3);flex:none"></span></summary>
-            <div class="faq-a"><p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty"><b style="color:var(--text)">Ваш трафик к нам не приходит вообще</b> — контейнер стоит внутри вашего периметра, маскирование, волт и раскрытие значений происходят на вашем железе. К нам уходит только тело продления аренды со счётчиками.</p>
-            <p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">Но у нас есть свои персональные данные — <b style="color:var(--text)">ваши</b>: почта администратора кабинета, реквизиты для счёта, ФИО подписанта. Это ПД по 152-ФЗ, и ст. 18 ч. 5 требует, чтобы их запись, систематизация и хранение шли в базах на территории России. Поэтому витрина, лицензионный сервер и их база размещены в России, и по-другому быть не может.</p>
-            <p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">Практическое следствие для вас: работая с нами, вы не создаёте себе трансграничной передачи — ни своей, ни своих клиентов.</p></div>
-          </details>
-
-          <details style="border-bottom:1px solid var(--line-3)">
-            <summary style="list-style:none;cursor:pointer;padding:24px 0;font-size:18px;font-weight:600;letter-spacing:-.015em;display:flex;justify-content:space-between;gap:24px;color:var(--text)">Какие куки вы ставите?<span class="faq-mark" style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--dim-3);flex:none"></span></summary>
-            <div class="faq-a"><p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">Две строго необходимые: сессионная — чтобы вы оставались в кабинете после входа, и CSRF — чтобы форму нельзя было отправить с чужого сайта. Обе помечены <code>HttpOnly</code> и <code>SameSite=Lax</code>, сессионная живёт 12 часов.</p>
-            <p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">{% if metrika_id %}<b style="color:var(--text)">На публичных страницах стоит Яндекс.Метрика</b> — единственный чужой счётчик на сайте. Она нужна, чтобы понимать, откуда приходят люди и что они читают; Вебвизор у неё включён — ведётся запись действий на странице, включая запись экрана, — но содержимое полей ввода в запись не попадает. {% if analytics.mode != "off" %}Рядом — наша собственная аналитика (Rybbit, открытый код) <b style="color:var(--text)">на нашем сервере в России</b>.{% endif %} Обе спрашивают согласия баннером, и «не считать» на нём такая же кнопка, как «согласен»; без ответа не грузится ни одна. <b style="color:var(--text)">На страницах кабинета и админки счётчиков нет вовсе</b> — ни Метрики, ни нашей: там на экране префиксы ключей и суммы счетов. Поля ввода в записи не попадают.{% elif analytics.mode == "off" %}<b style="color:var(--text)">Аналитики и счётчиков на сайте нет вообще</b> — ни Метрики, ни Google Analytics, ни пикселей. Поэтому нет и баннера «примите куки»: отказаться не от чего, а баннер там, где выбора нет, — ритуал, а не соблюдение закона. Сколько людей зашло, мы считаем на своём сервере: суточный необратимый отпечаток, IP не сохраняется.{% else %}<b style="color:var(--text)">Чужих счётчиков на сайте нет</b> — ни Метрики, ни Google Analytics, ни пикселей. Есть наша собственная аналитика (Rybbit, открытый код), развёрнутая <b style="color:var(--text)">на нашем сервере в России</b>: данные о посещениях не уходят ни в чьё облако. Она сохраняет в браузере идентификатор посетителя и записывает, куда вы нажимаете, поэтому мы спрашиваем согласия баннером — и «не считать» там такая же кнопка, как «согласен». Поля ввода в записи <b style="color:var(--text)">маскируются всегда</b>: то, что вы печатаете в форму, в запись не попадает. На страницах кабинета аналитики нет вовсе.{% endif %}</p>
-            <p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">Подробнее — в <a href="{% url 'policy' %}">политике обработки</a>.</p></div>
-          </details>
-
-          <details style="border-bottom:1px solid var(--line-3)">
-            <summary style="list-style:none;cursor:pointer;padding:24px 0;font-size:18px;font-weight:600;letter-spacing:-.015em;display:flex;justify-content:space-between;gap:24px;color:var(--text)">Как отозвать согласие на обработку?<span class="faq-mark" style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--dim-3);flex:none"></span></summary>
-            <div class="faq-a"><p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">Письмом на адрес, указанный в <a href="{% url 'policy' %}">политике</a>, с почты, на которую зарегистрирован аккаунт. Отзыв означает прекращение обработки и удаление аккаунта; данные, которые мы обязаны хранить по закону (бухгалтерские документы по оплаченным счетам), хранятся установленный срок и не используются ни для чего другого.</p>
-            <p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">Ваш волт с настоящими значениями к нам не относится — он на вашем железе, и удаление аккаунта его не трогает.</p></div>
-          </details>
-
-          <details style="border-bottom:1px solid var(--line-3)">
-            <summary style="list-style:none;cursor:pointer;padding:24px 0;font-size:18px;font-weight:600;letter-spacing:-.015em;display:flex;justify-content:space-between;gap:24px;color:var(--text)">Как отказаться?<span class="faq-mark" style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--dim-3);flex:none"></span></summary>
-            <div class="faq-a"><p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">Не оплачивать следующий счёт: карта не сохраняется, автосписаний нет. Ключ работает до конца оплаченного периода, потом сервис останавливается fail-closed. Данные остаются у вас — они и так никогда не были у нас.</p></div>
-          </details>
-        
+            <div style="border-top:1px solid var(--line)">
+        {% for q, a in landing_faq %}
+        <details style="border-bottom:1px solid var(--line-3)">
+            <summary style="list-style:none;cursor:pointer;padding:24px 0;font-size:18px;font-weight:600;letter-spacing:-.015em;display:flex;justify-content:space-between;gap:24px;color:var(--text)">{{ q }}<span class="faq-mark" style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--dim-3);flex:none"></span></summary>
+            <div class="faq-a"><p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">{{ a }}</p></div>
+        </details>
+        {% endfor %}
+        <div style="padding:26px 0 0;display:flex;align-items:center;gap:16px;font-size:15px"><a href="/faq" style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.14em;color:var(--accent-2)" class="hv-btn" >ВСЕ ВОПРОСЫ →</a><span style="font-size:14px;color:var(--dim-2)">производительность, объём, куки, серверы и согласие</span></div>
       </div>
     </div>
   </section>
@@ -815,12 +585,13 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
 
 {% block footer %}
 <footer style="border-top:1px solid var(--line);padding:32px 36px;display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--dim-3);letter-spacing:.06em">
-  <div>PSEUDEX · ШЛЮЗ ПД ДЛЯ LLM-АГЕНТОВ</div>
+  <div>PSEUDEX · ОБЕЗЛИЧИВАНИЕ ПД ДЛЯ ИИ-АГЕНТОВ</div>
   <div style="display:flex;gap:24px;flex-wrap:wrap">
     <a href="{% url 'offer' %}" style="color:var(--dim-3)" class="hv-muted">ОФЕРТА</a>
     <a href="{% url 'policy' %}" style="color:var(--dim-3)" class="hv-muted">ПОЛИТИКА</a>
     <a href="{% url 'consent' %}" style="color:var(--dim-3)" class="hv-muted">СОГЛАСИЕ</a>
     <a href="{% url 'requisites' %}" style="color:var(--dim-3)" class="hv-muted">РЕКВИЗИТЫ</a>
+    <a href="/baza-znaniy" style="color:var(--dim-3)" class="hv-muted">БАЗА ЗНАНИЙ</a>
     <a href="{% url 'architecture' %}" style="color:var(--dim-3)" class="hv-muted">АРХИТЕКТУРА</a>
     {% if support_bot %}<a href="https://t.me/{{ support_bot }}" rel="noopener" target="_blank"
        style="color:var(--accent-2)" class="hv-muted">TELEGRAM</a>{% endif %}

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% load static l10n %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block body_class %}v2{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'landing.css' %}">
+{% comment %}FAQPage СОБИРАЕТСЯ ИЗ ТОГО ЖЕ СПИСКА, ЧТО И ВИДИМЫЕ ВОПРОСЫ.
+   Разметка, разошедшаяся с содержимым страницы, — это не «недооптимизация», а
+   нарушение: поисковик показывает в сниппете одно, а на странице человек видит
+   другое. Один источник — одна правда. `escapejs` закрывает кавычки, обратные
+   слэши и `<`, поэтому текст ответа не может разорвать блок.{% endcomment %}
+{% localize off %}<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "@id": "{{ site_url }}/faq#faq",
+  "inLanguage": "ru",
+  "mainEntity": [
+    {% for q, a in faq_items %}{
+      "@type": "Question",
+      "name": "{{ q|escapejs }}",
+      "acceptedAnswer": { "@type": "Answer", "text": "{{ a|escapejs }}" }
+    }{% if not forloop.last %},{% endif %}{% endfor %}
+  ]
+}
+</script>{% endlocalize %}
+{% endblock %}
+{% block nav %}
+<nav>
+  <a href="/#how">КАК РАБОТАЕТ</a>
+  <a href="/how">ПОЧЕМУ ЭТО СЛОЖНЕЕ</a>
+  <a href="/detection">ЧТО НАХОДИМ</a>
+  <a href="/architecture" class="nav-secondary">152-ФЗ</a>
+  <a href="/#pricing">ЦЕНЫ</a>
+  <a href="/faq" style="color:var(--accent-2)" class="nav-secondary">FAQ</a>
+</nav>
+{% endblock %}
+{% block content %}
+<section style="padding:72px 36px 0">
+  {% comment %}У ЭТОЙ СТРАНИЦЫ НЕ БЫЛО h1. Заголовком страницы считался h2
+  «Вопросы» внутри сетки, то есть для поисковика и для скринридера страница
+  оставалась без названия — при том что все остальные страницы названы. Теперь
+  заголовок один и стоит там, где ему место: в шапке страницы.{% endcomment %}
+  <div class="eyebrow" style="margin-bottom:28px"><i></i><span>FAQ</span></div>
+  <h1 class="hero" style="font-size:clamp(30px,4.2vw,52px);max-width:26ch">Вопросы и ответы</h1>
+  <p class="lede" style="margin-top:22px;max-width:70ch">Ответы на то, что спрашивают перед покупкой и при интеграции. Чего-то нет — напишите в поддержку, добавим.</p>
+</section>
+<section style="padding:16px 36px 0">
+    <div style="display:grid;grid-template-columns:minmax(0,280px) minmax(0,3fr);gap:clamp(28px,3vw,64px)" class="faq-grid">
+      <div data-reveal>
+        <h2 style="margin:0;font-size:20px;font-weight:600;letter-spacing:-.01em">Написать нам</h2>
+        <p style="margin:18px 0 0;font-size:15px;line-height:1.6;color:var(--dim)">Поддержка — {% if support_bot %}в Telegram (<a href="https://t.me/{{ support_bot }}" rel="noopener">@{{ support_bot }}</a>){% if support_email %} или {% endif %}{% endif %}{% if support_email %}на почте (<a href="mailto:{{ support_email }}">{{ support_email }}</a>){% endif %}, отвечаем сами в рабочие часы по Москве. Настоящие значения клиентов присылать не нужно: они нам не видны, достаточно токена из журнала и времени.</p>
+      </div>
+      <div style="border-top:1px solid var(--line)">
+          {% for q, a in faq_items %}
+          <details open style="border-bottom:1px solid var(--line-3)">
+            <summary style="list-style:none;cursor:pointer;padding:24px 0;font-size:18px;font-weight:600;letter-spacing:-.015em;display:flex;justify-content:space-between;gap:24px;color:var(--text)">{{ q }}<span class="faq-mark" style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--dim-3);flex:none"></span></summary>
+            <div class="faq-a"><p style="margin:0 0 26px;max-width:76ch;font-size:15.5px;line-height:1.7;color:var(--dim);text-wrap:pretty">{{ a }}</p></div>
+          </details>
+          {% endfor %}
+        
+      </div>
+    </div>
+</section>
+<section style="padding:56px 36px 0">
+  <div style="border:1px solid var(--line-3);padding:22px 24px;max-width:64ch">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--dim-2);margin-bottom:12px">ЧИТАТЬ ПО ТЕМЕ</div>
+    <a href="/baza-znaniy/kak-obezlichit-personalnye-dannye" class="kb-name" style="font-size:19px;font-weight:700;letter-spacing:-.02em;color:var(--text);text-decoration:none">Как обезличить персональные данные: методы по приказу № 140</a>
+    <div style="margin-top:10px;font-size:14.5px;line-height:1.6;color:var(--dim)">Что закон называет обезличиванием, какие методы разрешены с 1 сентября 2025 года и какие требования приказ выставляет оператору.</div>
+  </div>
+</section>
+<section style="padding:96px 36px 140px">
+  <div style="border:1px solid var(--accent);background:var(--accent-bg);padding:32px;display:flex;align-items:center;justify-content:space-between;gap:32px;flex-wrap:wrap" data-reveal>
+    <div style="max-width:60ch">
+      <div style="font-size:22px;font-weight:700;letter-spacing:-.02em;color:var(--text)">Не нашли ответ — спросите нас.</div>
+      <div style="margin-top:10px;font-size:15px;line-height:1.6;color:var(--text-3)">Настоящие значения клиентов присылать не нужно: они нам не видны, достаточно токена из журнала и времени.</div>
+    </div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <a href="/#start" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:16px 26px;border:1px solid var(--accent);color:var(--accent-2)" class="hv-btn">НАЧАТЬ</a>
+      <a href="/how" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:16px 26px;border:1px solid var(--line);color:var(--dim)" class="hv-btn-ghost">КАК ЭТО РАБОТАЕТ</a>
+    </div>
+  </div>
+</section>
+{% endblock %}
+{% block script %}<script src="{% static 'landing.js' %}"></script>{% endblock %}

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% load static l10n %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block body_class %}v2{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'landing.css' %}">
+{% comment %}РАЗМЕТКА СТАТЬИ СОБИРАЕТСЯ ИЗ ТЕХ ЖЕ ДАННЫХ, ЧТО И СТРАНИЦА.
+   Заголовок, описание, дата и вопросы приходят из реестра `KB_ARTICLES`, а не
+   набираются здесь руками: разметка, разошедшаяся с содержимым, — это уже
+   нарушение, а не недооптимизация, и поисковик показывает в сниппете одно,
+   пока человек читает другое. `FAQPage` берётся из `article.faq` — если у
+   материала вопросов нет, блок просто не выводится.{% endcomment %}
+{% localize off %}<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Article",
+      "@id": "{{ site_url }}{{ request.path }}#article",
+      "headline": "{{ article.h1|escapejs }}",
+      "description": "{{ article.description|escapejs }}",
+      "inLanguage": "ru",
+      "datePublished": "{{ article.updated }}",
+      "dateModified": "{{ article.updated }}",
+      "mainEntityOfPage": "{{ site_url }}{{ request.path }}",
+      "author": { "@type": "Organization", "name": "Pseudex", "url": "{{ site_url }}/" },
+      "publisher": { "@type": "Organization", "name": "Pseudex", "url": "{{ site_url }}/" }
+    },
+    {
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Главная", "item": "{{ site_url }}/" },
+        { "@type": "ListItem", "position": 2, "name": "База знаний", "item": "{{ site_url }}/baza-znaniy" },
+        { "@type": "ListItem", "position": 3, "name": "{{ article.h1|escapejs }}" }
+      ]
+    }{% if article.faq %},
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {% for q, a in article.faq %}{
+          "@type": "Question",
+          "name": "{{ q|escapejs }}",
+          "acceptedAnswer": { "@type": "Answer", "text": "{{ a|escapejs }}" }
+        }{% if not forloop.last %},{% endif %}{% endfor %}
+      ]
+    }{% endif %}
+  ]
+}
+</script>{% endlocalize %}
+{% endblock %}
+{% block nav %}
+<nav>
+  <a href="/#how">КАК РАБОТАЕТ</a>
+  <a href="/how">ПОЧЕМУ ЭТО СЛОЖНЕЕ</a>
+  <a href="/detection">ЧТО НАХОДИМ</a>
+  <a href="/architecture">152-ФЗ</a>
+  <a href="/#pricing">ЦЕНЫ</a>
+  <a href="/faq" class="nav-secondary">FAQ</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<section style="padding:88px 36px 0">
+  <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;color:var(--dim-2);margin-bottom:26px">
+    <a href="/baza-znaniy" class="hv-text" style="color:var(--dim-2)">БАЗА ЗНАНИЙ</a>
+    <span style="color:var(--dim-3)"> / </span>{{ article.reading }} МИНУТ
+  </div>
+  <h1 class="hero" style="font-size:clamp(30px,4.4vw,54px);max-width:26ch">{{ article.h1 }}</h1>
+  <p class="lede" style="margin-top:26px;max-width:64ch">{{ article.lead }}</p>
+  <div style="margin-top:22px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--dim-2)">ОБНОВЛЕНО {{ article.updated }}</div>
+</section>
+
+<section style="padding:64px 36px 0">
+  <div class="kb-grid">
+    <div class="kb-prose">{% block article %}{% endblock %}</div>
+    <aside class="kb-aside">
+      <div class="kb-aside-title">НА ЭТОЙ СТРАНИЦЕ</div>
+      {% block toc %}{% endblock %}
+    </aside>
+  </div>
+</section>
+
+{% if article.faq %}
+<section style="padding:64px 36px 0">
+  <h2 style="margin:0 0 20px;font-size:clamp(21px,2.3vw,29px);font-weight:800;letter-spacing:-.03em">Вопросы</h2>
+  <div style="border-top:1px solid var(--line);max-width:64ch">
+    {% for q, a in article.faq %}
+    <details style="border-bottom:1px solid var(--line-3)">
+      <summary style="list-style:none;cursor:pointer;padding:20px 0;font-size:17px;font-weight:600;letter-spacing:-.015em;display:flex;justify-content:space-between;gap:24px;color:var(--text)">{{ q }}<span class="faq-mark" style="font-family:'JetBrains Mono',monospace;font-size:14px;color:var(--dim-3);flex:none"></span></summary>
+      <div class="faq-a"><p style="margin:0 0 22px;font-size:16px;line-height:1.7;color:var(--text-2)">{{ a }}</p></div>
+    </details>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+{% comment %}ПЕРЕХОД К ПРОДУКТУ — ОДИН И В КОНЦЕ, А НЕ ПОСРЕДИ ТЕКСТА. Человек
+пришёл за ответом про закон; ответ он получил, и только теперь уместно сказать,
+что техническую часть этого требования умеет наш контейнер.{% endcomment %}
+<section style="padding:64px 36px 0">
+  <div style="border:1px solid var(--accent);padding:28px;max-width:64ch">
+    <div class="eyebrow" style="margin-bottom:14px"><i></i><span>ЕСЛИ У ВАС ИИ-АГЕНТ</span></div>
+    <h2 style="margin:0 0 12px;font-size:clamp(20px,2.2vw,26px);font-weight:800;letter-spacing:-.03em">Техническую часть метода введения идентификаторов закрывает контейнер</h2>
+    <p style="margin:0 0 20px;font-size:16px;line-height:1.7;color:var(--dim)">Замена значений формато-сохраняющими подменами, ключ отдельно от данных, запрет совместного хранения, учёт каждого раскрытия. Работает в вашем контуре.</p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <a href="/#start" class="hv-btn" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:14px 22px;border:1px solid var(--accent);color:var(--accent-2);text-decoration:none">НАЧАТЬ ЗА 15 МИНУТ</a>
+      <a href="/how" class="hv-btn-ghost" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:14px 22px;border:1px solid var(--line);color:var(--dim);text-decoration:none">КАК ЭТО УСТРОЕНО</a>
+    </div>
+  </div>
+</section>
+
+<section style="padding:64px 36px 140px">
+  <div class="eyebrow" style="margin-bottom:18px"><i></i><span>ЧИТАТЬ ДАЛЬШЕ</span></div>
+  <div class="kb-list">
+    {% for a in articles %}{% if a.slug != article.slug %}
+    <a href="{% url 'kb_article' a.slug %}">
+      <div class="kb-kicker">{{ a.reading }} МИНУТ ЧТЕНИЯ</div>
+      <div class="kb-name">{{ a.h1 }}</div>
+      <div class="kb-desc">{{ a.description }}</div>
+    </a>
+    {% endif %}{% endfor %}
+    <a href="/architecture">
+      <div class="kb-kicker">СТРАНИЦА ПРОДУКТА</div>
+      <div class="kb-name">Что уходит наружу, а что не уходит никогда</div>
+      <div class="kb-desc">Документ для ИБ и комплаенса: граница обработки, волт, аренда словарей детекции и режим fail-closed.</div>
+    </a>
+  </div>
+</section>
+{% endblock %}
+
+{% block footer %}
+<footer>
+  <div>PSEUDEX · ОБЕЗЛИЧИВАНИЕ ПЕРСОНАЛЬНЫХ ДАННЫХ ДЛЯ ИИ-АГЕНТОВ</div>
+  <div style="display:flex;gap:24px;flex-wrap:wrap">
+    <a href="{% url 'offer' %}">ОФЕРТА</a>
+    <a href="{% url 'policy' %}">ПОЛИТИКА ОБРАБОТКИ</a>
+    <a href="{% url 'consent' %}">СОГЛАСИЕ НА ОБРАБОТКУ</a>
+    <a href="{% url 'requisites' %}">РЕКВИЗИТЫ</a>
+      <a href="/baza-znaniy">БАЗА ЗНАНИЙ</a>
+    <a href="/architecture">АРХИТЕКТУРА ДЛЯ БЕЗОПАСНИКА</a>
+  </div>
+</footer>
+{% endblock %}

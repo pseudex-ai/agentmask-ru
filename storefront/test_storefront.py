@@ -1106,28 +1106,31 @@ def _check_configurator(client, staff_client, base: str) -> None:
     from ops.models import DemandDay
     from storefront_web import detection_types
 
-    body = client.get("/").content.decode()
-    check("на лендинге есть блок конфигуратора", 'id="configurator"' in body)
+    # КОНФИГУРАТОР ПЕРЕЕХАЛ НА /detection, И ПРОВЕРКА ХОДИТ ЗА НИМ.
+    # На главной он был четвёртым интерактивным блоком подряд и отвечал на
+    # вопрос «чего у вас нет» там, где ещё не сказано, что есть. Вопрос задают
+    # после списка — значит и блок стоит на странице списка.
+    body = client.get("/detection").content.decode()
+    check("на /detection есть блок конфигуратора", 'id="configurator"' in body)
     missing_groups = [group["code"] for group in detection_types.GROUPS
                       if f'data-group="{group["code"]}"' not in body]
     check("все группы реестра отрисованы", not missing_groups, str(missing_groups))
-    # НИ ОДНОГО ПОЛЯ ДЛЯ ЧУЖОГО ТЕКСТА — В САМОМ БЛОКЕ. Утверждать это про всю
-    # страницу нельзя: ниже стоит форма регистрации, и поле названия компании в
-    # ней законно. Проверка по целой странице падала именно на нём, то есть
-    # говорила не о том, о чём написана.
-    section = body[body.index('id="configurator"'):body.index('id="start"')]
+    # НИ ОДНОГО ПОЛЯ ДЛЯ ЧУЖОГО ТЕКСТА — В САМОМ БЛОКЕ. Конфигуратор здесь
+    # ПОСЛЕДНЯЯ секция страницы: за ним только подвал, и полей ввода в хвосте нет.
+    section = body[body.index('id="configurator"'):]
     check("конфигуратор не просит чужой текст",
           "<textarea" not in section and 'type="text"' not in section
-          and 'type="email"' not in section, section[:0] or "проверен сам блок")
+          and 'type="email"' not in section, "проверен сам блок")
+    check("на главной конфигуратора больше нет — она воронка, а не каталог",
+          'id="configurator"' not in client.get("/").content.decode())
 
     # ОДИН РЕЕСТР НА ДВЕ СТРАНИЦЫ. Сверяется не двумя списками в тесте, а тем,
     # что подписи типов со страницы /detection приезжают из того же модуля.
-    detection = client.get("/detection").content.decode()
     absent = [label for label, _example, _holds in detection_types.FOUND
-              if label not in detection]
+              if label not in body]
     check("страница /detection перечисляет реестр целиком", not absent, str(absent))
     check("и обещание «напишите» ведёт туда, где это можно сделать",
-          "#configurator" in detection and "СВОЁМ ТЕКСТЕ" not in detection)
+          "#configurator" in body and "СВОЁМ ТЕКСТЕ" not in body)
 
     gap = next(group["code"] for group in detection_types.GROUPS
                if not group.get("found"))
@@ -1227,7 +1230,7 @@ def _check_configurator(client, staff_client, base: str) -> None:
     check("число типов в шаблонах не литерал, а длина реестра",
           not hardcoded, str(hardcoded))
     check("и страница его действительно печатает",
-          f"{len(detection_types.FOUND)} типов" in detection)
+          f"{len(detection_types.FOUND)} типов" in body)
 
     # ЭКРАН, РАДИ КОТОРОГО ВСЁ ЭТО ПИШЕТСЯ: очередь работ должна читаться
     # глазами, иначе счётчик существует для себя.

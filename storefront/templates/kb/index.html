@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}{{ page_title }}{% endblock %}
+{% block body_class %}v2{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'landing.css' %}">{% endblock %}
+{% block nav %}
+<nav>
+  <a href="/#how">КАК РАБОТАЕТ</a>
+  <a href="/how">ПОЧЕМУ ЭТО СЛОЖНЕЕ</a>
+  <a href="/detection">ЧТО НАХОДИМ</a>
+  <a href="/architecture">152-ФЗ</a>
+  <a href="/#pricing">ЦЕНЫ</a>
+  <a href="/faq" class="nav-secondary">FAQ</a>
+</nav>
+{% endblock %}
+
+{% block content %}
+<section style="padding:88px 36px 0">
+  <div class="eyebrow" style="margin-bottom:28px"><i></i><span>БАЗА ЗНАНИЙ</span></div>
+  <h1 class="hero" style="font-size:clamp(30px,4.2vw,52px);max-width:24ch">Разборы закона и того, что он значит для ИИ-агентов</h1>
+  {% comment %}ЭТА СТРАНИЦА НУЖНА НЕ ПРОДАЖЕ, А ПОИСКУ, и говорит об этом прямо.
+  Продуктовые страницы отвечают на «что такое Pseudex» — их находят те, кто уже
+  знает название, а таких пока ноль. Здесь — ответы на то, что люди печатают,
+  не зная о нас: как выполнить требование, какие методы разрешены, чем
+  обезличивание отличается от анонимизации.{% endcomment %}
+  <p class="lede" style="margin-top:24px;max-width:64ch">Мы пишем о том, что спрашивают перед внедрением: как выполнить требование закона, какие методы разрешены, что считается достаточным. Без «узнайте больше» — с ссылками на первоисточники.</p>
+</section>
+
+<section style="padding:56px 36px 0">
+  <div class="kb-list">
+    {% for a in articles %}
+    <a href="{% url 'kb_article' a.slug %}">
+      <div class="kb-kicker">{{ a.reading }} МИНУТ ЧТЕНИЯ</div>
+      <div class="kb-name">{{ a.h1 }}</div>
+      <div class="kb-desc">{{ a.description }}</div>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+<section style="padding:80px 36px 140px">
+  <div style="border-top:1px solid var(--line-3);padding-top:24px;max-width:64ch">
+    <div class="eyebrow" style="margin-bottom:16px"><i></i><span>ЧЕГО ЗДЕСЬ НЕ БУДЕТ</span></div>
+    <p style="margin:0;font-size:16px;line-height:1.7;color:var(--dim)">Юридических консультаций и обещаний «полного соответствия». Мы отвечаем за техническую часть — замену значений, хранение ключа, учёт действий, — а решение о достаточности метода для ваших целей принимает оператор, то есть вы. Если вопрос требует юриста, мы скажем это прямо.</p>
+  </div>
+</section>
+{% endblock %}
+
+{% block footer %}
+<footer>
+  <div>PSEUDEX · ОБЕЗЛИЧИВАНИЕ ПЕРСОНАЛЬНЫХ ДАННЫХ ДЛЯ ИИ-АГЕНТОВ</div>
+  <div style="display:flex;gap:24px;flex-wrap:wrap">
+    <a href="{% url 'offer' %}">ОФЕРТА</a>
+    <a href="{% url 'policy' %}">ПОЛИТИКА ОБРАБОТКИ</a>
+    <a href="{% url 'consent' %}">СОГЛАСИЕ НА ОБРАБОТКУ</a>
+    <a href="{% url 'requisites' %}">РЕКВИЗИТЫ</a>
+      <a href="/baza-znaniy">БАЗА ЗНАНИЙ</a>
+    <a href="{% url 'architecture' %}">АРХИТЕКТУРА ДЛЯ БЕЗОПАСНИКА</a>
+  </div>
+</footer>
+{% endblock %}

@@ -10,7 +10,7 @@
 означали бы три копии одного текста и три места, где он разъедется; переменная
 во вьюхе — одно. Значения по умолчанию оставлены здесь на случай страницы,
 которая их не задала: пустой заголовок хуже общего.{% endcomment %}
-{% with page_title|default:"pseudex — маскирование персональных данных для LLM-агентов" as ttl %}
+{% with page_title|default:"Обезличивание персональных данных для ИИ-агентов — pseudex" as ttl %}
 {% with page_description|default:"Модель не видит персональных данных, инструменты видят. Контейнер работает в вашем контуре, к нам уходят только счётчики." as descr %}
 <title>{% block title %}{{ ttl }}{% endblock %}</title>
 <meta name="description" content="{{ descr }}">
@@ -81,6 +81,11 @@
 <link rel="icon" href="{% static 'favicon-120.png' %}" type="image/png" sizes="120x120">
 <link rel="icon" href="/favicon.ico" type="image/x-icon" sizes="16x16 32x32 48x48">
 <link rel="apple-touch-icon" href="{% static 'favicon-180.png' %}">
+{% comment %}ТЕМА — ДО ТАБЛИЦЫ СТИЛЕЙ И ДО ПЕРВОЙ ОТРИСОВКИ. Скрипт блокирующий
+   намеренно: он ставит `data-theme` на <html> раньше, чем браузер покажет
+   первый пиксель. Подключённый после загрузки, он дал бы мигание чужой темой —
+   именно из-за него переключатель темы перестают включать.{% endcomment %}
+<script src="{% static 'theme.js' %}"></script>
 <link rel="stylesheet" href="{% static 'site.css' %}">
 {% block head %}{% endblock %}
 </head>
@@ -89,21 +94,19 @@
   <header class="top">
     <a class="brand" href="/">
       <svg width="26" height="26" viewBox="0 0 32 32" fill="none" style="display:block">
-        <rect x="3" y="11" width="18" height="18" rx="5" fill="#b3a0ea"></rect>
-        <rect x="11" y="3" width="18" height="18" rx="5" fill="#17171a" stroke="#b3a0ea" stroke-width="2.6"></rect>
+        <rect class="logo-a" x="3" y="11" width="18" height="18" rx="5" fill="var(--accent)"></rect>
+        <rect class="logo-b" x="11" y="3" width="18" height="18" rx="5" fill="var(--bg)" stroke="var(--accent)" stroke-width="2.6"></rect>
       </svg>
       <b>pseudex</b>
     </a>
     {% block nav %}
     <nav>
-      <a href="/#gap">РАЗНИЦА</a>
       <a href="/#how">КАК РАБОТАЕТ</a>
-      <a href="/#video">ВИДЕО</a>
+      <a href="/how">ПОЧЕМУ ЭТО СЛОЖНЕЕ</a>
       <a href="/detection">ЧТО НАХОДИМ</a>
-      <a href="/#legal">152-ФЗ</a>
-      <a href="/#start">БЫСТРЫЙ СТАРТ</a>
+      <a href="/architecture" class="nav-secondary">152-ФЗ</a>
       <a href="/#pricing">ЦЕНЫ</a>
-      <a href="/#faq">FAQ</a>
+      <a href="/faq" class="nav-secondary">FAQ</a>
     </nav>
     {% endblock %}
     {% comment %}ОТДЕЛЬНЫЙ БЛОК, чтобы страницы входа могли убрать кнопки:
@@ -112,6 +115,7 @@
        видимым текстом в шапке (уже случалось).{% endcomment %}
     {% block head_cta %}
     <div class="head-cta">
+      {% include "_theme_toggle.html" %}
       {% if user.is_staff %}<a class="btn" href="{% url 'ops_fleet' %}">ОПЕРАЦИИ</a>{% endif %}
       {% if user.is_authenticated %}
         <a class="btn" href="{% url 'cabinet' %}">КАБИНЕТ</a>
@@ -138,12 +142,13 @@
 
   {% block footer %}
   <footer>
-    <div>PSEUDEX · МАСКИРОВАНИЕ ПД ДЛЯ LLM-АГЕНТОВ</div>
+    <div>PSEUDEX · ОБЕЗЛИЧИВАНИЕ ПЕРСОНАЛЬНЫХ ДАННЫХ ДЛЯ ИИ-АГЕНТОВ</div>
     <div style="display:flex;gap:24px;flex-wrap:wrap">
       <a href="{% url 'offer' %}">ОФЕРТА</a>
       <a href="{% url 'policy' %}">ПОЛИТИКА ОБРАБОТКИ</a>
       <a href="{% url 'consent' %}">СОГЛАСИЕ НА ОБРАБОТКУ</a>
       <a href="{% url 'requisites' %}">РЕКВИЗИТЫ</a>
+      <a href="/baza-znaniy">БАЗА ЗНАНИЙ</a>
       <a href="{% url 'architecture' %}">АРХИТЕКТУРА ДЛЯ БЕЗОПАСНИКА</a>
       <span>ХОСТИНГ В РФ</span>
     </div>
