@@ -48,3 +48,45 @@ class DemandDay(models.Model):
 # Аналитика живёт в своём файле — там другая тема и другой объём объяснений,
 # а Django ищет модели именно здесь.
 from ops.analytics_models import Funnel, Visit, VisitDay  # noqa: E402,F401
+
+
+class SeoDay(models.Model):
+    """Снимок поиска за сутки: что Яндекс знает и где мы в выдаче.
+
+    ЗАЧЕМ СУТКИ, А НЕ «ТЕКУЩЕЕ СОСТОЯНИЕ». Смысл таблицы — ДВИЖЕНИЕ: «в индексе
+    2 страницы» само по себе не значит ничего, а «было 2, стало 9» значит всё.
+    Ключ по суткам, запись через UPSERT: повторный сбор в тот же день
+    перезаписывает снимок, а не плодит строки, поэтому таблица растёт со
+    скоростью «одна строка в сутки».
+
+    ЧЕГО ЗДЕСЬ НЕТ И ПОЧЕМУ ЭТО ГЛАВНОЕ. Ни одно поле не показывает
+    «неизвестно» как ноль. `None` в числовом поле значит «источник не ответил»,
+    и на экране это обязано читаться именно так: ноль страниц в индексе и
+    молчание Вебмастера — разные новости. Перепутать их — значит либо
+    испугаться на пустом месте, либо пропустить обвал.
+
+    ДВА ИСТОЧНИКА, ДВА ПОЛЯ, РАЗНЫЕ ПОДПИСИ. `pages_in_index` — точные данные
+    владельца, `pages_in_index_estimate` — `site:` из живой выдачи. Держать их в
+    одном поле нельзя: оценку приняли бы за факт, а это ровно та ошибка, из-за
+    которой метрика перестаёт что-либо значить.
+    """
+
+    day = models.DateField(unique=True)
+    pages_in_index = models.IntegerField(null=True, blank=True)
+    pages_in_index_estimate = models.IntegerField(null=True, blank=True)
+    sqi = models.IntegerField(null=True, blank=True)
+    # [{"query": ..., "position": 1..10|null, "documents": N}] — позиция в живой выдаче
+    positions = models.JSONField(default=list, blank=True)
+    # Запросы, по которым сайт ПОКАЗЫВАЛСЯ. Пусто, пока показов нет, — и это факт.
+    popular_queries = models.JSONField(default=list, blank=True)
+    recrawl = models.JSONField(default=dict, blank=True)
+    # Чем ответил каждый источник: {"webmaster": "ok"|"ошибка", "search": ...}.
+    # Без этой карты «пусто» на экране не отличить от «не смогли спросить».
+    sources = models.JSONField(default=dict, blank=True)
+    collected_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-day"]
+
+    def __str__(self) -> str:
+        return f"{self.day}: индекс {self.pages_in_index}, позиции {len(self.positions)}"

@@ -114,6 +114,12 @@ class Command(BaseCommand):
         lines.append(f"Подписок: {active} активных, {pending} ждут первой оплаты, "
                      f"{past_due} остановленных")
 
+        # --- поиск. В сводке КАЖДЫЙ ДЕНЬ, а не по неделям.
+        # В первые недели после публикации материалов это единственная новость,
+        # которая вообще есть: показов ещё нет, и «нас пока нет в выдаче» — это
+        # ответ, ради которого стоит открыть сводку.
+        lines.extend(self._seo())
+
         if options["weekly"]:
             lines.extend(self._yandex(7))
 
@@ -124,6 +130,25 @@ class Command(BaseCommand):
             self.stdout.write(f"{title}\n{body}")
             return
         self._send(title, body)
+
+    def _seo(self) -> list[str]:
+        """Строки про поиск: индекс, позиции, и что именно не ответило.
+
+        СВОДКА ОБЯЗАНА ПРИЙТИ, ЧТО БЫ НИ СЛУЧИЛОСЬ С ПОИСКОМ. Она ради денег,
+        воронки и отказов; потерять их из-за недоступного Search API было бы
+        обменом не в ту сторону. Поэтому здесь ловится всё, и единственное, что
+        может появиться вместо цифр, — строка с причиной.
+        """
+        try:
+            from ops import seo
+            from ops.models import SeoDay
+
+            today = datetime.date.today()
+            snapshot = SeoDay.objects.filter(day=today).first() or seo.collect(today)
+            before = SeoDay.objects.filter(day__lt=today).order_by("-day").first()
+            return seo.digest_lines(snapshot, before)
+        except Exception as error:  # noqa: BLE001 — сводка важнее диагностики
+            return [f"🔍 Поиск: замер не удался — {type(error).__name__}: {error}"]
 
     def _yandex(self, days: int) -> list[str]:
         """Блок рекламы: сколько пришло из Яндекса и что с кампаниями.

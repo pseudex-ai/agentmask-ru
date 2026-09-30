@@ -34,6 +34,7 @@ urlpatterns = [
     # рекламы тому, у кого есть только токен отчёта.
     path("yandex/", views.yandex, name="ops_yandex"),
     path("yandex/status", yandex_views.status, name="ops_yandex_status"),
+    path("yandex/seo", yandex_views.seo, name="ops_yandex_seo"),
     path("yandex/metrika/counters", yandex_views.metrika_counters,
          name="ops_yandex_counters"),
     path("yandex/metrika/summary", yandex_views.metrika_summary,

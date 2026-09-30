@@ -960,6 +960,20 @@ def yandex(request):
         except yandex_api.YandexError as error:
             direct_error = str(error)
 
+    # СНИМКИ ПОИСКА БЕРУТСЯ ИЗ БАЗЫ, А НЕ ЗАПРАШИВАЮТСЯ ПРИ ОТКРЫТИИ ЭКРАНА.
+    # Экран открывают в том числе тогда, когда что-то сломалось, и он обязан
+    # открываться за одну секунду: поход в Вебмастер и Search API на отрисовке
+    # страницы сделал бы это невозможным, а их отказ выглядел бы как «сломался
+    # наш экран». Кто и когда собирает — вопрос расписания, а не отрисовки; на
+    # экране честно написано, если за сегодня снимка ещё нет.
+    from ops.models import SeoDay
+    from ops import seo as seo_module
+
+    seo_days = list(SeoDay.objects.all()[:14])
+    seo_today = next((row for row in seo_days
+                      if row.day == datetime.date.today()), None)
+    seo_before = next((row for row in seo_days if row.day < datetime.date.today()), None)
+
     sent = (ConversionSent.objects.values("target")
             .annotate(n=Count("id")).order_by("target"))
     return render(request, "ops/yandex.html", {
@@ -970,4 +984,8 @@ def yandex(request):
                           or "58" in direct_error,
         "conversions": [{"target": row["target"], "count": row["n"]} for row in sent],
         "conversion_total": sum(row["count"] for row in sent),
+        "seo_today": seo_today,
+        "seo_before": seo_before,
+        "seo_days": seo_days,
+        "seo_top10": seo_module.in_top10(seo_today) if seo_today else 0,
     })

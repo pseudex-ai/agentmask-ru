@@ -444,17 +444,30 @@ def _meta(page: str) -> dict[str, str]:
 # новый адрес про неё не знает, а робот не знает про адрес. Здесь же живёт
 # ответ на «что вообще индексируется», и он совпадает с `indexable` в контексте
 # шаблона по построению — закрытых страниц в списке просто нет.
+# ДАТА ИЗМЕНЕНИЯ — ЧЕТВЁРТОЕ ПОЛЕ, И ОНА ЧЕСТНАЯ, А НЕ ДАТА СБОРКИ.
+# `<lastmod>` Яндекс использует, а `<changefreq>` с `<priority>` — нет: по нему
+# робот решает, что переобойти первым. Взять дату из mtime файла НЕЛЬЗЯ: в
+# контейнере mtime равен времени сборки образа, и тогда каждый релиз объявлял бы
+# свежими все 17 страниц сразу — а сайт, у которого меняется всё и каждый день,
+# робот очень быстро перестаёт воспринимать всерьёз, и поле перестаёт работать
+# совсем. Поэтому дата объявлена здесь и обновляется ВМЕСТЕ С ТЕКСТОМ страницы.
+# ПРАВИЛО ОДНО: дата = последнее изменение шаблона самой страницы (у статьи —
+# её `updated`). Смена темы, подвала или скрипта дату НЕ двигает: это «обвязка»,
+# одинаковая для всех, и объявлять её изменением содержания значило бы вернуть
+# «сегодня изменилось всё» через другую дверь.
+# Держит `test_seo.py`: у каждой публичной страницы дата есть, она в формате
+# ISO и не из будущего.
 _PUBLIC_PAGES = (
-    ("landing", 1.0, "weekly"),
-    ("detection", 0.8, "monthly"),
-    ("how", 0.8, "monthly"),
-    ("faq", 0.7, "monthly"),
-    ("kb", 0.6, "weekly"),
-    ("architecture", 0.7, "monthly"),
-    ("offer", 0.4, "yearly"),
-    ("policy", 0.4, "yearly"),
-    ("consent", 0.4, "yearly"),
-    ("requisites", 0.3, "yearly"),
+    ("landing", 1.0, "weekly", "2026-09-30"),
+    ("detection", 0.8, "monthly", "2026-09-29"),
+    ("how", 0.8, "monthly", "2026-09-30"),
+    ("faq", 0.7, "monthly", "2026-09-30"),
+    ("kb", 0.6, "weekly", "2026-09-30"),
+    ("architecture", 0.7, "monthly", "2026-09-30"),
+    ("offer", 0.4, "yearly", "2026-09-21"),
+    ("policy", 0.4, "yearly", "2026-09-17"),
+    ("consent", 0.4, "yearly", "2026-09-17"),
+    ("requisites", 0.3, "yearly", "2026-09-17"),
 )
 
 
@@ -496,10 +509,11 @@ def sitemap(request):
     from django.urls import reverse
     from django.utils.html import escape
     rows = []
-    for name, priority, freq in _PUBLIC_PAGES:
+    for name, priority, freq, updated in _PUBLIC_PAGES:
         rows.append(
             f"  <url>\n"
             f"    <loc>{escape(settings.SITE_URL + reverse(name))}</loc>\n"
+            f"    <lastmod>{updated}</lastmod>\n"
             f"    <changefreq>{freq}</changefreq>\n"
             f"    <priority>{priority}</priority>\n"
             f"  </url>")
@@ -509,6 +523,7 @@ def sitemap(request):
         rows.append(
             f"  <url>\n"
             f"    <loc>{escape(settings.SITE_URL + reverse('kb_article', args=[article['slug']]))}</loc>\n"
+            f"    <lastmod>{article['updated']}</lastmod>\n"
             f"    <changefreq>monthly</changefreq>\n"
             f"    <priority>0.6</priority>\n"
             f"  </url>")

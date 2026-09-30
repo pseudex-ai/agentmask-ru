@@ -27,6 +27,36 @@ import sys
 _SITE = "https://pseudex.test"
 
 
+def _sitemap_lastmod() -> list[str]:
+    """Проверки `<lastmod>`: он есть у каждого адреса и он не врёт.
+
+    ЗАЧЕМ ЭТО ОТДЕЛЬНАЯ ПРОВЕРКА. `<changefreq>` и `<priority>` Яндекс не
+    использует, а `<lastmod>` — использует, и по нему решает, что переобойти
+    первым. Дата, взятая из времени файла, в контейнере равна времени сборки
+    образа, поэтому каждый релиз объявлял бы свежими все страницы сразу; дата из
+    будущего или отсутствующая ломает поле так же тихо. Здесь три требования:
+    поле есть у КАЖДОГО адреса, оно в формате ISO, и оно не из будущего.
+    """
+    import re
+    from datetime import date
+
+    from django.test import Client
+
+    body = Client().get("/sitemap.xml").content.decode()
+    locs = re.findall(r"<loc>(.*?)</loc>", body)
+    stamps = re.findall(r"<lastmod>(.*?)</lastmod>", body)
+    wrong = []
+    if len(stamps) != len(locs):
+        wrong.append(f"адресов {len(locs)}, а дат {len(stamps)} — у кого-то её нет")
+    today = date.today().isoformat()
+    for stamp in stamps:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", stamp):
+            wrong.append(f"дата не в формате ISO: {stamp!r}")
+        elif stamp > today:
+            wrong.append(f"дата из будущего: {stamp}")
+    return wrong
+
+
 def main() -> int:
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "pseudex_site.settings")
     os.environ["PSEUDEX_SECRET_KEY"] = "seo-test"
@@ -90,6 +120,13 @@ def main() -> int:
         if code != 200:
             broken.append(f"{path} -> {code}")
     check(not broken, "каждый адрес из карты открывается", str(broken))
+
+    # ── lastmod: поле, которым Яндекс пользуется, в отличие от changefreq ───
+    stamps = re.findall(r"<lastmod>(.*?)</lastmod>", xml)
+    check(len(stamps) == len(locs),
+          f"у каждого адреса есть lastmod ({len(stamps)} из {len(locs)})")
+    bad_stamps = _sitemap_lastmod()
+    check(not bad_stamps, "и он в формате ISO и не из будущего", str(bad_stamps))
 
     # ── адрес со слэшем на конце — не тупик ───────────────────────────────
     # Публичные страницы объявлены БЕЗ слэша, и таков же их канонический адрес.

@@ -131,4 +131,98 @@
   <div class="msg">Кампаний нет.</div>
   {% endif %}
 </section>
+
+  {% comment %}
+     ПОИСК: ЧТО ЯНДЕКС ЗНАЕТ И ГДЕ МЫ В ВЫДАЧЕ.
+     Это не реклама. Блок выше — про деньги и кампании; здесь про то, находят
+     ли нас вообще. Две цифры, которые нельзя путать, подписаны по-разному:
+     «в индексе» — точные данные владельца, «по оценке site:» — выборка живой
+     выдачи. Оценка, выданная за факт, — это ровно та ошибка, из-за которой
+     метрика перестаёт что-либо значить.
+     КОММЕНТАРИЙ ИМЕННО БЛОЧНЫЙ, А НЕ `{# #}`: тот в Django однострочный, и
+     многострочный текст из него ПЕЧАТАЕТСЯ КЛИЕНТУ. Ловит `test_auth_style.py`.
+  {% endcomment %}
+  <div class="sec-head" style="margin-top:40px">
+    <div>
+      <h2>Поиск: индекс и позиции</h2>
+      <div class="sec-meta" style="margin-top:8px">снимок за сутки · движение важнее состояния · «нет данных» — это тоже ответ</div>
+    </div>
+    {% if seo_today %}
+    <div class="sec-meta">замер {{ seo_today.day|date:"d.m.Y" }}</div>
+    {% endif %}
+  </div>
+
+  {% if not seo_today %}
+  <div class="msg">Снимка за сегодня нет. Собирается раз в сутки вместе с утренней
+    сводкой; вручную — <span class="mono">python3 manage.py seo_snapshot</span>.</div>
+  {% else %}
+  <div style="display:flex;gap:24px;flex-wrap:wrap;margin:0 0 18px">
+    <div>
+      <div class="sec-meta">В ИНДЕКСЕ (точно)</div>
+      <div class="mono" style="font-size:26px">
+        {% if seo_today.pages_in_index is not None %}{{ seo_today.pages_in_index }}{% else %}—{% endif %}
+        {% if seo_before and seo_today.pages_in_index is not None and seo_before.pages_in_index is not None and seo_before.pages_in_index != seo_today.pages_in_index %}
+        <span style="font-size:14px">было {{ seo_before.pages_in_index }}</span>
+        {% endif %}
+      </div>
+    </div>
+    <div>
+      <div class="sec-meta">ПО ОЦЕНКЕ site:</div>
+      <div class="mono" style="font-size:26px">
+        {% if seo_today.pages_in_index_estimate is not None %}{{ seo_today.pages_in_index_estimate }}{% else %}—{% endif %}
+      </div>
+    </div>
+    <div>
+      <div class="sec-meta">ИКС</div>
+      <div class="mono" style="font-size:26px">
+        {% if seo_today.sqi is not None %}{{ seo_today.sqi }}{% else %}—{% endif %}
+      </div>
+    </div>
+    <div>
+      <div class="sec-meta">В ТОП-10</div>
+      <div class="mono" style="font-size:26px">{{ seo_top10 }}<span style="font-size:14px"> из {{ seo_today.positions|length }}</span></div>
+    </div>
+  </div>
+
+  {% if seo_today.positions %}
+  <table class="tbl">
+    <thead><tr><th>Запрос</th><th>Позиция</th><th>Документов</th></tr></thead>
+    <tbody>
+      {% for row in seo_today.positions %}
+      <tr>
+        <td>{{ row.query }}</td>
+        <td class="mono">{% if row.position %}{{ row.position }}{% else %}—{% endif %}</td>
+        <td class="mono">{{ row.documents }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if seo_today.popular_queries %}
+  <div class="sec-meta" style="margin-top:16px">ПОКАЗЫ УЖЕ ЕСТЬ ПО ЗАПРОСАМ</div>
+  <div>{{ seo_today.popular_queries|length }} запросов: {% for q in seo_today.popular_queries|slice:":8" %}{{ q.query }}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
+  {% endif %}
+
+  {% for name, state in seo_today.sources.items %}
+    {% if state != "ok" %}<div class="msg" style="margin-top:12px">Источник «{{ name }}»: {{ state }}</div>{% endif %}
+  {% endfor %}
+
+  {% if seo_days|length > 1 %}
+  <div class="sec-meta" style="margin-top:20px">ИСТОРИЯ</div>
+  <table class="tbl">
+    <thead><tr><th>Сутки</th><th>Индекс</th><th>Оценка</th><th>Топ-10</th></tr></thead>
+    <tbody>
+      {% for row in seo_days %}
+      <tr>
+        <td class="mono">{{ row.day|date:"d.m.Y" }}</td>
+        <td class="mono">{% if row.pages_in_index is not None %}{{ row.pages_in_index }}{% else %}—{% endif %}</td>
+        <td class="mono">{% if row.pages_in_index_estimate is not None %}{{ row.pages_in_index_estimate }}{% else %}—{% endif %}</td>
+        <td class="mono">{{ row.positions|length }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% endif %}
 {% endblock %}

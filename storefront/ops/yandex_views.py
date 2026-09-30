@@ -150,3 +150,42 @@ def status(request):
         "counter": settings.METRIKA_ID,
         "counter_set": bool(settings.METRIKA_ID),
     })
+
+
+@require_GET
+@_ops_api_gate
+def seo(request):
+    """Снимки поиска машинным видом: индекс, позиции, движение.
+
+    РУЧКА НУЖНА ДАЙДЖЕСТУ И ЛЮБОМУ ВНЕШНЕМУ ЧИТАТЕЛЮ. Сводка ходит в `ops.seo`
+    напрямую, потому что живёт в том же процессе; ручка существует для того, кто
+    в процессе не живёт, — утреннего отчёта на другом хосте, выгрузки в таблицу.
+    Считать заново она НЕ умеет: это дорого и требует секретов, поэтому отдаёт
+    то, что уже собрано, и честно говорит, если за сутки снимка нет.
+    """
+    from datetime import date
+
+    from ops.models import SeoDay
+    from ops import seo as seo_module
+
+    days = min(max(int(request.GET.get("days", 14)), 1), 365)
+    rows = list(SeoDay.objects.all()[:days])
+    today = date.today().isoformat()
+    payload = {
+        "today_collected": any(row.day.isoformat() == today for row in rows),
+        "days": [
+            {
+                "day": row.day.isoformat(),
+                "pages_in_index": row.pages_in_index,
+                "pages_in_index_estimate": row.pages_in_index_estimate,
+                "sqi": row.sqi,
+                "in_top10": seo_module.in_top10(row),
+                "queries_measured": len(row.positions),
+                "popular_queries": [q.get("query") for q in row.popular_queries[:5]],
+                "positions": row.positions,
+                "sources": row.sources,
+            }
+            for row in rows
+        ],
+    }
+    return JsonResponse(payload)
