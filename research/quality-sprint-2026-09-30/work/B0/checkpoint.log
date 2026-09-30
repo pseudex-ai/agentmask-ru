@@ -1,0 +1,14 @@
+{
+  "wip_files_verified": 441,
+  "dependencies_referenced": 3554,
+  "skipped_explicit": [],
+  "archive_bytes": 21968795,
+  "pinned_source_run_files": 198,
+  "previous_hashes": 88,
+  "paid_raw_files": 17,
+  "statuses": {
+    "complete": 802,
+    "excluded": 11
+  },
+  "holdout_intersection": 0
+}
