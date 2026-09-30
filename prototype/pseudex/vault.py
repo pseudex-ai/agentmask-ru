@@ -14,6 +14,7 @@ model copies them verbatim and they never coincide with a real person's ID.
 
 import copy
 import functools
+import hashlib
 import re
 import secrets
 import string
@@ -1916,7 +1917,16 @@ def _render_token(entity_type: str, gender: str | None = None,
         return _fake_secret(original)
     if entity_type == "LOC":
         return _fake_place(original, head)
-    return f"REDACTED{secrets.token_hex(3)}"
+    # NO RENDERER — DETERMINISTIC REDACTION, NOT A RANDOM MARKER. OPAQUE (a leaf
+    # re-typed by its field key, `structured.py:216`) reaches here, and the old
+    # `secrets.token_hex(3)` gave every request a NEW marker for the SAME value:
+    # not idempotent with itself, and the marker's hex digits read as a NUMBER
+    # under a numeric field key, so the engine minted a fake card over its own
+    # redaction (g07 `cardholder` → `REDACTED2aada2`). Derived from the value
+    # alone, like `envelope._neutral_redaction`, so the same value mints the same
+    # string and the re-masking guard (`REDACTION_MARKER`) keeps it a fixed point.
+    digest = hashlib.sha256(f"{entity_type}\x00{original}".encode("utf-8")).hexdigest()[:6]
+    return f"REDACTED{digest}"
 
 
 # Shapes of every token _render_token can mint, most specific first (Python's
@@ -2491,6 +2501,12 @@ class Vault:
         # по первым четырём буквам. Живут ровно столько, сколько верна таблица:
         # сбрасываются вставкой строки NAME.
         self._spent_words: dict[str, tuple[str, ...]] | None = None
+        # ВЫСШАЯ ОТМЕТКА rowid, от которой построен `_spent_words`. Кэш — снимок
+        # на процесс, а файл волта общий на N воркеров: вставка ДРУГОГО процесса
+        # его не сбрасывает, поэтому `_spent_real_words` сверяет отметку точечным
+        # запросом (`MAX(rowid)`) и перестраивает ведра, когда другой воркер
+        # отчеканил нового NAME.
+        self._spent_words_mark: int = -1
         self._lock = threading.Lock()
         self._conn = sqlite_connect(db_path, VAULT_STORE)
         # Base tables, numbered steps, indexes over migrated columns — and the
@@ -2644,22 +2660,42 @@ class Vault:
                 # NOT re-acquiring it: `threading.Lock` is not reentrant, and a
                 # nested `with self._lock` here deadlocked the mint loop on the
                 # first NAME (the whole test hung at 0% CPU).
-                rows = self._conn.execute(
-                    "SELECT canonical, original FROM tokens WHERE customer=? "
-                    "AND entity_type='NAME' AND minted_in=?",
-                    (self._customer, self._conversation),
-                ).fetchall()
-                buckets: dict[str, set[str]] = {}
-                for canonical, original in rows:
-                    for value in (canonical or "", original or ""):
-                        for word in value.split():
-                            if len(word) <= 1:
-                                continue
-                            stem = _stem_of_word(word.casefold().replace("ё", "е"))
-                            buckets.setdefault(stem[:4], set()).add(stem)
-                self._spent_words = {prefix: tuple(sorted(stems))
-                                     for prefix, stems in buckets.items()}
+                self._load_spent_words()
+        elif self._conversation:
+            # ДРУГОЙ ВОРКЕР ВСТАВИЛ РЯД — снимок протух. Один точечный запрос по
+            # индексу (MAX(rowid) читается из таблицы, а не сканом) говорит,
+            # сдвинулась ли вершина; перестраиваем ведра только тогда, когда
+            # сдвинулась. Та же дисциплина, что `_shares_a_stem_in_conversation`
+            # уже держит: спрашивать БД точечно, а не верить снимку на процесс.
+            mark = self._conn.execute(
+                "SELECT COALESCE(MAX(rowid), -1) FROM tokens WHERE customer=? "
+                "AND entity_type='NAME' AND minted_in=?",
+                (self._customer, self._conversation),
+            ).fetchone()[0]
+            if mark != self._spent_words_mark:
+                self._load_spent_words()
         return self._spent_words
+
+    def _load_spent_words(self) -> None:
+        """(Re)build the spent-word buckets from the NAME rows of this dialogue."""
+        rows = self._conn.execute(
+            "SELECT rowid, canonical, original FROM tokens WHERE customer=? "
+            "AND entity_type='NAME' AND minted_in=?",
+            (self._customer, self._conversation),
+        ).fetchall()
+        buckets: dict[str, set[str]] = {}
+        mark = -1
+        for rowid, canonical, original in rows:
+            mark = max(mark, int(rowid))
+            for value in (canonical or "", original or ""):
+                for word in value.split():
+                    if len(word) <= 1:
+                        continue
+                    stem = _stem_of_word(word.casefold().replace("ё", "е"))
+                    buckets.setdefault(stem[:4], set()).add(stem)
+        self._spent_words = {prefix: tuple(sorted(stems))
+                             for prefix, stems in buckets.items()}
+        self._spent_words_mark = mark
 
     def _shares_a_spent_word(self, token: str,
                              carry: frozenset[str] | None = None) -> bool:

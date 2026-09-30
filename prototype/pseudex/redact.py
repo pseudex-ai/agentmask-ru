@@ -853,7 +853,7 @@ def _argument_view(texts: tuple[str, ...], vault: Vault) -> Vault:
 
 
 def unmask_text(text: str, vault: Vault, inflect: bool = True,
-                for_tool: bool = False) -> str:
+                for_tool: bool = False, target: str = "") -> str:
     """Replace tokens with their real values, then catch numeric tokens the model
     REFORMATTED via a digit-signature match.
 
@@ -861,9 +861,13 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True,
     indexed lookups, so the cost tracks the length of the answer rather than the
     size of the vault. The previous approach loaded every token the org had ever
     minted and substring-scanned the text once per token, which made an org with
-    100k tokens pay 100k scans on every single response."""
+    100k tokens pay 100k scans on every single response.
+
+    `target` — the leaf's schema-declared notation (класс Ж), or "" when the
+    schema declares none; never guessed.
+    """
     return _unmask(text, _call_view(_call_texts(text), vault), _literals_of(vault),
-                   inflect, for_tool)
+                   inflect, for_tool, target=target)
 
 
 def _address_clauses(text: str) -> list[tuple[int, int]]:
@@ -924,7 +928,7 @@ def _conflicting_place_spans(text: str, vault: Vault,
 
 
 def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
-            for_tool: bool, field_key: str = "") -> str:
+            for_tool: bool, field_key: str = "", target: str = "") -> str:
     with stage("unmask.total"):
         # EVERY PASS READS THE SAME MASKED TEXT, AND THE EXACT TOKENS WIN. The
         # passes used to run one after another on the text the previous pass
@@ -946,7 +950,7 @@ def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
         inflected_spans: list[tuple[int, int, str]] = [
             (span.start, span.end, span.value) for span in resolved_spans]
         verbatim_spans = _restore_verbatim_spans(text, literals.forms, for_tool)
-        token_spans = _restore_tokens_spans(text, vault, for_tool)
+        token_spans = _restore_tokens_spans(text, vault, for_tool, target=target)
         # A resolved composite address owns its entire range. Restoring a
         # copied house/flat first would prevent the overlapping street+house
         # projection from being applied, creating a real/fake hybrid.
@@ -972,7 +976,7 @@ def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
         for span in sorted(token_spans, key=lambda item: (item[0], -item[1])):
             if not any(span[0] < end and start < span[1] for start, end, _ in taken):
                 taken.append(span)
-        passes = [_restore_reformatted_spans(text, vault, for_tool, field_key),
+        passes = [_restore_reformatted_spans(text, vault, for_tool, field_key, target=target),
                   _restore_spoken_identifier_spans(text, vault, for_tool)]
         # A cue inside a JSON string carries the same role as one in prose.
         # Field-level numeric values remain governed by the schema path.
@@ -1277,7 +1281,8 @@ def _restore_verbatim_spans(text: str, shown_forms: list[tuple[str, str, str]],
     return spans
 
 
-def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> list[tuple[int, int, str]]:
+def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False,
+                          target: str = "") -> list[tuple[int, int, str]]:
     matches: list[re.Match[str]] = list(token_re().finditer(text))
     spoken_dates: set[str] = set()
     # A DATE SAID IN WORDS is a token too, since a spoken date of birth is
@@ -1385,9 +1390,9 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False) -> li
             # into the surface's slots padded «10.4.82» to «10.04.82».
             canonical = _date_canonical(value) if kind in {"DOB", "DATE"} else ""
             if len(canonical) == 10 and _date_canonical(surface):
-                value = _atomic_in_form_of(surface, value, kind, for_tool=for_tool)
+                value = _atomic_in_form_of(surface, value, kind, for_tool=for_tool, target=target)
             elif kind in {"PHONE", "SNILS", "INN", "CARD", "PASSPORT", "EMAIL", "PLATE"}:
-                value = _atomic_in_form_of(surface, value, kind, for_tool=for_tool)
+                value = _atomic_in_form_of(surface, value, kind, for_tool=for_tool, target=target)
             elif for_tool and kind == "NAME":
                 # THE EXACT TOKEN, RE-CASED OR NOT: the agent wrote the
                 # nominative it was shown («Николай Сорокин» for a substitute
@@ -1411,7 +1416,8 @@ def _restore_tokens(text: str, vault: Vault, for_tool: bool = False) -> str:
 
 
 def _restore_reformatted_spans(text: str, vault: Vault,
-                         for_tool: bool = False, field_key: str = "") -> list[tuple[int, int, str]]:
+                         for_tool: bool = False, field_key: str = "",
+                         target: str = "") -> list[tuple[int, int, str]]:
     """Numeric tokens the model rewrote (+7… -> 8…, separators stripped) no longer
     match their minted shape, so they are resolved by digit signature instead."""
     normalized_text: str = normalize(text)
@@ -1466,7 +1472,7 @@ def _restore_reformatted_spans(text: str, vault: Vault,
         if hit is not None:
             kind, value = hit
             value = _atomic_in_form_of(text[match.start():match.end()], value, kind,
-                                       for_tool=for_tool)
+                                       for_tool=for_tool, target=target)
             spans.append((match.start(), match.end(), value))
             continue
         # КУСОК ПОДМЕНЫ — ТОЖЕ НАША ПОДМЕНА. Схема просит серию паспорта без
@@ -1573,7 +1579,7 @@ def _plate_in_form_of(written: str, value: str, for_tool: bool = False) -> str:
 
 
 def _atomic_in_form_of(written: str, value: str, kind: str,
-                       for_tool: bool = False) -> str:
+                       for_tool: bool = False, target: str = "") -> str:
     """Render resolved content in a mention's form, independent of its consumer.
 
     THE SEAM, NOT THE DECISION. Identity resolution supplies the type; the
@@ -1581,23 +1587,34 @@ def _atomic_in_form_of(written: str, value: str, kind: str,
     verbatim seam, the token seam and the mint cannot disagree about the same
     field — the disagreement that was class А. `for_tool` says which leg the
     mention is on: the tool cannot execute a dictated phrase, so there the
-    leaf's notation wins over the sender's words.
+    leaf's notation wins over the sender's words. `target` is the leaf's
+    SCHEMA-declared notation (класс Ж): when the tool schema names one
+    («snils» = XXX-XXX-XXX YY), it overrides the sender's separators; empty
+    means «not declared — do not guess».
     """
-    return notation.render_like(value, written, kind, for_tool=for_tool)
+    return notation.render_like(value, written, kind, for_tool=for_tool, target=target)
 
 
-def _numeric_in_form_of(written: str, value: str, kind: str) -> str:
+def _numeric_in_form_of(written: str, value: str, kind: str,
+                        target: str = "") -> str:
     """Процифровые документы — эталон, работавший и до класса А.
 
     PHONE, СНИЛС, ИНН, карта, паспорт: диктовка (`digits_in_words_like`) и
     разделители агента (`_same_shape`). Ничего не решает про нотацию листа —
-    это делает `notation.render_like`, который сюда и приходит.
+    это делает `notation.render_like`, который сюда и приходит. `target` —
+    объявленная схемой нотация листа (класс Ж): «snils» форсирует
+    «XXX-XXX-XXX YY», без объявления нотацию держит агентская поверхность.
     """
     if kind == "PHONE":
         return _phone_in_form_of(written, value)
     if kind in {"SNILS", "INN", "CARD", "PASSPORT"}:
         model: str = normalize(written)
         digits: str = re.sub(r"\D", "", canonicalize(kind, normalize(value)))
+        # СХЕМА ОБЪЯВИЛА НОТАЦИЮ ЛИСТА (DECISIONS-SPRINT.md §Класс Ж): «схема
+        # говорит SNILS: XXX-XXX-XXX YY — рендерим в этой нотации». Только тогда,
+        # когда схема её назвала; без объявления ничего не угадывается.
+        if kind == "SNILS" and target == "snils" and len(digits) == 11:
+            return f"{digits[:3]}-{digits[3:6]}-{digits[6:9]} {digits[9:]}"
         dictated: str | None = spoken.digits_in_words_like(digits, written)
         if dictated is not None:
             return dictated
@@ -2627,7 +2644,8 @@ def _bare_address_leaf(key: str, value: object) -> bool:
             and morph_places.role_of_field(key) in ("house", "flat", "building", "entrance", "floor"))
 
 
-def unmask_arguments(raw: str, vault: Vault) -> str:
+def unmask_arguments(raw: str, vault: Vault,
+                     leaf_notation: dict[str, str] | None = None) -> str:
     """Detokenise a tool call's `arguments` AS JSON, not as flat text.
 
     THE ARGUMENTS ARE JSON AND THE REAL VALUE IS ARBITRARY TEXT. Substituting
@@ -2648,6 +2666,11 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
     it. Fakes are format-preserving and carry no quotes, so flat substitution
     cannot break the JSON on the way out.
 
+    `leaf_notation` maps a leaf KEY to the notation its tool schema declares
+    (класс Ж — «snils» = XXX-XXX-XXX YY, «e164», «gost»). A leaf absent from the
+    map is «not declared» and is rendered in the sender's own form, never
+    guessed.
+
     Arguments that are not valid JSON fall back to flat text: a model is free
     to emit a broken object, and refusing to detokenise it would send a FAKE to
     the tool — the one outcome worse than imperfect text.
@@ -2662,11 +2685,15 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
     except (json.JSONDecodeError, TypeError):
         return _unmask(raw, call, literals, False, True)
 
+    notations = leaf_notation or {}
+
     def walk(node: object, key: str = "") -> object:
         if isinstance(node, str):
             # VERBATIM, NOT AGREED. A tool executes on the value; grammar is a
-            # property of prose. See `_in_case_of`.
-            return _unmask(node, call, literals, False, True, field_key=key)
+            # property of prose. See `_in_case_of`. The leaf's schema-declared
+            # notation rides as `target` and is applied only when declared.
+            return _unmask(node, call, literals, False, True, field_key=key,
+                           target=notations.get(key, ""))
         if isinstance(node, list):
             return [walk(item, key) for item in node]
         if isinstance(node, dict):

@@ -199,8 +199,8 @@ def _object_spans(text: str, matches: list[re.Match[str]],
         if composite is not None:
             # A TYPED COMPOSITE: the parent key says which document this is, and
             # the leased map says which roles it has and how long each is. A leaf
-            # that does not read as a part is NOT dropped — it falls through to
-            # the key-typed path below and is masked whole rather than left open.
+            # that does not read as a part is NOT dropped — it is masked WHOLE
+            # below rather than left open.
             leaves = _composite_leaves(group, composite)
             if leaves:
                 whole = _composite_whole(
@@ -208,7 +208,26 @@ def _object_spans(text: str, matches: list[re.Match[str]],
                 for role, (match, value) in leaves.items():
                     out.append(_part_span(match, entity_type or "", whole, role))
                     claimed.add(match.start())
-                continue
+            # FAIL-CLOSED: every OTHER string leaf of a typed object is masked
+            # WHOLE by the parent's type, never left open. A leaf whose role is
+            # missing or mis-spelled («seria»), or whose part carries no digit,
+            # is not a part of a numbered document — but the parent key still
+            # typed it, so it cannot be dropped: 4- and 6-digit runs without a
+            # checksum are invisible to every shape recognizer, and dropping them
+            # is exactly the g09 leak (`passport.series` alone went out in the
+            # clear). The whole substitute is over-masking; the open leaf is a
+            # leak, and a fail-closed gateway picks the safe side.
+            for match in group:
+                if match.start() in claimed:
+                    continue
+                raw = match.group(2)
+                value = raw.strip()
+                if len(value) >= 2 and not _is_running_text(value):
+                    lead = len(raw) - len(raw.lstrip())
+                    start = match.start(2) + lead
+                    out.append(Span(start, start + len(value), entity_type or "", value))
+                    claimed.add(match.start())
+            continue
         # AN OBJECT WITH A STREET AND A HOUSE IS ONE ADDRESS, whatever else it
         # holds and whatever the parent is called: the leaf NAMES are the
         # evidence, and that is how this rule worked before the parent key was

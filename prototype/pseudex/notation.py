@@ -131,9 +131,11 @@ def render_like(value: str, surface: str, kind: str, target: str | None = None,
     # ЦИФРОВЫЕ ДОКУМЕНТЫ — ЭТАЛОН, УЖЕ РАБОТАЮЩИЙ: их рендереры живут в
     # `redact` (там же, где их читает шов), и один из них (`_phone_in_form_of`)
     # отдаёт диктовку словами. Импорт отложенный: `redact` импортирует ЭТОТ
-    # модуль, и на уровне модуля получилось бы кольцо.
+    # модуль, и на уровне модуля получилось бы кольцо. `target` — объявленная
+    # схемой нотация листа (класс Ж): единственное, что форсирует нотацию выше
+    # поверхности отправителя, и только когда схема её назвала.
     from pseudex.redact import _numeric_in_form_of
-    return _numeric_in_form_of(surface, value, kind)
+    return _numeric_in_form_of(surface, value, kind, target=target or "")
 
 
 def _date_in_form_of(value: str, surface: str) -> str:
