@@ -37,9 +37,10 @@ from dataclasses import replace
 
 from bench.agentpii4 import tools as v4tools
 from bench.agentpii4.schema import PiiItem
-from bench.agentpii4.tools import (CSV_HEADER, REGISTRY as V4_REGISTRY, FieldSpec, Refusal,
-                                   ToolSpec, parse_e164, parse_inn, parse_int, parse_iso_date,
-                                   parse_name_word, parse_snils)
+from bench.agentpii4.tools import (CSV_HEADER, LEAF_NOTATION, LEAF_NOTATION_EVIDENCE,
+                                   NOTATIONS, REGISTRY as V4_REGISTRY, FieldSpec, Refusal,
+                                   ToolSpec, leaf_notation, parse_e164, parse_inn, parse_int,
+                                   parse_iso_date, parse_name_word, parse_snils)
 from bench.agentpii5.contracts import (NEW_TOOL_NAMES, NEW_TOOL_RESULT_TYPES,
                                        NEW_TOOL_RETURN_FORMS, NO_SUITE, RETURN_FORMS, SUITES,
                                        TOOL_SUITE, TOOL_VERTICAL, V4_TOOL_NAMES, VERTICALS,
@@ -2111,55 +2112,10 @@ def result_types(tool: str) -> tuple[str, ...]:
 # requires it — turns a notation mismatch from an accident of byte comparison
 # into a NAMED fact, which is what the spike asked for (Ж-6).
 #
-# WHY IT IS A TABLE AND NOT A `FieldSpec` FIELD. `FieldSpec` is v4's, and
-# `bench/agentpii4/` is the frozen baseline the whole instrument is measured
-# against (`contracts.C-001`, `git diff --stat -- bench/agentpii4/` must stay
-# empty); a v5 dataclass wrapping it would fork the object every existing caller
-# already passes around. A table keyed by (tool, path) is the same declaration
-# with no second type.
-#
-# THE DECLARATION IS NOT DECORATION: `notation_problems` proves it against the
-# leaf's OWN parser — the declared spelling must be ACCEPTED, and a demanding
-# notation must be the only spelling accepted. A table nothing reads is how a
-# «marker» becomes a comment.
-NOTATIONS: tuple[str, ...] = ("any", "snils", "e164", "gost")
-
-LEAF_NOTATION: dict[tuple[str, str], str] = {
-    # the parser strips spaces and upper-cases, so the leaf asks for ANY spelling
-    ("vehicle_check", "plate"): "any",
-    # «от одного до трёх слов», order free — the parser takes them in any order
-    ("calendar_free", "person"): "any",
-    # «Формат 112-233-445 95»: the parser enforces the ПФР spelling, dashes included
-    ("snils_verify", "snils"): "snils",
-    ("patient_find", "snils"): "snils",
-    # «Телефон в формате E.164, например +79161234567»: «8916…» is refused
-    ("patient_find", "phone"): "e164",
-}
-
-# THE EVIDENCE THAT MAKES EACH DECLARATION FALSIFIABLE: a call the parser
-# ACCEPTS in the declared notation, and the SAME value in the other notation a
-# Russian speaker writes it in. `any` means the parser accepts BOTH (that is
-# what «любая» means, and a leaf declared `any` whose parser refused one of them
-# would be a lie); a demanding notation means the parser accepts the declared
-# one and REFUSES the other — which is what «the schema requires it» means.
-# The samples are the schema's own examples, not invented values.
-LEAF_NOTATION_EVIDENCE: dict[tuple[str, str], tuple[dict[str, object], dict[str, object]]] = {
-    ("vehicle_check", "plate"): ({"plate": "В163ОУ23"}, {"plate": "в 163 оу 23"}),
-    ("calendar_free", "person"): ({"person": "Евгений Вольнов", "date": "2026-09-10"},
-                                  {"person": "Вольнов Евгений", "date": "2026-09-10"}),
-    ("snils_verify", "snils"): ({"snils": "017-897-237 96"}, {"snils": "01789723796"}),
-    ("patient_find", "snils"): ({"snils": "017-897-237 96"}, {"snils": "01789723796"}),
-    ("patient_find", "phone"): ({"phone": "+79164021187"}, {"phone": "89164021187"}),
-}
-
-
-def leaf_notation(tool: str, path: str) -> str:
-    """The notation this leaf's schema declares, or "" when it declares none.
-
-    EMPTY IS «NOT DECLARED», never «any»: 38 of the 43 tools make no claim about
-    the spelling of a leaf, and inventing one for them would be exactly the
-    guessing the owner forbade."""
-    return LEAF_NOTATION.get((tool, path), "")
+# LEAF_NOTATION / LEAF_NOTATION_EVIDENCE / NOTATIONS / leaf_notation now live in
+# `bench.agentpii4.tools` (the schemas are v4's, and a v4 module may not import
+# v5) and are re-imported at the top of this module. `notation_problems` stays
+# here because it needs the v5 `ToolSpecV5`.
 
 
 def notation_problems(registry: dict[str, ToolSpecV5]) -> list[str]:

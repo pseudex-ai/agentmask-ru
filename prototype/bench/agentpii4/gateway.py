@@ -23,8 +23,7 @@ from typing import Protocol
 from bench.agentpii3 import score
 from bench.agentpii4.parts import parts_of
 from bench.agentpii4.schema import Case, message_text
-from bench.agentpii4.tools import REGISTRY, flatten
-from bench.agentpii5.tools import leaf_notation as schema_leaf_notation
+from bench.agentpii4.tools import REGISTRY, flatten, leaf_notation as schema_leaf_notation
 from pseudex.audit import AuditLog
 from pseudex.detect_all import Detector
 from pseudex.envelope import MaskContext, conversation_key, mask_messages, mask_tools
@@ -40,7 +39,7 @@ def leaf_notation_for(tool: str, arguments: dict[str, object]) -> dict[str, str]
     """The schema-declared notation per leaf KEY, keyed the way `unmask_arguments`
     matches its JSON walk — the leaf's own key name, not its dotted path.
 
-    THE SOURCE OF TRUTH IS `bench.agentpii5.tools.LEAF_NOTATION` (класс Ж): the
+    THE SOURCE OF TRUTH IS `bench.agentpii4.tools.LEAF_NOTATION` (класс Ж): the
     tool schema is the authoritative marker for how a substitution on the OUT leg
     must be spelled. A leaf the table does not name is ABSENT here, never guessed —
     an empty value tells `unmask_arguments` to keep the agent's own form.
