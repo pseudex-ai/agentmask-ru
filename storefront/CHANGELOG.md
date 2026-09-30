@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.22](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.21...platform/v0.3.22) (2026-09-30)
+
+
+### Новое
+
+* **storefront:** редизайн — разгрузка главной, база знаний под спрос, светлая тема, читаемость ([4a9795e](https://github.com/Isk4R1oT/Obscura/commit/4a9795ed2f978584c73d1b5fd3d83c097c7a1595))
+
 ## [0.3.21](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.20...platform/v0.3.21) (2026-09-28)
 
 
