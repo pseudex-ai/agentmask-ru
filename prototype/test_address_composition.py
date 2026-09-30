@@ -285,8 +285,11 @@ def b6_whole_or_loud() -> None:
     # …and the honest counter-example: the street put back real AND the house
     # replaced by a number no substitute of ours carries — nothing of ours is
     # left, so nothing is reported. Without this half the diagnostic could call
-    # the customer's own house a leftover and be believed.
-    invented = written.replace(fake_street, real_street, 1).replace(leftover, "13", 1)
+    # the customer's own house a leftover and be believed. The sentinel must NOT
+    # equal the minted house (a mint can randomly BE «13», and then `.replace`
+    # is a no-op that keeps our own fake standing) — hence the conditional.
+    invented_house = "13" if leftover != "13" else "14"
+    invented = written.replace(fake_street, real_street, 1).replace(leftover, invented_house, 1)
     _check(surviving_substitutes(written, invented, talk, True) == [],
            "Б-6 a number no substitute of ours carries is not a residual",
            repr(surviving_substitutes(written, invented, talk, True)))
