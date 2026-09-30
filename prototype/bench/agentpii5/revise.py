@@ -63,7 +63,8 @@ from bench.agentpii4.tools import FieldSpec
 from bench.agentpii5 import mock
 from bench.agentpii5.contracts import (GENERIC_PIECE_ROLES, BranchSpec, CaseV5, Hop, LoopSpec,
                                        MemorySpec, PickSpec, ReturnExpectation, SPEECH_REGISTERS,
-                                       V4_KIND_TO_BEHAVIOUR, hop_owner_of_leaf)
+                                       V4_KIND_TO_BEHAVIOUR, hop_owner_of_leaf, is_canonical_leaf,
+                                       semantic_leaf)
 from bench.agentpii5.observe import values_equal
 from bench.agentpii5.schema import has_result, validate_v5
 from bench.agentpii5.tools import REGISTRY_V5, expected_leaf_value, spec_v5_for
@@ -428,6 +429,13 @@ def _arguments(case: Case, in_hop: dict[str, int],
     customer said. That preference is the whole of R12: an argument fed by a
     result is the chain, and filling every leaf from the message would make
     `sequential_chain` a family with no chains in it.
+
+    ONE (ITEM, SEMANTIC LEAF) DECLARES ONE (TOOL, PATH) — the canonical one
+    (`contracts.LEAF_CANONICAL`, SPIKE-Е, Е-6). A family that reaches the same
+    datum through `courier_book` AND a CRM write filled two equivalent leaves
+    from one item; declaring both would let one written leaf satisfy both and
+    read two `observed` from one crossing, so the non-canonical spelling is left
+    undeclared (R22 refuses the case that still names both).
     """
     read_by: dict[str, str] = {item.id: tool for tool, pairs in reads.items()
                                for item, _leaf in pairs}
@@ -442,7 +450,38 @@ def _arguments(case: Case, in_hop: dict[str, int],
             item = _argument_item(case, field, in_hop, read_by, tool)
             if item is not None:
                 out.append((tool, field.path, item))
-    return out
+    return _dedup_equivalent_leaves(out)
+
+
+def _dedup_equivalent_leaves(arguments: list[tuple[str, str, PiiItem]]
+                             ) -> list[tuple[str, str, PiiItem]]:
+    """Keep ONE declared leaf per (item, semantic leaf), the canonical one.
+
+    R22 forbids two DIFFERENT leaves of one class on one transition, so the
+    builder must decide which one stays. `contracts.LEAF_CANONICAL` names the
+    first leaf of each class (`courier_book.address.*` in every landed class):
+    the class's own READ tool, against the CRM WRITES that spell the same datum
+    differently. A non-canonical leaf is dropped only when its class's canonical
+    leaf IS declared; a class whose canonical leaf the case never fills keeps its
+    one non-canonical spelling rather than vanishing without a trace.
+    """
+    has_canonical = {(item.id, semantic_leaf(tool, path))
+                     for tool, path, item in arguments if is_canonical_leaf(tool, path)}
+    seen: set[tuple[str, str]] = set()
+    kept: list[tuple[str, str, PiiItem]] = []
+    for tool, path, item in arguments:
+        sem = semantic_leaf(tool, path)
+        if not sem:
+            kept.append((tool, path, item))
+            continue
+        key = (item.id, sem)
+        if key in has_canonical and not is_canonical_leaf(tool, path):
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append((tool, path, item))
+    return kept
 
 
 def _argument_item(case: Case, field: FieldSpec, in_hop: Container[str],
@@ -472,16 +511,24 @@ def _argument_item(case: Case, field: FieldSpec, in_hop: Container[str],
     satisfied it would have written the stale value back into the record. A read
     keeps the chain preference: there the result IS where the argument comes
     from, which is what `sequential_chain` measures.
+
+    `said[-1]` IS THE LAST WORD OF THE CUSTOMER, NOT THE FIRST (SPIKE-Е, Е-4).
+    A `correction` message is «садовая 46 … ой нет, садовая 18»: two message
+    items of one identity, the first cancelled by the second. `said[0]` put the
+    hop on the CANCELLED address, which the correct agent never writes again —
+    a REQUIRED hop that could not become `observed` by construction. For a
+    verbatim repeat the two are one item, so this is a no-op there; only the
+    correction is moved onto the value the agent will actually write.
     """
     primary = case.expects.primary_identity
     candidates = _candidates(case, field, in_hop, primary)
     said = _said_of(candidates)
     if said and _is_mutating(tool):
-        return said[0]
+        return said[-1]
     chained = _chained_of(candidates, read_by, tool)
     if chained:
         return chained[0]
-    return said[0] if said else None
+    return said[-1] if said else None
 
 
 def _candidates(case: Case, field: FieldSpec, in_hop: Container[str],

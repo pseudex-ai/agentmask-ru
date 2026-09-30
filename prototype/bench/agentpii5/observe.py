@@ -1425,6 +1425,14 @@ def _out_call(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem,
     would count one datum twice in every hop-level denominator
     (`form_hOUT`, `residual`, the `out_*` counts) — a doubling that grows exactly
     with the family the equivalence was written for.
+
+    THE TWIN'S IDENTITY IS CHECKED AGAINST `claimed` BEFORE IT IS ADDED. R22
+    refuses the corpus that declares two equivalent leaves on one transition,
+    but a saved run or a handwritten case can still carry one; the run-side
+    backstop is that the SECOND declared hop whose equivalence resolves to a leaf
+    an earlier hop already claimed reads `absent` (or nothing when optional) —
+    never `observed`, or one written leaf would count as two crossings and
+    `end_to_end` would inflate toward the gateway.
     """
     expected_owner = contracts.hop_owner_of_leaf(hop.tool_name, hop.path)
     if hop.owner != expected_owner:
@@ -1446,7 +1454,15 @@ def _out_call(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem,
         twin = equivalent_out_leaf(run, hop)
         if twin is not None:
             index, call, path = twin
-            claimed.add((hop.turn, call.name, call_ordinal_of(run, index), path))
+            identity = (hop.turn, call.name, call_ordinal_of(run, index), path)
+            if identity in claimed:
+                # Е-6: the second declared hop on a leaf an earlier hop already
+                # satisfied. One crossing is one hop, so the second reads as not
+                # happened — `optional` decides between `absent` and nothing,
+                # exactly as the emptiness of the leaf would.
+                return None if hop.optional else _flat(case, repeat, hop, True, item.type,
+                                                       "", "", "absent")
+            claimed.add(identity)
             written = leaf_text(flatten(call.written), call.name, path)
             restored = leaf_text(flatten(call.restored), call.name, path)
     if call is None or not written:

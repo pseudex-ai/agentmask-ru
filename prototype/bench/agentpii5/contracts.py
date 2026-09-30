@@ -538,6 +538,8 @@ V5_CASE_RULES: tuple[str, ...] = (
     "R19 every ReturnExpectation names a tool in base.tools, a return_form in RETURN_FORMS declared by that tool's ToolSpecV5 (a tool declares EVERY form it can return — a state-decided one like address_suggest canon/list is declared as both — and the case's return_form says which one THIS seeded state yields; the observer compares the mock's actual form with it), and result_item_ids that are seed items",
     "R20 streaming cases are register voice_raw or voice_itn",
     "R21 the items of every OUT hop with owner in ('template','summary') are named by TEMPLATE_FIELDS / SUMMARY_FIELDS of its tool",
+    "R22 the OUT hops of one (turn, item, semantic leaf) declare ONE (tool, path): two DIFFERENT leaves of one class on one transition would let one written leaf satisfy both, and one crossing would read two `observed`",
+    "R23 a REQUIRED OUT hop must not name an item superseded by a LATER message item of the same (type, identity, message) with a DIFFERENT value: the correct agent writes the corrected value, so the hop on the cancelled one can never become `observed`",
 )
 V5_CORPUS_RULES: tuple[str, ...] = (
     "K01 size in CORPUS_SIZE_BAND_V5 and every case id unique (two cases under one id are one case counted twice in every share below)",
@@ -1181,6 +1183,13 @@ LEAF_EQUIVALENCE: tuple[tuple[str, tuple[str, ...]], ...] = (
 # no other leaf and the observer reads it exactly as it always has.
 LEAF_SEMANTICS: dict[str, str] = {leaf: name for name, leaves in LEAF_EQUIVALENCE
                                   for leaf in leaves}
+# The FIRST leaf of each class — the canonical spelling the corpus keeps when a
+# family reaches the same semantic leaf through two tool schemas (R22 forbids
+# declaring both, so the builder must know which one to KEEP). The first member
+# is `courier_book.address.*` in every landed class, and that order is the
+# decision, not an accident of authoring: `courier_book` is the class's own
+# READ tool, the others are WRITES into another CRM's spelling.
+LEAF_CANONICAL: dict[str, str] = {name: leaves[0] for name, leaves in LEAF_EQUIVALENCE}
 
 
 def semantic_leaf(tool: str, path: str) -> str:
@@ -1189,6 +1198,14 @@ def semantic_leaf(tool: str, path: str) -> str:
     "" and not the path itself on purpose: a caller that treated «no class» as
     a class of its own would fold every unknown leaf into one."""
     return LEAF_SEMANTICS.get(f"{tool}.{path}", "")
+
+
+def is_canonical_leaf(tool: str, path: str) -> bool:
+    """Whether `(tool, path)` is the FIRST leaf its class folds — the one the
+    corpus KEEPS when a family reaches the same semantic leaf twice (R22). A
+    leaf in no class is canonical of nothing and answers False."""
+    name = semantic_leaf(tool, path)
+    return name != "" and LEAF_CANONICAL[name] == f"{tool}.{path}"
 
 
 def equivalent_leaves(tool: str, path: str) -> tuple[tuple[str, str], ...]:

@@ -263,6 +263,25 @@ def main() -> int:
     if c.hop_owner_of_leaf("sheet_append_row", "values[0][2]") != "tool_arg":
         failures.append("a spreadsheet cell is an ordinary argument leaf")
 
+    # 5bis. the authorial leaf equivalence and its canonical spelling (Е-6). R22
+    # forbids declaring two leaves of one class on one transition, and the
+    # corpus's own builder keeps the CANONICAL one — so the canonical must be a
+    # member of the class, its FIRST member, and `is_canonical_leaf` must agree.
+    if set(c.LEAF_CANONICAL) != {name for name, _leaves in c.LEAF_EQUIVALENCE}:
+        failures.append("LEAF_CANONICAL must name exactly the classes LEAF_EQUIVALENCE folds")
+    for name, leaves in c.LEAF_EQUIVALENCE:
+        if c.LEAF_CANONICAL.get(name) != leaves[0]:
+            failures.append(f"class {name!r}: the canonical leaf is not its first member")
+        canonical_tool, canonical_path = c.LEAF_CANONICAL[name].split(".", 1)
+        if not c.is_canonical_leaf(canonical_tool, canonical_path):
+            failures.append(f"class {name!r}: its first member is not is_canonical_leaf")
+        for leaf in leaves[1:]:
+            other_tool, other_path = leaf.split(".", 1)
+            if c.is_canonical_leaf(other_tool, other_path):
+                failures.append(f"class {name!r}: non-first member {leaf} reads canonical")
+    if c.is_canonical_leaf("crm_find_contact", "query.phone"):
+        failures.append("a leaf in no class must not read canonical")
+
     # 6. Line is the public one
     line = c.Line("x", 3, 3)
     if line.rate != 1.0 or line.certified is None or not (0.0 < line.certified < 1.0):

@@ -257,32 +257,45 @@ def build_probe(tier: str) -> Probe:
 # --- what a right gateway ACTUALLY prints, tier by tier ------------------------------
 
 # Every single-arm line a right gateway (`perfect.simulate`) prints on every tier
-# of the RECORDED ladder, as (hits, total). RE-MEASURED 30.09.2026 for class Ж,
-# on corpus `590584a737fd` (`corpus_digest_v5`, v4 stamp `7f7b1a80ba0c` — the v4
-# VIEW is unchanged, which is why the ladder tiers are byte-identical) and ladder
-# tiers nano `24d0486a4e1c` · small `4213399ddc00` · medium `b1b343528d8a` ·
-# large `6e1dd196d29c` · holdout `7f010f5ff9f7` · max `e07944f22fe2`.
+# of the RECORDED ladder, as (hits, total). RE-MEASURED 30.09.2026 for class Е
+# (Е-6 + Е-4 structural), on corpus `3de9f13199ac` (`corpus_digest_v5`, v4 stamp
+# `7f7b1a80ba0c` — the v4 VIEW is unchanged, which is why the ladder tiers are
+# byte-identical) and ladder tiers nano `24d0486a4e1c` · small `4213399ddc00` ·
+# medium `b1b343528d8a` · large `6e1dd196d29c` · holdout `7f010f5ff9f7` ·
+# max `e07944f22fe2`.
 #
-# WHAT MOVED AND WHY IT IS ONE MOVE. The `chain_*` denominators grew on every
-# tier but `nano` (small 84→88, medium 198→207, large 382→399, holdout 232→246,
-# max 1158→1218). That is NOT a new case: `revise._same_value` decides whether a
-# declared hand-over is one a copy of the source result can make, and it used to
-# be a THIRD copy of «is this the same value» — a digit fold that had already
-# drifted from the value line (SPIKE-Ж, Ж-4). Unified with
-# `observe.values_equal`, the hand-overs the corpus can honestly declare are
-# named: a PLATE respaced by the source result, a NAME whose parts the source
-# printed in another order and a LOC whose settlement the source spelled out are
-# now hand-overs instead of un-earnable promises. The hits equal the totals on
-# both sides of the move — a PERFECT gateway earns every one of them — which is
-# the check that the new transitions are reachable and not merely counted.
+# WHAT MOVED AND WHY IT IS ONE MOVE. `revise._arguments` no longer declares the
+# 92 non-canonical equivalent leaves a family reached twice (R22: one (item,
+# semantic leaf) declares ONE (tool, path), SPIKE-Е, Е-6) — every
+# `end_to_end`/`form_hOUT`/`out_*`/`residual`/`round_trip` denominator shrank by
+# exactly those 92 on `max` (52 across the five named tiers, 40 more in the rest
+# of the pool), and the hits shrank with them, so the perfect gateway still
+# earns every one. The Е-4 half (`revise._argument_item` reads `said[-1]`) is a
+# NO-OP for this probe: a right gateway writes what the case declares, so a hop
+# moved from the cancelled correction item onto the corrected one stays one
+# earned hop; its effect lives on the REAL agent, not on the perfect one.
 #
-# HISTORY. The measurement before this one (23.09.2026, corpus `e1129f8543ff`)
-# recorded two moves that were NOT the corpus growing, and they are kept because
-# the reasons still stand: `perfect.simulate` was wrong in two ways the office
-# suite's cases were the first to reach — a Latin NAME's substitute lost its
-# transliteration standard (`_marker_spans`), and a pool draw handed «Анна» the
-# fake «Жанна», which CONTAINS it (`_swallows`). Both made the PERFECT gateway
-# fail (`answer_real`, `chain_form`, `doc_masked`, `toolresult_masked`) on five
+# HISTORY. The measurement before this one (30.09.2026, corpus `590584a737fd`,
+# class Ж) moved the `chain_*` denominators on every tier but `nano` (small
+# 84→88, medium 198→207, large 382→399, holdout 232→246, max 1158→1218). That
+# was NOT a new case: `revise._same_value` decides whether a declared hand-over
+# is one a copy of the source result can make, and it used to be a THIRD copy of
+# «is this the same value» — a digit fold that had already drifted from the
+# value line (SPIKE-Ж, Ж-4). Unified with `observe.values_equal`, the hand-overs
+# the corpus can honestly declare are named: a PLATE respaced by the source
+# result, a NAME whose parts the source printed in another order and a LOC whose
+# settlement the source spelled out are now hand-overs instead of un-earnable
+# promises. The hits equal the totals on both sides of the move — a PERFECT
+# gateway earns every one of them — which is the check that the new transitions
+# are reachable and not merely counted.
+#
+# HISTORY (two back, 23.09.2026, corpus `e1129f8543ff`) recorded two moves that
+# were NOT the corpus growing, and they are kept because the reasons still
+# stand: `perfect.simulate` was wrong in two ways the office suite's cases were
+# the first to reach — a Latin NAME's substitute lost its transliteration
+# standard (`_marker_spans`), and a pool draw handed «Анна» the fake «Жанна»,
+# which CONTAINS it (`_swallows`). Both made the PERFECT gateway fail
+# (`answer_real`, `chain_form`, `doc_masked`, `toolresult_masked`) on five
 # cases, and both were the simulation inventing a defect that is only its own,
 # the class `_fake_digits` already warns about.
 #
@@ -354,29 +367,29 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
         "coverage": (857, 857),
         "doc_extracted": (35, 35),
         "doc_masked": (8, 8),
-        "end_to_end": (522, 522),
-        "end_to_end_written": (522, 522),
+        "end_to_end": (517, 517),
+        "end_to_end_written": (517, 517),
         "form_hIN": (814, 857),
-        "form_hOUT": (1090, 1090),
+        "form_hOUT": (1085, 1085),
         "leak": (857, 857),
         "memory_consistency": (43, 43),
         "multi_all_out": (61, 61),
         "multi_all_out_written": (61, 61),
         "multi_consistency": (82, 82),
-        "out_absent": (0, 867),
-        "out_engine_kept": (0, 867),
-        "out_leaf_foreign": (0, 867),
-        "out_no_mint": (0, 867),
-        "out_not_masked": (0, 867),
-        "out_written": (867, 867),
+        "out_absent": (0, 862),
+        "out_engine_kept": (0, 862),
+        "out_leaf_foreign": (0, 862),
+        "out_no_mint": (0, 862),
+        "out_not_masked": (0, 862),
+        "out_written": (862, 862),
         "overmask": (120, 120),
         "rag_identity_kept": (25, 25),
         "rag_masked": (27, 27),
-        "residual": (1210, 1210),
+        "residual": (1205, 1205),
         "retry_form": (8, 8),
         "rewrite_ratio_v5": (0, 120),
-        "round_trip": (415, 415),
-        "round_trip_repaired": (415, 415),
+        "round_trip": (410, 410),
+        "round_trip_repaired": (410, 410),
         "shared_block_answer": (151, 278),
         "stability": (43, 43),
         "stream_fidelity": (7, 7),
@@ -394,29 +407,29 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
         "coverage": (2102, 2102),
         "doc_extracted": (81, 81),
         "doc_masked": (19, 19),
-        "end_to_end": (1345, 1345),
-        "end_to_end_written": (1345, 1345),
+        "end_to_end": (1335, 1335),
+        "end_to_end_written": (1335, 1335),
         "form_hIN": (1988, 2102),
-        "form_hOUT": (2751, 2751),
+        "form_hOUT": (2741, 2741),
         "leak": (2102, 2102),
         "memory_consistency": (104, 104),
         "multi_all_out": (160, 160),
         "multi_all_out_written": (160, 160),
         "multi_consistency": (196, 196),
-        "out_absent": (0, 2187),
-        "out_engine_kept": (0, 2187),
-        "out_leaf_foreign": (0, 2187),
-        "out_no_mint": (0, 2187),
-        "out_not_masked": (0, 2187),
-        "out_written": (2187, 2187),
+        "out_absent": (0, 2177),
+        "out_engine_kept": (0, 2177),
+        "out_leaf_foreign": (0, 2177),
+        "out_no_mint": (0, 2177),
+        "out_not_masked": (0, 2177),
+        "out_written": (2177, 2177),
         "overmask": (300, 300),
         "rag_identity_kept": (57, 57),
         "rag_masked": (65, 65),
-        "residual": (3051, 3051),
+        "residual": (3041, 3041),
         "retry_form": (21, 21),
         "rewrite_ratio_v5": (0, 300),
-        "round_trip": (1071, 1071),
-        "round_trip_repaired": (1071, 1071),
+        "round_trip": (1061, 1061),
+        "round_trip_repaired": (1061, 1061),
         "shared_block_answer": (376, 689),
         "stability": (112, 112),
         "stream_fidelity": (11, 11),
@@ -434,29 +447,29 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
         "coverage": (4138, 4138),
         "doc_extracted": (132, 132),
         "doc_masked": (37, 37),
-        "end_to_end": (2636, 2636),
-        "end_to_end_written": (2636, 2636),
+        "end_to_end": (2609, 2609),
+        "end_to_end_written": (2609, 2609),
         "form_hIN": (3900, 4138),
-        "form_hOUT": (5399, 5399),
+        "form_hOUT": (5372, 5372),
         "leak": (4138, 4138),
         "memory_consistency": (212, 212),
         "multi_all_out": (314, 314),
         "multi_all_out_written": (314, 314),
         "multi_consistency": (386, 386),
-        "out_absent": (0, 4292),
-        "out_engine_kept": (0, 4292),
-        "out_leaf_foreign": (0, 4292),
-        "out_no_mint": (0, 4292),
-        "out_not_masked": (0, 4292),
-        "out_written": (4292, 4292),
+        "out_absent": (0, 4265),
+        "out_engine_kept": (0, 4265),
+        "out_leaf_foreign": (0, 4265),
+        "out_no_mint": (0, 4265),
+        "out_not_masked": (0, 4265),
+        "out_written": (4265, 4265),
         "overmask": (600, 600),
         "rag_identity_kept": (107, 107),
         "rag_masked": (124, 124),
-        "residual": (5999, 5999),
+        "residual": (5972, 5972),
         "retry_form": (41, 41),
         "rewrite_ratio_v5": (0, 600),
-        "round_trip": (2144, 2144),
-        "round_trip_repaired": (2144, 2144),
+        "round_trip": (2117, 2117),
+        "round_trip_repaired": (2117, 2117),
         "shared_block_answer": (753, 1365),
         "stability": (187, 187),
         "stream_fidelity": (25, 25),
@@ -474,29 +487,29 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
         "coverage": (2451, 2451),
         "doc_extracted": (66, 66),
         "doc_masked": (22, 22),
-        "end_to_end": (1510, 1510),
-        "end_to_end_written": (1510, 1510),
+        "end_to_end": (1500, 1500),
+        "end_to_end_written": (1500, 1500),
         "form_hIN": (2356, 2451),
-        "form_hOUT": (3115, 3115),
+        "form_hOUT": (3105, 3105),
         "leak": (2451, 2451),
         "memory_consistency": (119, 119),
         "multi_all_out": (187, 187),
         "multi_all_out_written": (187, 187),
         "multi_consistency": (229, 229),
-        "out_absent": (0, 2488),
-        "out_engine_kept": (0, 2488),
-        "out_leaf_foreign": (0, 2488),
-        "out_no_mint": (0, 2488),
-        "out_not_masked": (0, 2488),
-        "out_written": (2488, 2488),
+        "out_absent": (0, 2478),
+        "out_engine_kept": (0, 2478),
+        "out_leaf_foreign": (0, 2478),
+        "out_no_mint": (0, 2478),
+        "out_not_masked": (0, 2478),
+        "out_written": (2478, 2478),
         "overmask": (359, 359),
         "rag_identity_kept": (68, 68),
         "rag_masked": (77, 77),
-        "residual": (3474, 3474),
+        "residual": (3464, 3464),
         "retry_form": (27, 27),
         "rewrite_ratio_v5": (0, 359),
-        "round_trip": (1215, 1215),
-        "round_trip_repaired": (1215, 1215),
+        "round_trip": (1205, 1205),
+        "round_trip_repaired": (1205, 1205),
         "shared_block_answer": (444, 820),
         "stability": (111, 111),
         "stream_fidelity": (10, 10),
@@ -514,29 +527,29 @@ RECORDED: dict[str, dict[str, tuple[int, int]]] = {
         "coverage": (12398, 12398),
         "doc_extracted": (373, 373),
         "doc_masked": (112, 112),
-        "end_to_end": (7926, 7926),
-        "end_to_end_written": (7926, 7926),
+        "end_to_end": (7834, 7834),
+        "end_to_end_written": (7834, 7834),
         "form_hIN": (11721, 12398),
-        "form_hOUT": (16192, 16192),
+        "form_hOUT": (16100, 16100),
         "leak": (12398, 12398),
         "memory_consistency": (619, 619),
         "multi_all_out": (939, 939),
         "multi_all_out_written": (939, 939),
         "multi_consistency": (1146, 1146),
-        "out_absent": (0, 12918),
-        "out_engine_kept": (0, 12918),
-        "out_leaf_foreign": (0, 12918),
-        "out_no_mint": (0, 12918),
-        "out_not_masked": (0, 12918),
-        "out_written": (12918, 12918),
+        "out_absent": (0, 12826),
+        "out_engine_kept": (0, 12826),
+        "out_leaf_foreign": (0, 12826),
+        "out_no_mint": (0, 12826),
+        "out_not_masked": (0, 12826),
+        "out_written": (12826, 12826),
         "overmask": (1800, 1800),
         "rag_identity_kept": (310, 310),
         "rag_masked": (360, 360),
-        "residual": (17992, 17992),
+        "residual": (17900, 17900),
         "retry_form": (126, 126),
         "rewrite_ratio_v5": (0, 1800),
-        "round_trip": (6465, 6465),
-        "round_trip_repaired": (6465, 6465),
+        "round_trip": (6373, 6373),
+        "round_trip_repaired": (6373, 6373),
         "shared_block_answer": (2277, 4127),
         "stability": (537, 537),
         "stream_fidelity": (84, 84),
