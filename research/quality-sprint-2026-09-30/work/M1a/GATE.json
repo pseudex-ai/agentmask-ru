@@ -1,0 +1,20 @@
+{
+  "task":"M1a",
+  "gate":"G2",
+  "status":"FAIL",
+  "stage":"executed design/RED, no new score published",
+  "source_basis":"existing preserved uncommitted answer_restoration.py prototype at B0",
+  "checks":8,
+  "pass":3,
+  "red":5,
+  "command":"PYTHONDONTWRITEBYTECODE=1 prototype/.venv/bin/python research/quality-sprint-2026-09-30/work/M1a/red_truth_conditions.py",
+  "exit_code":1,
+  "failure_interpretation":"Five executed assertion-level property failures, no import/setup exception",
+  "evidence":["SPEC.md","red_truth_conditions.py","RED.log","RED-RESULTS.json"],
+  "blocked_promotions":["M1c integration of this estimator","publication as engine-only quality score"],
+  "next":"independent design review and source/provenance/derived/alignment mechanism implementation within M1a scope",
+  "engine_changed":false,
+  "historical_metric_changed":false,
+  "raw_run_changed":false,
+  "paid_calls":0
+}

@@ -1,0 +1,9 @@
+{
+  "changed_product_files": [],
+  "changed_historical_scorer_files": [],
+  "b0_source_pins_verified": 198,
+  "new_tests": 8,
+  "new_failed_properties": 5,
+  "interpretation": "coverage of tests increased; no engine or scorer improvement claimed",
+  "historical_metrics": "unchanged code and raw hashes; no changed official report"
+}

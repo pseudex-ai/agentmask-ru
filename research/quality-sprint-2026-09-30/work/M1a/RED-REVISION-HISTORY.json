@@ -1,0 +1,10 @@
+{
+  "initial_sha256": "4c4dbcb41cafa320df3d6b006572a68b2f3d0948854152aa4b482ea021034dbf",
+  "initial_source": "red_truth_conditions.initial.py",
+  "recovery": "reconstructed by undoing exactly the one-line fixture edit; original SHA256 independently matched the earlier INPUTS/tool observation",
+  "current_sha256": "9cf2a0856f2a89a9aec61beccb7753f852f966e55772520c2fbab2b87bd9f6a3",
+  "current_source": "red_truth_conditions.py",
+  "change": "request_count matches gateway push-index range; no cross-clock availability inference",
+  "both_runs": "3PASS/5RED; exit1",
+  "review_scope_note": "review prose mixed before-edit fixture with current hash; do not mark exact new revision accepted"
+}

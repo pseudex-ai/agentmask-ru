@@ -1,0 +1,9 @@
+PASS each_repeated_fake_is_local
+RED exact_copy_does_not_silently_repair_source_typo
+RED correct_literal_source_can_earn_value
+RED unmapped_push_clock_is_not_provider_provenance
+RED known_initials_not_silent_zero_denominator
+RED street_type_is_value_identity_not_only_form
+PASS nonpii_id_change_never_clean_answer
+PASS actual_stream_defeats_correct_whole
+truth conditions: 3/8 satisfied
