@@ -24,6 +24,7 @@ from bench.agentpii3 import score
 from bench.agentpii4.parts import parts_of
 from bench.agentpii4.schema import Case, message_text
 from bench.agentpii4.tools import REGISTRY, flatten
+from bench.agentpii5.tools import leaf_notation as schema_leaf_notation
 from pseudex.audit import AuditLog
 from pseudex.detect_all import Detector
 from pseudex.envelope import MaskContext, conversation_key, mask_messages, mask_tools
@@ -33,6 +34,25 @@ from pseudex.vault import Vault
 
 _ORG = "agentpii4"
 _AGENT = "bench"
+
+
+def leaf_notation_for(tool: str, arguments: dict[str, object]) -> dict[str, str]:
+    """The schema-declared notation per leaf KEY, keyed the way `unmask_arguments`
+    matches its JSON walk — the leaf's own key name, not its dotted path.
+
+    THE SOURCE OF TRUTH IS `bench.agentpii5.tools.LEAF_NOTATION` (класс Ж): the
+    tool schema is the authoritative marker for how a substitution on the OUT leg
+    must be spelled. A leaf the table does not name is ABSENT here, never guessed —
+    an empty value tells `unmask_arguments` to keep the agent's own form.
+    """
+    out: dict[str, str] = {}
+    for path in flatten(arguments):
+        leaf = path.split(".")[-1].split("[")[0]
+        notation = (schema_leaf_notation(tool, re.sub(r"\[\d+\]", "[]", path))
+                    or schema_leaf_notation(tool, path))
+        if notation:
+            out[leaf] = notation
+    return out
 
 
 class HarnessError(RuntimeError):
@@ -48,7 +68,7 @@ class Gateway(Protocol):
     def push_tool(self, name: str, text: str) -> str: ...
     def note(self, text: str) -> None: ...
     def note_tool_call(self, name: str, arguments: dict[str, object]) -> None: ...
-    def restore_arguments(self, arguments: dict[str, object]) -> tuple[dict[str, object], dict[str, tuple[str, ...]]]: ...
+    def restore_arguments(self, arguments: dict[str, object], name: str = "") -> tuple[dict[str, object], dict[str, tuple[str, ...]]]: ...
     def restore_text(self, text: str) -> str: ...
     def masked_spans(self) -> dict[int, tuple[tuple[int, int], ...]]: ...
     def substitutes_seen(self) -> dict[str, str]: ...
@@ -86,7 +106,7 @@ class PassThrough:
     def note_tool_call(self, name: str, arguments: dict[str, object]) -> None:
         return None
 
-    def restore_arguments(self, arguments: dict[str, object]) -> tuple[dict[str, object], dict[str, tuple[str, ...]]]:
+    def restore_arguments(self, arguments: dict[str, object], name: str = "") -> tuple[dict[str, object], dict[str, tuple[str, ...]]]:
         return dict(arguments), {}
 
     def restore_text(self, text: str) -> str:
@@ -196,10 +216,15 @@ class RealGateway:
             {"type": "function", "function": {"name": name,
                                               "arguments": json.dumps(arguments, ensure_ascii=False)}}]})
 
-    def restore_arguments(self, arguments: dict[str, object]) -> tuple[dict[str, object], dict[str, tuple[str, ...]]]:
+    def restore_arguments(self, arguments: dict[str, object], name: str = "") -> tuple[dict[str, object], dict[str, tuple[str, ...]]]:
         """Detokenise as the sidecar does — the JSON walk, never a flat replace —
-        and report, per leaf, every minted string (whole or piece) that survived."""
-        restored = unmask_arguments(json.dumps(arguments, ensure_ascii=False), self._base)
+        and report, per leaf, every minted string (whole or piece) that survived.
+        `name` is the called function, whose schema (класс Ж) declares the notation
+        a leaf must be spelled in; a leaf the schema does not name keeps the
+        agent's own form."""
+        leaf_notation = leaf_notation_for(name, arguments)
+        restored = unmask_arguments(json.dumps(arguments, ensure_ascii=False), self._base,
+                                    leaf_notation=leaf_notation)
         try:
             parsed = json.loads(restored)
         except json.JSONDecodeError:

@@ -1758,9 +1758,14 @@ def _mask_tool_body(body: dict[str, object], context: MaskContext) -> dict[str, 
     return out
 
 
-def unmask_response(response: dict[str, object], vault: Vault) -> dict[str, object]:
+def unmask_response(response: dict[str, object], vault: Vault,
+                    leaf_notation: dict[str, str] | None = None) -> dict[str, object]:
     """Detokenize a non-streamed completion: assistant content + tool-call
-    arguments. Rebuilt rather than mutated so the caller's object is untouched."""
+    arguments. Rebuilt rather than mutated so the caller's object is untouched.
+
+    `leaf_notation` maps a leaf KEY to the notation its tool schema declares (класс
+    Ж — «snils», «e164», «gost»); it rides through to every tool call's
+    `unmask_arguments`, and a leaf absent from the map keeps the sender's own form."""
     result = dict(response)
     choices = result.get("choices")
     if not isinstance(choices, list):
@@ -1789,7 +1794,8 @@ def unmask_response(response: dict[str, object], vault: Vault) -> dict[str, obje
                         new_function = dict(function)
                         if isinstance(new_function.get("arguments"), str):
                             new_function["arguments"] = unmask_arguments(
-                                new_function["arguments"], vault
+                                new_function["arguments"], vault,
+                                leaf_notation=leaf_notation
                             )
                         new_call["function"] = new_function
                     restored.append(new_call)

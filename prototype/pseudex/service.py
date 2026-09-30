@@ -765,9 +765,11 @@ async def unmask_arguments_endpoint(request: Request) -> JSONResponse:
       * `delta.content`                        -> /unmask_chunk, as it streams
       * `delta.tool_calls[].function.arguments` -> accumulate, then here once
 
-    Body: {org_id, arguments: [str, ...]} -> {arguments: [str, ...]}.
+    Body: {org_id, arguments: [str, ...], leaf_notation?: {leaf: notation}} -> {arguments: [str, ...]}.
     A list because one streamed response may carry several tool calls, and the
-    gateway should not pay a round trip for each.
+    gateway should not pay a round trip for each. `leaf_notation` is the gateway's
+    own reading of the tool schema (класс Ж): a leaf key declared «snils» is
+    restored as «XXX-XXX-XXX YY», a leaf absent from the map keeps the agent's form.
     """
     body = await request.json()
     org_id = str(body.get("org_id", "")) or "default"
@@ -780,13 +782,18 @@ async def unmask_arguments_endpoint(request: Request) -> JSONResponse:
     if not isinstance(arguments, list) or not all(isinstance(a, str) for a in arguments):
         return JSONResponse({"error": "arguments must be a list of strings"},
                             status_code=400)
+    leaf_notation = body.get("leaf_notation") or {}
+    if not isinstance(leaf_notation, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in leaf_notation.items()):
+        return JSONResponse({"error": "leaf_notation must be an object of string->string"},
+                            status_code=400)
     pseudonym_scope = _requested_scope(body)
     refused = _bad_scope(pseudonym_scope)
     if refused:
         return refused
     restored, residual, disclosed = await anyio.to_thread.run_sync(
         _unmask_arguments_for, arguments, org_id, str(body.get("conversation_id", "")),
-        pseudonym_scope, limiter=_MASK_LIMITER
+        pseudonym_scope, leaf_notation, limiter=_MASK_LIMITER
     )
     await anyio.to_thread.run_sync(
         AUDIT.record_detok, org_id, _detok_actor(body), disclosed, len(residual)
@@ -903,14 +910,19 @@ def _bad_scope(scope: str) -> JSONResponse | None:
 
 
 def _unmask_arguments_for(arguments: list[str], org_id: str, conversation_id: str = "",
-                          pseudonym_scope: str = "") -> tuple[list[str], list[str], int]:
+                          pseudonym_scope: str = "",
+                          leaf_notation: dict[str, str] | None = None) -> tuple[list[str], list[str], int]:
     """Vault resolved inside the worker thread — see _mask_request. Returns the
     restored arguments, the residual (substitutes that failed to resolve — a fake
     reaching the tool), and the count of real values DISCLOSED (minted tokens in the
     input arguments, gone from the output), which is what the F2 value-based rate
-    limit and audit count — many values in one argument count as many, not one."""
+    limit and audit count — many values in one argument count as many, not one.
+
+    `leaf_notation` maps a leaf KEY to the notation its tool schema declares (класс
+    Ж — «snils», «e164», «gost»); a leaf absent from the map is «not declared» and
+    keeps the sender's own form. The gateway computes it from the tool schema."""
     vault = _scoped(org_id, conversation_id, pseudonym_scope)
-    restored = [unmask_arguments(raw, vault) for raw in arguments]
+    restored = [unmask_arguments(raw, vault, leaf_notation=leaf_notation) for raw in arguments]
     residual: list[str] = []
     for raw, text in zip(arguments, restored):
         residual.extend(surviving_substitutes(raw, text, vault, True))

@@ -147,7 +147,7 @@ def _mcp_tools(case: Case, gateway: object, backend: object, masked: list[dict[s
                 arguments = dict(args)
                 gateway.note_tool_call(tool_name, arguments)  # type: ignore[attr-defined]
                 try:
-                    restored, residual = gateway.restore_arguments(arguments)  # type: ignore[attr-defined]
+                    restored, residual = gateway.restore_arguments(arguments, tool_name)  # type: ignore[attr-defined]
                 except HarnessError as broken:
                     gateway.fault(str(broken))  # type: ignore[attr-defined]
                     return {"content": [{"type": "text", "text": FILLER_RESULT}]}
