@@ -425,7 +425,14 @@ def _mask_message(text: str, detector: Detector, vault: Vault,
     if role == "tool":
         recorded = _echo_targets(_recorded_values(vault))
         if recorded:
-            masked = _replace_echoes(masked, (), recorded, _own_renderings(vault))
+            # MIRROR `envelope._mask_text_leg`: the recorded leg must not redact a
+            # fragment inside a detected whole LOC span — the span was substituted
+            # whole (class Б), so the surviving generic word is the substitute's
+            # own, not a real cut.
+            covered = tuple((p.start, p.end) for p in pieces
+                            if p.engine_type == "LOC")
+            masked = _replace_echoes(masked, (), recorded, _own_renderings(vault),
+                                     covered)
     return Masked(text=text, masked=masked, pieces=pieces)
 
 

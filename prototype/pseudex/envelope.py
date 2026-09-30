@@ -1062,7 +1062,8 @@ def _free_marker_nonce(text: str, count: int) -> int:
 
 def _reserve_echoes(text: str,
                     echoes: tuple[tuple[_InjectedValue, str | None], ...],
-                    renderings: tuple[str, ...]) -> tuple[str, tuple[str, ...], int]:
+                    renderings: tuple[str, ...],
+                    covered: tuple[tuple[int, int], ...] = ()) -> tuple[str, tuple[str, ...], int]:
     """Lift a bound call's own echoes OFF the text before detection runs.
 
     THIS IS THE E01 PRECEDENCE, STATED AS AN ORDER OF OPERATIONS. `_mask_content`
@@ -1085,7 +1086,14 @@ def _reserve_echoes(text: str,
     blocked = _substitute_ranges(text, renderings)
 
     def _free(start: int, end: int) -> bool:
-        return not any(start < stop and begin < end for begin, stop in blocked)
+        if any(start < stop and begin < end for begin, stop in blocked):
+            return False
+        # DETECTION OWNS A WHOLE ADDRESS (class Б). A fragment that lies inside a
+        # detected LOC span is not an echo the reserve pass may lift — the whole
+        # span reuses its substitution (generic word, case, abbreviations and all),
+        # and reserving the fragment would split the address so detection can no
+        # longer find it, leaving the other parts (the street name, the flat) raw.
+        return not any(start < cend and cbegin < end for cbegin, cend in covered)
 
     claims: list[tuple[int, int, str]] = []
     for value, digits in echoes:
@@ -1169,7 +1177,8 @@ def _is_bare_settlement_echo(fragment: str, value: _InjectedValue) -> bool:
 def _replace_echoes(text: str,
                     echoes: tuple[tuple[_InjectedValue, str | None], ...],
                     recorded: tuple[tuple[_InjectedValue, str | None], ...],
-                    renderings: tuple[str, ...]) -> str:
+                    renderings: tuple[str, ...],
+                    covered: tuple[tuple[int, int], ...] = ()) -> str:
     """Replace echoes of values THIS call carried, after detection has run.
 
     Deliberately after: the substitute is a fresh value nobody has detected yet,
@@ -1197,7 +1206,14 @@ def _replace_echoes(text: str,
     blocked = _substitute_ranges(text, renderings)
 
     def _free(start: int, end: int) -> bool:
-        return not any(start < stop and begin < end for begin, stop in blocked)
+        if any(start < stop and begin < end for begin, stop in blocked):
+            return False
+        # Same guard as the reserve pass: a fragment inside a detected whole
+        # address is not a cut to redact — the address was already substituted
+        # whole, and the surviving generic word is the substitute's own, not a
+        # real fragment. Redacting it would answer a whole-address reuse with a
+        # half-redacted string and split production from the scorer.
+        return not any(start < cend and cbegin < end for cbegin, cend in covered)
 
     specific = [(start, end, value.substitute)
                 for value, digits in echoes
@@ -1451,16 +1467,31 @@ def _mask_content(content: object, provenance: _Provenance,
         performance detail; the fallback keeps the previous behaviour for every
         text whose echoes the reserve pass did not claim (a pure detection case,
         and the `recorded`-only privacy case)."""
+        # DETECTION OWNS A WHOLE ADDRESS (class Б). The echo legs exist for
+        # fragments detection MISSES (a truncated phone, a re-cased name), so they
+        # must not split — and then redact — a fragment that lies inside a detected
+        # LOC span: the whole span reuses its substitution, and reserving only one
+        # part of it (the house) left the street name and the flat raw in the tool
+        # result. Read once, only when a leg actually runs; `_mask_one` below runs
+        # its own (cached) pass and a detection here would double it for the plain
+        # detection-only result.
+        covered: tuple[tuple[int, int], ...] = ()
+        if echoes or recorded:
+            covered = tuple(
+                (span.start, span.end)
+                for span in provenance.context.detector.detect(text)
+                if span.entity_type == "LOC")
         if echoes:
-            reserved, replacements, nonce = _reserve_echoes(text, echoes, renderings)
+            reserved, replacements, nonce = _reserve_echoes(
+                text, echoes, renderings, covered)
             if replacements:
                 masked = _splice_reserved(
                     _mask_one(reserved, provenance.context, own), replacements, nonce)
-                return (_replace_echoes(masked, (), recorded, renderings)
+                return (_replace_echoes(masked, (), recorded, renderings, covered)
                         if recorded else masked)
         masked = _mask_one(text, provenance.context, own)
         return masked if not echoes and not recorded else _replace_echoes(
-            masked, echoes, recorded, renderings)
+            masked, echoes, recorded, renderings, covered)
 
     if isinstance(content, str):
         return _mask_text_leg(content)

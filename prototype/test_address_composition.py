@@ -42,7 +42,11 @@ import testkit  # noqa: E402
 
 testkit.load_dev_bundle()          # the bundle first, everything else after it
 
+from pseudex.audit import AuditLog  # noqa: E402
 from pseudex.detect import Span  # noqa: E402
+from pseudex.detect_all import Detector  # noqa: E402
+from pseudex.envelope import MaskContext, mask_messages  # noqa: E402
+from pseudex.maskcache import MaskCache  # noqa: E402
 from pseudex.redact import (mask_text, surviving_substitutes, unmask_arguments,  # noqa: E402
                             unmask_text)
 from pseudex.vault import Vault  # noqa: E402
@@ -327,6 +331,72 @@ def b7_identity_and_linking() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Б-8 — THE WHOLE ADDRESS IN A TOOL RESULT IS ONE VALUE, REUSED. The result the
+# CRM returns re-writes the SAME place on a different surface — a capital street,
+# a glued litera («34в»), a short flat marker («кв.») — and the production path
+# used to lift the one fragment it recognised (the house) off the text and leave
+# the street name and the flat RAW. The whole span must reuse its substitution,
+# rendered in the result's own form, with the generic word kept (it is part of
+# the substitute, not a redaction).
+# --------------------------------------------------------------------------- #
+def b8_whole_result_reuse() -> None:
+    detector = Detector()
+    vault = _vault("b8")
+    ctx = MaskContext(detector=detector, vault=vault, audit=AuditLog(":memory:"),
+                      cache=MaskCache(4096), org_id="x", agent_id="a",
+                      conversation_id="c1")
+    transcript: list[dict[str, object]] = []
+
+    def push(message: dict[str, object]) -> dict[str, object]:
+        transcript.append(dict(message))
+        return mask_messages([dict(m) for m in transcript], ctx, False)[-1]
+
+    user = push({"role": "user",
+                 "content": "адрес: переулок лермонтова 34 в, квартира 9"})
+    user_content = user.get("content")
+    assert isinstance(user_content, str)
+    fake_addr = user_content.split("адрес: ", 1)[1]
+
+    push({"role": "assistant", "content": "",
+          "tool_calls": [{"id": "t1", "type": "function",
+                          "function": {"name": "crm_upsert_contact",
+                                       "arguments": json.dumps(
+                                           {"street_type": "переулок",
+                                            "street": "лермонтова",
+                                            "house": "34в", "flat": "9"},
+                                           ensure_ascii=False)}}]})
+    tool = json.dumps({"address": "переулок Лермонтова 34в, кв. 9"},
+                      ensure_ascii=False)
+    result = push({"role": "tool", "tool_call_id": "t1",
+                   "name": "crm_upsert_contact", "content": tool})
+    result_content = result.get("content")
+    assert isinstance(result_content, str)
+    got = json.loads(result_content)["address"]
+
+    from pseudex.morph_places import split_roles
+    _check(split_roles(got).get("street_name", "").casefold()
+           == split_roles(fake_addr).get("street_name", "").casefold(),
+           "Б-8 the result reuses the SAME fake street name",
+           f"{got!r} vs {fake_addr!r}")
+    _check(_digits(got) == _digits(fake_addr),
+           "Б-8 the same fake house and flat (no leak of «34»/«9»)",
+           f"{got!r} vs {fake_addr!r}")
+    _check("лермонтова" not in got.casefold(),
+           "Б-8 the real street name does not survive",
+           repr(got))
+    _check(_street_type(got) == "переулок" and "REDACTED" not in got,
+           "Б-8 the generic word is part of the substitute, not a redaction",
+           repr(got))
+    # The result's own surface is authoritative: the street NAME is re-cased to
+    # match «Лермонтова», while the generic word stays as the tool wrote it.
+    name_word = next((word for word in got.split()
+                      if word not in TYPE_WORDS and not word.isdigit()), "")
+    _check(bool(name_word) and name_word[:1].isupper(),
+           "Б-8 the street name is rendered in the result's case",
+           repr(got))
+
+
+# --------------------------------------------------------------------------- #
 # CONTROLS — the instrument must be ABLE to pass. These are green on the same
 # legs, the same vault and the same readers as the contracts above.
 # --------------------------------------------------------------------------- #
@@ -368,6 +438,7 @@ def main() -> int:
     b5_two_houses_two_substitutes()
     b6_whole_or_loud()
     b7_identity_and_linking()
+    b8_whole_result_reuse()
     controls()
     failed = [name for ok, name, _ in RESULTS if not ok]
     print()
