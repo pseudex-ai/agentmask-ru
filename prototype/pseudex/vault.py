@@ -24,7 +24,7 @@ from pseudex.normalize import normalize
 import threading
 import time
 
-from pseudex.fuzzy import within_one_typo
+from pseudex.fuzzy import Edit, apply_edit, edit_from, within_one_typo
 from pseudex import date_form, morph_names, morph_places, notation, spoken, translit
 from pseudex.notation import looks_dictated
 from pseudex.spoken import (email_from_words, numeral_runs,
@@ -1023,6 +1023,22 @@ def _same_house(left: tuple[str, ...], right: tuple[str, ...]) -> bool:
     return _keys_match(" ".join(left), " ".join(right))
 
 
+def _same_place_type(canonical: str, other_canonical: str) -> bool:
+    """Two writings of one place, judged by their street TYPE, not their street.
+
+    Type is identity (DECISIONS-SPRINT.md §Б): «переулок Пушкина 5» and
+    «улица Пушкина 5» are two places and two substitutes. The tolerant link
+    paths (`_linked_place`, `_extends_linked_place`) key on the street stem and
+    house alone, so they must ask this question themselves; the answer is False
+    only when BOTH writings name a type and the types differ — a writing with no
+    type still links to a typed one, because «то же место, написано с типом и
+    без» is the separate linking rule, not two places.
+    """
+    mine = morph_places.key_type(canonical)
+    theirs = morph_places.key_type(other_canonical)
+    return not (mine and theirs and mine != theirs)
+
+
 def _house_identity(canonical: str, has_city: bool) -> tuple[str, ...]:
     """The street and the house AS WRITTEN — litera included — of a canonical,
     without the city and without anything finer than the house.
@@ -1577,7 +1593,72 @@ def _round_trip_last_names(version: str, gender: str) -> tuple[str, ...]:
     return usable
 
 
-def _fake_name(gender: str | None, shape: tuple[str, ...] = ()) -> str:
+def _name_typo_edits(original: str, plan: tuple[str, ...] = ()) -> dict[int, Edit]:
+    """word index → the edit that turned each damaged GIVEN NAME into the surface.
+
+    Class А: the substitute inherits the customer's TYPO, not just the name.
+    «меня зовут игрь» → «Игорь» is recovered, the deletion is read off, and the
+    same deletion lands on the drawn fake («Егор» → «Егр»), so the agent's
+    clarifying question does not change. Only a word that detection itself would
+    call damaged is edited — the recovery reuses `names.recover_damaged_name`,
+    the same signals `_looks_misspelt_name` gates on, so mint and detection can
+    never disagree about what a typo is.
+
+    ONLY A GIVEN-NAME SLOT IS EDITED, and this is what keeps the rule from
+    corrupting clean names. A surname the dictionary holds but pymorphy does not
+    («дормедонтов») is indistinguishable from a damaged surname by the one-edit
+    signal alone — the detection side needs an ANCHOR (a cue or an adjacent name)
+    the mint does not have. A short given name is the one place where «unknown to
+    morphology + one edit from the dictionary» means a typo with no anchor, and
+    it is exactly the owner's example. A surname typo is left for the anchor to
+    catch; minting a clean fake there is fail-closed, not a silent corruption.
+    """
+    from pseudex import names as names_module
+
+    words = original.split()
+    if not plan or len(plan) != len(words):
+        # Shape/word count disagreement means morphology misread the surface;
+        # applying an edit by position would be a guess. No typos.
+        return {}
+    edits: dict[int, Edit] = {}
+    for index, (word, slot) in enumerate(zip(words, plan)):
+        if slot != "name" or len(word) < 4 or len(word) > 8:
+            continue
+        if any(ch.isdigit() for ch in word):
+            continue
+        canonical = names_module.recover_damaged_name(word)
+        if canonical is None:
+            continue
+        edit = edit_from(canonical.casefold(), word.casefold())
+        if edit is not None:
+            edits[index] = edit
+    return edits
+
+
+def _apply_name_typos(candidate: str, edits: dict[int, Edit]) -> str:
+    """The fake name with the customer's own typos applied to the matching words.
+
+    An edit that cannot land on the drawn word (the fake is a totally different
+    shape — a deletion past the end, a substitution into a shorter word) is left
+    OFF: the clean fake stands, and the damage stays on the surface where the
+    caller names it, never silently erased and never guessed at.
+    """
+    if not edits:
+        return candidate
+    out: list[str] = []
+    for index, part in enumerate(candidate.split()):
+        edit = edits.get(index)
+        if edit is not None:
+            applied = apply_edit(part, edit)
+            if applied is not None and len(applied) >= 3:
+                out.append(applied)
+                continue
+        out.append(part)
+    return " ".join(out)
+
+
+def _fake_name(gender: str | None, shape: tuple[str, ...] = (),
+               original: str = "") -> str:
     """A fake full name that AGREES WITH ITSELF and with the real person.
 
     `Екатерина Цветков` and `Руслан Хвостова` are not cosmetic defects: a model
@@ -1596,6 +1677,7 @@ def _fake_name(gender: str | None, shape: tuple[str, ...] = ()) -> str:
     # token — the same failure gender and case disagreement produce, on a third
     # axis. An empty shape keeps the historical «given surname».
     plan = shape or ("name", "surn")
+    typo_edits = _name_typo_edits(original, plan) if original else {}
     names = ASSETS.get().names
     patronymics = (names.patronymics_masc if resolved == "masc"
                    else names.patronymics_femn)
@@ -1638,7 +1720,7 @@ def _fake_name(gender: str | None, shape: tuple[str, ...] = ()) -> str:
         # paradigm, and a name that is nothing but initials cannot fail one.
         checkable = " ".join(part for part, slot in zip(parts, plan) if slot != "init")
         if not checkable or morph_names.survives_round_trip(checkable, resolved):
-            return candidate
+            return _apply_name_typos(candidate, typo_edits)
     # SHAPE IS QUALITY, A TOKEN IS CORRECTNESS. Some shapes cannot be produced
     # at all — «Морозова Екатeрина», where a keyboard slip makes morphology read
     # both words as surnames, asks for two surnames in a row, and no pair of them
@@ -1817,7 +1899,8 @@ def _render_token(entity_type: str, gender: str | None = None,
         # where a model is most tempted to «repair» what it was given.
         return _fake_date(original)
     if entity_type == "NAME":
-        return _fake_name(gender, morph_names.name_shape(original) if original else ())
+        return _fake_name(gender, morph_names.name_shape(original) if original else (),
+                          original=original)
     if entity_type == "MAC":
         # 02: sets the locally-administered bit, so the address can never belong
         # to a vendor OUI — the MAC analogue of the reserved IP range.
@@ -3035,9 +3118,13 @@ class Vault:
                     if grown is not None:
                         token, extends = grown
                     else:
-                        initials = self._initials_reuse(canonical, value)
-                        if initials is not None:
-                            token, extends = initials
+                        united = self._unite_name_parts(canonical, value, gender)
+                        if united is not None:
+                            token, extends = united
+                        else:
+                            initials = self._initials_reuse(canonical, value)
+                            if initials is not None:
+                                token, extends = initials
             elif entity_type == "LOC":
                 same = self._same_place_written_differently(canonical, value, shape)
                 if same is not None:
@@ -3868,6 +3955,14 @@ class Vault:
             if _normalizing_hole(token_digits, digits):
                 found.append((real, row_type, spent))
                 continue
+            # ПОЗИЦИОННЫЙ СРЕЗ ЛИЦЕНЗИРУЕТСЯ ТОЛЬКО НАЗВАННЫМ КРАЕМ (класс Д).
+            # `position is None` значит «никакая сторона края не назвала», и
+            # `real[start:start+len(digits)]` тут — «10 из 12 настоящих цифр»:
+            # молчаливый срез канона, который ни одна публичная строка не видит.
+            # Целое число (`_normalizing_hole`) и разбиение этого же вызова
+            # (`_digit_fragments_tiled`) отвечают без края; срез — никогда.
+            if position is None:
+                continue
             for start in _placements(token_digits, digits, position):
                 found.append((real[start:start + len(digits)], row_type, spent))
         return found
@@ -4664,7 +4759,8 @@ class Vault:
         # owners of one key and one owner of «луговая 10».
         wanted = _house_identity(canonical, False)
         owners = [token for owner_canonical, token in rows
-                  if _same_house(_house_identity(owner_canonical, True), wanted)]
+                  if _same_house(_house_identity(owner_canonical, True), wanted)
+                  and _same_place_type(canonical, owner_canonical)]
         if len(owners) != 1:
             return None
         full = owners[0]
@@ -4705,11 +4801,16 @@ class Vault:
         # A city-bearing row on this EXACT street and house is another town's
         # (the same town would have been found by `_same_place_written_
         # differently`), and then the short mention is a guess between the two.
+        # A DIFFERENT TYPE on the same base is not the same place either — it is
+        # the one thing `_house_identity` throws away, and throwing it away here
+        # linked «переулок Пушкина 5» to «улица Пушкина 5» into one substitute.
         if any(has_city == 1 and _same_house(_house_identity(owner, True), wanted)
+               and _same_place_type(canonical, owner)
                for has_city, owner, _ in rows):
             return None
         shorts = [token for has_city, owner, token in rows
-                  if has_city == 0 and _same_house(_house_identity(owner, False), wanted)]
+                  if has_city == 0 and _same_house(_house_identity(owner, False), wanted)
+                  and _same_place_type(canonical, owner)]
         if len(shorts) != 1:
             return None
         short = shorts[0]
@@ -4914,6 +5015,66 @@ class Vault:
                 continue
             return candidate, short_token
         return None
+
+    def _unite_name_parts(self, canonical: str, value: str,
+                          gender: str | None) -> tuple[str, str] | None:
+        """A full name whose EVERY part already has a lone substitute reuses them.
+
+        Class В (DECISIONS-SPRINT.md §В): «одна персона = одна подмена». A CRM
+        card `{"last_name":"Иванов","first_name":"Пётр","middle_name":
+        "Сергеевич"}` mints three LONE names — one word each — and the same
+        person written as a whole string then minted a FOURTH identity. The lone
+        parts are indexed nowhere as a set (`name_parts` indexes only multi-word
+        names), so `_extends_known_person` cannot see them. Here the whole name
+        is assembled from the lone substitutes it is a union of, in the written
+        order: «Иванов Пётр Сергеевич» becomes «Котов Гордей Олегович» when the
+        card already minted «Котов», «Гордей» and «Олегович» — one person, one
+        set, whatever order the parts and the whole arrived in.
+
+        Single owner or nothing: every part must resolve to exactly ONE lone
+        substitute of this conversation, and the assembled whole must pass the
+        same guards a fresh draw passes (distinct words, round-trip, free token).
+        A part with two owners means a guess between two people, which is worse
+        than the model seeing two.
+        """
+        if not self._conversation:
+            return None
+        real_parts = [word for word in canonical.split() if len(word) > 2]
+        if len(real_parts) < 2 or len(real_parts) != len(canonical.split()):
+            return None
+        # The whole name's shape must read its parts the way the lone parts were
+        # minted, or the assembled substitute would carry the wrong kinds.
+        shape = morph_names.name_shape(canonical)
+        if len(shape) != len(real_parts):
+            return None
+        built: list[str] = []
+        for part in real_parts:
+            rows = self._conn.execute(
+                "SELECT canonical, token FROM tokens "
+                "WHERE customer=? AND entity_type='NAME' AND minted_in=? "
+                "AND canonical_fold=?",
+                (self._customer, self._conversation, fold_key(part)),
+            ).fetchall()
+            lone = [token for other, token in rows
+                    if len(other.split()) == 1 and len(token.split()) == 1]
+            if len(lone) != 1:
+                return None
+            built.append(lone[0])
+        candidate = " ".join(built)
+        if len(set(word.casefold() for word in built)) != len(built):
+            return None
+        resolved = gender if gender in ("masc", "femn") else morph_names.detect_gender(candidate)
+        if resolved not in ("masc", "femn"):
+            resolved = secrets.choice(("masc", "femn"))
+        if not morph_names.survives_round_trip(candidate, resolved):
+            return None
+        if not self._is_free_token(
+                candidate, "NAME", value, canonical,
+                carry=frozenset(word.casefold()
+                                for word in (canonical + " " + candidate).split()
+                                if len(word) > 1)):
+            return None
+        return candidate, built[0]
 
     def _initials_reuse(self, canonical: str, value: str) -> tuple[str, str] | None:
         """«Ващенко Т. С.» after «Ващенко Таисия Савельевна» is ONE person.

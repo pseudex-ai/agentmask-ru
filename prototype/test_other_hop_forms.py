@@ -153,12 +153,12 @@ def _masked(entity: str, writing: str, vault: Vault) -> str:
         return _mask(f"«{writing}»", writing, entity, vault)
 
 
-def _tool(written: str, vault: Vault) -> str:
-    raw = json.dumps({"field": written}, ensure_ascii=False)
+def _tool(written: str, vault: Vault, field: str = "field") -> str:
+    raw = json.dumps({field: written}, ensure_ascii=False)
     restored: object = json.loads(unmask_arguments(raw, vault))
-    if not isinstance(restored, dict) or not isinstance(restored.get("field"), str):
+    if not isinstance(restored, dict) or not isinstance(restored.get(field), str):
         raise AssertionError("tool restoration changed the JSON field type")
-    return restored["field"]
+    return restored[field]
 
 
 def _prose(written: str, vault: Vault) -> str:
@@ -294,30 +294,36 @@ def _out_prose() -> None:
 
 
 def _parts() -> None:
-    """Selected roles resolve; unsupported roles stay fake (documented limits)."""
+    """Named roles resolve; unnamed roles stay fake (documented limits).
+
+    Класс Д (DECISIONS-SPRINT.md §Д): the positional slice is licensed only by a
+    NAMED place — `series`/`number`/`last4` — never by «the field held a number».
+    A bare group under a generic field has no FieldSpec naming its edge, so it
+    stays fake and is reported, not guessed.
+    """
     vault = _vault("acme", "c1")
     with _mint("SNILS"):
         _mask("«112-233-445 95»", "112-233-445 95", "SNILS", vault)
-    _expect("SNILS", "part", "first group is an edge", _tool("085", vault), "112")
-    _expect("SNILS", "part", "last four resolve", _tool("6919", vault), "4595")
+    _expect("SNILS", "part", "LIMIT: an unnamed first group stays fake", _tool("085", vault), "085")
+    _expect("SNILS", "part", "last four resolve under a named field", _tool("6919", vault, "last4"), "4595")
     _expect("SNILS", "part", "LIMIT: two-digit control stays fake", _tool("19", vault), "19")
     _expect("SNILS", "part", "LIMIT: unnamed middle stays fake", _tool("387", vault), "387")
 
     vault = _vault("acme", "c1")
     with _mint("INN"):
         _mask("«500100732259»", "500100732259", "INN", vault)
-    _expect("INN", "part", "last four resolve", _tool("7887", vault), "2259")
+    _expect("INN", "part", "last four resolve under a named field", _tool("7887", vault, "last4"), "2259")
     _expect("INN", "part", "LIMIT: two-digit prefix stays fake", _tool("00", vault), "00")
 
     vault = _vault("acme", "c1")
     with _mint("CARD"):
         _mask("«4276 1600 1234 5675»", "4276 1600 1234 5675", "CARD", vault)
-    _expect("CARD", "part", "last four resolve", _tool("2347", vault), "5675")
+    _expect("CARD", "part", "last four resolve under a named field", _tool("2347", vault, "last4"), "5675")
 
     vault = _vault("acme", "c1")
     with _mint("PASSPORT"):
         _mask("«4509 123456»", "4509 123456", "PASSPORT", vault)
-    _expect("PASSPORT", "part", "series resolve", _tool("0002", vault), "4509")
+    _expect("PASSPORT", "part", "series resolve under a named field", _tool("0002", vault, "series"), "4509")
 
     vault = _vault("acme", "c1")
     with _mint("EMAIL"):

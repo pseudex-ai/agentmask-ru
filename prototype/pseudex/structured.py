@@ -81,6 +81,40 @@ def _key_type(key: str, structured: StructuredAssets) -> str | None:
     return None
 
 
+def key_edge(key: str, structured: StructuredAssets) -> tuple[str | None, str | None]:
+    """(type, edge) a schema field NAMES for its value, or (None, None).
+
+    Класс Д (DECISIONS-SPRINT.md §Д): «место/нотацию листа объявляет FieldSpec,
+    не угадываем». The positional slice of a substitute's digits is licensed only
+    by a NAMED edge — passport series/number and the last-four digits. A field
+    that names a type but no edge (`inn`) restores WHOLE or is reported; a field
+    that names neither (`x`) never slices. This map is the ONE reader both the
+    masking leg (`detect_structured_kv`) and the restoring leg
+    (`redact._restore_reformatted_spans`) consult, so the two cannot disagree
+    about which edge a key declared.
+
+    The type half reuses `_key_type`; the edge half is a small STRUCTURAL map, not
+    leased tuning — the words «series/number/last» name a position in a value the
+    way a field name names a role, and they do not drift with a customer's
+    vocabulary.
+    """
+    normalized = _KEY_CLEAN_RE.sub("", key.strip().lower())
+    entity_type = _key_type(key, structured)
+    # "last N digits" — the field names the END of whatever value it holds.
+    if normalized.startswith(("last4", "lastfour", "lastdigits", "tail", "окончани", "последни")):
+        return (entity_type, "end")
+    # Document parts name their edge by role: series = start, number = end. A
+    # bare «number» is ambiguous in general, but the owner names it as the
+    # document-number place, and the slice itself is restricted to PASSPORT rows
+    # (`digit_fragment_owner`), so a phone/account number under a different key
+    # never answers here.
+    if normalized.startswith(("series", "сери")):
+        return ("PASSPORT", "start")
+    if normalized.startswith(("number", "номер")):
+        return ("PASSPORT", "end")
+    return (entity_type, None)
+
+
 _ADDRESS_ROLES = frozenset({"city", "street", "house", "flat", "entrance", "floor", "building"})
 
 

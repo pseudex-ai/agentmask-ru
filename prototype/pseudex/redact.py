@@ -10,7 +10,7 @@ import re
 from typing import NamedTuple
 
 from pseudex.detect import NameSpan, PartSpan, Span
-from pseudex import agent_form, morph_names, morph_places, notation, spoken, translit
+from pseudex import agent_form, morph_names, morph_places, notation, spoken, structured, translit
 from pseudex.assets import ASSETS
 from pseudex.normalize import normalize
 from pseudex.profiling import stage
@@ -924,7 +924,7 @@ def _conflicting_place_spans(text: str, vault: Vault,
 
 
 def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
-            for_tool: bool) -> str:
+            for_tool: bool, field_key: str = "") -> str:
     with stage("unmask.total"):
         # EVERY PASS READS THE SAME MASKED TEXT, AND THE EXACT TOKENS WIN. The
         # passes used to run one after another on the text the previous pass
@@ -972,7 +972,7 @@ def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
         for span in sorted(token_spans, key=lambda item: (item[0], -item[1])):
             if not any(span[0] < end and start < span[1] for start, end, _ in taken):
                 taken.append(span)
-        passes = [_restore_reformatted_spans(text, vault, for_tool),
+        passes = [_restore_reformatted_spans(text, vault, for_tool, field_key),
                   _restore_spoken_identifier_spans(text, vault, for_tool)]
         # A cue inside a JSON string carries the same role as one in prose.
         # Field-level numeric values remain governed by the schema path.
@@ -1411,7 +1411,7 @@ def _restore_tokens(text: str, vault: Vault, for_tool: bool = False) -> str:
 
 
 def _restore_reformatted_spans(text: str, vault: Vault,
-                         for_tool: bool = False) -> list[tuple[int, int, str]]:
+                         for_tool: bool = False, field_key: str = "") -> list[tuple[int, int, str]]:
     """Numeric tokens the model rewrote (+7… -> 8…, separators stripped) no longer
     match their minted shape, so they are resolved by digit signature instead."""
     normalized_text: str = normalize(text)
@@ -1430,6 +1430,11 @@ def _restore_reformatted_spans(text: str, vault: Vault,
                  re.sub(r"\D", "", stripped))]
     if not runs:
         return []
+    # THE FIELD'S OWN DECLARATION IS WHAT NAMES A DIGIT'S EDGE (класс Д). The
+    # positional slice of a substitute's digits is licensed only by a named
+    # place — `series`/`number`/`last4` — never by «the field held a number».
+    edge_type, edge = (structured.key_edge(field_key, ASSETS.get().structured)
+                       if for_tool and field_key else (None, None))
     candidates: set[str] = set()
     for _, digits in runs:
         candidates.add(digits)
@@ -1481,7 +1486,12 @@ def _restore_reformatted_spans(text: str, vault: Vault,
         # cue-gated path below is where «дом 74» is decided.
         if len(digits) < _FRAGMENT_DIGIT_FLOOR:
             continue
-        owner = vault.digit_fragment_owner(digits)
+        # THE TYPE TRAVELS ONLY WITH A NAMED EDGE. The whole-number resolution
+        # (`_normalizing_hole`) is about identity, and identity is type-free: the
+        # same number written as an ИНН and as a СНИЛС must stay ambiguous and
+        # refuse, not be narrowed by the field's key. The type narrows ONLY the
+        # positional slice, and only a named edge licenses a slice at all.
+        owner = vault.digit_fragment_owner(digits, edge_type if edge else None, edge)
         if owner is not None:
             spans.append((match.start(), match.end(),
                           _numeric_glyphs_like(text[match.start():match.end()],
@@ -2652,13 +2662,13 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
     except (json.JSONDecodeError, TypeError):
         return _unmask(raw, call, literals, False, True)
 
-    def walk(node: object) -> object:
+    def walk(node: object, key: str = "") -> object:
         if isinstance(node, str):
             # VERBATIM, NOT AGREED. A tool executes on the value; grammar is a
             # property of prose. See `_in_case_of`.
-            return _unmask(node, call, literals, False, True)
+            return _unmask(node, call, literals, False, True, field_key=key)
         if isinstance(node, list):
-            return [walk(item) for item in node]
+            return [walk(item, key) for item in node]
         if isinstance(node, dict):
             # Keys are the tool's own schema, not customer text — but a token
             # can only ever appear in a value, so rewriting keys would be a way
@@ -2669,7 +2679,7 @@ def unmask_arguments(raw: str, vault: Vault) -> str:
             # digits by the cross-type fragment owner and came back as the
             # customer's phone fragment «230» — a flat that is nobody's, with
             # a 200 (fresh-seed v4: 3 of 300 two-address draws).
-            return {key: (value if _bare_address_leaf(key, value) else walk(value))
+            return {key: (value if _bare_address_leaf(key, value) else walk(value, str(key)))
                     for key, value in node.items()}
         return node
 

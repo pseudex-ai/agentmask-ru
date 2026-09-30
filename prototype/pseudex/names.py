@@ -25,7 +25,7 @@ import re
 
 from pseudex.assets import ASSETS, NameAssets
 from pseudex.detect import Span
-from pseudex.fuzzy import build_index, lookup, within_one_edit, within_one_typo
+from pseudex.fuzzy import build_index, lookup, recover_one_edit, within_one_edit, within_one_typo
 from pseudex.morph import MORPH, is_stretched_filler
 from pseudex import spoken
 
@@ -696,7 +696,7 @@ def _misspelling_index(version: str) -> dict[str, tuple[str, ...]]:
                        if len(word) >= 5 and word not in names.ambiguous)
 
 
-def _looks_misspelt_name(word: str) -> bool:
+def _looks_misspelt_name(word: str, min_len: int = 5) -> bool:
     """Whether this word is one edit away from a name we know.
 
     The second signal, and it is needed: the first — sitting next to a name we
@@ -704,12 +704,18 @@ def _looks_misspelt_name(word: str) -> bool:
     very often an ordinary one. Requiring near-membership in the dictionary is
     the same tolerance the cue-word deny matching already uses, bounded the same
     way at a single edit.
+
+    `min_len` is the one dial the callers move, and it moves DOWN only where a
+    cue has already said the next word names a person: «меня зовут игрь» is four
+    letters, one deletion from «игорь», and without the cue a four-letter word
+    reaches too much of the language («игрь» → «игра», «тигр»…). The cue is what
+    makes that neighbourhood safe to enter.
     """
     if _is_numeral_word(word):
         return False
     lowered = word.lower()
-    if len(lowered) < 5:
-        # Below five letters a single edit reaches too much of the language:
+    if len(lowered) < min_len:
+        # Below the floor a single edit reaches too much of the language:
         # «Иван» is one edit from «Иван», «Инан», «Иванк»… and also from ordinary
         # short words. The gazetteer already covers names this short exactly.
         return False
@@ -736,6 +742,26 @@ def _looks_misspelt_name(word: str) -> bool:
     if any(within_one_typo(lowered, cue) for cue in ASSETS.get().names.never_cues):
         return False
     return lookup(lowered, _misspelling_index(ASSETS.version or ""))
+
+
+def recover_damaged_name(word: str) -> str | None:
+    """The dictionary name one edit from this damaged word, or None.
+
+    The mint's half of class А: detection answers «is this a damaged name», and
+    the mint needs WHICH name it is so the edit that made it can be applied to
+    the substitute. Same signals as `_looks_misspelt_name` (unknown to
+    morphology, not a cue word, not a numeral, not a stretched filler), so the
+    two halves cannot disagree about what is and is not a damaged name.
+    """
+    if _is_numeral_word(word) or is_stretched_filler(word):
+        return None
+    parses = MORPH.parse(word)
+    if not parses or parses[0].is_known:
+        return None
+    lowered = word.lower()
+    if any(within_one_typo(lowered, cue) for cue in ASSETS.get().names.never_cues):
+        return None
+    return recover_one_edit(lowered, _misspelling_index(ASSETS.version or ""))
 
 
 _SURNAME_CUE_RE = re.compile(r"(?i)\bфамил\w*\s*[:\-—–]?\s*([А-ЯЁа-яё][А-ЯЁа-яё\-]{2,})")
@@ -819,7 +845,12 @@ def _cued_misspelt_names(text: str, names: NameAssets) -> list[Span]:
         candidate = word.group()
         if len(candidate) < 4 or candidate.lower() in names.stopwords:
             continue
-        if not _looks_misspelt_name(candidate):
+        # A CUE LICENSES THE SHORT DAMAGED NAME IT INTRODUCES. «меня зовут игрь»
+        # is four letters and one deletion from «игорь»; without the cue the
+        # four-letter neighbourhood is too dense, and with it the word is
+        # already declared a person, so the shorter floor is safe (class А —
+        # the owner's literal example).
+        if not _looks_misspelt_name(candidate, min_len=4):
             continue
         start = match.end() + word.start()
         spans.append(Span(start, match.end() + word.end(), "NAME", candidate))
