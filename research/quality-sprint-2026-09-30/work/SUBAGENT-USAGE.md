@@ -34,3 +34,10 @@ Invocation `subagent_fork:7ac9e839-fe35-4124-9b90-33d9eea930d7`, inherited Lead 
 - `subagent_fork:840196d9-9a08-4802-a6b5-22ea67844f55` — inherited gpt-6-astra, независимый re-review исправлений M1b/S1 revision-2; writes only work/review-critical-revision2/. RUNNING. Вход — findings work/review-critical/REVIEW.md против revision-2 пакетов. G3 не повышается без этого.
 
 Собственная фраза модели не является доказательством маршрутизации.
+
+## Round 4
+
+- `subagent_fork:840196d9-9a08-4802-a6b5-22ea67844f55` — inherited gpt-6-astra, независимый re-review M1b/S1 revision-2; writes only work/review-critical-revision2/. Result **PASS_CORRECTIONS** (both). Каждый REVISE finding реально исправлен, не переименован. S1 raw перечитан из arms.v5.jsonl напрямую; probe перезапущен exit4 violated{A2,B,C,D1}; full G3 stays REVISED_NOT_PASS, M1b G2 stays NOT_MEASURED. Два неблокирующих замечания (index-notation ambiguous; long_clinic-006 field label).
+- Lead M1a (round 4): доказуемые инициалы через whole-name disclosure, 58/58 controls, 6 legacy suites. Bare «ПО» намеренно не кандидат (P09).
+
+Собственная фраза модели не является доказательством маршрутизации.

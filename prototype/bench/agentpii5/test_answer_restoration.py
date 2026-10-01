@@ -184,7 +184,17 @@ def main():
     check(score(c,r,e).overall.value_ok==1,'source literal typo earns value with explicit proof')
     c,r,e=sample('П.О.','И.Е.','NAME','Иванова Елена','Пахомова Ольга')
     s=score(c,r,e)
-    check(s.overall.candidates==1 and s.overall.unresolved==1,'initials visible as unresolved candidate, not a silent zero')
+    check(s.overall.candidates==1 and s.overall.joint_ok==1 and s.overall.value_ok==1,
+          'rewritten initials of a proved whole-name disclosure earn value')
+    c,r,e=sample('П.О.','П.О.','NAME','Иванова Елена','Пахомова Ольга')
+    s=score(c,r,e)
+    check(s.overall.residual==1 and s.overall.joint_ok==0,'unchanged fake initials are residual, not success')
+    c,r,e=sample('П.О.','И.П.','NAME','Иванова Елена','Пахомова Ольга')
+    s=score(c,r,e)
+    check(s.overall.value_ok==0 and s.overall.joint_ok==0,'wrong restored initials are value_wrong')
+    c,r,e=sample('ПО','ИЕ','NAME','Иванова Елена','Пахомова Ольга')
+    check(score(c,r,e).overall.candidates==0,
+          'bare two-letter form is not an initials candidate (lexical ambiguity, P09)')
     c,r,e=sample('переулок Липовый, дом 21','улица Пушкина, дом 14','LOC','переулок Пушкина, дом 14','переулок Липовый, дом 21')
     check(score(c,r,e).overall.value_ok==0,'street type belongs to identity')
     c,r,e=sample('8','8')

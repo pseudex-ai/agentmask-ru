@@ -1,0 +1,28 @@
+{
+  "review": "review-critical-revision2",
+  "verdict": {"M1b_revision_2": "PASS_CORRECTIONS", "S1_revision_2": "PASS_CORRECTIONS"},
+  "full_gate_promotion": {"M1b_G2": "NOT_MEASURED unchanged", "S1_G3": "REVISED_NOT_PASS unchanged"},
+  "independent_commands": [
+    {"what": "S1 revision-2 probe rerun", "cwd": "prototype", "command": "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python ../research/quality-sprint-2026-09-30/work/S1/revision-2/s1_probes_v2.py", "exit": 4, "violated": ["A2", "B", "C", "D1"], "holds": ["P", "A1", "A3", "C2", "E1"], "other": {"D2": "NOT_MEASURED", "E2": "CONTRACT_EXPECTED"}, "fixture_spec_sha256": "6178608ff3b2edc0c910edf914e0844cc4b73f2f14615e6f32aceafff8f70e2a"},
+    {"what": "M1b parity verdict self-test (pure function, runpy import)", "exit": 0, "controls": 7, "all_ok": true, "unrelated_harness_error_classified_as": "UNRELATED_HARNESS_ERROR"}
+  ],
+  "archived_raw_reverified": {
+    "long_clinic_001": {"line": 49, "raw_phone": "+7 929 542-23-19", "restored_phone": "+3 929 542-23-19", "at_requests": [7, 8, 13], "at_list_indices": [6, 7, 12]},
+    "fanout_pick_017": {"line": 607, "raw": "23.10.1965 / c-3 / c-8", "restored": "127.10.1965", "at_request": 14, "at_list_index": 13},
+    "long_clinic_006": {"line": 60, "reply_raw_has_fake_dob": "08.04.1964", "reply_whole_has_real_dob": "04.04.1964", "stream_mismatch": true}
+  },
+  "m1b_canary_recorded_facts": {
+    "rows": 810, "over_engine_bound": 2,
+    "engine_check_run": "NOT_MEASURED capture_rows=0 coverage_known=False",
+    "max_payload_utf8_bytes": 36592, "max_payload_chars": 35718,
+    "legacy_diagnostic": {"measured": 810, "skipped": 0, "refused": 0, "payloads": 20201},
+    "v2_lying_row_verdict": "REFUSED"
+  },
+  "product_source_written": false,
+  "provider_prod_paid_calls": 0,
+  "git_mutations": 0,
+  "minor_notes": [
+    "ARCHIVED_RAW pointer uses request ordinals (responses[7,13], response 14) while review-critical used 0-based list indices (6/7/12, 13); same responses, notation ambiguous",
+    "long_clinic-006 field list names 'reply' but top-level v5 keys are reply_raw/reply_whole/stream_mismatch (delivered reply lives in model_trace.responses)"
+  ]
+}

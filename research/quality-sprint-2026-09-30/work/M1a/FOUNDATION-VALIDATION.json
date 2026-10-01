@@ -1,5 +1,5 @@
 {
-  "stage": "M1a v2-dev: alignment boundary refinement + adversarial REDs recorded",
+  "stage": "M1a v2-dev: provable dotted initials via whole-name disclosure",
   "only_declared_source_changes": [
     "prototype/bench/agentpii5/answer_restoration.py",
     "prototype/bench/agentpii5/test_answer_restoration.py"
@@ -7,22 +7,18 @@
   "files": [
     {
       "path": "prototype/bench/agentpii5/answer_restoration.py",
-      "sha256": "914726337ceef714aaf23db592f33f3ce46aadf4cce1d1292df49d3d3318996a"
+      "sha256": "48ecc8f772aaa60d7bdd8394f793533ed8bf97e361582fe0b5f92a1c9f33d5b4"
     },
     {
       "path": "prototype/bench/agentpii5/test_answer_restoration.py",
-      "sha256": "024e494e46a588815a303b2d3d922b1cdc2df5590e6713dd9e094ce690e6b087"
+      "sha256": "ed5adbfb4c94d48f25e7f2d6b854fd2ef18d811f4fb8f69952264b540f4c1f78"
     }
   ],
   "m04_controls": {
-    "passed": 55,
-    "total": 55
+    "passed": 58,
+    "total": 58
   },
   "legacy_suites": 6,
-  "alignment_cases": 6,
-  "alignment_open": [
-    "insertion-around-token -> value_wrong (should be value_ok + gap-change)"
-  ],
   "other_source_run_pins_unchanged": 196,
   "engine_changed": false,
   "raw_paid_run_changed": false,

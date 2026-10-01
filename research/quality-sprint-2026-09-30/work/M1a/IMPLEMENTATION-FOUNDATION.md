@@ -33,15 +33,19 @@
 3. **Тип записанной замены.** В tool proof engine_type куска обязан совпадать с declared item.type; неизвестный тип больше не проходит молча.
 4. **Будущее доказательство не стирает unknown.** `availability` сокращён до available/unknown: proof с request после consumer не может доказать, что то же написание не было известно раньше по другому каналу; такой кандидат остаётся unknown-конкурентом, а не выпадает из maps.
 
-## Открыто — не скрывать ради55/55
+## Доказуемые инициалы (round 4)
+
+Инициалы теперь доказуемы через раскрытие полного имени. `initials_of` возвращает squeezed-инициалы (кириллица+латиница); `_spelling_matches` и `_initials_value_equal` сопоставляют raw-вхождение «П.О.» с fake «Пахомова Ольга» и сверяют delivered с реальными инициалами «И.Е.». Кандидат становится available при доказанном whole-name disclosure. Bare «ПО» намеренно не кандидат (лексическая неоднозначность, P09). 58/58 контролов.
+
+## Открыто — не скрывать ради58/58
 
 - Legacyadapterвывода providerlinkedproof изсуществующихcaptures. Пока noneevidenceконсервативноUNKNOWN, неновыйenginequalityrate.
-- Полноценныеliteralrole/disclosureparts, Latin/initialstransformationsиomission/typo supportснезависимымoracle. InitialscandidateUNKNOWNнеполнаяподдержка.
-- Unique monotone alignment. СтарыйSequenceMatcherwindowещёиспользуетсякакdevэвристика; оннедостаточендляG2acceptanceиостанетсяподотдельнымиadversarialchecks.
+- Latin (транслитерация) и partial roles (только фамилия/имя) всё ещё unknown-кандидаты, не доказуемые — нужен тот же механизм привязки derived-формы к whole-name disclosure.
+- Unique monotone alignment. СтарыйSequenceMatcherwindowещёиспользуетсякакdevэвристика; известное ограничение — соседняя вставка литерала сливается в value replace (см. ALIGNMENT-NOTE.md). Недостаточно дляG2acceptance.
 - Перспановыеformabstentions инеполныеvalueчасти,унификацияcoverage-discoveryblindspots.
 - Unmappedchangesнеавтоматическидоказанныеnon-PIIcorruption,покаunsupportedlegitimatesubstitutionнеможетбытьисключена.
 - ПолныйindependentreviewG2, историческиеcounterinvariance,новыйofflineoutput иM1cпроводка.
 
 ## Заморозка для foundation re-review
 
-На время отдельногоreview не менять этидвафайла/55controlinputs. Остальныеагентымогутчитать,нопишуттолькосвоиreviewscopes. FullgateG2остаётсяFAILнезависимоотприёмкиэтогопромежуточногослоя. Первый foundation reviewer завершился преждевременно(до итогового вердикта), но дал четыре подтверждённых дефекта; они исправлены. Требуется повторный независимый foundation review на замороженных входах перед commit приёмки.
+На время отдельногоreview не менять этидвафайла/58controlinputs. Остальныеагентымогутчитать,нопишуттолькосвоиreviewscopes. FullgateG2остаётсяFAILнезависимоотприёмкиэтогопромежуточногослоя. Первый foundation reviewer завершился преждевременно(до итогового вердикта), но дал четыре подтверждённых дефекта; они исправлены. Повторный foundation review (2f5d5333) дал PASS_FOUNDATION на 55 контролов; инициалы добавлены после него и требуют отдельного incremental review перед G2/M1c.

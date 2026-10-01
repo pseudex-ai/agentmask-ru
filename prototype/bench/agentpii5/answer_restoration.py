@@ -23,7 +23,7 @@ from bench.agentpii4.parts import parts_of
 from bench.agentpii5 import contracts
 from bench.agentpii5.contracts import CaseV5, ArmRunV5
 from bench.agentpii5.form import _ANALYZER, form_match, loc_generic
-from bench.agentpii5.observe import value_needles, _needle_spans, values_equal, fold
+from bench.agentpii5.observe import value_needles, _needle_spans, values_equal, fold, initials_of
 
 ESTIMATOR_VERSION = 'm04-answer-restoration-2-dev'
 WORD = re.compile(r'[A-Za-zА-Яа-яЁё]+(?:-[A-Za-zА-Яа-яЁё]+)*')
@@ -61,6 +61,18 @@ def _equal(kind: str, left: str, right: str) -> bool:
         # shared comparator must not silently change with an answer metric.
         return False
     return values_equal(kind, left, right)
+
+
+def _squeeze_initials(text: str) -> str:
+    """Letter heads of a written initials form, casefolded, dots stripped."""
+    return ''.join(c for c in text if c.isalpha()).casefold()
+
+
+def _initials_value_equal(delivered: str, real: str) -> bool:
+    """A written initials form matches SOME rendering of the real name's initials
+    (Cyrillic or Latin). Not a full-name comparison."""
+    heads = _squeeze_initials(delivered)
+    return bool(heads) and heads in initials_of('NAME', real)
 
 
 @dataclass(frozen=True)
@@ -323,8 +335,12 @@ def _mapping_rows(case: CaseV5, run: ArmRunV5, response: object | None,
                     rows.append(Mapping(item.id,item.identity,item.type,role,f,r,'unknown',
                                         'derived_role_requires_exact_disclosure',None))
             if any(n.kind=='initials' for n in value_needles('NAME',fake)):
-                rows.append(Mapping(item.id,item.identity,item.type,'initials',fake,real,'unknown',
-                                    'derived_initials_candidate_not_identity_proof',None))
+                # Initials of a proved whole-name disclosure are themselves
+                # provable; without such a disclosure they stay unknown.
+                initials_avail = 'available' if available else 'unknown'
+                rows.append(Mapping(item.id,item.identity,item.type,'initials',fake,real,initials_avail,
+                                    'derived_initials_from_whole_name_disclosure' if available
+                                    else 'derived_initials_candidate_not_identity_proof',None))
     return tuple(dict.fromkeys(rows))
 
 
@@ -360,6 +376,18 @@ def _placed(mapping: Mapping, raw: str) -> tuple[tuple[int, int], ...]:
     return tuple(sorted(hits))
 
 
+def _spelling_matches(mapping: 'Mapping', raw_span: str, fake: str) -> bool:
+    """Does a raw occurrence correspond to a mapping's fake spelling?
+
+    For an initials role the occurrence is the squeezed initials of the fake, not
+    the whole name; the whole-name `_equal` would never match «П.О.» to
+    «Пахомова Ольга».
+    """
+    if mapping.role == 'initials':
+        return _squeeze_initials(raw_span) in initials_of(mapping.pii_type, fake)
+    return _equal(mapping.pii_type, raw_span, fake)
+
+
 def _candidates(case: CaseV5, run: ArmRunV5,
                 evidence: AnswerEvidence | None = None) -> list[tuple[int,int,tuple[Mapping,...]]]:
     regions=_response_regions(run)
@@ -374,7 +402,7 @@ def _candidates(case: CaseV5, run: ArmRunV5,
             if cache_key not in qualified_cache:
                 qualified_cache[cache_key] = _mapping_rows(case, run, region, evidence)
             qualified=[x for x in qualified_cache[cache_key]
-                       if x.key==m.key and _equal(m.pii_type,run.reply_raw[a:b],x.fake)]
+                       if x.key==m.key and _spelling_matches(m,run.reply_raw[a:b],x.fake)]
             all_hits.setdefault((a,b),[]).extend(qualified or [m])
     # Strong whole readings outrank their nested role hypotheses, not peers.
     intervals=sorted(all_hits,key=lambda x:(x[0],-(x[1]-x[0])))
@@ -439,16 +467,27 @@ def answer_events(case: CaseV5, run: ArmRunV5, *,
         elif available!=keys or any(m.availability=='unknown' for m in maps): status='provenance_unavailable'
         elif unknown: status='alignment_unresolved'
         else:
-            # A literal copy is judged against the source at THAT disclosure,
-            # not a repaired canonical or an unrelated alias's canonical. An
-            # exact raw spelling with a single proved literal is the copy path;
-            # anything else (renotation, non-literal fake) is the value path.
-            exact_copy = len(literal_choices) == 1
-            value = (text == next(iter(literal_choices))) if exact_copy else _equal(chosen.pii_type,text,chosen.real)
-            residual=_equal(chosen.pii_type,text,raw[a:b]) and not value
-            if chosen.pii_type in contracts.FORM_FEATURES and text.strip():
-                verdict=form_match(chosen.pii_type,text,raw[a:b])
-                form=verdict.same; measured=True; differs=tuple(sorted(verdict.differs))
+            if chosen.role == 'initials':
+                # A derived initials form of a proved whole-name disclosure: the
+                # value is the letter heads of the real name; residual means the
+                # written fake initials survived unchanged.
+                value = _initials_value_equal(text, chosen.real)
+                residual = (_squeeze_initials(text) == _squeeze_initials(raw[a:b])) and not value
+                if text.strip() and raw[a:b].strip():
+                    form = text.count('.') == raw[a:b].count('.')
+                    measured = True
+                    differs = () if form else ('initials_separators',)
+            else:
+                # A literal copy is judged against the source at THAT disclosure,
+                # not a repaired canonical or an unrelated alias's canonical. An
+                # exact raw spelling with a single proved literal is the copy path;
+                # anything else (renotation, non-literal fake) is the value path.
+                exact_copy = len(literal_choices) == 1
+                value = (text == next(iter(literal_choices))) if exact_copy else _equal(chosen.pii_type,text,chosen.real)
+                residual=_equal(chosen.pii_type,text,raw[a:b]) and not value
+                if chosen.pii_type in contracts.FORM_FEATURES and text.strip():
+                    verdict=form_match(chosen.pii_type,text,raw[a:b])
+                    form=verdict.same; measured=True; differs=tuple(sorted(verdict.differs))
             status=('residual' if residual else 'value_wrong' if not value else
                     'form_unmeasured' if not measured else 'form_wrong' if not form else 'matched')
         measurable=status not in ('ambiguous','provenance_unavailable','alignment_unresolved')
