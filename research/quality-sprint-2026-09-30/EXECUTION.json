@@ -149,7 +149,7 @@
       "status": "RUNNING",
       "gate": "G2",
       "wave": "workflow-3",
-      "execution_stage": "design/RED corrected + independent re-review PASS_CORRECTIONS; diagnostic bounded legacy-v1 reader in revision-2 (810/810 readable in separate namespace); ENGINE stays NOT_MEASURED (4 MiB). Engine reader change (8 MiB + payload bounds + skip-never-abort) is M1c."
+      "execution_stage": "design PASS_CORRECTIONS; reader contract accepted and implemented in M1c (engine now 810/810 MEASURED)"
     },
     {
       "id": "M1c",
@@ -159,8 +159,9 @@
       ],
       "model": "lead:gpt-6-astra",
       "scope": "sole writer benchmark contracts/observe/metrics/report/live wiring",
-      "status": "NOT_RUN",
-      "gate": "G2"
+      "status": "RUNNING",
+      "gate": "G2",
+      "execution_stage": "Phase 1 reader contract done (skip-never-abort + denominator survival; saved run 810/810 MEASURED). Phase 2 legacy adapter + Phase 3 wiring pending; no score publication until adapter."
     },
     {
       "id": "A1",
