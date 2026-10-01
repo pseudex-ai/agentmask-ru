@@ -1,0 +1,277 @@
+{
+  "artifact": "DECISION-COVERAGE",
+  "revision": "contracts-revision-2",
+  "sprint_root": "research/quality-sprint-2026-09-30",
+  "purpose": "Mark every choice that is ALREADY settled by the owner so the merged owner questionnaire cannot reopen it, and name the source literal for each.",
+  "status_vocabulary": {
+    "COVERED_BY_OWNER_DECISION": "an owner choice exists; do not re-ask",
+    "COVERED_BY_ENGINEERING_OBLIGATION": "an engineering/instrument obligation with its own test; not an owner fork",
+    "OWNER_PENDING": "a real remaining owner checkpoint (see OWNER-QUESTIONS-6.md)",
+    "RESEARCH_GAP": "not answerable by the owner; needs a source/measurement first"
+  },
+  "items": [
+    {
+      "coverage_id": "COV-QUALITY-BAR",
+      "topic": "quality bar",
+      "literal": "«≥99% на выборке + размер и ДИ»",
+      "source": "research/quality-sprint-2026-09-30/OWNER-DECISIONS.md:19",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "point estimate ≥99%; CI published; lower CI bound ≥99% NOT chosen; small sample does not prove population-level 99%"
+    },
+    {
+      "coverage_id": "COV-SUPPORT-300",
+      "topic": "support floor",
+      "literal": "«не менее 300 независимых позитивных единиц на основной заявляемый тип/срез плюс достаточная отдельная проверка precision»",
+      "source": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md:34",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "small slices are not full acceptance; family average never hides an unproven type"
+    },
+    {
+      "coverage_id": "COV-TWO-LABELERS",
+      "topic": "annotation protocol",
+      "literal": "«два независимых разметчика, сначала только исходный текст/правила, без detector output»",
+      "source": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md:33",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "both annotators see RAW SOURCE TEXT, never predicted spans; disputes go to the owner; AI proposal is not final gold"
+    },
+    {
+      "coverage_id": "COV-LEXAMB",
+      "topic": "lexical ambiguity",
+      "literal": "«Не маскировать по одной двусмысленной форме»",
+      "source": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md:8",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "«напиши жене» is not an automatic NAME and not an automatic FP; the remaining question is only how the unresolved measurement population is printed (Q2)"
+    },
+    {
+      "coverage_id": "COV-PUBLIC-NAMES",
+      "topic": "public/fictional/stage names",
+      "literal": "«Одинаково защищать все личные имена»",
+      "source": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md:9",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "positives in the same protection; a separate public stratum is a reporting view, never an exclusion from the claim"
+    },
+    {
+      "coverage_id": "COV-ALL-PARTS",
+      "topic": "name parts and carry",
+      "literal": "«Да, это дефект, защищаем все части»",
+      "source": "research/quality-sprint-2026-09-30/OWNER-DECISIONS.md:37",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "one person gets one consistent substitute for whole and parts; carry keeps an already-issued substitute, never a first-time real name"
+    },
+    {
+      "coverage_id": "COV-ADDR-COMPONENTS",
+      "topic": "address boundary",
+      "literal": "«все личные компоненты, не маркеры»",
+      "source": "research/quality-sprint-2026-09-30/OWNER-DECISIONS.md:38",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "street+house+block+flat+entrance+floor are personal components; service words and allowed generic toponyms need no substitution but must stay unchanged"
+    },
+    {
+      "coverage_id": "COV-CHECKSUM-INHERIT",
+      "topic": "checksum policy",
+      "literal": "«Наследовать валидность исходника»",
+      "source": "research/quality-sprint-2026-09-30/OWNER-DECISIONS.md:23",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "valid source → valid substitute; a faulty source is not repaired; new v6 checksum-type criteria follow this"
+    },
+    {
+      "coverage_id": "COV-TYPED-INVALID",
+      "topic": "technically invalid personal identifier",
+      "literal": "«Защищать при доказанном типовом контексте»",
+      "source": "research/quality-sprint-2026-09-30/OWNER-DECISIONS.md:27",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "the written value is protected, not an invented correct number; bare look-alike digit runs are not automatically PII"
+    },
+    {
+      "coverage_id": "COV-UNIT-OF-REFUSAL",
+      "topic": "unit of refusal / forward collision",
+      "literal": "«весь затронутый вызов инструмента или ответ»; «Да, так и нужно»",
+      "source": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md:14; OWNER-DECISIONS.md:40",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "a partially restored payload is not success; indistinguishable new-real/old-fake → explicit refusal; no silent passthrough; no value-only pairing for convenience"
+    },
+    {
+      "coverage_id": "COV-NO-NEW-PROVENANCE-API",
+      "topic": "provenance",
+      "literal": "«Изменение API сейчас НЕ разрешено»",
+      "source": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md:15",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "first restore and use available transformation history; only proven indistinguishability under equal inputs earns a new owner question about new fields"
+    },
+    {
+      "coverage_id": "COV-AGENT-FORM",
+      "topic": "explicit agent form over schema",
+      "literal": "«сохранить явно написанную форму агента»",
+      "source": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md:16",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "the schema signals type/role, not a right to silently fix an explicit format; applies to v5/v6 and M04"
+    },
+    {
+      "coverage_id": "COV-CVC-DESTINATIONS",
+      "topic": "CVC destinations",
+      "literal": "«В любой ответ той же операции»",
+      "source": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md:21",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "the earlier recommendation to limit to the payment argument was NOT chosen; documents/memory may hold information of that operation"
+    },
+    {
+      "coverage_id": "COV-CVC-SCOPE",
+      "topic": "CVC / temporary secrets in scope",
+      "literal": "«CVC не исключается из текущего спринта»; «Да, исследовать всё семейство временных секретов»",
+      "source": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md:22-23",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "recognition + faithful restoration on a synthetic isolated path; production payment enablement/retention still not approved"
+    },
+    {
+      "coverage_id": "COV-CVC-LIFECYCLE-DEFERRED",
+      "topic": "temporary-secret lifecycle",
+      "literal": "«Lifecycle/admin/API/HITL перенесены в отдельный следующий спринт»",
+      "source": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md:24-25",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "the temporary reversible path without persistent storage stays future design intent; it does not block the isolated synthetic quality work"
+    },
+    {
+      "coverage_id": "COV-SEMANTIC-DEFERRED",
+      "topic": "semantic PII implementation",
+      "literal": "«исследовать пробелы сейчас, реализация только после отдельного решения владельца»",
+      "source": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md:38",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "diagnosis/salary/conviction/debt are not covered by the presence of 55 registry types; research inventory now, implementation later"
+    },
+    {
+      "coverage_id": "COV-KEEP-V5",
+      "topic": "v5/v6 integration precondition",
+      "literal": "«сначала сохранить WIP и зафиксировать актуальный v5 meter, затем полный v6»",
+      "source": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md:39",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "no rollback of the new semantics; keep current v5 readers and current semantics; D-068/069/070 numbering is a sub-obligation"
+    },
+    {
+      "coverage_id": "COV-NO-PAID-RUNS",
+      "topic": "paid benchmark calls",
+      "literal": "«Исторический budget не разрешает новые расходы»",
+      "source": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md:41",
+      "status": "COVERED_BY_OWNER_DECISION",
+      "blocks_reopen": true,
+      "note": "offline gates first, then an exact estimate and a separate GO"
+    },
+    {
+      "coverage_id": "COV-INTEGRATION-KEEP-V5",
+      "topic": "status funnel: reader choice",
+      "literal": "keep current v5 semantics and legacy readers; v6 rows additive",
+      "source": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md:39; work/V0/SPEC.md:82-89",
+      "status": "COVERED_BY_ENGINEERING_OBLIGATION",
+      "blocks_reopen": false,
+      "note": "the v6 status vocabulary is a strict subset of the v5 one (re-derived in FACTS.json); a frozen old-corpus replay must print the same out_* counts AND the v6 rows on one run file; test_observe/test_observe_v6 green"
+    },
+    {
+      "coverage_id": "D-ID-RENUMBER",
+      "topic": "D-068/D-069/D-070 collisions",
+      "literal": "unique ids + old→new reference map, keeping both records",
+      "source": "research/quality-sprint-2026-09-30/work/review-contracts/REVIEW.md:152",
+      "status": "COVERED_BY_ENGINEERING_OBLIGATION",
+      "blocks_reopen": false,
+      "note": "which number is assigned is technical; only contradicting CONTENT goes to the owner; acceptance: every D-NNN cross-reference resolves to exactly one heading"
+    },
+    {
+      "coverage_id": "MUTANT-LINE-REDEFINE",
+      "topic": "checksum mutant line under Q2",
+      "literal": "valid→invalid, invalid→valid, wrong form, unsafe identity/collision",
+      "source": "research/quality-sprint-2026-09-30/OWNER-DECISIONS.md:23; work/review-contracts/REVIEW.md:131-135",
+      "status": "COVERED_BY_ENGINEERING_OBLIGATION",
+      "blocks_reopen": false,
+      "note": "valid→valid is CORRECT under Q2 and old M8 is not a mutant on a valid source; the metric/scorer change needs its own version and migration, not a Q2 reopening"
+    },
+    {
+      "coverage_id": "TYPED-INVALID-PATH",
+      "topic": "typed-invalid admission path (v6)",
+      "literal": "0/66 bare_typed is not proof that no typed path exists",
+      "source": "research/quality-sprint-2026-09-30/work/V0/SPEC.md:130; OWNER-DECISIONS.md:27",
+      "status": "COVERED_BY_ENGINEERING_OBLIGATION",
+      "blocks_reopen": false,
+      "note": "cues/field keys are the admitted signals; the obligation is a typed-invalid positive plus a same-shape business negative that the mechanism separates"
+    },
+    {
+      "coverage_id": "INSTRUMENT-FIX-LEAF-READINGS",
+      "topic": "CHK v5-leaf-and-readings trigger",
+      "literal": "RED on presence of v5_extra, never GREEN after migration",
+      "source": "research/quality-sprint-2026-09-30/work/V0/checks/v0_checks.py:216-230",
+      "status": "COVERED_BY_ENGINEERING_OBLIGATION",
+      "blocks_reopen": false,
+      "note": "the trigger must test the absence of `carried`, not the presence of the v5 tables"
+    },
+    {
+      "coverage_id": "Q1-DATA-SOURCE",
+      "topic": "source of independent support and rare-type plan",
+      "status": "OWNER_PENDING",
+      "question": "Q1",
+      "source": "research/quality-sprint-2026-09-30/work/contracts-revision-2/OWNER-QUESTIONS-6.md",
+      "blocks_reopen": false,
+      "note": "the concrete acquisition/labelling plan, budget and claim frame for underpowered types; not the already-decided 300 floor"
+    },
+    {
+      "coverage_id": "Q2-UNRESOLVED-VISIBILITY",
+      "topic": "how unresolved/ambiguous gold is printed",
+      "status": "OWNER_PENDING",
+      "question": "Q2",
+      "blocks_reopen": false,
+      "note": "policy (do not mask) is decided; the measurement protocol (separate N plus strict lower and conditional figures vs another explicit protocol) is not"
+    },
+    {
+      "coverage_id": "Q3-BLIND-CUSTODY",
+      "topic": "blind split custodian, slices and weighting",
+      "status": "OWNER_PENDING",
+      "question": "Q3",
+      "blocks_reopen": false,
+      "note": "who generates and holds the fresh blind split, how developer blindness is proven, which main slices need their own support, PPV allocation/weighting and CI"
+    },
+    {
+      "coverage_id": "Q4-TEMP-SECRET-SUBCLASSES",
+      "topic": "exact additional temporary-secret subclass scope",
+      "status": "OWNER_PENDING",
+      "question": "Q4",
+      "blocks_reopen": false,
+      "note": "TOTP/2FA, recovery/backup codes, transaction authorisation codes, PIN: implement a minimal quality path now, or keep a gap map"
+    },
+    {
+      "coverage_id": "Q5-OTP-GRAMMAR",
+      "topic": "OTP/3DS length and grammar",
+      "status": "RESEARCH_GAP",
+      "question": "Q5",
+      "blocks_reopen": false,
+      "note": "must be cited from an authoritative source or marked as a research gap; the owner is NOT asked to invent a length"
+    },
+    {
+      "coverage_id": "Q6-SEMANTIC-DISPOSITION",
+      "topic": "semantic gap map disposition",
+      "status": "OWNER_PENDING",
+      "question": "Q6",
+      "blocks_reopen": false,
+      "note": "confirm research-only disposition and the future boundary for health/income/debt; no implementation GO, no present MEDICAL change"
+    },
+    {
+      "coverage_id": "O-DETECT-NOT-READY",
+      "topic": "architecture choice",
+      "status": "RESEARCH_GAP",
+      "blocks_reopen": false,
+      "note": "the corrected populations/labels and a controlled p50/p95/RSS measurement do not yet exist; the owner must not be asked to choose a family now"
+    }
+  ]
+}

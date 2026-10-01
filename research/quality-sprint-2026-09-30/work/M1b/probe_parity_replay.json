@@ -1,0 +1,492 @@
+{
+  "run_dir": "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/runs/2026-09-30/v5-sprint-v2-813",
+  "cases": [
+    {
+      "tool_name": "clinic_book",
+      "payloads_in_capture": 5,
+      "payloads_replayed": 4,
+      "full_prior_state_replayed": true,
+      "intermediate_hops_in_capture": 0,
+      "state_byte_identical": true,
+      "saved_tool_args_sha256": "dd56d07aa8f273628b123552a3ac1bc8d081541cf26e7651a65d11442bef5ede",
+      "restored_args": "{\"patient\": {\"last_name\": \"Соколова\", \"first_name\": \"Анна\", \"middle_name\": \"Игоревна\", \"birth_date\": \"1997-10-08\", \"age\": 28, \"gender\": \"F\"}, \"phone\": \"+79166983686\", \"speciality\": \"офтальмолог\", \"slot\": \"2026-09-03T10:00:00+03:00\"}",
+      "saved_restored_args": "{\"patient\": {\"last_name\": \"Соколова\", \"first_name\": \"Анна\", \"middle_name\": \"Игоревна\", \"birth_date\": \"1997-10-08\", \"age\": 28, \"gender\": \"F\"}, \"phone\": \"+79166983686\", \"speciality\": \"офтальмолог\", \"slot\": \"2026-09-03T10:00:00+03:00\"}",
+      "restored_args_match_saved": true,
+      "mock_result_head": "{\n  \"appointment_id\": \"apt-1\",\n  \"slot\": \"2026-09-03T10:00:00+03:00\",\n  \"status\": \"booked\",\n  \"patient\": {\n    \"last_nam",
+      "raised": "",
+      "verdict": "NO_DIVERGENCE_THIS_TOOL",
+      "case_id": "derive-008",
+      "payload_names": [
+        "model_request",
+        "model_input",
+        "model_request",
+        "model_input",
+        "tool_args"
+      ],
+      "capture_line_bytes": null,
+      "recovered_fake_pairs": [
+        {
+          "type": "NAME",
+          "real": "соколову анну игоревну",
+          "fake": "устинову юлию семёновну"
+        },
+        {
+          "type": "DOB",
+          "real": "08.10.1997",
+          "fake": "17.10.1997"
+        },
+        {
+          "type": "PHONE",
+          "real": "+79166983686",
+          "fake": "+79184403785"
+        }
+      ],
+      "candidate_attempts": [
+        {
+          "tool_name": "clinic_book",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 5,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": true,
+          "restored_args_match_saved": true
+        },
+        {
+          "tool_name": "crm_upsert_contact",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 5,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": true,
+          "restored_args_match_saved": true
+        },
+        {
+          "tool_name": "delivery_create_order",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 5,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": true,
+          "restored_args_match_saved": true
+        },
+        {
+          "tool_name": "callback_schedule",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 5,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": true,
+          "restored_args_match_saved": true
+        },
+        {
+          "tool_name": "payment_create",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 5,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": true,
+          "restored_args_match_saved": true
+        }
+      ],
+      "saved_production_prefix": "'{\\n  \"appointment_id\": \"apt-1\",\\n  \"slot\": \"2026-02-11T10:00:0'",
+      "saved_counting_prefix": "'{\\n  \"appointment_id\": \"apt-1\",\\n  \"slot\": \"2026-02-11T10:00:0'"
+    },
+    {
+      "tool_name": "crm_find_contact",
+      "payloads_in_capture": 8,
+      "payloads_replayed": 4,
+      "full_prior_state_replayed": false,
+      "intermediate_hops_in_capture": 1,
+      "state_byte_identical": true,
+      "saved_tool_args_sha256": "6ed5b8286250fc4e124070b1d510b7c97ab0e24a35811b7d467d1cbbb151d0ed",
+      "restored_args": "{\"subject\": \"Гвелесиани Галина Максимовна\", \"fact\": \"Адрес: г. Ростов-на-Дону, ул. Каштановая, д. 92, кв. 18. (лат. Gvelesiani Galina Maksimovna, инициалы Г. М.; телефон +79260517821, saguoeni@example.ru).\", \"scope\": \"user\"}",
+      "saved_restored_args": "{\"subject\": \"Тарасова Алла Анатольевна\", \"fact\": \"Адрес: г. Ростов-на-Дону, ул. Некрасова, д. 29, кв. 44. (лат. Tarasova Alla Anatolevna, инициалы Г. М.; телефон +79260517821, tarasova81@bk.ru).\", \"scope\": \"user\"}",
+      "restored_args_match_saved": false,
+      "mock_result_head": "{\n  \"error\": {\n    \"code\": \"object_required\",\n    \"field\": \"query\",\n    \"message\": \"поле query: object_required: None\"\n ",
+      "raised": "",
+      "verdict": "NO_DIVERGENCE_THIS_TOOL",
+      "case_id": "sequential_chain:assistant-002",
+      "payload_names": [
+        "model_request",
+        "model_input",
+        "model_request",
+        "model_input",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args"
+      ],
+      "capture_line_bytes": null,
+      "recovered_fake_pairs": [
+        {
+          "type": "PHONE",
+          "real": "+79260517821",
+          "fake": "+79786020917"
+        },
+        {
+          "type": "EMAIL",
+          "real": "operator42@gmail.com",
+          "fake": "ihjfovwi@example.ru"
+        }
+      ],
+      "candidate_attempts": [
+        {
+          "tool_name": "crm_find_contact",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 8,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "memory_save",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 8,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "reminder_set",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 8,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "calendar_invite",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 8,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        }
+      ],
+      "saved_production_prefix": "'{\\n  \"memory\": {\\n    \"id\": \"mem-1\",\\n    \"scope\": \"user\",\\n    '",
+      "saved_counting_prefix": "'{\\n  \"memory\": {\\n    \"id\": \"mem-1\",\\n    \"scope\": \"user\",\\n    '"
+    },
+    {
+      "tool_name": "crm_find_contact",
+      "payloads_in_capture": 31,
+      "payloads_replayed": 4,
+      "full_prior_state_replayed": false,
+      "intermediate_hops_in_capture": 8,
+      "state_byte_identical": true,
+      "saved_tool_args_sha256": "4ef1bc5907b8aa7fc1662f476e2881ecd035f4a6773df337f10b4a4aa6494de5",
+      "restored_args": "{\"recipient\": {\"name\": \"Данилюк Гелена Петровна\", \"phones\": [{\"number\": \"+79611099220\"}]}, \"packages\": [{\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}], \"to_location\": {\"address\": \"ул. Берёзовая, д. 63, кв. 62\", \"city\": \"Глазов\", \"postal_code\": \"427952\"}}",
+      "saved_restored_args": "{\"recipient\": {\"name\": \"Громова Марина Борисовна\", \"phones\": [{\"number\": \"+79611099220\"}]}, \"packages\": [{\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}], \"to_location\": {\"address\": \"ул. Берёзовая, д. 63, кв. 62\", \"city\": \"Глазов\", \"postal_code\": \"427952\"}}",
+      "restored_args_match_saved": false,
+      "mock_result_head": "{\n  \"error\": {\n    \"code\": \"object_required\",\n    \"field\": \"query\",\n    \"message\": \"поле query: object_required: None\"\n ",
+      "raised": "",
+      "verdict": "NO_DIVERGENCE_THIS_TOOL",
+      "case_id": "tool_chain-037",
+      "payload_names": [
+        "model_request",
+        "model_input",
+        "model_request",
+        "model_input",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "model_request",
+        "model_input",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args"
+      ],
+      "capture_line_bytes": null,
+      "recovered_fake_pairs": [
+        {
+          "type": "PHONE",
+          "real": "8-961-109-92-20",
+          "fake": "8-997-494-62-17"
+        }
+      ],
+      "candidate_attempts": [
+        {
+          "tool_name": "crm_find_contact",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 31,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "address_suggest",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 31,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "delivery_create_order",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 31,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "order_status",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 31,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "courier_book",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 31,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "notify_sms",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 31,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "crm_add_note",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 31,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "pickup_points_near",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 31,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        }
+      ],
+      "saved_production_prefix": "'{\\n  \"uuid\": \"ord-2\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '",
+      "saved_counting_prefix": "'{\\n  \"uuid\": \"ord-2\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '"
+    },
+    {
+      "tool_name": "crm_find_contact",
+      "payloads_in_capture": 31,
+      "payloads_replayed": 4,
+      "full_prior_state_replayed": false,
+      "intermediate_hops_in_capture": 8,
+      "state_byte_identical": true,
+      "saved_tool_args_sha256": "c755dea1ea826fee026267fb7a7ee34cae9006176386e80ab7165a78694b0573",
+      "restored_args": "{\"address\": {\"locality\": \"Уфа\", \"street\": \"Лавандовая\", \"building\": \"62\", \"sflat\": \"47\"}, \"contact\": {\"name\": \"Савченко Борис Фёдорович\", \"phone\": \"+79164021187\"}, \"interval\": {\"from\": \"2026-09-02T08:00:00+05:00\", \"to\": \"2026-09-02T09:00:00+05:00\"}}",
+      "saved_restored_args": "{\"address\": {\"locality\": \"Уфа\", \"street\": \"Лавандовая\", \"building\": \"62\", \"sflat\": \"47\"}, \"contact\": {\"name\": \"Букин Сергей Иванович\", \"phone\": \"+79164021187\"}, \"interval\": {\"from\": \"2026-09-02T08:00:00+05:00\", \"to\": \"2026-09-02T09:00:00+05:00\"}}",
+      "restored_args_match_saved": false,
+      "mock_result_head": "{\n  \"error\": {\n    \"code\": \"object_required\",\n    \"field\": \"query\",\n    \"message\": \"поле query: object_required: None\"\n ",
+      "raised": "",
+      "verdict": "NO_DIVERGENCE_THIS_TOOL",
+      "case_id": "tool_chain-040",
+      "payload_names": [
+        "model_request",
+        "model_input",
+        "model_request",
+        "model_input",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "model_request",
+        "model_input",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args"
+      ],
+      "capture_line_bytes": null,
+      "recovered_fake_pairs": [
+        {
+          "type": "PHONE",
+          "real": "89164021187",
+          "fake": "89034243583"
+        }
+      ],
+      "candidate_attempts": [
+        {
+          "tool_name": "crm_find_contact",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 31,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "address_suggest",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 31,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "delivery_create_order",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 31,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "order_status",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 31,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "courier_book",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 31,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "notify_sms",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 31,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "crm_add_note",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 31,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        },
+        {
+          "tool_name": "pickup_points_near",
+          "verdict": "NO_DIVERGENCE_THIS_TOOL",
+          "raised": "",
+          "raised_other": null,
+          "state_byte_identical": true,
+          "payloads_in_capture": 31,
+          "payloads_replayed": 4,
+          "full_prior_state_replayed": false,
+          "restored_args_match_saved": false
+        }
+      ],
+      "saved_production_prefix": "'{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'",
+      "saved_counting_prefix": "'{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+    }
+  ],
+  "reproduced": 0,
+  "total": 4
+}

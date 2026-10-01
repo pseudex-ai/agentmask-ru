@@ -1,0 +1,263 @@
+{
+  "artifact": "RECEIPT",
+  "revision": "contracts-revision-2",
+  "sprint_root": "research/quality-sprint-2026-09-30",
+  "write_scope": "research/quality-sprint-2026-09-30/work/contracts-revision-2/ ONLY",
+  "python": {
+    "interpreter": "prototype/.venv/bin/python",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "version": "Python 3.12.12"
+  },
+  "commands": [
+    {
+      "purpose": "independent fact re-derivation",
+      "command": "PYTHONDONTWRITEBYTECODE=1 prototype/.venv/bin/python research/quality-sprint-2026-09-30/work/contracts-revision-2/verify_facts.py",
+      "exit": 0,
+      "stdout_log": "verify_facts.log",
+      "notes": "no detector call, no engine import, no network, no git mutation"
+    },
+    {
+      "purpose": "receipt generation",
+      "command": "PYTHONDONTWRITEBYTECODE=1 prototype/.venv/bin/python research/quality-sprint-2026-09-30/work/contracts-revision-2/make_receipt.py",
+      "exit": 0
+    }
+  ],
+  "deliverables": {
+    "BUDGET.json": "9a5306683ef7e3924a4a69f41508870dc5516a13e1cff21d34b460ba9e96a36b",
+    "DECISION-COVERAGE.json": "7ff5e7327aeac558f7a7a32bb118466d322a42fd92bc6fb69dfa10cad0a7e6fa",
+    "FACTS.json": "f6731fae39819df040134f74482607dccc36f187ab8ab1a2b5142abff546c84e",
+    "GATES.json": "0bc0173b5f9264e520ac7498473c98f7968c22a9d336c518766215e18585fce1",
+    "SLICES.json": "b3e6ea93dc0623eae051a5ade82eaef4de2d84ab3c6f4823fee0e4512ce67471",
+    "CORRECTIONS.md": "ac991fa67910c4c791b01f3b48107d68f7278eaaa2c06cad2e3b30d4f1343459",
+    "D0-METRICS-CORRECTED.md": "52c3f06cc80cd149f9427d73ac81ab1a699262db58a53e91457881ee4daf5b2b",
+    "O-DATA-PROPOSAL.md": "e1e792c9657040ec4cdb85e3c657fcebbfa82af42d1eca73ebf0d316cd117dd6",
+    "OWNER-QUESTIONS-6.md": "d9715ed472901decb6c71d52d3609335abcb660b034804f822cffdc05dba6531"
+  },
+  "json_validity": {
+    "BUDGET.json": "valid",
+    "DECISION-COVERAGE.json": "valid",
+    "FACTS.json": "valid",
+    "GATES.json": "valid",
+    "SLICES.json": "valid"
+  },
+  "verified_facts": {
+    "v5_HOP_STATUSES": [
+      "observed",
+      "leaked",
+      "residual",
+      "unmasked",
+      "absent",
+      "engine_kept",
+      "not_masked",
+      "leaf_foreign"
+    ],
+    "v6_HOP_STATUSES": [
+      "observed",
+      "leaked",
+      "residual",
+      "unmasked",
+      "absent"
+    ],
+    "v6_strict_subset_of_v5": true,
+    "registry_records": 66,
+    "item_types": 65,
+    "non_item_types": [
+      "DATE"
+    ],
+    "v5_records": 11,
+    "v6_records": 55,
+    "bare_typed_true": 0,
+    "checksum_carrying_types": 11,
+    "checksum_samples_valid": 11,
+    "demotion_guard": [
+      "if entity_type in _NUMERIC_KEY_TYPES and not any(c.isdigit() for c in value):"
+    ],
+    "in_memory_vault": {
+      "test_loop_uses_memory_vault": true,
+      "sqlite_setup_handles_memory": true,
+      "opaque_is_deterministic_redaction": true,
+      "opaque_original_stored_in_tokens_table": true
+    },
+    "budget": {
+      "native_only_recomputed": 6600,
+      "native_only_declared": 6600,
+      "full_scope_recomputed": 8320,
+      "full_scope_declared": 8320,
+      "labeler_items_full_recomputed": 16640,
+      "support_floor_55x300": 16500,
+      "budget_covers_support_floor": false,
+      "note": "17.8-18.6k review items is a staged estimate; it is below the 16 500 positive units the 300/type floor implies before registers, PPV, negatives and cluster de-duplication"
+    },
+    "nerel_version_read_by_a1": [
+      "inv[\"nerel\"] = summarize_nerel(CACHE / \"nerel/NEREL-v1.1\")"
+    ]
+  },
+  "input_pins_from_FACTS": [
+    {
+      "path": "prototype/bench/agentpii5/contracts.py",
+      "sha256": "d616610137519d261e0d25d8517ad82d348d83103b54ae6cd7d7ee357fb46800"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/V0/evidence/frozen/v6/contracts.py",
+      "sha256": "6e294754f2b676910133a7e64e84e7ee9fe64dfaf0b1725356e4ae964ffad5fb"
+    },
+    {
+      "path": "prototype/bench/agentpii5/contracts.py",
+      "sha256": "d616610137519d261e0d25d8517ad82d348d83103b54ae6cd7d7ee357fb46800"
+    },
+    {
+      "path": "research/hop-format-audit/next-sprint-review/v6-snapshot/pii_types.py",
+      "sha256": "f0ca78cf892333935c74f51e273f52feee81cfffb22fa8e153290b0e77475d9d"
+    },
+    {
+      "path": "research/hop-format-audit/next-sprint-review/v6-snapshot/pii_types_a.py",
+      "sha256": "82006cf7b7dbd05900878ef34c482b664cc5748e9fb1e35ff43fd55506504c29"
+    },
+    {
+      "path": "research/hop-format-audit/next-sprint-review/v6-snapshot/pii_types_b.py",
+      "sha256": "10739ad4bcbe99cd8d35a992e03bd6a196b4d58544a1e2e0431a67d0523cbc93"
+    },
+    {
+      "path": "research/hop-format-audit/next-sprint-review/v6-snapshot/pii_types_c.py",
+      "sha256": "6ef21928cda28f29b9fad3a13d6062ab639973794c63b2cc49dd80abb4f2ab42"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/V0/evidence/frozen/v6/checksum_v6.py",
+      "sha256": "31fc5a927657e985830dfce300c562965cfedeaf8f8f0213912f8affa3e2f69e"
+    },
+    {
+      "path": "prototype/pseudex/structured.py",
+      "sha256": "a8bb3a0c4bcb5a5ebf191b045ff97e76f605a90282950336ab4a118754f42aa6"
+    },
+    {
+      "path": "prototype/test_loop.py",
+      "sha256": "be375b13f3267d2683b55d6007da28e850699bae4bfd87f5d71d65fd1c043f19"
+    },
+    {
+      "path": "prototype/pseudex/sqlite_setup.py",
+      "sha256": "504080ac0b471abaf4fd7f449bed05c78354706fa80f16d7e3da241d177d02dd"
+    },
+    {
+      "path": "prototype/pseudex/vault.py",
+      "sha256": "e10630e377febdefe0205ee1f733efdc8c24a3c5288816b43ede12a1f180163e"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/A1/inventory_sources.py",
+      "sha256": "65b36da4ddeb83224f6899b9580df8fc9513da723f08a41088ef42bac96bcf6e"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/A1/ACCEPTANCE-PROPOSAL.json",
+      "sha256": "4787792ad15580f5250d4fa68c6206f76b9815fe1514748923b6de8c05f109c2"
+    }
+  ],
+  "raw_evidence_pins_unchanged_source": {
+    "research/quality-sprint-2026-09-30/work/A1/ACCEPTANCE-PROPOSAL.json": {
+      "exists": true,
+      "sha256": "4787792ad15580f5250d4fa68c6206f76b9815fe1514748923b6de8c05f109c2"
+    },
+    "research/quality-sprint-2026-09-30/work/A1/SPEC.md": {
+      "exists": true,
+      "sha256": "fc5b01e977b241c52684e1581f24732f6b8af38fa5461540427fd3d992b364dd"
+    },
+    "research/quality-sprint-2026-09-30/work/A1/OWNER-QUESTIONS.md": {
+      "exists": true,
+      "sha256": "962cdfd5581bb7c632a251af452983760fb9915c25990ac66f7b02f96037abd2"
+    },
+    "research/quality-sprint-2026-09-30/work/D0/d0_arm_compare.py": {
+      "exists": true,
+      "sha256": "ce9f0ed63aad252ff28d92bb04fe6e33512cd3a187d439f12d26a2efd1d10c6d"
+    },
+    "research/quality-sprint-2026-09-30/work/D0/out/arm-results.json": {
+      "exists": true,
+      "sha256": "189a6e50efbfd3572d51f9243107e6220dffac2f3909e5f3e35135b74232fdfb"
+    },
+    "research/quality-sprint-2026-09-30/work/V0/SPEC.md": {
+      "exists": true,
+      "sha256": "db54bcc38d4bbeb2f32c44a9e253a3d4bfde2f6451094230c21ac037457fa6b5"
+    },
+    "research/quality-sprint-2026-09-30/work/V0/OWNER-QUESTIONS.md": {
+      "exists": true,
+      "sha256": "50e4aa816c0c062a77d8e14e8d859858e6387af1e847412606503fb70cf93de2"
+    },
+    "research/quality-sprint-2026-09-30/work/V0/TYPE55.json": {
+      "exists": true,
+      "sha256": "2733891f90ed9fb13550cb661786f9a46de43d9199e9b19276f4029af5032137"
+    },
+    "research/quality-sprint-2026-09-30/work/V0/checks/v0_checks.py": {
+      "exists": true,
+      "sha256": "2b8766e4f3dad18a7222c32edec4832a04016c94f137c7df1d3be914fa11744d"
+    },
+    "research/quality-sprint-2026-09-30/work/C0/SPEC.md": {
+      "exists": true,
+      "sha256": "fa3038451af12a1f67fbc15ef1cd286dba70a825d821069eff1315130a2a650a"
+    },
+    "research/quality-sprint-2026-09-30/work/C0/OWNER-QUESTIONS.md": {
+      "exists": true,
+      "sha256": "093e089fd65f9e685a46f8409a2dc3e5ddf8e16148cee12261c5042b3705c794"
+    },
+    "research/quality-sprint-2026-09-30/work/C0/PROBE-FACTS.json": {
+      "exists": true,
+      "sha256": "b089636390412223965ef6dbdb05f108803a831beb9910357eecba1f46f80033"
+    },
+    "research/quality-sprint-2026-09-30/work/S2/SPEC.md": {
+      "exists": true,
+      "sha256": "b0079161c7e404e8d61eae9466d145cc04417d6293b5676cfb4e79f5e1b0c4db"
+    },
+    "research/quality-sprint-2026-09-30/work/S2/GAP-MATRIX.json": {
+      "exists": true,
+      "sha256": "29574030fa9294c20729256a890798665f820b11910fa4b36caa63396e045121"
+    },
+    "research/quality-sprint-2026-09-30/work/review-contracts/REVIEW.md": {
+      "exists": true,
+      "sha256": "6d74667a5d8c69dcbbc82ee67f785f6ae7d4e8987476db3d789a41e424885c3e"
+    },
+    "research/quality-sprint-2026-09-30/work/review-contracts/VERIFICATION.json": {
+      "exists": true,
+      "sha256": "1318a2505fafcc7735055d4442e4c408bd29cf8dac674a530e8d4d826b1c688f"
+    },
+    "research/quality-sprint-2026-09-30/GOAL-BRIEF.md": {
+      "exists": true,
+      "sha256": "f7f7a2e2a31f54e3737c71a8dc4556aba0f7ca3b198d4430810b45b8607cfa77"
+    },
+    "research/quality-sprint-2026-09-30/OWNER-DECISIONS.md": {
+      "exists": true,
+      "sha256": "d36927f51527862624666f66328c9547a1302e2cd466d00323e0ebb36b310090"
+    },
+    "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md": {
+      "exists": true,
+      "sha256": "364982c8bf623f53f705afea4a0a2cea7a788db4c961406654df31c4bd9cd3ef"
+    },
+    "research/quality-sprint-2026-09-30/EXECUTION.json": {
+      "exists": true,
+      "sha256": "04d6295f638e8a7b6a7a128dc4dcf94799826c406c837ac435f480b99ac3c36d"
+    }
+  },
+  "declared_parent_owned_files": {
+    "prototype/bench/agentpii5/answer_restoration.py": {
+      "exists": true,
+      "sha256": "7d1ffd6a78266b2e86d45f3a72f8babb58d37c6902664768fdfe1542788709b0",
+      "written_by_this_revision": false
+    },
+    "prototype/bench/agentpii5/test_answer_restoration.py": {
+      "exists": true,
+      "sha256": "60dd47dab990cf077207c04ad5ede9c24d4a10f392ac1edc954a7e9935c50120",
+      "written_by_this_revision": false
+    },
+    "research/quality-sprint-2026-09-30/work/M1a/answer_restoration.py": {
+      "exists": false,
+      "sha256": null,
+      "written_by_this_revision": false
+    },
+    "research/quality-sprint-2026-09-30/work/M1a/test_answer_restoration.py": {
+      "exists": false,
+      "sha256": null,
+      "written_by_this_revision": false
+    }
+  },
+  "limitations": [
+    "No detector was run; nothing here measures engine quality.",
+    "The child labels PASS/PARTIAL/PASS_RESEARCH_ONLY were not converted into official gate statuses; see GATES.json.",
+    "Historical evidence was preserved and not rewritten.",
+    "No git operation of any kind was performed."
+  ]
+}

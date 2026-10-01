@@ -1,0 +1,101 @@
+{
+  "task": "C0",
+  "gate": "G3",
+  "gate_scope": "design/RED, QUALITY-contract half for the temporary-secret family (CVC/CVV/CID, OTP/SMS/3DS, adjacent classes)",
+  "status": "OWNER_PENDING",
+  "status_meaning": "The design/RED evidence half is produced and its REDs are reproduced, but the gate cannot be closed by an agent: O-SECRET is an owner fork and it stays OWNER_PENDING. A RED_CONFIRMED here is an EXPECTED FAILING PROPERTY, not a suite PASS, and not a regression.",
+  "revision": {
+    "pinned_product_source_commit": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "workspace_head": "890c50849a326f882eac336ba4e38c91171de473",
+    "workspace_head_note": "research-only evidence commit; product source unchanged",
+    "engine_files_diff_vs_pin": "empty (checks.log C1)",
+    "gate_is_valid_for": "these source hashes only; any change to a relevant path invalidates it and needs re-acceptance"
+  },
+  "preconditions_consumed": {
+    "B0_GATE": "work/B0/GATE.json — G1 LOCAL/DESIGN PASS, production NOT_MEASURED (blocks RG release-A/B)",
+    "B0_REVIEW": "work/B0/REVIEW.md — durable independent PASS for local source/WIP/run/runtime; no blanket all-G1 PASS",
+    "FIRST_WAVE": "work/FIRST-WAVE-TASKS.json entry id=C0 executed; no other entry executed"
+  },
+  "design_red_evidence": {
+    "status": "RED_REPRODUCED_ON_PINNED_UNCHANGED_BUILD",
+    "suite_verdict": "NOT_A_SUITE_PASS — intentional RED",
+    "intentional_red_properties_confirmed": 9,
+    "intentional_red_properties_total": 9,
+    "controls_that_must_hold": "4/4 held",
+    "synthetic_positive_fixtures_protected": "0/14",
+    "hard_negative_fixtures_open": "10/10",
+    "exit_code": 0,
+    "property_ids": ["RED-1", "RED-2", "RED-3", "RED-4", "RED-5", "RED-6", "RED-7", "RED-8", "RED-9"],
+    "control_ids": ["NEG-1", "NEG-2", "CTRL-1", "CTRL-2"],
+    "warning": "0/14 is a capability gap on a build with no recognizer for these classes; it is not an engine-quality score and not a regression."
+  },
+  "fixture_self_check": {
+    "status": "PASS_INTERNAL_TABLES_ONLY",
+    "fixtures_total": 32,
+    "checks_run": 37,
+    "glyph_identical_positive_negative_pairs": 8,
+    "explicit_non_claim": "gen_fixtures.py validates only its OWN syntax tables and the internal consistency of the fixture set; it is not a detector and never counts as engine quality (never_counts_as_engine_quality=true in FIXTURES.json)."
+  },
+  "owner_decision_required": {
+    "id": "O-SECRET",
+    "status": "OWNER_PENDING",
+    "required_by": "EXECUTION.json owner_checkpoints.O-SECRET: 'precise temporary-secret quality scope, no current lifecycle implementation'",
+    "delivered_here": "precise family/type contracts, discriminator policy, length/syntax/malformed/identity/fake/restore/collision axes, synthetic positive+hard-negative fixtures, reproduced RED, and 10 explicit forks",
+    "forks": ["O-SECRET-1", "O-SECRET-2", "O-SECRET-3", "O-SECRET-4", "O-SECRET-5", "O-SECRET-6", "O-SECRET-7", "O-SECRET-8", "O-SECRET-9", "O-SECRET-10"],
+    "blocks": ["C1"],
+    "does_not_block": ["independent read-only research", "the other first-wave tasks", "M1c", "K1", "V1", "N1"]
+  },
+  "evidence": [
+    "work/C0/INPUTS.json",
+    "work/C0/SPEC.md",
+    "work/C0/TYPE-CONTRACTS.json",
+    "work/C0/FIXTURES.json",
+    "work/C0/OWNER-QUESTIONS.md",
+    "work/C0/RED.log",
+    "work/C0/PROBE-FACTS.json",
+    "work/C0/checks.log",
+    "work/C0/DELTA.json",
+    "work/C0/gen_fixtures.py",
+    "work/C0/probe_engine.py",
+    "work/C0/verify.py"
+  ],
+  "checks": {
+    "C1_engine_source_unmodified_vs_pin": "PASS",
+    "C2_recorded_source_hashes_recompute": "PASS",
+    "C3_fixture_self_check": "PASS",
+    "C4_engine_red_probe": "PASS (9/9 RED, 4/4 controls, exit 0)",
+    "C5_property_id_set": "PASS",
+    "C6_fixtures_probe_consistency": "PASS (32 ids)",
+    "C7_red_is_expected_failing_property": "PASS",
+    "C8_v6_registry_has_no_temporary_secret_type": "PASS (63 codes, 0 secret-ish)",
+    "C9_no_writes_outside_declared_scope": "PASS",
+    "C10_json_artifacts_parse": "PASS",
+    "C11_no_stray_files_in_scope": "PASS",
+    "C12_artifact_hash_ledger": "PASS"
+  },
+  "not_measured": [
+    "engine quality for any temporary-secret class (no meter exists; no scorer run or changed)",
+    "production/deployed artifact digest (B0 production_artifact_gate = NOT_MEASURED; blocks RG release-A/B)",
+    "real customer field names and traffic prevalence",
+    "ISSUER_OTP length",
+    "whether a 3-D Secure one-time value is SAD under PCI DSS",
+    "PCI DSS v4.0.1 clause numbers"
+  ],
+  "not_claimed": [
+    "entire quality green",
+    "paid GO / budget approval",
+    "engine implementation or C1 acceptance",
+    "a passed whole-suite",
+    "production verification or deployment",
+    "PCI compliance, payment readiness, or permission to retain real CVC/OTP",
+    "any decision on the 10 O-SECRET forks",
+    "merge, PR, tag or release"
+  ],
+  "integrity_note": "No self-certification: the RED was produced by the author's own script on a read-only engine, and no independent reviewer has yet verified work/C0. An independent reviewer is required before any dependent transition.",
+  "blocked_downstream": ["C1 (also blocked by K1, V1, N1)"],
+  "allowed_next": [
+    "independent read-only review of work/C0",
+    "owner answers on O-SECRET-1..10",
+    "the other first-wave tasks (M1b, A1, S1, D0, V0, S2) remain independent"
+  ]
+}

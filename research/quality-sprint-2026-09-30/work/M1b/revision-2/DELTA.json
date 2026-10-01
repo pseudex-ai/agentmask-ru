@@ -1,0 +1,123 @@
+{
+  "task": "M1b",
+  "revision": "revision-2",
+  "supersedes_descriptions_in": "work/M1b/SPEC.md and work/M1b/DELTA.json (revision-1 files preserved read-only)",
+  "changed_product_files": [],
+  "changed_benchmark_files": [],
+  "source_revision": {
+    "product_pinned": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "git_head": "8a808ca70a13b3b19b28d60c6746c443bec01ea0",
+    "note": "same pinned product content as revision-1; no product source diff"
+  },
+  "files_written": [
+    "work/M1b/revision-2/SPEC.md",
+    "work/M1b/revision-2/DELTA.json",
+    "work/M1b/revision-2/GATE.json",
+    "work/M1b/revision-2/INPUTS.json",
+    "work/M1b/revision-2/legacy_reader_limits.json",
+    "work/M1b/revision-2/probe_canary_reader_v2.py",
+    "work/M1b/revision-2/probe_canary_reader_v2.json",
+    "work/M1b/revision-2/probe_parity_replay_v2.py",
+    "work/M1b/revision-2/probe_parity_replay_v2.json",
+    "work/M1b/revision-2/run-revision-v2.sh",
+    "work/M1b/revision-2/revision.log",
+    "work/M1b/revision-2/tmp/ (probe stdout/stderr, synthetic controls)"
+  ],
+  "withdrawn_claims": [
+    "full prior state replayed / full_prior_state_replayed boolean as a state-equivalence claim",
+    "the trigger lives in the failing push's own mint, not in the prior transcript or state",
+    "two of four prior states reproduced byte-identically (numerical typo and wrong count)"
+  ],
+  "corrected_claims": [
+    "count comparison only: replayed_payload_count_matches_remaining; visible-prefix agreement is not vault/provenance/shown-forms/cache/backend/RNG equivalence",
+    "0/4 reproduced; trigger and relevant missing state UNKNOWN",
+    "byte fields: chars and utf8_bytes reported separately; limits are byte limits",
+    "0/0 denominator: the early read-error return discards a journal denominator that exists (810 expected I arms, 810 covered)",
+    "replay verdict requires divergence signature + both saved prefixes + recomputed first difference >= 60; seven-control mutation self-test passes",
+    "_unique_token original restored per case in finally; probe exit asserts it",
+    "legacy v1 oversized-reader path specified and measured; not just a future v2 writer header"
+  ],
+  "slices": [
+    {
+      "slice": "canary readback - saved run measurability",
+      "before": {
+        "engine_verdict": "NOT_MEASURED",
+        "reason": "cc3a551f-....canary.jsonl:806: capture row is over the 4194304 byte bound",
+        "captured_rows": 0,
+        "intervention_rows": 0,
+        "coverage_known": false
+      },
+      "after": {
+        "engine_verdict": "NOT_MEASURED (unchanged; no patch)",
+        "derived_facts": {
+          "rows_on_disk": 810,
+          "total_utf8_bytes": 95241454,
+          "total_decoded_chars": 81514019,
+          "oversized_rows": [806, 810],
+          "max_row_utf8_bytes": 5531229,
+          "oversized_rows_schema_valid": 2,
+          "payloads_in_oversized_rows": 760,
+          "max_payload_utf8_bytes": 36592,
+          "max_payload_chars": 35718,
+          "max_payload_count": 380,
+          "expected_i_arms_from_triples": 810,
+          "captured_rows": 810,
+          "coverage_fraction": 1.0
+        },
+        "legacy_v1_diagnostic": {
+          "measured_rows": 810,
+          "skipped_rows": 0,
+          "refused_rows": 0,
+          "payloads": 20201,
+          "status": "DIAGNOSTIC ONLY, separate namespace; global verdict remains NOT_MEASURED"
+        }
+      },
+      "x_over_n": "engine 0/810 measured; 810/810 present, parseable and readable on the bounded legacy path; 2/2 oversized rows valid"
+    },
+    {
+      "slice": "canary reader - controls",
+      "controls": {
+        "valid_rows_with_one_over_bound_payload": "2 measured, 1 skipped by name (payload over the 1 MiB bound), 0 refused",
+        "hostile_single_row_over_ceiling": "0 measured, 1 skipped by name (row over the 8 MiB hard ceiling)",
+        "v2_row_with_lying_declared_sizes": "REFUSED (declared payload_count 1 vs actual 0)"
+      },
+      "x_over_n": "3/3 controls behave as specified"
+    },
+    {
+      "slice": "parity - four production/counting masking divergences",
+      "before": {
+        "revision_1_verdict": "0/4 reproduced; full_prior_state_replayed asserted; trigger inferred to the failing push's mint"
+      },
+      "after": {
+        "reproduced_exact_boundary": "0/4",
+        "visible_prefix_agreement": "4/4 (the replay's produced prefix matches the saved capture bytes)",
+        "replayed_payload_count_matches_remaining": "1/4 (derive-008 only) - a count, not state equivalence",
+        "state_equivalence_claimed": false,
+        "recovered_fake_pairs": {"derive-008": 3, "sequential_chain:assistant-002": 2, "tool_chain-037": 1, "tool_chain-040": 1},
+        "ambiguous_recovery": 0,
+        "original_call_identified": false,
+        "trigger": "UNKNOWN"
+      },
+      "x_over_n": "0/4 reproduced under the strict boundary+signature rule; 4/4 visible prefixes agree; 0/4 state-equivalence claims"
+    }
+  ],
+  "evidence_vs_measurement": {
+    "evidence_mechanism": "the run's own capture rows and triples journal; the archived excluded.json reasons",
+    "measurement": "probe_canary_reader_v2.py (byte-accurate geometry, engine verdict, legacy diagnostic, controls), probe_parity_replay_v2.py (strict verdict, per-case restore, verdict-rule self-test)",
+    "separated_because": "a reader/instrument correction is not an engine gain; nothing here credits M1b with a quality improvement"
+  },
+  "unknowns": [
+    "the trigger of the four masking divergences",
+    "whether the four share one trigger",
+    "the exact original divergence offset (only 'at or after character 60' is recoverable)",
+    "whether the legacy reader contract will be accepted in M1c"
+  ],
+  "exclusions_changed": 0,
+  "owner_questions_opened": 0,
+  "decision_coverage": {
+    "O-M1B-1": ["G2", "G10", "SPRINT-PLAN-S7"],
+    "O-M1B-2": ["REMAINING-DECISIONS-S2", "OWNER-DECISIONS-P15", "split: engineering proposal vs new policy"],
+    "O-M1B-3": ["G2", "G10", "hard-fail-baseline"]
+  },
+  "gate_status": "G2 NOT passed; no full PASS recorded; independent re-review required before promotion"
+}

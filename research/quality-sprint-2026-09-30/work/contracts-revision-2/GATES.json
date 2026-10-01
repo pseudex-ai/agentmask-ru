@@ -1,0 +1,160 @@
+{
+  "artifact": "GATES",
+  "revision": "contracts-revision-2",
+  "status_vocabulary": {
+    "PASS": "accepted with revision, commands/exits, input hashes and independent check attached",
+    "FAIL": "a required property does not hold; keep the counterexample",
+    "NOT_RUN": "no evidence produced yet",
+    "NOT_MEASURED": "the population/denominator is empty or the measurement was not performed",
+    "OWNER_PENDING": "a real open owner checkpoint blocks the dependent work",
+    "DESCRIPTIVE_INSUFFICIENT_SUPPORT": "n below the support floor; the slice stays visible, no headline",
+    "RED_CONFIRMED": "a capability gap reproduced on a pinned unchanged build (not a regression, not a suite PASS)",
+    "REVISE": "protocol/interpretation not acceptable as input until the named corrections are applied",
+    "DEFERRED_BY_OWNER": "explicitly moved out of this sprint by an owner decision"
+  },
+  "statuses": [
+    {
+      "scope": "A1 / G0",
+      "checkpoint": "O-DATA",
+      "status": "OWNER_PENDING",
+      "child_status_preserved": "OWNER_PENDING",
+      "protocol_status": "REVISE_APPLIED_IN_REVISION_2",
+      "evidence": [
+        "research/quality-sprint-2026-09-30/work/A1/ACCEPTANCE-PROPOSAL.json",
+        "research/quality-sprint-2026-09-30/work/contracts-revision-2/CORRECTIONS.md",
+        "research/quality-sprint-2026-09-30/work/contracts-revision-2/O-DATA-PROPOSAL.md"
+      ],
+      "blocked_by": ["Q1", "Q2", "Q3", "Q5"],
+      "note": "counts accepted as source description; occurrence-first whole, typed PPV split, no ambiguous exclusion, independence fallback withdrawn, budget labelled ESTIMATE_PRELIMINARY_STAGE"
+    },
+    {
+      "scope": "A1 protocol-internal checks (this revision)",
+      "status": "PASS",
+      "evidence": ["research/quality-sprint-2026-09-30/work/contracts-revision-2/FACTS.json"],
+      "command": "PYTHONDONTWRITEBYTECODE=1 prototype/.venv/bin/python research/quality-sprint-2026-09-30/work/contracts-revision-2/verify_facts.py",
+      "exit": 0,
+      "limits": "read-only re-derivation of counts and code facts; no detector call, no engine import, no quality measurement",
+      "note": "this PASS does not close O-DATA, G7 or any engine-quality gate"
+    },
+    {
+      "scope": "D0 / G3 diagnostic harness",
+      "status": "FAIL",
+      "failing_properties": [
+        "old public must-not policy used as current truth",
+        "fp_other merges adjudicated-negative FP with unlabelled predictions",
+        "arm names read as product configurations (RULES_ONLY, HYBRID_UNION)",
+        "two whole definitions could be merged into one column"
+      ],
+      "accepted": ["harness reproducibility, five arms on identical source texts, counting-bug fixes, source pins, timings declared exploratory"],
+      "evidence": ["research/quality-sprint-2026-09-30/work/D0/d0_arm_compare.py", "research/quality-sprint-2026-09-30/work/contracts-revision-2/D0-METRICS-CORRECTED.md"],
+      "note": "the FAIL is on the instrument's populations, not a claim about detector quality"
+    },
+    {
+      "scope": "D0 / O-DETECT",
+      "status": "NOT_MEASURED",
+      "blocked_by": ["O-DATA protocol", "corrected populations/labels", "controlled resource measurement"],
+      "evidence": ["research/quality-sprint-2026-09-30/work/D0/RUNBOOK-PERF.md"],
+      "note": "no architecture ranking may be derived from the current gold; latency/RSS for every candidate is NOT_MEASURED; the owner is not asked to choose without data"
+    },
+    {
+      "scope": "V0 status funnel / G8",
+      "status": "FAIL",
+      "failing_property": "the child check compared the v6 read-vocabulary with a v5 write-population and claimed non-inclusion",
+      "re_derived_fact": "v6 HOP_STATUSES (5) is a strict subset of v5 HOP_STATUSES (8, including legacy unmasked); see FACTS.json.funnel_v0",
+      "correction_status": "CORRECTED_BY_ENGINEERING_OBLIGATION (INTEGRATION-KEEP-V5), not a new owner fork",
+      "acceptance": "frozen old-corpus replay prints the same out_* counts and the v6 rows on one run file; test_observe/test_observe_v6 green"
+    },
+    {
+      "scope": "V0 checksum mutant line / O-V6-1",
+      "status": "FAIL",
+      "failing_property": "valid->valid was treated as the mutant behaviour, and both arms were assigned one formula instead of two executions",
+      "correction_status": "CORRECTED_BY_ENGINEERING_OBLIGATION (MUTANT-LINE-REDEFINE); Q2 is not reopened",
+      "acceptance": "valid->invalid, invalid->valid, wrong-form/unsafe-identity mutants plus real-provided positive controls, each differing on at least one real execution, typed-valid and typed-invalid populations split"
+    },
+    {
+      "scope": "V0 counts and typed-invalid path / O-V6-5",
+      "status": "RED_CONFIRMED",
+      "re_derived_facts": {
+        "registry_records": 66,
+        "item_types": 65,
+        "non_item": "DATE",
+        "v5_records": 11,
+        "v6_records": 55,
+        "bare_typed_true": 0,
+        "checksum_carrying_types": 11,
+        "checksum_samples_valid": "11/11"
+      },
+      "correction_status": "typed-invalid admission is an ENGINEERING GAP with a positive/negative fixture pair, not an open owner rule",
+      "note": "script still means alphabet; DERIVED_PIECE_TYPES equals today and must not change on a verbal argument; CHK v5-leaf-and-readings triggers on v5_extra and can never go GREEN"
+    },
+    {
+      "scope": "V0 / O-V6 overall",
+      "status": "OWNER_PENDING",
+      "remaining_owner_forks": ["none identified as a genuine new policy choice"],
+      "note": "O-V6-1 (engineering), O-V6-2 (engineering), O-V6-3 (D-ID renumbering, engineering), O-V6-4 (engineering/test predicate), O-V6-5 (engineering gap) — all covered_by_decision_ids or engineering obligations"
+    },
+    {
+      "scope": "C0 / G3 capability probes",
+      "status": "RED_CONFIRMED",
+      "counts_preserved": {
+        "fixtures_probed": 32,
+        "positive_fixtures_protected": "0/14",
+        "hard_negatives_open": "10/10",
+        "red_confirmed": "9/9",
+        "controls_held": "4/4"
+      },
+      "supported_version": "NOT_RUN",
+      "note": "capability gaps on synthetic examples, explicitly NOT precision and not a regression; synthetic originals stay in private fixtures for round-trip checking"
+    },
+    {
+      "scope": "C0 / O-SECRET",
+      "status": "OWNER_PENDING",
+      "blocked_by": ["Q4"],
+      "corrections": [
+        "OPAQUE is reversible (deterministic redaction + vault original); the OPAQUE-vs-passthrough fork is removed",
+        "in-memory Vault exists; no impossible test-only mapping is required",
+        "numeric demotion is 'no digits at all', not 'malformed'",
+        "the existing <=20-nondigit cue window is an engineering hypothesis, not the norm",
+        "fake generation / fixture profile / self-check syntax are not quality rates",
+        "63 candidate codes is a TZ candidate count, not the implemented registry"
+      ],
+      "deferred": ["retention", "TTL/expiry", "admin controls", "new API", "HITL", "production payment enablement"]
+    },
+    {
+      "scope": "S2 / G0 semantic inventory",
+      "status": "NOT_RUN",
+      "disposition": "RESEARCH_ONLY",
+      "accepted": ["26 synthetic episodes", "13 changed texts", "26/26 identical round trip", "marker/untouched counts", "source-based gap map"],
+      "corrections": [
+        "relation_closed is a PROPOSED_METRIC (1/15), not an approved contract",
+        "diagnosis visible vs replaced are different product promises",
+        "8/15 unnamed/indirect subjects are not missed NAME spans",
+        "DATE association is not automatically a MEDICAL rule; test_coverage_152fz expects MEDICAL at line 48",
+        "health/income/debt are not one policy; legal text was a mirror, no compliance claim"
+      ],
+      "blocked_by": ["Q6"],
+      "note": "no semantic implementation, no MEDICAL change now"
+    },
+    {
+      "scope": "G7 strict quality gate",
+      "status": "NOT_RUN",
+      "note": "cannot be declared from any artifact in this revision"
+    },
+    {
+      "scope": "G9 / G11 lifecycle, retention, payment-ready",
+      "status": "DEFERRED_BY_OWNER",
+      "evidence": ["research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md:24-27", "research/quality-sprint-2026-09-30/EXECUTION.json"]
+    },
+    {
+      "scope": "production digest / RG",
+      "status": "NOT_MEASURED",
+      "note": "B0 recorded production_digest NOT_VERIFIED; nothing here changes that"
+    }
+  ],
+  "rules": [
+    "Not run cannot pass.",
+    "Every PASS attaches revision, command/exit, input hashes, counts and an independent check.",
+    "A child label PASS/PARTIAL/PASS_RESEARCH_ONLY never replaces an official gate status.",
+    "A corrected artifact is a NEW version; the original raw result is never rewritten."
+  ]
+}

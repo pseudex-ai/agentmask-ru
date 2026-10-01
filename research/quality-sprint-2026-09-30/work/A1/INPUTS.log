@@ -1,0 +1,47 @@
+{
+  "revision": {
+    "git_head_current": "890c50849a326f882eac336ba4e38c91171de473",
+    "git_branch_current": "research/hop-format-audit",
+    "product_source_pin": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "product_source_pin_note": "0bfda2363ef1a1d552e2ac093129b1026a86ad68 is the pinned product source; current HEAD 890c508 is research-only evidence per the task and B0.",
+    "porcelain_lines": 45,
+    "no_git_mutation_performed": true
+  },
+  "bundle": {
+    "recomputed_in_memory": true,
+    "version": "2a07cebae2b050ec",
+    "plaintext_bytes": 1524582,
+    "sha256": "01c19f4689450b54694b7aaa4070cbaf695efc3e98f0b59471486392a0348206",
+    "matches_b0_record": true,
+    "file_written": false
+  },
+  "gates_inherited": {
+    "B0_G1_local_design": {
+      "status": "G1",
+      "record": "work/B0/GATE.json",
+      "scope": "local source, WIP, raw-run and evaluation-runtime baseline for design/RED wave",
+      "checks": {
+        "wip_files_archived_verified": 441,
+        "dependency_reference_hashes_verified": 3554,
+        "skipped_unknown_files": 0,
+        "prior_source_hashes_verified": 88,
+        "paid_raw_files_verified": 17,
+        "pinned_source_run_files": 198,
+        "complete": 802,
+        "excluded": 11,
+        "holdout_intersection": 0
+      }
+    },
+    "B0_review": {
+      "path": "work/B0/REVIEW.md",
+      "verdict": "PASS for local/design G1 only; production NOT_VERIFIED"
+    },
+    "production_artifact_gate": {
+      "status": "NOT_MEASURED",
+      "blocks": "RG release-A/B",
+      "reason": "Actual deployed digest not queried; no inference from local version.txt"
+    },
+    "paid_runs_authorized": false
+  }
+}
+wrote /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/A1/INPUTS.json

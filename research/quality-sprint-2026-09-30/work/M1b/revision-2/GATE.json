@@ -1,0 +1,98 @@
+{
+  "task": "M1b",
+  "revision": "revision-2",
+  "gate": "G2-input — canary readback and masking parity (corrected design/RED)",
+  "status": "NOT_MEASURED",
+  "status_meaning": "G2 itself is NOT passed: the canary metric is still NOT_MEASURED on the saved run and no meter patch was made. revision-2 corrects the evidence description and the replay instrument; it does not promote the package. No full PASS may be recorded before an independent re-review of these frozen artifacts.",
+  "supersedes": "the STATUS/RED-record of work/M1b/GATE.json for any claim revised in work/M1b/revision-2/SPEC.md §0; the revision-1 file stays authoritative for what it measured",
+  "revision_identity": {
+    "product_source": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "git_head": "8a808ca70a13b3b19b28d60c6746c443bec01ea0",
+    "run_id": "cc3a551f-a8a5-4c0d-b90b-d3db2b26858a",
+    "run_label": "v5-sprint-v2-813",
+    "capture_sha256": "3c42892960088ad08a8cded1b5dc987563cfe4af810d7b8ae283b501e2ceabb7",
+    "declared_parent_changes_not_attributed": [
+      "prototype/bench/agentpii5/answer_restoration.py",
+      "prototype/bench/agentpii5/test_answer_restoration.py"
+    ]
+  },
+  "commands": [
+    {
+      "id": "C1",
+      "command": "PYTHONDONTWRITEBYTECODE=1 prototype/.venv/bin/python work/M1b/revision-2/probe_canary_reader_v2.py --run prototype/bench/runs/2026-09-30/v5-sprint-v2-813 --out work/M1b/revision-2",
+      "exit": 0,
+      "what": "byte-accurate row/payload accounting, unchanged engine verdict, bounded legacy-v1 diagnostic, synthetic controls"
+    },
+    {
+      "id": "C2",
+      "command": "PYTHONDONTWRITEBYTECODE=1 prototype/.venv/bin/python work/M1b/revision-2/probe_parity_replay_v2.py --run prototype/bench/runs/2026-09-30/v5-sprint-v2-813 --out work/M1b/revision-2/probe_parity_replay_v2.json --reason-source research/hop-format-audit/runs/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.excluded.json",
+      "exit": 0,
+      "what": "four divergences under the strict boundary+signature verdict; per-case _unique_token restore; seven-control verdict self-test"
+    }
+  ],
+  "output_hashes_sha256": {
+    "probe_canary_reader_v2.py": "fcaf347412ec84a525008789c96e548bb581042e159f4ef2b7735d618da23acb",
+    "probe_parity_replay_v2.py": "bd020827f689ff4c2e782274a26c1135777bad5510abe1b0b7db015cc3e6caf5",
+    "probe_canary_reader_v2.json": "c6cbc01e58e42d69b74f6d1040a31f17659bfabf377e30ec8aee1ff453e67d9c",
+    "probe_parity_replay_v2.json": "b9067a3f1cfe4ca05441d9bdadc85bdc63481048b7eb1381eac25ab760fc5308"
+  },
+  "hash_note": "the canary output is deterministic; the parity output is NOT byte-stable across runs because the engine mints substitutes with secrets (concrete strings differ, verdicts do not). The hashes above pin the run recorded in revision.log.",
+  "verified_facts": {
+    "canary_rows": 810,
+    "canary_total_utf8_bytes": 95241454,
+    "oversized_rows": [
+      {"line": 806, "utf8_bytes_including_newline": 5531229, "payloads": 380, "max_payload_utf8_bytes": 36592, "schema_valid": true},
+      {"line": 810, "utf8_bytes_including_newline": 5470734, "payloads": 380, "max_payload_utf8_bytes": 35852, "schema_valid": true}
+    ],
+    "engine_verdict": "NOT_MEASURED with capture_rows=0 and intervention_rows=0",
+    "journal_denominator": {"expected_i_arms": 810, "covered": 810, "coverage_fraction": 1.0},
+    "legacy_v1_diagnostic": {"measured_rows": 810, "skipped_rows": 0, "refused_rows": 0, "payloads": 20201, "scope": "diagnostic only"},
+    "parity_reproduced_exact_boundary": "0/4",
+    "parity_visible_prefix_agreement": "4/4",
+    "state_equivalence_claimed": false,
+    "trigger": "UNKNOWN"
+  },
+  "checks": [
+    {"id": "C1a", "what": "810 physical rows; 2 oversized; no unparsable row; payload bytes reported in UTF-8 units"},
+    {"id": "C1b", "what": "unchanged engine still NOT_MEASURED at row 806 with a 0/0 denominator"},
+    {"id": "C1c", "what": "legacy-v1 bounded read measures 810/810 with 0 skipped, in a separate diagnostic namespace"},
+    {"id": "C1d", "what": "controls: 1 over-bound payload row skipped by name while neighbours measured; hostile >9 MiB row skipped; lying v2 declaration refused"},
+    {"id": "C2a", "what": "0/4 reproduced under the strict boundary+signature rule"},
+    {"id": "C2b", "what": "verdict rule self-test rejects an unrelated HarnessError, a prefix mismatch and a sub-60 offset (7/7 controls)"},
+    {"id": "C2c", "what": "_unique_token restored per case; probe exit 0 asserts the original identity is back"}
+  ],
+  "withdrawn": [
+    "full prior state replayed",
+    "failing-push mint inferred as the trigger",
+    "any HarnessError counted as a reproduction"
+  ],
+  "owner_questions_opened": 0,
+  "decision_coverage": {
+    "O-M1B-1": "covered_by G2 / G10 / SPRINT-PLAN-S7 - whole run NOT_MEASURED with a named diagnostic subset; never partial=full PASS",
+    "O-M1B-2": "split - minimal private synthetic diagnostic is an engineering proposal; persistence of real mappings / API / storage changes would be new policy and still needs an owner question; nothing crosses that line here",
+    "O-M1B-3": "covered_by G2 / G10 / hard-fail baseline - fail-closed default retained"
+  },
+  "not_claimed": [
+    "G2 passed",
+    "clean working tree",
+    "product quality passed",
+    "paid GO or release readiness",
+    "production artifact verified",
+    "the four divergences diagnosed to a root cause",
+    "the legacy reader implemented or accepted",
+    "G3/full-package PASS before independent re-review"
+  ],
+  "scope_limits": {
+    "write_scope": "research/quality-sprint-2026-09-30/work/M1b/revision-2/ only",
+    "no_touch": ["prototype source", "runs/corpora", "EXECUTION.json", "usage journal", "wiki", "git history", "work/M1b review-1 originals"]
+  },
+  "blocked_next": [
+    "any product/scorer patch",
+    "any promotion of M1b to G2 before independent re-review",
+    "M1c reader contract freeze before the corrected design is accepted"
+  ],
+  "allowed_next": [
+    "independent re-review of the frozen revision-2 artifacts",
+    "M1c only after M1a and M1b are accepted"
+  ]
+}

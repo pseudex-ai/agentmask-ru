@@ -1,0 +1,188 @@
+{
+  "task": "D0",
+  "title": "Local detector-mechanism inventory: what is runnable here, under which licence, at what shipping cost",
+  "generated_utc": "2026-09-30T20:12:42Z",
+  "status_vocabulary": {
+    "AVAILABLE": "weights and runtime are both present locally; could be run today without network",
+    "WEIGHTS_ONLY": "weights are cached locally but the runtime is not installed; running it is out of scope for this wave",
+    "ABSENT": "neither the runtime nor the weights are present; obtaining them is a download",
+    "NOT_MEASURED": "no quality and/or cost number exists yet; no number is inferred"
+  },
+  "engine_used_for_baseline": {
+    "path": "/Users/igor/Projects/Obscura-hop-audit/prototype",
+    "python": "3.12.12",
+    "entry_module": "prototype/pseudex/detect_all.py",
+    "bundle_version": "2a07cebae2b050ec",
+    "bundle_sha256": "01c19f4689450b54694b7aaa4070cbaf695efc3e98f0b59471486392a0348206",
+    "bundle_bytes": 1524582,
+    "bundle_matches_B0_RUNTIME": true,
+    "product_source_pin": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "source_modules_hashed": 63,
+    "source_modules_matching_B0_pins": 63,
+    "source_drift": []
+  },
+  "shipped_weights_today": [
+    {
+      "role": "NER (news domain) — the only token-classification model in the product path",
+      "file": "prototype/.venv/lib/python3.12/site-packages/natasha/data/model/slovnet_ner_news_v1.tar",
+      "bytes": 2385920,
+      "sha256": "16c3343a6572ddf0e2b2fc1923113de15a7f5ca5bde90e780dd590418665603e",
+      "licence_library": "MIT (natasha 1.6.0, installed metadata; prototype/THIRD-PARTY-NOTICES.md:82)",
+      "licence_weights": "NOT_VERIFIED — distributed inside the MIT wheel; no separate upstream weight-licence statement was located in this wave"
+    },
+    {
+      "role": "word embeddings for NER/address model",
+      "file": "prototype/.venv/lib/python3.12/site-packages/natasha/data/emb/navec_news_v1_1B_250K_300d_100q.tar",
+      "bytes": 26634240,
+      "sha256": "f07270833d78523edc5781538d67038e95b43975e4a7ae757c693b687f9cbfca",
+      "licence_library": "MIT (navec 0.10.0)",
+      "licence_weights": "NOT_VERIFIED (same as above)"
+    },
+    {
+      "role": "morphology model",
+      "file": "prototype/.venv/lib/python3.12/site-packages/natasha/data/model/slovnet_morph_news_v1.tar",
+      "bytes": 2580480,
+      "sha256": "54812762a641c742dbfa9c950c4b53bbb469301983077ed01b9f074643d540d3",
+      "licence_library": "MIT"
+    },
+    {
+      "role": "leased tuning dictionaries (travel in the lease, not the image)",
+      "files": [
+        {"path": "prototype/licensing/data/first_names.txt", "bytes": 415777, "sha256": "af36a608c08fd3005c4c59325261fed13465d526fb66ab15d4dd82097d453d12"},
+        {"path": "prototype/licensing/data/gar_streets.tsv", "bytes": 4606010, "sha256": "66ba875f6d1595e008440f515b15f8e639fc99b35863f1057e2ec87469b10852"},
+        {"path": "prototype/licensing/data/gar_types.json", "bytes": 125042, "sha256": "e63225c35d36743745863f7bfab294f431311377f0d5e02f45ddb4fe4d4426d3"},
+        {"path": "prototype/licensing/data/surnames.txt", "bytes": 3384288, "sha256": "03256d70bc9422b619ca64c84274b1fac951f3f9c491c0dc88468322516a4a1a"}
+      ],
+      "note": "identical to B0 RUNTIME.json dictionary hashes"
+    }
+  ],
+  "runtime_probe_this_host": {
+    "installed_ner_capable": {
+      "natasha": true,
+      "slovnet": true,
+      "razdel": true,
+      "yargy": true,
+      "spacy": false,
+      "transformers": false,
+      "torch": false,
+      "deeppavlov": false,
+      "stanza": false,
+      "flair": false
+    },
+    "note": "presence of a library is not a quality claim; nothing here was installed, downloaded or called over the network"
+  },
+  "candidates": [
+    {
+      "id": "C1-current-product",
+      "mechanism": "rules + gates + Natasha news NER + Natasha address + KV + quasi",
+      "status": "AVAILABLE",
+      "measured_by_D0": "arm FULL",
+      "licence": "MIT (dependencies)",
+      "ship_path": "already shipped inside the image through the pip dependency; tuning travels in the lease",
+      "resource": "NOT_MEASURED by D0; project baseline ~350 MB resident per worker (prototype/pseudex/preflight.py:19,33)",
+      "decision": "incumbent, not a candidate to adopt"
+    },
+    {
+      "id": "C2-rules-only",
+      "mechanism": "product path with _ner_spans disabled (still needs Natasha AddrExtractor for the address layer)",
+      "status": "AVAILABLE",
+      "measured_by_D0": "arm RULES_ONLY (ablation)",
+      "licence": "MIT",
+      "ship_path": "does not remove the natasha dependency, so no shipping-weight saving",
+      "resource": "NOT_MEASURED (exploratory 5.25 ms/text in the D0 run; not comparable)",
+      "decision": "OWNER_PENDING — ablation shows 18/56 golden LOC missed and no difference on the lowercase-speech slice"
+    },
+    {
+      "id": "C3-bare-news-ner",
+      "mechanism": "bare Natasha NewsNERTagger PER/LOC/ORG",
+      "status": "AVAILABLE",
+      "measured_by_D0": "arm RAW_NER (ablation)",
+      "licence": "MIT",
+      "resource": "NOT_MEASURED",
+      "decision": "NOT A CANDIDATE — D0 brief forbids proposing it as a replacement"
+    },
+    {
+      "id": "C4-union",
+      "mechanism": "product path ∪ bare news NER",
+      "status": "AVAILABLE",
+      "measured_by_D0": "arm HYBRID_UNION (ablation ceiling)",
+      "decision": "NOT A MECHANISM — union is not an architecture; added 7 over-masks on the dirty slice"
+    },
+    {
+      "id": "C5-other-slovnet-models",
+      "mechanism": "different slovnet model tars (e.g. wiki domain)",
+      "status": "ABSENT",
+      "licence_library": "MIT (slovnet 0.6.0)",
+      "licence_weights": "NOT_VERIFIED",
+      "resource": "NOT_MEASURED",
+      "decision": "OWNER_PENDING — acquisition (download) is out of scope this wave"
+    },
+    {
+      "id": "C6-rubert-tiny2-finetune",
+      "mechanism": "fine-tuned Russian token classifier on top of a small Russian encoder",
+      "status": "WEIGHTS_ONLY",
+      "local_cache": {
+        "path": "<HF_HOME>/hub/models--cointegrated--rubert-tiny2",
+        "bytes_on_disk": 120373248,
+        "ref_main": "e8ed3b0c8bbf4fb6984c3de043bf7d2f4e5969ae",
+        "config": {"model_type": "bert", "architectures": ["BertForPreTraining"], "hidden_size": 312, "num_hidden_layers": 3, "max_position_embeddings": 2048},
+        "model_safetensors": {"bytes": 117529600, "sha256_prefix": "26ebb6db2a68593c"},
+        "config_json_sha256_prefix": "adee8b3e344bcb83"
+      },
+      "licence": "MIT",
+      "primary_source": "https://huggingface.co/cointegrated/rubert-tiny2 (fetched 2026-09-30, HTTP 200; card states License: mit, Russian)",
+      "language": "ru",
+      "gap": "pretrained MLM only, no token-classification head; requires fine-tuning, training labels (A1/O-DATA territory) and a separate licence/ship review of the resulting weights",
+      "resource": "NOT_MEASURED",
+      "decision": "OWNER_PENDING — new owner decision needed before any training/install"
+    },
+    {
+      "id": "C7-ai4privacy-deberta",
+      "mechanism": "DeBERTa-v3 token classifier fine-tuned on ai4privacy/pii-masking-200k",
+      "status": "WEIGHTS_ONLY",
+      "local_cache": {
+        "path": "<HF_HOME>/hub/models--Isotonic--deberta-v3-base_finetuned_ai4privacy_v2",
+        "bytes_on_disk": 746840064,
+        "ref_main": "absent (no refs/main in the cache)",
+        "config": {"model_type": "deberta-v2", "architectures": ["DebertaV2ForTokenClassification"], "hidden_size": 768, "num_hidden_layers": 12, "max_position_embeddings": 512, "label_count": 111, "includes": ["B-CREDITCARDCVV", "B-CREDITCARDNUMBER", "B-FIRSTNAME", "B-LASTNAME", "B-STREET", "B-PHONENUMBER"]},
+        "model_safetensors": {"bytes": 735692028, "sha256_prefix": "179e55224bbc3ff4"},
+        "config_json_sha256_prefix": "8eee9362a25b22df"
+      },
+      "licence": "cc-by-nc-4.0 (NON-COMMERCIAL)",
+      "primary_source": "https://huggingface.co/Isotonic/deberta-v3-base_finetuned_ai4privacy_v2 (fetched 2026-09-30, HTTP 200; card states License: cc-by-nc-4.0, English)",
+      "language": "en",
+      "gap": "non-commercial licence and English training data; Russian efficacy NOT_VERIFIED",
+      "resource": "NOT_MEASURED",
+      "decision": "NOT SHIPPABLE as-is; research contrast only, and only after legal review"
+    },
+    {
+      "id": "C8-local-llm",
+      "mechanism": "a cached local LLM used as a PII detector",
+      "status": "ABSENT in this venv (host has model caches for other runtimes)",
+      "licence": "varies per model; NOT_VERIFIED for a detector use",
+      "gap": "no token-level calibration, large RSS/latency, per-worker budget impact unknown",
+      "resource": "NOT_MEASURED",
+      "decision": "not justified by D0 evidence; only if the owner asks for an LLM-family comparison"
+    },
+    {
+      "id": "C9-external-inference",
+      "mechanism": "sending text to a hosted model",
+      "status": "FORBIDDEN",
+      "reason": "GOAL-BRIEF P15 and the D0 brief forbid sending PII to external inference"
+    }
+  ],
+  "shipping_constraints": [
+    {"constraint": "engine ships empty of authored tuning; tuning travels in the lease", "source": "docs/tz-tuning-in-lease.md; GOAL-BRIEF P15"},
+    {"constraint": "pseudex/data must not ship", "source": "prototype/Dockerfile:82"},
+    {"constraint": "pseudex/ must not import licensing or sqlite3", "source": "prototype/Dockerfile:83-87"},
+    {"constraint": "image < 1.5 GB and cold start to first /mask < 20 s", "source": "docs/tz-license-packaging.md:931 (gate P8)"},
+    {"constraint": "default per-worker memory arithmetic: 350 MB worker + 128 MB headroom enforced by PSEUDEX_ROLE=preflight", "source": "prototype/pseudex/preflight.py:19,33,39"},
+    {"constraint": "third-party licences are recorded per package", "source": "prototype/THIRD-PARTY-NOTICES.md:81-86"}
+  ],
+  "unmeasured": [
+    "cold start, p50/p95/p99 detect latency, RSS per worker, throughput for every candidate",
+    "image-size delta for any candidate that would ship",
+    "quality of any candidate other than the four D0 arms, on any gold set",
+    "licence of natasha's model weights as distinct from the library licence"
+  ]
+}

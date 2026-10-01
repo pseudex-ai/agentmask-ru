@@ -1,0 +1,30 @@
+{
+  "job": "workflow-4",
+  "routing_requested": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash"
+  },
+  "completed_tasks": 2,
+  "revision_scopes": [
+    {
+      "scope": "M1b/revision-2",
+      "files": 19,
+      "sha256": "772b7a250bfe247ea552e3fd0627652c7076af872725f968e94fd2db4335956b"
+    },
+    {
+      "scope": "S1/revision-2",
+      "files": 10,
+      "sha256": "afbfe463264b87fb8b3ae804507d0ee24b8756bce9470e6b684fd821359cfc4b"
+    },
+    {
+      "scope": "contracts-revision-2",
+      "files": 14,
+      "sha256": "ff804ae834f278133432ecb88dd29e88c36c4943acd6cbd1cd97f10c7618b62e"
+    }
+  ],
+  "owner_questions_consolidated": "work/contracts-revision-2/OWNER-QUESTIONS-6.md",
+  "no_product_source_written": true,
+  "paid_benchmark_calls": 0,
+  "engine_changed": false,
+  "independent_review_of_revisions": "NOT_RUN (parent intake only)"
+}

@@ -1,0 +1,103 @@
+{
+  "task": "S1",
+  "revision": "revision-2",
+  "kind": "corrected deterministic RED/probes on the unchanged engine (design/RED, NOT product implementation)",
+  "write_scope": "research/quality-sprint-2026-09-30/work/S1/revision-2/ only",
+  "routing": {
+    "provider_requested": "deepseek-official",
+    "model_requested": "deepseek-flash",
+    "mechanism": "explicit delegation override per SPRINT-PLAN §5 and FIRST-WAVE-SCOPES",
+    "effective_routing_metadata": "NOT_AVAILABLE to this process; no effective model claimed",
+    "self_identity_attestation": false,
+    "external_calls_made": 0,
+    "provider_calls": 0
+  },
+  "runtime": {
+    "interpreter": "/Users/igor/Projects/Obscura-hop-audit/prototype/.venv/bin/python",
+    "python": "3.12.12",
+    "cwd_for_execution": "prototype",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1"
+    },
+    "bundle_load": "testkit.load_dev_bundle() before any detect (in-memory development path)",
+    "vault": "Vault(':memory:') only; no persistent store touched",
+    "network": "none"
+  },
+  "revisions": {
+    "git_head": "8a808ca70a13b3b19b28d60c6746c443bec01ea0",
+    "product_source_pin": "0bfda2363ef1a1d552e2ac093129b1026a86ad68"
+  },
+  "requirements_read": [
+    "work/review-critical/REVIEW.md",
+    "work/review-critical/EVIDENCE.json",
+    "GOAL-BRIEF.md",
+    "OWNER-DECISIONS.md",
+    "REMAINING-DECISIONS.md",
+    "EXECUTION.json",
+    "SPRINT-PLAN.md",
+    "work/S1/{INPUTS,SPEC,DELTA,GATE}.md|json",
+    "work/S1/{s1_probes.py,RED.log,OWNER-QUESTIONS.md}"
+  ],
+  "source_hashes_sha256": {
+    "prototype/pseudex/detect_all.py": "e2e458de6e9bbc16c5c3d91307a0076a647115c9fa7e39fd1ce667a0e5e32e69",
+    "prototype/pseudex/names.py": "40b3cdb71ca2a75b93965db00193e3533a1d3b11d1d1ecf46472da508c711eab",
+    "prototype/pseudex/address.py": "2a9dd7ab7c2594a250e024e1d89f0a9809c0795c6436b604be9195a31b1dad68",
+    "prototype/pseudex/morph_places.py": "0434c4115a60d1d2b8f93e1457e7e12c9c364cadf2b857ebe4e3adcf97affaed",
+    "prototype/pseudex/context.py": "1a8e826ce749ee383226e7f2f7be8b86dccda9da0004371acef93138d8cfdb22",
+    "prototype/pseudex/vault.py": "e10630e377febdefe0205ee1f733efdc8c24a3c5288816b43ede12a1f180163e",
+    "prototype/pseudex/redact.py": "a5d80fe5ab9c2a1cb63eb5af2b648abc10e9fb650d05b56a755ecba4bf8f9f91",
+    "prototype/pseudex/envelope.py": "76bbc441fe44eef4fb381f7b19805bd77305a41698efee66674d30d11f16a585",
+    "prototype/pseudex/maskcache.py": "6e6085b86437bb5dd5f1c3eac79b630fe57af2b7b8d393981347aa8fff59796b",
+    "prototype/pseudex/audit.py": "23e1793df117db22823fe6c10d6def751f0814f2c2dedaf71629141a7de57ea1",
+    "prototype/pseudex/proxy.py": "0e65191f2d9a49406d1edbf63c35a57d63184a93e21f6d120a5949c0d522e60c",
+    "prototype/pseudex/service.py": "bfdce23a5de31904d9e118361453161d7e7d55157a138acb4616eb4bf74f164c",
+    "prototype/pseudex/normalize.py": "5f2ab7726715957c79017eb9cd9ee309722ae0ca03520ba7d32019b89c464b2e",
+    "prototype/pseudex/morph_names.py": "96abc06df58b7d39a699b2070afe2062a6e10166004a81c011d25fded09c28f3",
+    "prototype/pseudex/structured.py": "a8bb3a0c4bcb5a5ebf191b045ff97e76f605a90282950336ab4a118754f42aa6",
+    "prototype/pseudex/quasi.py": "c8e59f62a7a1364d5900fbee29652c1b517a6a6091677eae6b323c6d0fe8d458",
+    "prototype/pseudex/credentials.py": "f0a91007a39a65f3ebb30094ee218fbf098123fafbbf8a5cfdad29b5c06bc892",
+    "prototype/pseudex/ru_pii.py": "4bc2eeebf2f18bf71b48dcb0e7b8f4870fb7c1c333d7cb1b78050d10f0943747",
+    "prototype/pseudex/spoken.py": "64629a887d210e5aa3ba3b6325ce89afeb2ec42af307d75acedd80969c7f4b99",
+    "prototype/testkit.py": "ee3e1cc254839f2514741a026d6444eca62bc556c324231b8518ca7f1622d03d",
+    "prototype/bench/agentpii5/harness.py": "0cc7f9144ad8a7bdd6463ff0b5daa94d8f3711453ea4e1064056d013eb7d1eeb"
+  },
+  "run_artifact_hashes_sha256": {
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.arms.v5.jsonl": "252e775e602f3a59624d85efc5c6c56b35b84ffc4f0c2e59a39571d5fc0010f9",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/corpus.v5.json": "83d46b1da3416c40fffc94e41ac9a88ac642bc405b05d217e5c5d0413a9e12e4"
+  },
+  "revision1_and_review_inputs_sha256": {
+    "research/quality-sprint-2026-09-30/work/S1/s1_probes.py": "9c36571ae8d2b18b533784e1ae8fec7e0745b47b13bbb7d192f7cd0999b44301",
+    "research/quality-sprint-2026-09-30/work/S1/SPEC.md": "ca186727ebd6f9fc51e0ed38b60d4788fb5f699ad1ef213db5d8cd6477406a21",
+    "research/quality-sprint-2026-09-30/work/S1/GATE.json": "2ea9dbc345f09a7228850a569cc77740fe046e995e2d30badca75c5a9f756594",
+    "research/quality-sprint-2026-09-30/work/S1/OWNER-QUESTIONS.md": "9a28a6c450d2cbeaa405c372c9844392792041b099bf2f058fbeeaef4c424944",
+    "research/quality-sprint-2026-09-30/work/S1/DELTA.json": "8ef2c4a79fefee3b611cd5e8aa5645ab93978b49cc0234b22b4aceff2d465c80",
+    "research/quality-sprint-2026-09-30/work/S1/RED.log": "00e2035c6ddb7fd1343251a2320dc9463c8793a667c510ce6e3fadef8865f10e",
+    "research/quality-sprint-2026-09-30/work/review-critical/REVIEW.md": "22ae213ac3734c0b6566ae204e1a3fc9e076ee637d729277593eefbe2a34f177",
+    "research/quality-sprint-2026-09-30/work/review-critical/EVIDENCE.json": "3000eeaa6067966d7f8026e490ac99abb9216b777a0228e5d41825b2fee93822"
+  },
+  "forbidden_operations_observed": {
+    "product_source_writes": "none",
+    "scorer_writes": "none",
+    "reset_stash_revert": "none",
+    "installs_or_downloads": "none",
+    "provider_or_production_calls": "none",
+    "corpus_cases_run": 0,
+    "monkeypatch_used_as_gold": "none",
+    "writes_outside_write_scope": "none",
+    "overwrite_of_author_originals": "none"
+  },
+  "outputs": {
+    "s1_probes_v2.py": "corrected probes (A2 isolated, B staged, C exact identity, D1 split, E2 reframed)",
+    "SPEC.md": "corrected claims + gate position",
+    "DELTA.json": "per-slice before/after",
+    "GATE.json": "REVISED_NOT_PASS; full_g3_pass false",
+    "DECISION-COVERAGE.md": "covered_by_decision_ids mapping",
+    "revision.log": "command, exit 4 = EXPECTED_RED, output hashes, preserved-original hashes"
+  },
+  "unknowns": [
+    "which internal guard produced the recorded document:office-005 symptom",
+    "the fanout_pick-017 vault/provenance behind the recorded non-rewrite",
+    "the long_clinic-006 vault state behind the recorded stream mismatch",
+    "whether all available inputs are incapable of distinguishing an external new-real value from an echo"
+  ]
+}

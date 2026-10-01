@@ -1,0 +1,84 @@
+{
+  "counts": {
+    "fixtures_probed": 32,
+    "positive_fixtures_protected": 0,
+    "positive_fixtures_total": 14,
+    "hard_negatives_open": 10,
+    "hard_negatives_total": 10,
+    "red_confirmed": 9,
+    "red_total": 9,
+    "controls_held": 4,
+    "controls_total": 4
+  },
+  "suite_verdict": "NOT_A_SUITE_PASS — intentional RED on a pinned unchanged build; no engine change was made by this task",
+  "properties": [
+    {
+      "property_id": "RED-1",
+      "status": "RED_CONFIRMED",
+      "observed": "0/5 fielded CVC positives protected"
+    },
+    {
+      "property_id": "RED-2",
+      "status": "RED_CONFIRMED",
+      "observed": "POS-CVC-005 protected=False"
+    },
+    {
+      "property_id": "RED-3",
+      "status": "RED_CONFIRMED",
+      "observed": "_JSON_KV matches on '{\"cvc\": 314}' = [] (quoted form does match: [['cvc', '314']])"
+    },
+    {
+      "property_id": "RED-4",
+      "status": "RED_CONFIRMED",
+      "observed": "0/4 OTP positives protected"
+    },
+    {
+      "property_id": "RED-5",
+      "status": "RED_CONFIRMED",
+      "observed": "MAL-CVC-001 open=True, MAL-CVC-002 open=True"
+    },
+    {
+      "property_id": "RED-6",
+      "status": "RED_CONFIRMED",
+      "observed": "AMB-001 spans=[]"
+    },
+    {
+      "property_id": "RED-7",
+      "status": "RED_CONFIRMED",
+      "observed": "POS-CVC-008 spans=[{'type': 'CARD', 'start': 21, 'end': 37, 'surface': '4111111111111111'}]"
+    },
+    {
+      "property_id": "RED-8",
+      "status": "RED_CONFIRMED",
+      "observed": "_render_token('CVC', original='314') = 'REDACTEDf40bac'"
+    },
+    {
+      "property_id": "RED-9",
+      "status": "RED_CONFIRMED",
+      "observed": "card_cvc -> CARD; card_length('314') -> 16; render CARD for '314' -> '0162 7271 3505 2316'"
+    },
+    {
+      "property_id": "NEG-1",
+      "status": "GREEN_as_expected",
+      "observed": "9/9 hard negatives open"
+    },
+    {
+      "property_id": "NEG-2",
+      "status": "GREEN_as_expected",
+      "observed": "NEG-PROSE-3 open=True"
+    },
+    {
+      "property_id": "CTRL-1",
+      "status": "GREEN_as_expected",
+      "observed": "[{'type': 'SECRET', 'start': 14, 'end': 21, 'surface': 'hunter2'}]"
+    },
+    {
+      "property_id": "CTRL-2",
+      "status": "GREEN_as_expected",
+      "observed": "[{'type': 'CARD', 'start': 10, 'end': 26, 'surface': '4111111111111111'}]"
+    }
+  ]
+}
+wrote /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/C0/PROBE-FACTS.json
+
+EXIT=0

@@ -1,0 +1,43 @@
+diff --git a/prototype/bench/agentpii5/scenarios5/common.py b/prototype/bench/agentpii5/scenarios5/common.py
+index 533d320..c50bf79 100644
+--- a/prototype/bench/agentpii5/scenarios5/common.py
++++ b/prototype/bench/agentpii5/scenarios5/common.py
+@@ -35,6 +35,6 @@ from bench.agentpii4.scenarios.common import (  # noqa: F401 - re-exported on pu
+     noisy_word, opener, order_number, passport, phone, snils, time_of_day)
+ from bench.agentpii4.schema import InvalidCase, Locus, Message, PiiItem
+-from bench.agentpii5.contracts import (BranchSpec, CaseV5, DocumentSpec, ForcedError, Hop,
+-                                       LoopSpec, MemorySpec, PickSpec, RagSpec,
++from bench.agentpii5.contracts import (GENERIC_PIECE_ROLES, BranchSpec, CaseV5, DocumentSpec,
++                                       ForcedError, Hop, LoopSpec, MemorySpec, PickSpec, RagSpec,
+                                        ReturnExpectation, hop_owner_of_leaf)
+ from bench.agentpii5.contracts import (
+@@ -447,8 +447,18 @@ def arg_hop(item_id: str, index: int, turn: int, tool: str, ordinal: int, path:
+     read, or a summary the agent writes for another agent — the owner decides
+     which `form_hOUT` line the hop counts in, and a family that chose it by hand
+-    would move hops between lines case by case. `optional` is `not
+-    FieldSpec.required` for the same reason: the tool's own schema already says
+-    whether a call can legitimately omit the leaf, and a second opinion here
+-    would be a second definition of the same fact.
++    would move hops between lines case by case.
++
++    REACHABILITY IS A PROPERTY OF THE CORPUS, NOT OF THE INSTRUMENT (SPIKE-Е,
++    Е-4). `optional` is `(not spec.required) or spec.role in
++    GENERIC_PIECE_ROLES`: the tool's schema says whether a call may omit the
++    leaf, and the PRODUCT decides which leaves it never masks. A city inside an
++    address is one of them (`pseudex/vault.py::_settlement_of` keeps the
++    settlement real — «what the law does not protect stays true»), so
++    `courier_book.address.locality` and `delivery_create_order.to_location.city`
++    are `required=True, role='city'` and a REQUIRED hop there is a promise no
++    correct gateway can keep: it can never become `observed`, and every such
++    leaf read as a miss BY CONSTRUCTION (g07, g01, g03, g04, g14). The
++    alternative — narrowing the headline denominator — is the defect this
++    class exists to avoid.
+ 
+     A path the registry does not know RAISES rather than defaulting to
+@@ -463,5 +473,5 @@ def arg_hop(item_id: str, index: int, turn: int, tool: str, ordinal: int, path:
+                hop_index=index, turn=turn, tool_name=tool, call_ordinal=ordinal,
+                parallel_group=group, source_hop=source_hop, path=path,
+-               optional=not spec.required)
++               optional=(not spec.required) or spec.role in GENERIC_PIECE_ROLES)
+ 
+ 

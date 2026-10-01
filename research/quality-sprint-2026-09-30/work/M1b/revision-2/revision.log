@@ -1,0 +1,25 @@
+# M1b revision-2 run 2026-09-30T20:58:34Z
+# cwd=/Users/igor/Projects/Obscura-hop-audit/prototype
+# interpreter=/Users/igor/Projects/Obscura-hop-audit/prototype/.venv/bin/python
+# python=Python 3.12.12
+# git HEAD=8a808ca70a13b3b19b28d60c6746c443bec01ea0
+# probe1 command: /Users/igor/Projects/Obscura-hop-audit/prototype/.venv/bin/python probe_canary_reader_v2.py --run <run> --out /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/revision-2
+# probe2 command: /Users/igor/Projects/Obscura-hop-audit/prototype/.venv/bin/python probe_parity_replay_v2.py --run <run> --out /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/revision-2/probe_parity_replay_v2.json --reason-source <excluded.json>
+# --- probe 1 ---
+EXIT_CANARY=0
+# --- probe 2 ---
+EXIT_PARITY=0
+# --- stderr tails (empty expected) ---
+       0 /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/revision-2/tmp/probe_canary_v2.stderr
+       0 /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/revision-2/tmp/probe_parity_v2.stderr
+       0 total
+# --- output hashes ---
+fcaf347412ec84a525008789c96e548bb581042e159f4ef2b7735d618da23acb  /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/revision-2/probe_canary_reader_v2.py
+bd020827f689ff4c2e782274a26c1135777bad5510abe1b0b7db015cc3e6caf5  /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/revision-2/probe_parity_replay_v2.py
+c6cbc01e58e42d69b74f6d1040a31f17659bfabf377e30ec8aee1ff453e67d9c  /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/revision-2/probe_canary_reader_v2.json
+b9067a3f1cfe4ca05441d9bdadc85bdc63481048b7eb1381eac25ab760fc5308  /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/revision-2/probe_parity_replay_v2.json
+# --- preserved originals (must be unchanged by this run) ---
+368411171bdd476b026a0de82c29706c02da1692a5526d104547337cbd16672b  /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/probe_parity_replay.py
+a1ba22fb01dce8d7aebe5b9de2de2a1413cdf829ad67a260f851f4f0059c57dd  /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/probe_canary_reader.py
+6b7d34b3ccfded7d5fcf5fe673d08da3a9dab048317b2381348102b77d65100e  /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/SPEC.md
+d3e8236018f2edaf67e1418d7824c6d590e265fd9e2b4bfaaa60a2e624dc5b07  /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/GATE.json

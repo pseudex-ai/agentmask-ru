@@ -1,0 +1,11 @@
+diff --git a/prototype/bench/agentpii5/test_judge.py b/prototype/bench/agentpii5/test_judge.py
+index 3d684a0..da76005 100644
+--- a/prototype/bench/agentpii5/test_judge.py
++++ b/prototype/bench/agentpii5/test_judge.py
+@@ -72,5 +72,5 @@ def _run_with_turns(turn_replies: tuple[str, ...]) -> ArmRunV5:
+                     control_reply="", tool_results=(result,), mentions=(),
+                     turn_replies=turn_replies, call_turns=(1,), request_count=2,
+-                    stream_mismatch=False, reply_whole="", turn_residual=0)
++                    stream_mismatch=False, reply_whole="", turn_residual=0, model_trace=None)
+ 
+ 

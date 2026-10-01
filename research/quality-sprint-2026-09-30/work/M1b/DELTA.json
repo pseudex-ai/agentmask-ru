@@ -1,0 +1,108 @@
+{
+  "task": "M1b",
+  "wave": "quality-sprint-design-red-1",
+  "changed_product_files": [],
+  "changed_benchmark_files": [],
+  "source_revision": {
+    "product_pinned": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "git_head": "890c50849a326f882eac336ba4e38c91171de473",
+    "head_is": "research-only evidence commit",
+    "product_source_diff_pinned_to_head": "empty (verified by make_inputs.py)"
+  },
+  "files_written": [
+    "research/quality-sprint-2026-09-30/work/M1b/INPUTS.json",
+    "research/quality-sprint-2026-09-30/work/M1b/SPEC.md",
+    "research/quality-sprint-2026-09-30/work/M1b/RED.log",
+    "research/quality-sprint-2026-09-30/work/M1b/DELTA.json",
+    "research/quality-sprint-2026-09-30/work/M1b/GATE.json",
+    "research/quality-sprint-2026-09-30/work/M1b/MISSING-STATE.json",
+    "research/quality-sprint-2026-09-30/work/M1b/probe_canary_reader.py",
+    "research/quality-sprint-2026-09-30/work/M1b/probe_canary_reader.json",
+    "research/quality-sprint-2026-09-30/work/M1b/probe_parity_replay.py",
+    "research/quality-sprint-2026-09-30/work/M1b/probe_parity_replay.json",
+    "research/quality-sprint-2026-09-30/work/M1b/probe_parity_mechanism.py",
+    "research/quality-sprint-2026-09-30/work/M1b/probe_parity_mechanism.json",
+    "research/quality-sprint-2026-09-30/work/M1b/make_inputs.py",
+    "research/quality-sprint-2026-09-30/work/M1b/tmp/ (probe stdout/stderr, synthetic run, saved tool args)"
+  ],
+  "slices": [
+    {
+      "slice": "canary readback — saved run is measurable at all",
+      "before": {
+        "verdict": "NOT_MEASURED",
+        "reason": "cc3a551f-….canary.jsonl:806: capture row is over the 4194304 byte bound",
+        "captured_rows": 0,
+        "intervention_rows": 0,
+        "coverage_known": false
+      },
+      "after": {
+        "verdict": "NOT_MEASURED (unchanged — no patch in this wave)",
+        "derived_facts": {
+          "rows_on_disk": 810,
+          "rows_at_or_under_row_bound": 808,
+          "rows_unparsable": 0,
+          "duplicate_case_repeat_keys": 0,
+          "oversized_rows_valid_captures": 2,
+          "expected_i_arms_from_triples": 810,
+          "captured_rows": 810,
+          "covered": 810,
+          "coverage_fraction": 1.0,
+          "delivered_payloads": 20201
+        }
+      },
+      "x_over_n": "0/810 measured before; 810/810 present and parseable, 808/810 readable under the current bound",
+      "population_change": "none — no row added, removed, rewritten or re-parsed into the run"
+    },
+    {
+      "slice": "canary reader — positive control",
+      "before": "not attempted",
+      "after": {
+        "synthetic_row_bytes": 8910569,
+        "over_row_bound": true,
+        "under_run_bound": true,
+        "check_run_status": "NOT_MEASURED",
+        "reason": "m1b-synthetic.canary.jsonl:1: capture row is over the 4194304 byte bound"
+      },
+      "x_over_n": "1/1 synthetic valid oversized captures refused",
+      "population_change": "synthetic fixture lives only in work/M1b/tmp/synthetic-run/"
+    },
+    {
+      "slice": "parity — four production/counting masking divergences",
+      "before": {
+        "evidence": "60-character prefix pair inside the triple reason",
+        "prior_state": "reported missing (_empty_run)"
+      },
+      "after": {
+        "prior_state_recovered": "4/4 from <run>.canary.jsonl capture rows",
+        "prefix_replayed_byte_identical": "4/4 (system push + user pushes before the first tool call)",
+        "prior_state_fully_replayed": "1/4 (derive-008, the only case with no intermediate tool hop)",
+        "intermediate_hops_not_replayed": {"sequential_chain:assistant-002": 1, "tool_chain-037": 8, "tool_chain-040": 8},
+        "restored_tool_args_match_saved": "1/4 (derive-008)",
+        "failing_push_reproduced": "0/4",
+        "declared_tools_tried": {"derive-008": 5, "sequential_chain:assistant-002": 4, "tool_chain-037": 8, "tool_chain-040": 8},
+        "saved_prefix_pairs_equal_within_a_case": "4/4 (divergence begins at or after character 60)",
+        "class_controls": {
+          "positive_new_value": "no divergence",
+          "negative_no_pii": "no divergence (control that no divergence occurs at all)",
+          "echo_of_substitute": "no divergence",
+          "fragments": "4 shapes, no divergence",
+          "full_name_again": "no divergence"
+        },
+        "trigger": "UNKNOWN"
+      },
+      "x_over_n": "0/4 failures reproduced; 4/4 prior states extracted; 4/4 prefixes byte-identical; 1/4 prior states replayed in full",
+      "population_change": "none — the run's 813 selected / 802 complete / 11 excluded inventory is unchanged and untouched"
+    }
+  ],
+  "evidence_vs_measurement": {
+    "evidence_mechanism": "capture rows written by GatewayV5(capture=True) at the moment of delivery, and the triples journal; both are the run's own artifacts",
+    "measurement": "probe_canary_reader.py (reader verdict, geometry, coverage), probe_parity_replay.py (byte-identity and reproduction), probe_parity_mechanism.py (controls)",
+    "separated_because": "an instrument defect is not an engine gain and vice versa; nothing in this DELTA credits M1b with a quality improvement"
+  },
+  "unknowns": [
+    "the trigger of the four masking divergences",
+    "whether the four share one trigger",
+    "whether a skipped oversized row should keep a run MEASURED (owner fork O-M1B-1)"
+  ],
+  "exclusions_changed": 0
+}

@@ -1,0 +1,28 @@
+diff --git a/wiki/STATE.md b/wiki/STATE.md
+index d9b77ff..57d18ac 100644
+--- a/wiki/STATE.md
++++ b/wiki/STATE.md
+@@ -515,2 +515,23 @@ any claim.
+ **Price:** a third view of one value (canon for the index, shown for the content, agent's for the form) — it is `shown_forms`, already recorded per conversation for Б23/Б24, not a new store. Measured gain of steps 1–4 is 71.1 % → 83.2 %; step 5's arithmetic adds ≈10 pp on top (≈93–94 %), to be measured, not assumed.
+ **Related:** `research/2026-09-22-compound-street-address.md` · INVARIANTS.md#swap (Б24, «дословно — значит дословно») · `docs/known-issues.md` (Б16, Б23) · D-062
++
++### D-068 · 2026-09-26 · v6 implements pilot types before expanding industry coverage
++**Status:** approved scope; implementation awaits explicit GO
++**Context:** implementing generators for every researched candidate before the pilot would spend time and agent budget before the instrument is accepted.
++**Decision:** the authoritative scope and partial owner rulings are in `docs/tz-agentpii6.md` §13, G1-1 and G1-3. Research remains in `docs/tz-agentpii6-registry.md`; expansion gets a concrete scenario package after pilot acceptance.
++**Alternative rejected:** implementing all researched types immediately, or starting with the full corpus.
++**Price:** coverage outside the pilot arrives later. The exact pilot type list, acceptance thresholds and ambiguous-value scoring still need decisions; scope approval does not approve them.
++
++### D-069 · 2026-09-26 · Pilot tools require an evidence-backed schema
++**Status:** active
++**Context:** the v6 research proves many industry identifiers and processes, but some proposed pilot tools had only a plausible process name without an evidenced producer field, consumer field or agent action.
++**Decision:** a pilot API schema is never synthetic. It must be grounded in an existing v5 implementation, official schema, OSS implementation or documented procedure with named fields. Synthetic PII values and reconstructed language remain allowed; they are not an API schema. A type with no such tool stays a candidate for the extension.
++**Alternative rejected:** synthetic mirrors of KYC, collection, DMS, device service, CDP or seller-requisites processes just to carry an identifier through the benchmark.
++**Price:** the first pilot may contain fewer proposed types and needs an evidence matrix before its final type list is approved.
++
++### D-070 · 2026-09-28 · v6 is built as the full corpus, not as a pilot followed by expansion
++**Status:** active
++**Context:** the former 180-case pilot and G2-pilot gate delayed implementation of the complete 500-case, 15-industry v6 scope.
++**Decision:** build the full v6 corpus directly. The pilot calculations remain reference material only; they neither limit the implemented types nor require a separate owner GO. Before coding, the full evidence matrix still has to identify a documented end-to-end tool path for each admitted type; D-069 remains unchanged.
++**Alternative rejected:** completing a three-industry pilot first and deciding whether to expand later.
++**Price:** more implementation work starts together, so the full evidence matrix and per-component ownership become the first acceptance gate.

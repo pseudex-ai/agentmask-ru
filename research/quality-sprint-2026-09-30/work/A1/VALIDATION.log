@@ -1,0 +1,75 @@
+PASS  all six JSON deliverables parse
+PASS  v5 corpus cases == 1800
+PASS  v5 corpus items == 16287
+PASS  run813 cases == 813
+PASS  run813 items == 8191
+PASS  gate labels == 587
+PASS  gate candidates == 3054
+PASS  v6 new types == 55
+PASS  v6 grammar-uncertain == 9
+PASS  v6 generated cases == 0
+PASS  name15 verified rows == 15
+PASS  proposal native types == 10
+PASS  NAME independent identities == 1188
+PASS  underpowered native types == 5
+PASS  DATA-GAPS.csv rows == 511
+PASS  DATA-GAPS.csv has no empty pii_type
+PASS  DATA-GAPS.csv v6 rows == 55
+PASS  DATA-GAPS.csv temporary-secret rows == 6
+PASS  every v6/temporary row carries gap 300
+PASS  proposal status OWNER_PENDING
+PASS  proposal owner questions == 10
+PASS  owner question ids unique
+PASS  protocol rule present: lexical_ambiguity_wife_name
+PASS  protocol rule present: fio_all_parts
+PASS  protocol rule present: possessive_forms
+PASS  protocol rule present: public_fictional_stage
+PASS  protocol rule present: brand_context
+PASS  protocol rule present: address_entrance_floor
+PASS  protocol rule present: malformed_personal_ids
+PASS  PPV and specificity are separate designs
+PASS  zero denominator status == NOT_MEASURED
+PASS  insufficient-N status named
+PASS  cost units_full_scope == 8320
+PASS  cost native labeler-items == 13200
+PASS  proposal carries the confirmed in-memory bundle identity
+PASS  binding input unchanged: research/quality-sprint-2026-09-30/work/B0/GATE.json
+PASS  binding input unchanged: research/quality-sprint-2026-09-30/work/B0/REVIEW.md
+PASS  binding input unchanged: research/quality-sprint-2026-09-30/work/B0/SPEC.md
+PASS  binding input unchanged: research/quality-sprint-2026-09-30/work/B0/INPUTS.json
+PASS  binding input unchanged: research/quality-sprint-2026-09-30/GOAL-BRIEF.md
+PASS  binding input unchanged: research/quality-sprint-2026-09-30/OWNER-DECISIONS.md
+PASS  binding input unchanged: research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md
+PASS  binding input unchanged: research/quality-sprint-2026-09-30/SPRINT-PLAN.md
+PASS  binding input unchanged: research/quality-sprint-2026-09-30/EXECUTION.json
+PASS  binding input unchanged: research/quality-sprint-2026-09-30/work/FIRST-WAVE-TASKS.json
+PASS  binding input unchanged: research/quality-sprint-2026-09-30/work/FIRST-WAVE-SCOPES.md
+PASS  binding input unchanged: research/quality-sprint-2026-09-30/followup/name-labels-blind-proposal/proposal-counts.json
+PASS  binding input unchanged: research/quality-sprint-2026-09-30/followup/cvc-context-contract/CONTEXT-MATRIX.json
+PASS  binding input unchanged: research/quality-sprint-2026-09-30/followup/cvc-context-contract/PRIMARY-SOURCES.md
+PASS  binding input unchanged: research/hop-format-audit/next-sprint-review/v6-snapshot/registry-inventory.json
+PASS  binding input unchanged: research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6.md
+PASS  binding input unchanged: prototype/bench/agentpii5/corpus.v5.json
+PASS  binding input unchanged: prototype/bench/runs/2026-09-30/v5-sprint-v2-813/corpus.json
+PASS  binding input unchanged: prototype/bench/gate/labels.json
+PASS  binding input unchanged: prototype/bench/gate/README.md
+PASS  binding input unchanged: wiki/INVARIANTS.md
+PASS  external input unchanged: ~/.cache/pseudex-bench/pii-bench/data/domain-00000-of-00001.parquet
+PASS  external input unchanged: ~/.cache/pseudex-bench/pii-bench/data/entity-00000-of-00001.parquet
+PASS  external input unchanged: ~/.cache/pseudex-bench/massive_ru_train.parquet
+PASS  external input unchanged: ~/.cache/pseudex-bench/massive_ru_validation.parquet
+PASS  external input unchanged: ~/.cache/pseudex-bench/massive_ru_test.parquet
+PASS  external input unchanged: ~/.cache/pseudex-bench/voice_addresses.json
+PASS  external input unchanged: ~/.cache/pseudex-bench/rudevices_addresses.json
+PASS  external input unchanged: ~/.cache/pseudex-bench/speech_calls.jsonl
+PASS  external input unchanged: ~/.cache/pseudex-bench/speech_rudevices.jsonl
+PASS  external input unchanged: ~/.cache/pseudex-bench/gate_candidates.json
+PASS  external input unchanged: ~/.cache/pseudex-bench/ru_prose.jsonl
+PASS  read-only proof covered >=20 files
+PASS  no __pycache__ under A1
+PASS  no .pyc under A1
+PASS  DELTA lists only own scope
+PASS  GATE is OWNER_PENDING and claims no quality PASS
+
+all checks passed (72 assertions, 32 input hashes re-verified)
+files in scope: ACCEPTANCE-PROPOSAL.json, DATA-GAPS-SUMMARY.json, DATA-GAPS.csv, DELTA.json, DERIVE.log, GATE.json, INPUTS.json, INPUTS.log, INVENTORY.json, INVENTORY.log, OWNER-QUESTIONS.md, PROPOSAL.log, SPEC.md, VALIDATION.log, derive_gaps.py, inventory_sources.py, make_inputs.py, make_proposal.py, validate_outputs.py

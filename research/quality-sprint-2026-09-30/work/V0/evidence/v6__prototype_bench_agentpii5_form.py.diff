@@ -1,0 +1,18 @@
+diff --git a/prototype/bench/agentpii5/form.py b/prototype/bench/agentpii5/form.py
+index 53ddc05..6387014 100644
+--- a/prototype/bench/agentpii5/form.py
++++ b/prototype/bench/agentpii5/form.py
+@@ -53,4 +53,5 @@ import pymorphy3
+ from bench.agentpii4.parts import _PATRONYMIC_TAIL
+ from bench.agentpii5 import contracts
++from bench.agentpii5 import form_v6
+ from bench.agentpii5.contracts import FORM_ABSTAIN, FormVerdict
+ from bench.agentpii5.form_tables import (
+@@ -977,4 +978,7 @@ FEATURE_EXTRACTORS: dict[tuple[str, str], contracts.FeatureExtractor] = {
+     ("PLATE", "spaces"): plate_spaces,
+     ("PLATE", "region_sep"): plate_region_sep,
++    # §5.1: the v6 extractors live in form_v6.py; this ONE unpack is the whole
++    # merge — the v5 extractors above stay the same objects, never re-ordered.
++    **form_v6.FEATURE_EXTRACTORS,
+ }
+ 

@@ -1,0 +1,186 @@
+{
+  "script": "verify_facts.py",
+  "scope": "independent read-only re-derivation; no detector call, no engine import, no network",
+  "python": "3.12.12",
+  "funnel_v0": {
+    "v5_HOP_STATUSES": [
+      "observed",
+      "leaked",
+      "residual",
+      "unmasked",
+      "absent",
+      "engine_kept",
+      "not_masked",
+      "leaf_foreign"
+    ],
+    "v6_HOP_STATUSES": [
+      "observed",
+      "leaked",
+      "residual",
+      "unmasked",
+      "absent"
+    ],
+    "v5_OUT_HOP_WRITTEN_STATUSES": [
+      "observed",
+      "residual",
+      "engine_kept",
+      "not_masked",
+      "leaf_foreign"
+    ],
+    "v6_subset_of_v5_HOP_STATUSES": true,
+    "v6_strict_subset": true,
+    "v5_only_statuses": [
+      "engine_kept",
+      "leaf_foreign",
+      "not_masked"
+    ],
+    "v0_check_used_v5_set": [
+      "absent",
+      "engine_kept",
+      "leaf_foreign",
+      "leaked",
+      "not_masked",
+      "observed",
+      "residual"
+    ]
+  },
+  "v6_registry": {
+    "records_total": 66,
+    "by_origin": {
+      "v5": 11,
+      "v6": 55
+    },
+    "item_types_true": 65,
+    "non_item_types": [
+      "DATE"
+    ],
+    "v5_non_item": [
+      "DATE"
+    ],
+    "bare_typed_true": 0,
+    "per_source_file": {
+      "pii_types.py": 11,
+      "pii_types_a.py": 16,
+      "pii_types_b.py": 15,
+      "pii_types_c.py": 24
+    },
+    "generated_checksum_nonempty": [
+      "BANK_ACCOUNT",
+      "EPTS_NUMBER",
+      "IBAN",
+      "ICCID",
+      "IMEI",
+      "LOAN_UID",
+      "LOYALTY_CARD_NUMBER",
+      "OGRNIP",
+      "OMS_ENP",
+      "UIN",
+      "VIN"
+    ]
+  },
+  "checksum": {
+    "generated_checksum_types": 11,
+    "samples_valid": 11,
+    "all_samples_valid": true,
+    "rows": [
+      {
+        "id": "BANK_ACCOUNT",
+        "sample": "40602810700000000025",
+        "rule": "cbr515",
+        "valid": true
+      },
+      {
+        "id": "IBAN",
+        "sample": "RU0304452522540817810538091310419",
+        "rule": "mod97",
+        "valid": true
+      },
+      {
+        "id": "LOAN_UID",
+        "sample": "1dcf884c-5f2a-4b3e-9d7a-6c5b4e3f2a1d-c",
+        "rule": "uid",
+        "valid": true
+      },
+      {
+        "id": "OGRNIP",
+        "sample": "324770000123455",
+        "rule": "ogrnip",
+        "valid": true
+      },
+      {
+        "id": "OMS_ENP",
+        "sample": "7707536455681514",
+        "rule": "luhn",
+        "valid": true
+      },
+      {
+        "id": "VIN",
+        "sample": "XTAGFK330LY123456",
+        "rule": "iso3779",
+        "valid": true
+      },
+      {
+        "id": "EPTS_NUMBER",
+        "sample": "164301000000016",
+        "rule": "epts",
+        "valid": true
+      },
+      {
+        "id": "UIN",
+        "sample": "18810123456789012345",
+        "rule": "uin",
+        "valid": true
+      },
+      {
+        "id": "IMEI",
+        "sample": "260531793113837",
+        "rule": "luhn",
+        "valid": true
+      },
+      {
+        "id": "ICCID",
+        "sample": "8970102000000123458",
+        "rule": "luhn",
+        "valid": true
+      },
+      {
+        "id": "LOYALTY_CARD_NUMBER",
+        "sample": "376104250021234569",
+        "rule": "gs1",
+        "valid": true
+      }
+    ],
+    "v0_q2_hit_line": 0,
+    "v0_m8_hit_line": 0,
+    "q2_equals_m8_in_that_formula": true
+  },
+  "c0_demotion_guard": {
+    "guard_source_line": [
+      "if entity_type in _NUMERIC_KEY_TYPES and not any(c.isdigit() for c in value):"
+    ],
+    "guard_is_no_digits_only": true,
+    "note": "a value that CONTAINS a digit but is malformed is not covered by this guard"
+  },
+  "c0_in_memory_and_opaque": {
+    "test_loop_uses_memory_vault": true,
+    "sqlite_setup_handles_memory": true,
+    "opaque_is_deterministic_redaction": true,
+    "opaque_original_stored_in_tokens_table": true
+  },
+  "a1_nerel_version_refs_in_inventory": [
+    "inv[\"nerel\"] = summarize_nerel(CACHE / \"nerel/NEREL-v1.1\")"
+  ],
+  "a1_budget_arithmetic": {
+    "native_only_recomputed": 6600,
+    "native_only_declared": 6600,
+    "full_scope_recomputed": 8320,
+    "full_scope_declared": 8320,
+    "labeler_items_full_recomputed": 16640,
+    "support_floor_55x300": 16500,
+    "budget_covers_support_floor": false,
+    "note": "17.8-18.6k review items is a staged estimate; it is below the 16 500 positive units the 300/type floor implies before registers, PPV, negatives and cluster de-duplication"
+  },
+  "commands": [],
+  "exit": 0
+}
+OUTPUT_SHA256 f6731fae39819df040134f74482607dccc36f187ab8ab1a2b5142abff546c84e

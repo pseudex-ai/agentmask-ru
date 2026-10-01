@@ -1,0 +1,330 @@
+{
+ "task": "D0",
+ "created_utc": "2026-09-30T20:16:47Z",
+ "changed_files": [
+  {
+   "path": "research/quality-sprint-2026-09-30/work/D0/d0_arm_compare.py",
+   "bytes": 28785,
+   "sha256": "ce9f0ed63aad252ff28d92bb04fe6e33512cd3a187d439f12d26a2efd1d10c6d"
+  },
+  {
+   "path": "research/quality-sprint-2026-09-30/work/D0/SPEC.md",
+   "bytes": 13854,
+   "sha256": "86546350b4c3b9460cbc4f0d48fd8dffe47ac68ee2e411a406ef60496e654e2f"
+  },
+  {
+   "path": "research/quality-sprint-2026-09-30/work/D0/OPTIONS.md",
+   "bytes": 9615,
+   "sha256": "5476405028aead16b8df11200a8e6febe1815d8b52932771f5dc83e829f2c582"
+  },
+  {
+   "path": "research/quality-sprint-2026-09-30/work/D0/RUNBOOK-PERF.md",
+   "bytes": 7077,
+   "sha256": "f63f5171501607e31963cd7cf1ead7c1986a28d0366cb393126e42b77de1a562"
+  },
+  {
+   "path": "research/quality-sprint-2026-09-30/work/D0/MODEL-INVENTORY.json",
+   "bytes": 10154,
+   "sha256": "673f6e70fd24a4d26ed3db7ea26c9549852a6deb887abb80eedeb593cd1a5103"
+  },
+  {
+   "path": "research/quality-sprint-2026-09-30/work/D0/GATE.json",
+   "bytes": 4906,
+   "sha256": "07c7b7668bf22ea0b269c751d51b238d8a17f904e2c5a5946a0973bca231d4de"
+  },
+  {
+   "path": "research/quality-sprint-2026-09-30/work/D0/smoke.log",
+   "bytes": 3143,
+   "sha256": "dadfed9827d7cb3513e1acc54fdd7a2316ee6eaa4c7785640cd6023ef30c3399"
+  },
+  {
+   "path": "research/quality-sprint-2026-09-30/work/D0/verify_evidence.py",
+   "bytes": 6187,
+   "sha256": "cfd0c8118e5591f4e9bc7a14e528f43e9ead9262e03acf0952de31280a85e8c6"
+  },
+  {
+   "path": "research/quality-sprint-2026-09-30/work/D0/make_manifests.py",
+   "bytes": 12289,
+   "sha256": "8e93f438a119b233b2fc69670cb99979c4f0ec05d0dffb5529e7792825271d82"
+  },
+  {
+   "path": "research/quality-sprint-2026-09-30/work/D0/out/arm-results.json",
+   "bytes": 47285,
+   "sha256": "189a6e50efbfd3572d51f9243107e6220dffac2f3909e5f3e35135b74232fdfb"
+  },
+  {
+   "path": "research/quality-sprint-2026-09-30/work/D0/out/arm-summary.tsv",
+   "bytes": 7103,
+   "sha256": "8cd7dfa0197ae59d03b446ea13bb016981361916bfae85fe1dbe84c5d0984116"
+  },
+  {
+   "path": "research/quality-sprint-2026-09-30/work/D0/out/source-hashes.json",
+   "bytes": 17407,
+   "sha256": "73725f69bd2cebd113605358660b80ad152d9b9b759c0b163a705cef6428e8a6"
+  }
+ ],
+ "change_type": "new evidence only — no product, scorer, benchmark, licensing, wiki or corpus file changed",
+ "instrument_corrections": [
+  {
+   "defect": "occurrence rows counted instead of unique labelled keys",
+   "effect": "gate numerator/denominator inflated (320 gold, 634 rows)",
+   "fix": "dedupe by the instrument's own key (bench/gate/sheet.py:101)",
+   "evidence": "out/arm-results.json:gold_slices[gatectx].duplicate_rows_skipped"
+  },
+  {
+   "defect": "a prediction re-counted once per sibling occurrence in the same text",
+   "effect": "prediction-side FP counts inflated",
+   "fix": "gold items counted once per (span,type); predictions once per unique text",
+   "evidence": "harness docstring evaluate(); SPEC.md §4"
+  }
+ ],
+ "per_slice": {
+  "golden": {
+   "unit": "golden",
+   "gold_units": 298,
+   "population": "100 generated cases -> 298 unique (span,type) gold values",
+   "baseline_arm": "FULL (product path)",
+   "baseline_whole_same_type": "286/298",
+   "baseline_char_coverage": 0.9699,
+   "baseline_fp": {
+    "fp_other": 0,
+    "fp_place": 0,
+    "fp_public": 0,
+    "fp_declared": 0
+   },
+   "arms": {
+    "RULES_ONLY": {
+     "is_ablation": true,
+     "whole_same_type": "268/298",
+     "char_coverage": 0.9174,
+     "wrong_type": 12,
+     "miss": 18,
+     "pred": 270,
+     "fp": {
+      "fp_other": 0,
+      "fp_place": 0,
+      "fp_public": 0,
+      "fp_declared": 0
+     }
+    },
+    "HYBRID_UNION": {
+     "is_ablation": true,
+     "whole_same_type": "286/298",
+     "char_coverage": 0.9699,
+     "wrong_type": 12,
+     "miss": 0,
+     "pred": 288,
+     "fp": {
+      "fp_other": 0,
+      "fp_place": 0,
+      "fp_public": 0,
+      "fp_declared": 0
+     }
+    },
+    "RAW_NER": {
+     "is_ablation": true,
+     "whole_same_type": "85/298",
+     "char_coverage": 0.299,
+     "wrong_type": 0,
+     "miss": 200,
+     "pred": 98,
+     "fp": {
+      "fp_other": 0,
+      "fp_place": 0,
+      "fp_public": 0,
+      "fp_declared": 0
+     }
+    },
+    "RAW_NER_REGEX": {
+     "is_ablation": true,
+     "whole_same_type": "167/298",
+     "char_coverage": 0.5925,
+     "wrong_type": 25,
+     "miss": 93,
+     "pred": 233,
+     "fp": {
+      "fp_other": 0,
+      "fp_place": 0,
+      "fp_public": 0,
+      "fp_declared": 0
+     }
+    }
+   },
+   "unknowns": "no CI, no independence/cluster analysis, no approved acceptance protocol: these are diagnostic counts, not G7 acceptance"
+  },
+  "dirty": {
+   "unit": "dirty",
+   "gold_units": 134,
+   "population": "150 generated cases -> 134 unique gold values + 6 declared hard negatives",
+   "baseline_arm": "FULL (product path)",
+   "baseline_whole_same_type": "134/134",
+   "baseline_char_coverage": 1.0,
+   "baseline_fp": {
+    "fp_other": 0,
+    "fp_place": 0,
+    "fp_public": 0,
+    "fp_declared": 0
+   },
+   "arms": {
+    "RULES_ONLY": {
+     "is_ablation": true,
+     "whole_same_type": "134/134",
+     "char_coverage": 1.0,
+     "wrong_type": 0,
+     "miss": 0,
+     "pred": 134,
+     "fp": {
+      "fp_other": 0,
+      "fp_place": 0,
+      "fp_public": 0,
+      "fp_declared": 0
+     }
+    },
+    "HYBRID_UNION": {
+     "is_ablation": true,
+     "whole_same_type": "134/134",
+     "char_coverage": 1.0,
+     "wrong_type": 0,
+     "miss": 0,
+     "pred": 141,
+     "fp": {
+      "fp_other": 7,
+      "fp_place": 0,
+      "fp_public": 0,
+      "fp_declared": 0
+     }
+    },
+    "RAW_NER": {
+     "is_ablation": true,
+     "whole_same_type": "14/134",
+     "char_coverage": 0.0774,
+     "wrong_type": 0,
+     "miss": 118,
+     "pred": 23,
+     "fp": {
+      "fp_other": 7,
+      "fp_place": 0,
+      "fp_public": 0,
+      "fp_declared": 0
+     }
+    },
+    "RAW_NER_REGEX": {
+     "is_ablation": true,
+     "whole_same_type": "57/134",
+     "char_coverage": 0.4431,
+     "wrong_type": 41,
+     "miss": 34,
+     "pred": 126,
+     "fp": {
+      "fp_other": 7,
+      "fp_place": 0,
+      "fp_public": 0,
+      "fp_declared": 2
+     }
+    }
+   },
+   "unknowns": "no CI, no independence/cluster analysis, no approved acceptance protocol: these are diagnostic counts, not G7 acceptance"
+  },
+  "gatectx": {
+   "unit": "gatectx",
+   "gold_units": 295,
+   "population": "587 unique hand-labelled occurrences (295 must-mask, 292 must-not)",
+   "baseline_arm": "FULL (product path)",
+   "baseline_whole_same_type": "238/295",
+   "baseline_char_coverage": 0.8415,
+   "baseline_fp": {
+    "fp_other": 104,
+    "fp_place": 7,
+    "fp_public": 25,
+    "fp_declared": 0
+   },
+   "arms": {
+    "RULES_ONLY": {
+     "is_ablation": true,
+     "whole_same_type": "238/295",
+     "char_coverage": 0.8415,
+     "wrong_type": 3,
+     "miss": 54,
+     "pred": 372,
+     "fp": {
+      "fp_other": 104,
+      "fp_place": 7,
+      "fp_public": 25,
+      "fp_declared": 0
+     }
+    },
+    "HYBRID_UNION": {
+     "is_ablation": true,
+     "whole_same_type": "238/295",
+     "char_coverage": 0.8415,
+     "wrong_type": 3,
+     "miss": 54,
+     "pred": 372,
+     "fp": {
+      "fp_other": 104,
+      "fp_place": 7,
+      "fp_public": 25,
+      "fp_declared": 0
+     }
+    },
+    "RAW_NER": {
+     "is_ablation": true,
+     "whole_same_type": "0/295",
+     "char_coverage": 0.0,
+     "wrong_type": 0,
+     "miss": 295,
+     "pred": 1,
+     "fp": {
+      "fp_other": 1,
+      "fp_place": 0,
+      "fp_public": 0,
+      "fp_declared": 0
+     }
+    },
+    "RAW_NER_REGEX": {
+     "is_ablation": true,
+     "whole_same_type": "0/295",
+     "char_coverage": 0.0,
+     "wrong_type": 0,
+     "miss": 295,
+     "pred": 1,
+     "fp": {
+      "fp_other": 1,
+      "fp_place": 0,
+      "fp_public": 0,
+      "fp_declared": 0
+     }
+    }
+   },
+   "unknowns": "no CI, no independence/cluster analysis, no approved acceptance protocol: these are diagnostic counts, not G7 acceptance"
+  }
+ },
+ "evidence_mechanism_vs_measurement": {
+  "mechanism_evidence": "arm definitions (FULL = product path; RULES_ONLY = _ner_spans disabled subclass; RAW_NER = bare NewsNERTagger; HYBRID_UNION = union; RAW_NER_REGEX = bare NER + the naive regexes of bench/_baseline_independent.py) and the identical-input comparison performed by one harness",
+  "measurement": "counters in out/arm-results.json and out/arm-summary.tsv; timings are exploratory single-run numbers, not a p50/p95 and not an admission budget",
+  "causality": "NOT CLAIMED — an ablation difference on this gold is not a causal claim about production"
+ },
+ "population_and_exclusions": {
+  "excluded": "no paid run, no holdout, no external corpus; 2420 unlabelled gate occurrences skipped; 47 duplicate labelled rows deduped",
+  "unknown": [
+   "real-traffic precision",
+   "CI/support",
+   "p50/p95/RSS",
+   "licence of natasha's weights"
+  ],
+  "membership_delta": "none — D0 adds no corpus and changes no population"
+ },
+ "not_claimed": [
+  "architecture choice",
+  "production quality",
+  "causal effect of any component",
+  "raw Natasha as a replacement",
+  "p50/p95/RSS",
+  "entire-sprint quality green",
+  "paid or live GO",
+  "production artifact verified"
+ ],
+ "owner_gates": {
+  "O-DETECT": "OWNER_PENDING"
+ }
+}

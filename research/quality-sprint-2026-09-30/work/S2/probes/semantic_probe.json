@@ -1,0 +1,646 @@
+{
+  "counts": {
+    "any_span": 13,
+    "episodes": 26,
+    "masked_changed": 13,
+    "no_span": 13,
+    "redaction_marker_visible": 7,
+    "roundtrip_identical": 26
+  },
+  "engine_revision_expected": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+  "episodes": [
+    {
+      "attribute_digits_present": false,
+      "attribute_digits_survive_masked": false,
+      "dimension": "diagnosis",
+      "form": "named_person",
+      "id": "DX-01",
+      "masked": "Тихонову Илье Геннадьевичу диагностировали сахарный REDACTEDcc880a второго типа.",
+      "masked_changed": true,
+      "pair_role": "positive",
+      "redaction_marker_visible": true,
+      "restored": "Иванову Петру Сергеевичу диагностировали сахарный диабет второго типа.",
+      "roundtrip_identical": true,
+      "span_count": 2,
+      "spans": [
+        {
+          "end": 24,
+          "start": 0,
+          "surface": "Иванову Петру Сергеевичу",
+          "type": "NAME"
+        },
+        {
+          "end": 56,
+          "start": 50,
+          "surface": "диабет",
+          "type": "MEDICAL"
+        }
+      ],
+      "subject_present": true,
+      "text": "Иванову Петру Сергеевичу диагностировали сахарный диабет второго типа.",
+      "types": [
+        "MEDICAL",
+        "NAME"
+      ]
+    },
+    {
+      "attribute_digits_present": false,
+      "attribute_digits_survive_masked": false,
+      "dimension": "diagnosis",
+      "form": "indirect_reference",
+      "id": "DX-02",
+      "masked": "У него нашли REDACTED54d640-инфекцию, терапию начнём в понедельник.",
+      "masked_changed": true,
+      "pair_role": "positive",
+      "redaction_marker_visible": true,
+      "restored": "У него нашли ВИЧ-инфекцию, терапию начнём в понедельник.",
+      "roundtrip_identical": true,
+      "span_count": 1,
+      "spans": [
+        {
+          "end": 16,
+          "start": 13,
+          "surface": "ВИЧ",
+          "type": "MEDICAL"
+        }
+      ],
+      "subject_present": true,
+      "text": "У него нашли ВИЧ-инфекцию, терапию начнём в понедельник.",
+      "types": [
+        "MEDICAL"
+      ]
+    },
+    {
+      "attribute_digits_present": false,
+      "attribute_digits_survive_masked": false,
+      "dimension": "diagnosis",
+      "form": "record_field",
+      "id": "DX-03",
+      "masked": "{\"patient\": \"Якушев Э. Д.\", \"diagnosis\": \"сахарный REDACTEDcc880a\"}",
+      "masked_changed": true,
+      "pair_role": "positive",
+      "redaction_marker_visible": true,
+      "restored": "{\"patient\": \"Петров П.С.\", \"diagnosis\": \"сахарный диабет\"}",
+      "roundtrip_identical": true,
+      "span_count": 2,
+      "spans": [
+        {
+          "end": 24,
+          "start": 13,
+          "surface": "Петров П.С.",
+          "type": "NAME"
+        },
+        {
+          "end": 56,
+          "start": 50,
+          "surface": "диабет",
+          "type": "MEDICAL"
+        }
+      ],
+      "subject_present": true,
+      "text": "{\"patient\": \"Петров П.С.\", \"diagnosis\": \"сахарный диабет\"}",
+      "types": [
+        "MEDICAL",
+        "NAME"
+      ]
+    },
+    {
+      "attribute_digits_present": false,
+      "attribute_digits_survive_masked": false,
+      "dimension": "diagnosis",
+      "form": "generic_statement",
+      "id": "DX-04",
+      "masked": "В регионе выросла заболеваемость REDACTEDebeb53 среди взрослых.",
+      "masked_changed": true,
+      "pair_role": "negative",
+      "redaction_marker_visible": true,
+      "restored": "В регионе выросла заболеваемость диабетом среди взрослых.",
+      "roundtrip_identical": true,
+      "span_count": 1,
+      "spans": [
+        {
+          "end": 41,
+          "start": 33,
+          "surface": "диабетом",
+          "type": "MEDICAL"
+        }
+      ],
+      "subject_present": false,
+      "text": "В регионе выросла заболеваемость диабетом среди взрослых.",
+      "types": [
+        "MEDICAL"
+      ]
+    },
+    {
+      "attribute_digits_present": false,
+      "attribute_digits_survive_masked": false,
+      "dimension": "diagnosis",
+      "form": "multiple_persons",
+      "id": "DX-05",
+      "masked": "Белых поставили диагноз REDACTEDf96b24, а Уварову — REDACTED0d3659.",
+      "masked_changed": true,
+      "pair_role": "positive",
+      "redaction_marker_visible": true,
+      "restored": "Петрову поставили диагноз астма, а Сидорову — гипертония.",
+      "roundtrip_identical": true,
+      "span_count": 4,
+      "spans": [
+        {
+          "end": 7,
+          "start": 0,
+          "surface": "Петрову",
+          "type": "NAME"
+        },
+        {
+          "end": 31,
+          "start": 26,
+          "surface": "астма",
+          "type": "MEDICAL"
+        },
+        {
+          "end": 43,
+          "start": 35,
+          "surface": "Сидорову",
+          "type": "NAME"
+        },
+        {
+          "end": 56,
+          "start": 46,
+          "surface": "гипертония",
+          "type": "MEDICAL"
+        }
+      ],
+      "subject_present": true,
+      "text": "Петрову поставили диагноз астма, а Сидорову — гипертония.",
+      "types": [
+        "MEDICAL",
+        "NAME"
+      ]
+    },
+    {
+      "attribute_digits_present": false,
+      "attribute_digits_survive_masked": false,
+      "dimension": "diagnosis",
+      "form": "lexical_control",
+      "id": "DX-06",
+      "masked": "Ракета-носитель стартовала по расписанию, гипертекст документа открылся.",
+      "masked_changed": false,
+      "pair_role": "negative",
+      "redaction_marker_visible": false,
+      "restored": "Ракета-носитель стартовала по расписанию, гипертекст документа открылся.",
+      "roundtrip_identical": true,
+      "span_count": 0,
+      "spans": [],
+      "subject_present": false,
+      "text": "Ракета-носитель стартовала по расписанию, гипертекст документа открылся.",
+      "types": []
+    },
+    {
+      "attribute_digits_present": true,
+      "attribute_digits_survive_masked": true,
+      "dimension": "salary",
+      "form": "named_person",
+      "id": "SAL-01",
+      "masked": "Рыбаковой Стелле начислили зарплату 185 000 рублей за август.",
+      "masked_changed": true,
+      "pair_role": "positive",
+      "redaction_marker_visible": false,
+      "restored": "Смирновой Ольге начислили зарплату 185 000 рублей за август.",
+      "roundtrip_identical": true,
+      "span_count": 1,
+      "spans": [
+        {
+          "end": 15,
+          "start": 0,
+          "surface": "Смирновой Ольге",
+          "type": "NAME"
+        }
+      ],
+      "subject_present": true,
+      "text": "Смирновой Ольге начислили зарплату 185 000 рублей за август.",
+      "types": [
+        "NAME"
+      ]
+    },
+    {
+      "attribute_digits_present": true,
+      "attribute_digits_survive_masked": true,
+      "dimension": "salary",
+      "form": "record_field",
+      "id": "SAL-02",
+      "masked": "доход: 185000 руб/мес",
+      "masked_changed": false,
+      "pair_role": "positive",
+      "redaction_marker_visible": false,
+      "restored": "доход: 185000 руб/мес",
+      "roundtrip_identical": true,
+      "span_count": 0,
+      "spans": [],
+      "subject_present": true,
+      "text": "доход: 185000 руб/мес",
+      "types": []
+    },
+    {
+      "attribute_digits_present": true,
+      "attribute_digits_survive_masked": true,
+      "dimension": "salary",
+      "form": "generic_statement",
+      "id": "SAL-03",
+      "masked": "Средняя зарплата в отрасли — 185 000 рублей.",
+      "masked_changed": false,
+      "pair_role": "negative",
+      "redaction_marker_visible": false,
+      "restored": "Средняя зарплата в отрасли — 185 000 рублей.",
+      "roundtrip_identical": true,
+      "span_count": 0,
+      "spans": [],
+      "subject_present": false,
+      "text": "Средняя зарплата в отрасли — 185 000 рублей.",
+      "types": []
+    },
+    {
+      "attribute_digits_present": true,
+      "attribute_digits_survive_masked": true,
+      "dimension": "salary",
+      "form": "non_pii_amount",
+      "id": "SAL-04",
+      "masked": "Сумма заказа 185 000 рублей, оплата по счёту.",
+      "masked_changed": false,
+      "pair_role": "negative",
+      "redaction_marker_visible": false,
+      "restored": "Сумма заказа 185 000 рублей, оплата по счёту.",
+      "roundtrip_identical": true,
+      "span_count": 0,
+      "spans": [],
+      "subject_present": false,
+      "text": "Сумма заказа 185 000 рублей, оплата по счёту.",
+      "types": []
+    },
+    {
+      "attribute_digits_present": true,
+      "attribute_digits_survive_masked": true,
+      "dimension": "salary",
+      "form": "multiple_persons",
+      "id": "SAL-05",
+      "masked": "Мкртчян получает 90 000, а Гончарук — 210 000 рублей в месяц.",
+      "masked_changed": true,
+      "pair_role": "positive",
+      "redaction_marker_visible": false,
+      "restored": "Петров получает 90 000, а Сидорова — 210 000 рублей в месяц.",
+      "roundtrip_identical": true,
+      "span_count": 2,
+      "spans": [
+        {
+          "end": 6,
+          "start": 0,
+          "surface": "Петров",
+          "type": "NAME"
+        },
+        {
+          "end": 34,
+          "start": 26,
+          "surface": "Сидорова",
+          "type": "NAME"
+        }
+      ],
+      "subject_present": true,
+      "text": "Петров получает 90 000, а Сидорова — 210 000 рублей в месяц.",
+      "types": [
+        "NAME"
+      ]
+    },
+    {
+      "attribute_digits_present": false,
+      "attribute_digits_survive_masked": false,
+      "dimension": "salary",
+      "form": "indirect_reference",
+      "id": "SAL-06",
+      "masked": "Ей задержали выплату за июль.",
+      "masked_changed": false,
+      "pair_role": "positive",
+      "redaction_marker_visible": false,
+      "restored": "Ей задержали выплату за июль.",
+      "roundtrip_identical": true,
+      "span_count": 0,
+      "spans": [],
+      "subject_present": true,
+      "text": "Ей задержали выплату за июль.",
+      "types": []
+    },
+    {
+      "attribute_digits_present": true,
+      "attribute_digits_survive_masked": true,
+      "dimension": "salary",
+      "form": "record_field",
+      "id": "SAL-07",
+      "masked": "Справка 2-НДФЛ: доход за год 2 220 000 руб.",
+      "masked_changed": false,
+      "pair_role": "positive",
+      "redaction_marker_visible": false,
+      "restored": "Справка 2-НДФЛ: доход за год 2 220 000 руб.",
+      "roundtrip_identical": true,
+      "span_count": 0,
+      "spans": [],
+      "subject_present": true,
+      "text": "Справка 2-НДФЛ: доход за год 2 220 000 руб.",
+      "types": []
+    },
+    {
+      "attribute_digits_present": true,
+      "attribute_digits_survive_masked": true,
+      "dimension": "conviction",
+      "form": "named_person",
+      "id": "CON-01",
+      "masked": "Фролов осуждён по статье 159 УК РФ на три года условно.",
+      "masked_changed": true,
+      "pair_role": "positive",
+      "redaction_marker_visible": false,
+      "restored": "Сидоров осуждён по статье 159 УК РФ на три года условно.",
+      "roundtrip_identical": true,
+      "span_count": 1,
+      "spans": [
+        {
+          "end": 7,
+          "start": 0,
+          "surface": "Сидоров",
+          "type": "NAME"
+        }
+      ],
+      "subject_present": true,
+      "text": "Сидоров осуждён по статье 159 УК РФ на три года условно.",
+      "types": [
+        "NAME"
+      ]
+    },
+    {
+      "attribute_digits_present": true,
+      "attribute_digits_survive_masked": true,
+      "dimension": "conviction",
+      "form": "record_field",
+      "id": "CON-02",
+      "masked": "судимость: имеется, ст. 159 ч. 2 УК РФ",
+      "masked_changed": false,
+      "pair_role": "positive",
+      "redaction_marker_visible": false,
+      "restored": "судимость: имеется, ст. 159 ч. 2 УК РФ",
+      "roundtrip_identical": true,
+      "span_count": 0,
+      "spans": [],
+      "subject_present": true,
+      "text": "судимость: имеется, ст. 159 ч. 2 УК РФ",
+      "types": []
+    },
+    {
+      "attribute_digits_present": true,
+      "attribute_digits_survive_masked": true,
+      "dimension": "conviction",
+      "form": "generic_statement",
+      "id": "CON-03",
+      "masked": "Суд рассмотрел дело по статье 159 УК РФ.",
+      "masked_changed": false,
+      "pair_role": "negative",
+      "redaction_marker_visible": false,
+      "restored": "Суд рассмотрел дело по статье 159 УК РФ.",
+      "roundtrip_identical": true,
+      "span_count": 0,
+      "spans": [],
+      "subject_present": false,
+      "text": "Суд рассмотрел дело по статье 159 УК РФ.",
+      "types": []
+    },
+    {
+      "attribute_digits_present": false,
+      "attribute_digits_survive_masked": false,
+      "dimension": "conviction",
+      "form": "indirect_reference",
+      "id": "CON-04",
+      "masked": "Его судимость погашена в прошлом году.",
+      "masked_changed": false,
+      "pair_role": "positive",
+      "redaction_marker_visible": false,
+      "restored": "Его судимость погашена в прошлом году.",
+      "roundtrip_identical": true,
+      "span_count": 0,
+      "spans": [],
+      "subject_present": true,
+      "text": "Его судимость погашена в прошлом году.",
+      "types": []
+    },
+    {
+      "attribute_digits_present": true,
+      "attribute_digits_survive_masked": true,
+      "dimension": "debt",
+      "form": "named_person",
+      "id": "DEB-01",
+      "masked": "Савченко должен банку 450 000 рублей по кредиту.",
+      "masked_changed": true,
+      "pair_role": "positive",
+      "redaction_marker_visible": false,
+      "restored": "Иванов должен банку 450 000 рублей по кредиту.",
+      "roundtrip_identical": true,
+      "span_count": 1,
+      "spans": [
+        {
+          "end": 6,
+          "start": 0,
+          "surface": "Иванов",
+          "type": "NAME"
+        }
+      ],
+      "subject_present": true,
+      "text": "Иванов должен банку 450 000 рублей по кредиту.",
+      "types": [
+        "NAME"
+      ]
+    },
+    {
+      "attribute_digits_present": true,
+      "attribute_digits_survive_masked": true,
+      "dimension": "debt",
+      "form": "record_field",
+      "id": "DEB-02",
+      "masked": "задолженность: 450000 руб.",
+      "masked_changed": false,
+      "pair_role": "positive",
+      "redaction_marker_visible": false,
+      "restored": "задолженность: 450000 руб.",
+      "roundtrip_identical": true,
+      "span_count": 0,
+      "spans": [],
+      "subject_present": true,
+      "text": "задолженность: 450000 руб.",
+      "types": []
+    },
+    {
+      "attribute_digits_present": true,
+      "attribute_digits_survive_masked": true,
+      "dimension": "debt",
+      "form": "legal_person",
+      "id": "DEB-03",
+      "masked": "Задолженность ООО «Заря» перед поставщиком 450 000 рублей.",
+      "masked_changed": false,
+      "pair_role": "negative",
+      "redaction_marker_visible": false,
+      "restored": "Задолженность ООО «Заря» перед поставщиком 450 000 рублей.",
+      "roundtrip_identical": true,
+      "span_count": 0,
+      "spans": [],
+      "subject_present": false,
+      "text": "Задолженность ООО «Заря» перед поставщиком 450 000 рублей.",
+      "types": []
+    },
+    {
+      "attribute_digits_present": true,
+      "attribute_digits_survive_masked": true,
+      "dimension": "debt",
+      "form": "generic_statement",
+      "id": "DEB-04",
+      "masked": "Общий долг домохозяйств вырос на 3%.",
+      "masked_changed": false,
+      "pair_role": "negative",
+      "redaction_marker_visible": false,
+      "restored": "Общий долг домохозяйств вырос на 3%.",
+      "roundtrip_identical": true,
+      "span_count": 0,
+      "spans": [],
+      "subject_present": false,
+      "text": "Общий долг домохозяйств вырос на 3%.",
+      "types": []
+    },
+    {
+      "attribute_digits_present": false,
+      "attribute_digits_survive_masked": false,
+      "dimension": "debt",
+      "form": "indirect_reference",
+      "id": "DEB-05",
+      "masked": "У неё просрочка по трём займам.",
+      "masked_changed": false,
+      "pair_role": "positive",
+      "redaction_marker_visible": false,
+      "restored": "У неё просрочка по трём займам.",
+      "roundtrip_identical": true,
+      "span_count": 0,
+      "spans": [],
+      "subject_present": true,
+      "text": "У неё просрочка по трём займам.",
+      "types": []
+    },
+    {
+      "attribute_digits_present": true,
+      "attribute_digits_survive_masked": false,
+      "dimension": "control",
+      "form": "existing_capability",
+      "id": "CTL-01",
+      "masked": "Юдина Святослава Андреевича, он 01.12.1992, запишите к неврологу.",
+      "masked_changed": true,
+      "pair_role": "positive",
+      "redaction_marker_visible": false,
+      "restored": "Букина Сергея Ивановича, он 19.12.1992, запишите к неврологу.",
+      "roundtrip_identical": true,
+      "span_count": 2,
+      "spans": [
+        {
+          "end": 23,
+          "start": 0,
+          "surface": "Букина Сергея Ивановича",
+          "type": "NAME"
+        },
+        {
+          "end": 38,
+          "start": 28,
+          "surface": "19.12.1992",
+          "type": "DOB"
+        }
+      ],
+      "subject_present": true,
+      "text": "Букина Сергея Ивановича, он 19.12.1992, запишите к неврологу.",
+      "types": [
+        "DOB",
+        "NAME"
+      ]
+    },
+    {
+      "attribute_digits_present": true,
+      "attribute_digits_survive_masked": false,
+      "dimension": "control",
+      "form": "existing_capability",
+      "id": "CTL-02",
+      "masked": "мой телефон +7 979 910-33-34",
+      "masked_changed": true,
+      "pair_role": "positive",
+      "redaction_marker_visible": false,
+      "restored": "мой телефон +7 999 123-45-67",
+      "roundtrip_identical": true,
+      "span_count": 1,
+      "spans": [
+        {
+          "end": 28,
+          "start": 12,
+          "surface": "+7 999 123-45-67",
+          "type": "PHONE"
+        }
+      ],
+      "subject_present": true,
+      "text": "мой телефон +7 999 123-45-67",
+      "types": [
+        "PHONE"
+      ]
+    },
+    {
+      "attribute_digits_present": true,
+      "attribute_digits_survive_masked": false,
+      "dimension": "control",
+      "form": "existing_capability",
+      "id": "CTL-03",
+      "masked": "клиенту REDACTED8ed57c",
+      "masked_changed": true,
+      "pair_role": "positive",
+      "redaction_marker_visible": true,
+      "restored": "клиенту 95 лет",
+      "roundtrip_identical": true,
+      "span_count": 1,
+      "spans": [
+        {
+          "end": 14,
+          "start": 8,
+          "surface": "95 лет",
+          "type": "AGE"
+        }
+      ],
+      "subject_present": true,
+      "text": "клиенту 95 лет",
+      "types": [
+        "AGE"
+      ]
+    },
+    {
+      "attribute_digits_present": false,
+      "attribute_digits_survive_masked": false,
+      "dimension": "control",
+      "form": "existing_capability",
+      "id": "CTL-04",
+      "masked": "диагноз сахарный REDACTEDcc880a",
+      "masked_changed": true,
+      "pair_role": "positive",
+      "redaction_marker_visible": true,
+      "restored": "диагноз сахарный диабет",
+      "roundtrip_identical": true,
+      "span_count": 1,
+      "spans": [
+        {
+          "end": 23,
+          "start": 17,
+          "surface": "диабет",
+          "type": "MEDICAL"
+        }
+      ],
+      "subject_present": false,
+      "text": "диагноз сахарный диабет",
+      "types": [
+        "MEDICAL"
+      ]
+    }
+  ],
+  "fixture": "work/S2/EPISODES.jsonl",
+  "harness": "work/S2/probes/semantic_probe.py"
+}

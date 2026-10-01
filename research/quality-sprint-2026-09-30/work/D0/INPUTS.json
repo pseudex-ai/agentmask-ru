@@ -1,0 +1,351 @@
+{
+ "task": "D0",
+ "title": "Comparable detector-mechanism experiment (isolated research harness)",
+ "created_utc": "2026-09-30T20:16:47Z",
+ "root": "/Users/igor/Projects/Obscura-hop-audit",
+ "parent_gates": {
+  "B0_G1": "PASS — local source/WIP/run/runtime scope only",
+  "B0_evidence": [
+   "work/B0/GATE.json",
+   "work/B0/REVIEW.md",
+   "work/B0/INPUTS.json",
+   "work/B0/RUNTIME.json"
+  ],
+  "B0_production_digest": "NOT_VERIFIED (unchanged by D0)"
+ },
+ "authorization": {
+  "first_wave_task": "work/FIRST-WAVE-TASKS.json:id=D0",
+  "plan_rows": [
+   "SPRINT-PLAN.md §6 D0",
+   "SPRINT-PLAN.md §7 G3",
+   "GOAL-BRIEF.md §9 O-DETECT",
+   "GOAL-BRIEF.md P15, P17"
+  ],
+  "owner_decisions": {
+   "Q4": "compare variants allowed; the choice is the owner's",
+   "block4": "best proven quality; real resource cost shown before adoption"
+  },
+  "write_scope": "research/quality-sprint-2026-09-30/work/D0/",
+  "forbidden_and_honoured": [
+   "no model download / install",
+   "no provider or production call",
+   "no PII to external inference",
+   "no engine/scorer/benchmark/licensing edit",
+   "no git reset/stash/revert or checkout",
+   "no holdout read",
+   "no paid-run directory read",
+   "no broad secret-path search"
+  ]
+ },
+ "model_routing": {
+  "requested_provider": "deepseek-official",
+  "requested_model": "deepseek-flash",
+  "effective_model": "NOT_AVAILABLE_FROM_RUNTIME",
+  "note": "runtime routing metadata was not exposed to this agent; no self-identity attestation is made and no other model name is claimed"
+ },
+ "revision": {
+  "head": "890c50849a326f882eac336ba4e38c91171de473",
+  "head_note": "evidence-only commit; product source remains pinned",
+  "product_source_pin": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+  "branch": "research/hop-format-audit",
+  "v6_ref": "fad9c7466ea1221282214e6c747ca373ee7e6a55"
+ },
+ "runtime": {
+  "python": "3.12.12 | packaged by conda-forge | (main, Oct 22 2025, 23:34:53) [Clang 19.1.7 ]",
+  "executable": "/Users/igor/Projects/Obscura-hop-audit/prototype/.venv/bin/python",
+  "platform": "macOS-26.6.2-arm64-arm-64bit",
+  "PYTHONDONTWRITEBYTECODE": "1",
+  "libraries": {
+   "natasha": "1.6.0",
+   "navec": "0.10.0",
+   "slovnet": "0.6.0",
+   "pymorphy3": "2.0.6",
+   "phonenumbers": "9.0.40",
+   "numpy": "2.5.3",
+   "razdel": "0.5.0",
+   "yargy": "0.16.0",
+   "ipymarkup": "0.9.0",
+   "sqlcipher3": "0.6.2"
+  },
+  "installed_ner_capable": {
+   "natasha": {
+    "installed": true
+   },
+   "slovnet": {
+    "installed": true
+   },
+   "razdel": {
+    "installed": true
+   },
+   "yargy": {
+    "installed": true
+   },
+   "spacy": {
+    "installed": false
+   },
+   "transformers": {
+    "installed": false
+   },
+   "torch": {
+    "installed": false
+   },
+   "deeppavlov": {
+    "installed": false
+   },
+   "stanza": {
+    "installed": false
+   },
+   "flair": {
+    "installed": false
+   }
+  },
+  "dev_bundle": "testkit.load_dev_bundle() in process, nothing written to disk"
+ },
+ "bundle": {
+  "version": "2a07cebae2b050ec",
+  "bytes": 1524582,
+  "sha256": "01c19f4689450b54694b7aaa4070cbaf695efc3e98f0b59471486392a0348206",
+  "written_to_disk": false,
+  "org_id": "",
+  "watermark": "",
+  "vs_B0_RUNTIME": {
+   "version_match": true,
+   "sha256_match": true,
+   "bytes_match": true
+  }
+ },
+ "identity_cross_checks": {
+  "source_pin_check_vs_B0": {
+   "compared": 63,
+   "match": 63,
+   "drift": [],
+   "not_in_B0": [
+    "prototype/testkit.py",
+    "prototype/make_dataset.py",
+    "prototype/make_dirty.py",
+    "prototype/bench/_baseline_independent.py",
+    "prototype/bench/gate/extract.py",
+    "prototype/bench/gate/sheet.py"
+   ]
+  },
+  "note": "63 hashed prototype/pseudex/*.py + prototype/licensing/*.py modules match work/B0/INPUTS.json pins; drift 0",
+  "dictionaries": [
+   {
+    "path": "/Users/igor/Projects/Obscura-hop-audit/prototype/licensing/data/first_names.txt",
+    "exists": true,
+    "bytes": 415777,
+    "sha256": "af36a608c08fd3005c4c59325261fed13465d526fb66ab15d4dd82097d453d12"
+   },
+   {
+    "path": "/Users/igor/Projects/Obscura-hop-audit/prototype/licensing/data/gar_streets.tsv",
+    "exists": true,
+    "bytes": 4606010,
+    "sha256": "66ba875f6d1595e008440f515b15f8e639fc99b35863f1057e2ec87469b10852"
+   },
+   {
+    "path": "/Users/igor/Projects/Obscura-hop-audit/prototype/licensing/data/gar_types.json",
+    "exists": true,
+    "bytes": 125042,
+    "sha256": "e63225c35d36743745863f7bfab294f431311377f0d5e02f45ddb4fe4d4426d3"
+   },
+   {
+    "path": "/Users/igor/Projects/Obscura-hop-audit/prototype/licensing/data/surnames.txt",
+    "exists": true,
+    "bytes": 3384288,
+    "sha256": "03256d70bc9422b619ca64c84274b1fac951f3f9c491c0dc88468322516a4a1a"
+   }
+  ]
+ },
+ "gold_inputs": {
+  "slices": [
+   {
+    "slice": "golden",
+    "file": {
+     "path": "/Users/igor/Projects/Obscura-hop-audit/prototype/dataset.json",
+     "exists": true,
+     "bytes": 39980,
+     "sha256": "82901b0fbbb1867ab9f090dc58f2e47041fee6d26ccbd250d72050dc1cfa929d"
+    },
+    "cases": 100,
+    "unresolved_gold_values": 0
+   },
+   {
+    "slice": "dirty",
+    "file": {
+     "path": "/Users/igor/Projects/Obscura-hop-audit/prototype/dirty.json",
+     "exists": true,
+     "bytes": 32233,
+     "sha256": "970c4ab21617db94062f5064e56d646e81e05ede5da60ce6da43cf311b8eb1c2"
+    },
+    "cases": 150,
+    "unresolved_gold_values": 0
+   },
+   {
+    "slice": "gatectx",
+    "file": {
+     "path": "/Users/igor/.cache/pseudex-bench/gate_candidates.json",
+     "exists": true,
+     "bytes": 599880,
+     "sha256": "508bf6de4d4ae5756bebca927fdcaf78549fc401c71c720f4702bfbe1e7a0c5f"
+    },
+    "labels_file": {
+     "path": "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/gate/labels.json",
+     "exists": true,
+     "bytes": 17401,
+     "sha256": "d2133f5d45555fadd24d97a9ca869970eef29db32745d911dc32345456cdcfbc"
+    },
+    "occurrences_total": 3054,
+    "labelled_used": 587,
+    "unlabelled_skipped": 2420,
+    "duplicate_rows_skipped": 47,
+    "label_counts": {
+     "person": 271,
+     "other": 209,
+     "place": 26,
+     "address": 24,
+     "public": 57
+    }
+   }
+  ],
+  "files_hashed": [
+   {
+    "path": "/Users/igor/Projects/Obscura-hop-audit/prototype/dataset.json",
+    "exists": true,
+    "bytes": 39980,
+    "sha256": "82901b0fbbb1867ab9f090dc58f2e47041fee6d26ccbd250d72050dc1cfa929d"
+   },
+   {
+    "path": "/Users/igor/Projects/Obscura-hop-audit/prototype/dirty.json",
+    "exists": true,
+    "bytes": 32233,
+    "sha256": "970c4ab21617db94062f5064e56d646e81e05ede5da60ce6da43cf311b8eb1c2"
+   },
+   {
+    "path": "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/gate/labels.json",
+    "exists": true,
+    "bytes": 17401,
+    "sha256": "d2133f5d45555fadd24d97a9ca869970eef29db32745d911dc32345456cdcfbc"
+   },
+   {
+    "path": "/Users/igor/.cache/pseudex-bench/gate_candidates.json",
+    "exists": true,
+    "bytes": 599880,
+    "sha256": "508bf6de4d4ae5756bebca927fdcaf78549fc401c71c720f4702bfbe1e7a0c5f"
+   }
+  ],
+  "holdout": {
+   "file_present": false,
+   "used": false,
+   "note": "known-diagnostic slices only; no holdout read"
+  },
+  "corpus_text_retention": "no corpus or holdout text is stored in D0 outputs; arm-results.json holds only counters and spans of this agent's own synthetic control strings"
+ },
+ "commands": [
+  {
+   "cmd": "prototype/.venv/bin/python -m py_compile work/D0/d0_arm_compare.py",
+   "exit": 1,
+   "outcome": "SyntaxError in the first draft; fixed before any measurement"
+  },
+  {
+   "cmd": "... d0_arm_compare.py --max-cases 5 --out work/D0/out_check",
+   "exit": 0,
+   "outcome": "bounded sanity; controls passed; out_check removed"
+  },
+  {
+   "cmd": "... d0_arm_compare.py --out work/D0/out (pre-dedupe instrument)",
+   "exit": 0,
+   "outcome": "overwritten; its counting unit was wrong (see DELTA.json)"
+  },
+  {
+   "cmd": "... d0_arm_compare.py --out work/D0/out (deduped instrument)",
+   "exit": 0,
+   "outcome": "overwritten by the final run after the pin-check widening"
+  },
+  {
+   "cmd": "cd prototype && PYTHONDONTWRITEBYTECODE=1 .venv/bin/python ../research/quality-sprint-2026-09-30/work/D0/d0_arm_compare.py --out ../research/quality-sprint-2026-09-30/work/D0/out",
+   "exit": 0,
+   "log": "work/D0/smoke.log",
+   "outcome": "final run retained; 791 unique texts x 5 arms; controls passed"
+  }
+ ],
+ "outputs": {
+  "d0_arm_compare.py": {
+   "path": "research/quality-sprint-2026-09-30/work/D0/d0_arm_compare.py",
+   "bytes": 28785,
+   "sha256": "ce9f0ed63aad252ff28d92bb04fe6e33512cd3a187d439f12d26a2efd1d10c6d"
+  },
+  "SPEC.md": {
+   "path": "research/quality-sprint-2026-09-30/work/D0/SPEC.md",
+   "bytes": 13854,
+   "sha256": "86546350b4c3b9460cbc4f0d48fd8dffe47ac68ee2e411a406ef60496e654e2f"
+  },
+  "OPTIONS.md": {
+   "path": "research/quality-sprint-2026-09-30/work/D0/OPTIONS.md",
+   "bytes": 9615,
+   "sha256": "5476405028aead16b8df11200a8e6febe1815d8b52932771f5dc83e829f2c582"
+  },
+  "RUNBOOK-PERF.md": {
+   "path": "research/quality-sprint-2026-09-30/work/D0/RUNBOOK-PERF.md",
+   "bytes": 7077,
+   "sha256": "f63f5171501607e31963cd7cf1ead7c1986a28d0366cb393126e42b77de1a562"
+  },
+  "MODEL-INVENTORY.json": {
+   "path": "research/quality-sprint-2026-09-30/work/D0/MODEL-INVENTORY.json",
+   "bytes": 10154,
+   "sha256": "673f6e70fd24a4d26ed3db7ea26c9549852a6deb887abb80eedeb593cd1a5103"
+  },
+  "GATE.json": {
+   "path": "research/quality-sprint-2026-09-30/work/D0/GATE.json",
+   "bytes": 4906,
+   "sha256": "07c7b7668bf22ea0b269c751d51b238d8a17f904e2c5a5946a0973bca231d4de"
+  },
+  "smoke.log": {
+   "path": "research/quality-sprint-2026-09-30/work/D0/smoke.log",
+   "bytes": 3143,
+   "sha256": "dadfed9827d7cb3513e1acc54fdd7a2316ee6eaa4c7785640cd6023ef30c3399"
+  },
+  "verify_evidence.py": {
+   "path": "research/quality-sprint-2026-09-30/work/D0/verify_evidence.py",
+   "bytes": 6187,
+   "sha256": "cfd0c8118e5591f4e9bc7a14e528f43e9ead9262e03acf0952de31280a85e8c6"
+  },
+  "make_manifests.py": {
+   "path": "research/quality-sprint-2026-09-30/work/D0/make_manifests.py",
+   "bytes": 12289,
+   "sha256": "8e93f438a119b233b2fc69670cb99979c4f0ec05d0dffb5529e7792825271d82"
+  },
+  "out/arm-results.json": {
+   "path": "research/quality-sprint-2026-09-30/work/D0/out/arm-results.json",
+   "bytes": 47285,
+   "sha256": "189a6e50efbfd3572d51f9243107e6220dffac2f3909e5f3e35135b74232fdfb"
+  },
+  "out/arm-summary.tsv": {
+   "path": "research/quality-sprint-2026-09-30/work/D0/out/arm-summary.tsv",
+   "bytes": 7103,
+   "sha256": "8cd7dfa0197ae59d03b446ea13bb016981361916bfae85fe1dbe84c5d0984116"
+  },
+  "out/source-hashes.json": {
+   "path": "research/quality-sprint-2026-09-30/work/D0/out/source-hashes.json",
+   "bytes": 17407,
+   "sha256": "73725f69bd2cebd113605358660b80ad152d9b9b759c0b163a705cef6428e8a6"
+  }
+ },
+ "outputs_note": "verify.log is present but not hash-listed because it is the output of the self-check that validates this hash list",
+ "scope_compliance": {
+  "files_written_outside_work_D0": [],
+  "git_status_product_paths": "empty (verified with git status --porcelain on prototype/pseudex, prototype/licensing, testkit.py, dataset.json, dirty.json, bench/gate, bench/_baseline_independent.py)",
+  "engine_source_modified": false,
+  "scorer_or_benchmark_modified": false
+ },
+ "limits": [
+  "single host, possibly shared with other sprint tasks: timings are exploratory, NOT a p50/p95/RSS admission budget",
+  "golden/dirty are our own generated sets; gatectx labels are ours; none of them measures real-traffic precision",
+  "RAW_NER/HYBRID_UNION/RULES_ONLY are ablations on this gold, not candidate mechanisms and not evidence of a causal effect",
+  "no production artifact, container, lease server or provider call"
+ ],
+ "production_digest": "NOT_VERIFIED",
+ "paid_runs_authorized": false,
+ "owner_gates": {
+  "O-DETECT": "OWNER_PENDING"
+ }
+}

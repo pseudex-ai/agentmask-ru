@@ -85,3 +85,7 @@ prototype/bench/agentpii3/corpus.json
 deploy/.local-env.sh
 deploy/.env.seller
 .DS_Store
+
+# Приватный локальный чекпойнт спринта качества: содержит PII/credentials evidence,
+# не публикуется и не коммитится.
+research/quality-sprint-2026-09-30/work/B0/private-wip-checkpoint.tar.gz

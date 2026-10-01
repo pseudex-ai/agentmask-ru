@@ -1,0 +1,103 @@
+{
+  "task": "M1b",
+  "revision": "revision-2",
+  "kind": "corrected design/RED evidence; no product or benchmark patch",
+  "write_scope": "research/quality-sprint-2026-09-30/work/M1b/revision-2/ only",
+  "routing": {
+    "provider_requested": "deepseek-official",
+    "model_requested": "deepseek-flash",
+    "mechanism": "explicit delegation override per GOAL-BRIEF §6 and FIRST-WAVE-SCOPES",
+    "effective_routing_metadata": "NOT_AVAILABLE to this process; no effective model claimed",
+    "self_identity_attestation": false,
+    "external_calls_made": 0,
+    "paid_benchmark_calls_made": 0,
+    "provider_or_production_calls": 0
+  },
+  "runtime": {
+    "interpreter": "/Users/igor/Projects/Obscura-hop-audit/prototype/.venv/bin/python",
+    "python": "3.12.12",
+    "cwd_for_execution": "prototype",
+    "env": {
+      "PYTHONDONTWRITEBYTECODE": "1"
+    },
+    "bundle_load": "testkit.load_dev_bundle() before any bounded engine probe",
+    "network": "none",
+    "installs_or_downloads": "none",
+    "git_mutations": "none"
+  },
+  "git": {
+    "head": "8a808ca70a13b3b19b28d60c6746c443bec01ea0",
+    "product_pinned": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "branch": "research/hop-format-audit",
+    "declared_parent_m1a_changes": [
+      "prototype/bench/agentpii5/answer_restoration.py",
+      "prototype/bench/agentpii5/test_answer_restoration.py"
+    ],
+    "declared_parent_note": "these two files are the parent's concurrent M1a v2-dev work; revision-2 does not attribute them to any other agent and does not write to them"
+  },
+  "inputs_read": [
+    "research/quality-sprint-2026-09-30/GOAL-BRIEF.md",
+    "research/quality-sprint-2026-09-30/OWNER-DECISIONS.md",
+    "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md",
+    "research/quality-sprint-2026-09-30/EXECUTION.json",
+    "research/quality-sprint-2026-09-30/SPRINT-PLAN.md",
+    "research/quality-sprint-2026-09-30/work/review-critical/REVIEW.md",
+    "research/quality-sprint-2026-09-30/work/review-critical/EVIDENCE.json",
+    "research/quality-sprint-2026-09-30/work/M1b/{INPUTS,SPEC,DELTA,GATE,MISSING-STATE}.json|md",
+    "research/quality-sprint-2026-09-30/work/M1b/probe_{canary_reader,parity_replay,parity_mechanism}.py"
+  ],
+  "source_hashes_sha256": {
+    "prototype/bench/agentpii5/payload_canaries.py": "ed2e605f94cb02c8233a75ebfb6a7531fcc4c84c2a0b30e138d49c8c447ea631",
+    "prototype/bench/agentpii5/harness.py": "0cc7f9144ad8a7bdd6463ff0b5daa94d8f3711453ea4e1064056d013eb7d1eeb",
+    "prototype/bench/agentpii5/mock.py": "ca7793fda74412536a2e07e6b3d89e96212b26ceeb36a2d65e0d41aba1d245b9",
+    "prototype/bench/agentpii5/schema.py": "f1e8e2e593e4f47ec8de554be50c2cfb1400a023e5c979066d890cd57e31ad4c",
+    "prototype/bench/agentpii4/gateway.py": "551c409b82623f48034d45a8c171c3fb1f7fc1e038a73800e50254dcd494ff37",
+    "prototype/pseudex/envelope.py": "76bbc441fe44eef4fb381f7b19805bd77305a41698efee66674d30d11f16a585",
+    "prototype/pseudex/vault.py": "e10630e377febdefe0205ee1f733efdc8c24a3c5288816b43ede12a1f180163e",
+    "prototype/pseudex/detect_all.py": "e2e458de6e9bbc16c5c3d91307a0076a647115c9fa7e39fd1ce667a0e5e32e69",
+    "prototype/pseudex/redact.py": "a5d80fe5ab9c2a1cb63eb5af2b648abc10e9fb650d05b56a755ecba4bf8f9f91",
+    "prototype/pseudex/proxy.py": "0e65191f2d9a49406d1edbf63c35a57d63184a93e21f6d120a5949c0d522e60c",
+    "prototype/bench/agentpii3/score.py": "b396a97380ee7771e213238765b12fbab06738d6ac229c07cc3d46b09fd94b8b",
+    "prototype/testkit.py": "ee3e1cc254839f2514741a026d6444eca62bc556c324231b8518ca7f1622d03d"
+  },
+  "run_artifact_hashes_sha256": {
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl": "3c42892960088ad08a8cded1b5dc987563cfe4af810d7b8ae283b501e2ceabb7",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.arms.v5.jsonl": "252e775e602f3a59624d85efc5c6c56b35b84ffc4f0c2e59a39571d5fc0010f9",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/corpus.v5.json": "83d46b1da3416c40fffc94e41ac9a88ac642bc405b05d217e5c5d0413a9e12e4",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.triples.jsonl": "2d257e25ffe14a68375ce856a5581fa843aba51e0896084ce38846e23c45abee"
+  },
+  "revision1_and_review_inputs_sha256": {
+    "research/quality-sprint-2026-09-30/work/M1b/SPEC.md": "6b7d34b3ccfded7d5fcf5fe673d08da3a9dab048317b2381348102b77d65100e",
+    "research/quality-sprint-2026-09-30/work/M1b/GATE.json": "d3e8236018f2edaf67e1418d7824c6d590e265fd9e2b4bfaaa60a2e624dc5b07",
+    "research/quality-sprint-2026-09-30/work/M1b/probe_canary_reader.py": "a1ba22fb01dce8d7aebe5b9de2de2a1413cdf829ad67a260f851f4f0059c57dd",
+    "research/quality-sprint-2026-09-30/work/M1b/probe_parity_replay.py": "368411171bdd476b026a0de82c29706c02da1692a5526d104547337cbd16672b",
+    "research/quality-sprint-2026-09-30/work/M1b/probe_parity_mechanism.py": "0f39d47c02269ba60f0dd66cab86c2683bb35f8200c73cb57b0f0a8589d3fbd9",
+    "research/quality-sprint-2026-09-30/work/review-critical/REVIEW.md": "22ae213ac3734c0b6566ae204e1a3fc9e076ee637d729277593eefbe2a34f177",
+    "research/quality-sprint-2026-09-30/work/review-critical/EVIDENCE.json": "3000eeaa6067966d7f8026e490ac99abb9216b777a0228e5d41825b2fee93822",
+    "research/hop-format-audit/runs/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.excluded.json": "521b5528c990156416ec808107695d17005835d163ab0c87d5fd14f5b9b02cb6"
+  },
+  "forbidden_operations_observed": {
+    "product_source_writes": "none",
+    "reset_stash_revert": "none",
+    "installs_or_downloads": "none",
+    "provider_or_production_calls": "none",
+    "scorer_or_engine_patch": "none",
+    "writes_outside_write_scope": "none",
+    "overwrite_of_author_originals": "none"
+  },
+  "outputs": {
+    "SPEC.md": "corrected claims + legacy v1 reader design",
+    "DELTA.json": "per-slice before/after with withdrawn claims",
+    "GATE.json": "NOT_MEASURED; G2 not passed; no full PASS",
+    "legacy_reader_limits.json": "measured byte maxima + proposed legacy limits + controls",
+    "probe_canary_reader_v2.py": "byte-accurate reader probe + legacy diagnostic + controls (exit 0)",
+    "probe_parity_replay_v2.py": "strict verdict, per-case restore, verdict self-test (exit 0)",
+    "revision.log": "commands, exits, output hashes, preserved-original hashes"
+  },
+  "unknowns": [
+    "trigger of the four divergences",
+    "whether the four share one trigger",
+    "exact original divergence offset",
+    "acceptance of the legacy reader contract in M1c"
+  ]
+}

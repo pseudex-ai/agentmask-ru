@@ -1,0 +1,75 @@
+{
+  "task": "V0",
+  "delta_against": "research/hop-format-audit/next-sprint-review/v6-snapshot/branch-comparison.json and the v6 snapshot documents, plus B0 local G1 PASS",
+  "what_was_already_known": [
+    "the v6 branch is fad9c746, the audit branch is 0bfda236, the merge base is 3be526a2",
+    "v6 changed 77 paths and lists 24 overlapping paths",
+    "the v6 snapshot names 55 new types, 500 cases / 15 industries and changes registry/methodology",
+    "Dirty worktree, WIP and run corpora were preserved by B0 and are not to be touched"
+  ],
+  "new_findings": [
+    {
+      "id": "V0-F1",
+      "finding": "The 24-path overlap list is exactly reproducible from the refs; v5 changed 418 paths vs base, v6 77, v6-only 53.",
+      "evidence": "REDorchecks.log C1/C2; COMPATIBILITY24.json",
+      "significance": "The declared matrix is not a hand-written list; it is derivable, so its completeness is checkable."
+    },
+    {
+      "id": "V0-F2",
+      "finding": "v6's pii_types.py NAME record holds the PRE-v5 NAME form table (no translit, old script labels, no translit abstention), and v6's contracts.py derives FORM_FEATURES/FEATURE_LABELS/FORM_ABSTAIN from it. The three tables diverge from the live v5 tables.",
+      "evidence": "CHK v5-tables-reproduced, CHK script-translit, REDorchecks.log",
+      "significance": "The G8 red condition 'old script/translit table copied' is a mechanical consequence of adopting the v6 edge direction as-is."
+    },
+    {
+      "id": "V0-F3",
+      "finding": "test_pii_types.test_v5_tables_reproduced compares against hand-copied BASE literals, so it stays green while the live v5 tables diverge. No instrument currently detects the rollback.",
+      "evidence": "CHK v6-test-literal-copy",
+      "significance": "G8 needs a new instrument before it can be claimed."
+    },
+    {
+      "id": "V0-F4",
+      "finding": "v6 HOP_STATUSES ('observed','leaked','residual','unmasked','absent') and the v5 five-status funnel (engine_kept/not_masked/leaf_foreign replacing unmasked) are mutually incomparable; neither contains the other.",
+      "evidence": "CHK status-funnel",
+      "significance": "The v5 funnel rebuild and the v6 reports cannot both be true without an explicit mapping decision."
+    },
+    {
+      "id": "V0-F5",
+      "finding": "v6's fake_checksum_invalid (boundary 1.0, R6-39 re-mint-until-invalid, M8 mutant) contradicts owner Q2 and product invariant #structured-ids. Executed: 11/11 registry samples are checksum-valid, the Q2-correct arm scores 0/11 and the M8 mutant scores an identical 0/11.",
+      "evidence": "CHK checksum-policy; probe_checksum_samples.py; fixtures.py _fake_checksum_fixtures (7707536455681514 valid = the 'zero' miss fixture)",
+      "significance": "The line built to separate a checksum-passing mutant from a correct gateway cannot do so under the owner's own policy."
+    },
+    {
+      "id": "V0-F6",
+      "finding": "v5's LEAF_EQUIVALENCE/semantic_leaf/equivalence_problems, VALUE_READINGS/VALUE_NORMALISERS, R22 and R23 exist only on the v5 side (23 v5 case rules vs 21 v6).",
+      "evidence": "CHK v5-leaf-and-readings, CHK v5-corpus-rules",
+      "significance": "The authorial-leaf and single-value-reading decisions are invisible to the v6 snapshot and would be lost by a take-theirs merge."
+    },
+    {
+      "id": "V0-F7",
+      "finding": "wiki/STATE.md uses D-068, D-069 and D-070 on both branches with different dates and different decisions; wiki/check.py does not validate id uniqueness.",
+      "evidence": "STATE.md headings at both refs; COMPATIBILITY24.json row wiki/STATE.md",
+      "significance": "A silent merge loses one decision record and later work cites an id that means something else."
+    },
+    {
+      "id": "V0-F8",
+      "finding": "Counts reproduce exactly (24 overlaps, 55 ORIGIN_V6 types, 9 grammar-uncertain, 11 v5 types, 11 checksum-carrying v6 types) and every snapshot file is byte-identical to its fad9c746 blob.",
+      "evidence": "INPUTS.json snapshot_sources; CHK overlap-24, CHK type-55; TYPE55.json",
+      "significance": "The matrix is built on pinned bytes, not on a paraphrase."
+    },
+    {
+      "id": "V0-F9",
+      "finding": "No v6 record sets bare_typed (0/66); every [K] type still needs a cue or a key. Owner Q3's 'proven typed context' admission for a technically invalid personal identifier has no declared path in the v6 registry.",
+      "evidence": "TYPE55.json registry fields; pii_types.registry_problems T6",
+      "significance": "Recorded as a gap, not as a defect; O-V6-5."
+    }
+  ],
+  "not_new_and_explicitly_not_claimed": [
+    "no merge, no integration attempt, no source patch",
+    "no statement that v6 semantics are wrong for v6 types — the conflicts found are where v6 touches v5 contracts",
+    "no engine-quality or detector measurement; no corpus was run",
+    "no claim that the 55 types are supported",
+    "production digest still NOT_VERIFIED"
+  ],
+  "unresolved": ["O-V6-1", "O-V6-2", "O-V6-3", "O-V6-4", "O-V6-5"],
+  "blocked_downstream": ["V1 checksum clauses", "V1 status-funnel clauses"]
+}

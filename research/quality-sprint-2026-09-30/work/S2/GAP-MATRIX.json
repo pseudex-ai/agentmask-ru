@@ -1,0 +1,661 @@
+{
+  "class_summary": {
+    "control": {
+      "any_span": 4,
+      "episodes": [
+        "CTL-01",
+        "CTL-02",
+        "CTL-03",
+        "CTL-04"
+      ],
+      "negative": 0,
+      "not_applicable_no_subject": 1,
+      "over_masked_negative": 0,
+      "positive": 4,
+      "relation_closed": 2,
+      "relation_disclosed_by_attribute": 0,
+      "subject_not_detected": 1
+    },
+    "conviction": {
+      "any_span": 1,
+      "episodes": [
+        "CON-01",
+        "CON-02",
+        "CON-03",
+        "CON-04"
+      ],
+      "negative": 1,
+      "not_applicable_no_subject": 1,
+      "over_masked_negative": 0,
+      "positive": 3,
+      "relation_closed": 0,
+      "relation_disclosed_by_attribute": 1,
+      "subject_not_detected": 2
+    },
+    "debt": {
+      "any_span": 1,
+      "episodes": [
+        "DEB-01",
+        "DEB-02",
+        "DEB-03",
+        "DEB-04",
+        "DEB-05"
+      ],
+      "negative": 2,
+      "not_applicable_no_subject": 2,
+      "over_masked_negative": 0,
+      "positive": 3,
+      "relation_closed": 0,
+      "relation_disclosed_by_attribute": 1,
+      "subject_not_detected": 2
+    },
+    "diagnosis": {
+      "any_span": 5,
+      "episodes": [
+        "DX-01",
+        "DX-02",
+        "DX-03",
+        "DX-04",
+        "DX-05",
+        "DX-06"
+      ],
+      "negative": 2,
+      "not_applicable_no_subject": 2,
+      "over_masked_negative": 1,
+      "positive": 4,
+      "relation_closed": 1,
+      "relation_disclosed_by_attribute": 2,
+      "subject_not_detected": 1
+    },
+    "salary": {
+      "any_span": 2,
+      "episodes": [
+        "SAL-01",
+        "SAL-02",
+        "SAL-03",
+        "SAL-04",
+        "SAL-05",
+        "SAL-06",
+        "SAL-07"
+      ],
+      "negative": 2,
+      "not_applicable_no_subject": 2,
+      "over_masked_negative": 0,
+      "positive": 5,
+      "relation_closed": 0,
+      "relation_disclosed_by_attribute": 2,
+      "subject_not_detected": 3
+    }
+  },
+  "definitions": {
+    "not_applicable_no_subject": "negative control; no person is referenced, nothing should be masked",
+    "relation_closed": "subject mention replaced AND no attribute surface left in the masked text",
+    "relation_disclosed_by_attribute": "subject replaced or unmatched, but the attribute value/word is still readable by the model",
+    "subject_not_detected": "the subject is present in the text but no identifying span was found",
+    "unit_of_protection": "the SUBJECT->ATTRIBUTE relation (152-ФЗ ст.3 п.1: information relating to an identifiable natural person), not an isolated word"
+  },
+  "generated_from": {
+    "engine_revision": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "fixture": "work/S2/EPISODES.jsonl",
+    "probe_json": "work/S2/probes/semantic_probe.json"
+  },
+  "measured_episodes": [
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "сахарный"
+      ],
+      "dimension": "diagnosis",
+      "engine_types": [
+        "MEDICAL",
+        "NAME"
+      ],
+      "form": "named_person",
+      "id": "DX-01",
+      "marker_substitute": true,
+      "masked": "Тихонову Илье Геннадьевичу диагностировали сахарный REDACTEDcc880a второго типа.",
+      "pair_role": "positive",
+      "relation_state_measured": "relation_disclosed_by_attribute",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": true,
+      "subject_span_types": [
+        "NAME"
+      ]
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "инфекцию"
+      ],
+      "dimension": "diagnosis",
+      "engine_types": [
+        "MEDICAL"
+      ],
+      "form": "indirect_reference",
+      "id": "DX-02",
+      "marker_substitute": true,
+      "masked": "У него нашли REDACTED54d640-инфекцию, терапию начнём в понедельник.",
+      "pair_role": "positive",
+      "relation_state_measured": "subject_not_detected",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": false,
+      "subject_span_types": []
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "сахарный"
+      ],
+      "dimension": "diagnosis",
+      "engine_types": [
+        "MEDICAL",
+        "NAME"
+      ],
+      "form": "record_field",
+      "id": "DX-03",
+      "marker_substitute": true,
+      "masked": "{\"patient\": \"Якушев Э. Д.\", \"diagnosis\": \"сахарный REDACTEDcc880a\"}",
+      "pair_role": "positive",
+      "relation_state_measured": "relation_disclosed_by_attribute",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": true,
+      "subject_span_types": [
+        "NAME"
+      ]
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "заболеваемость"
+      ],
+      "dimension": "diagnosis",
+      "engine_types": [
+        "MEDICAL"
+      ],
+      "form": "generic_statement",
+      "id": "DX-04",
+      "marker_substitute": true,
+      "masked": "В регионе выросла заболеваемость REDACTEDebeb53 среди взрослых.",
+      "pair_role": "negative",
+      "relation_state_measured": "not_applicable_no_subject",
+      "roundtrip_identical": true,
+      "subject_present": false,
+      "subject_replaced": false,
+      "subject_span_types": []
+    },
+    {
+      "attribute_fully_masked": true,
+      "attribute_lexicon_in_clear": [],
+      "dimension": "diagnosis",
+      "engine_types": [
+        "MEDICAL",
+        "NAME"
+      ],
+      "form": "multiple_persons",
+      "id": "DX-05",
+      "marker_substitute": true,
+      "masked": "Белых поставили диагноз REDACTEDf96b24, а Уварову — REDACTED0d3659.",
+      "pair_role": "positive",
+      "relation_state_measured": "relation_closed",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": true,
+      "subject_span_types": [
+        "NAME"
+      ]
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [],
+      "dimension": "diagnosis",
+      "engine_types": [],
+      "form": "lexical_control",
+      "id": "DX-06",
+      "marker_substitute": false,
+      "masked": "Ракета-носитель стартовала по расписанию, гипертекст документа открылся.",
+      "pair_role": "negative",
+      "relation_state_measured": "not_applicable_no_subject",
+      "roundtrip_identical": true,
+      "subject_present": false,
+      "subject_replaced": false,
+      "subject_span_types": []
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "185000"
+      ],
+      "dimension": "salary",
+      "engine_types": [
+        "NAME"
+      ],
+      "form": "named_person",
+      "id": "SAL-01",
+      "marker_substitute": false,
+      "masked": "Рыбаковой Стелле начислили зарплату 185 000 рублей за август.",
+      "pair_role": "positive",
+      "relation_state_measured": "relation_disclosed_by_attribute",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": true,
+      "subject_span_types": [
+        "NAME"
+      ]
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "185000"
+      ],
+      "dimension": "salary",
+      "engine_types": [],
+      "form": "record_field",
+      "id": "SAL-02",
+      "marker_substitute": false,
+      "masked": "доход: 185000 руб/мес",
+      "pair_role": "positive",
+      "relation_state_measured": "subject_not_detected",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": false,
+      "subject_span_types": []
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "185000"
+      ],
+      "dimension": "salary",
+      "engine_types": [],
+      "form": "generic_statement",
+      "id": "SAL-03",
+      "marker_substitute": false,
+      "masked": "Средняя зарплата в отрасли — 185 000 рублей.",
+      "pair_role": "negative",
+      "relation_state_measured": "not_applicable_no_subject",
+      "roundtrip_identical": true,
+      "subject_present": false,
+      "subject_replaced": false,
+      "subject_span_types": []
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "185000"
+      ],
+      "dimension": "salary",
+      "engine_types": [],
+      "form": "non_pii_amount",
+      "id": "SAL-04",
+      "marker_substitute": false,
+      "masked": "Сумма заказа 185 000 рублей, оплата по счёту.",
+      "pair_role": "negative",
+      "relation_state_measured": "not_applicable_no_subject",
+      "roundtrip_identical": true,
+      "subject_present": false,
+      "subject_replaced": false,
+      "subject_span_types": []
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "90000",
+        "210000"
+      ],
+      "dimension": "salary",
+      "engine_types": [
+        "NAME"
+      ],
+      "form": "multiple_persons",
+      "id": "SAL-05",
+      "marker_substitute": false,
+      "masked": "Мкртчян получает 90 000, а Гончарук — 210 000 рублей в месяц.",
+      "pair_role": "positive",
+      "relation_state_measured": "relation_disclosed_by_attribute",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": true,
+      "subject_span_types": [
+        "NAME"
+      ]
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "выплату"
+      ],
+      "dimension": "salary",
+      "engine_types": [],
+      "form": "indirect_reference",
+      "id": "SAL-06",
+      "marker_substitute": false,
+      "masked": "Ей задержали выплату за июль.",
+      "pair_role": "positive",
+      "relation_state_measured": "subject_not_detected",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": false,
+      "subject_span_types": []
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "2220000"
+      ],
+      "dimension": "salary",
+      "engine_types": [],
+      "form": "record_field",
+      "id": "SAL-07",
+      "marker_substitute": false,
+      "masked": "Справка 2-НДФЛ: доход за год 2 220 000 руб.",
+      "pair_role": "positive",
+      "relation_state_measured": "subject_not_detected",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": false,
+      "subject_span_types": []
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "осуждён",
+        "159"
+      ],
+      "dimension": "conviction",
+      "engine_types": [
+        "NAME"
+      ],
+      "form": "named_person",
+      "id": "CON-01",
+      "marker_substitute": false,
+      "masked": "Фролов осуждён по статье 159 УК РФ на три года условно.",
+      "pair_role": "positive",
+      "relation_state_measured": "relation_disclosed_by_attribute",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": true,
+      "subject_span_types": [
+        "NAME"
+      ]
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "судимость",
+        "159"
+      ],
+      "dimension": "conviction",
+      "engine_types": [],
+      "form": "record_field",
+      "id": "CON-02",
+      "marker_substitute": false,
+      "masked": "судимость: имеется, ст. 159 ч. 2 УК РФ",
+      "pair_role": "positive",
+      "relation_state_measured": "subject_not_detected",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": false,
+      "subject_span_types": []
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "159"
+      ],
+      "dimension": "conviction",
+      "engine_types": [],
+      "form": "generic_statement",
+      "id": "CON-03",
+      "marker_substitute": false,
+      "masked": "Суд рассмотрел дело по статье 159 УК РФ.",
+      "pair_role": "negative",
+      "relation_state_measured": "not_applicable_no_subject",
+      "roundtrip_identical": true,
+      "subject_present": false,
+      "subject_replaced": false,
+      "subject_span_types": []
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "судимость"
+      ],
+      "dimension": "conviction",
+      "engine_types": [],
+      "form": "indirect_reference",
+      "id": "CON-04",
+      "marker_substitute": false,
+      "masked": "Его судимость погашена в прошлом году.",
+      "pair_role": "positive",
+      "relation_state_measured": "subject_not_detected",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": false,
+      "subject_span_types": []
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "450000"
+      ],
+      "dimension": "debt",
+      "engine_types": [
+        "NAME"
+      ],
+      "form": "named_person",
+      "id": "DEB-01",
+      "marker_substitute": false,
+      "masked": "Савченко должен банку 450 000 рублей по кредиту.",
+      "pair_role": "positive",
+      "relation_state_measured": "relation_disclosed_by_attribute",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": true,
+      "subject_span_types": [
+        "NAME"
+      ]
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "450000"
+      ],
+      "dimension": "debt",
+      "engine_types": [],
+      "form": "record_field",
+      "id": "DEB-02",
+      "marker_substitute": false,
+      "masked": "задолженность: 450000 руб.",
+      "pair_role": "positive",
+      "relation_state_measured": "subject_not_detected",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": false,
+      "subject_span_types": []
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "450000"
+      ],
+      "dimension": "debt",
+      "engine_types": [],
+      "form": "legal_person",
+      "id": "DEB-03",
+      "marker_substitute": false,
+      "masked": "Задолженность ООО «Заря» перед поставщиком 450 000 рублей.",
+      "pair_role": "negative",
+      "relation_state_measured": "not_applicable_no_subject",
+      "roundtrip_identical": true,
+      "subject_present": false,
+      "subject_replaced": false,
+      "subject_span_types": []
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [],
+      "dimension": "debt",
+      "engine_types": [],
+      "form": "generic_statement",
+      "id": "DEB-04",
+      "marker_substitute": false,
+      "masked": "Общий долг домохозяйств вырос на 3%.",
+      "pair_role": "negative",
+      "relation_state_measured": "not_applicable_no_subject",
+      "roundtrip_identical": true,
+      "subject_present": false,
+      "subject_replaced": false,
+      "subject_span_types": []
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "просрочка"
+      ],
+      "dimension": "debt",
+      "engine_types": [],
+      "form": "indirect_reference",
+      "id": "DEB-05",
+      "marker_substitute": false,
+      "masked": "У неё просрочка по трём займам.",
+      "pair_role": "positive",
+      "relation_state_measured": "subject_not_detected",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": false,
+      "subject_span_types": []
+    },
+    {
+      "attribute_fully_masked": true,
+      "attribute_lexicon_in_clear": [],
+      "dimension": "control",
+      "engine_types": [
+        "DOB",
+        "NAME"
+      ],
+      "form": "existing_capability",
+      "id": "CTL-01",
+      "marker_substitute": false,
+      "masked": "Юдина Святослава Андреевича, он 01.12.1992, запишите к неврологу.",
+      "pair_role": "positive",
+      "relation_state_measured": "relation_closed",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": true,
+      "subject_span_types": [
+        "NAME"
+      ]
+    },
+    {
+      "attribute_fully_masked": true,
+      "attribute_lexicon_in_clear": [],
+      "dimension": "control",
+      "engine_types": [
+        "PHONE"
+      ],
+      "form": "existing_capability",
+      "id": "CTL-02",
+      "marker_substitute": false,
+      "masked": "мой телефон +7 979 910-33-34",
+      "pair_role": "positive",
+      "relation_state_measured": "relation_closed",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": true,
+      "subject_span_types": [
+        "PHONE"
+      ]
+    },
+    {
+      "attribute_fully_masked": true,
+      "attribute_lexicon_in_clear": [],
+      "dimension": "control",
+      "engine_types": [
+        "AGE"
+      ],
+      "form": "existing_capability",
+      "id": "CTL-03",
+      "marker_substitute": true,
+      "masked": "клиенту REDACTED8ed57c",
+      "pair_role": "positive",
+      "relation_state_measured": "subject_not_detected",
+      "roundtrip_identical": true,
+      "subject_present": true,
+      "subject_replaced": false,
+      "subject_span_types": []
+    },
+    {
+      "attribute_fully_masked": false,
+      "attribute_lexicon_in_clear": [
+        "сахарный"
+      ],
+      "dimension": "control",
+      "engine_types": [
+        "MEDICAL"
+      ],
+      "form": "existing_capability",
+      "id": "CTL-04",
+      "marker_substitute": true,
+      "masked": "диагноз сахарный REDACTEDcc880a",
+      "pair_role": "positive",
+      "relation_state_measured": "not_applicable_no_subject",
+      "roundtrip_identical": true,
+      "subject_present": false,
+      "subject_replaced": false,
+      "subject_span_types": []
+    }
+  ],
+  "read_inventory": [
+    {
+      "detail": "KEY_TYPE and CTX_TYPES hold identity/document/credentials keys only; searching both maps for диагноз/зарплат/доход/судим/задолженност/долг returns nothing.",
+      "fact": "No semantic key types a salary/income/diagnosis/conviction/debt value.",
+      "method": "read",
+      "source": "prototype/licensing/assets_source.py#L1334-L1417"
+    },
+    {
+      "detail": "~24 condition stems + explicit inflection sets for рак/спид; it types a WORD, with no subject binding and no notion of the relation.",
+      "fact": "The MEDICAL recognizer is a leased stem gazetteer of named conditions.",
+      "method": "read",
+      "source": "prototype/licensing/assets_source.py#L1027-L1042"
+    },
+    {
+      "detail": "MEDICAL and AGE have no format-preserving fake; the model sees REDACTED<6 hex>, identical for the same value. Restorable through the vault, but not a faithful substitute.",
+      "fact": "The is-no-renderer fallback mints a deterministic REDACTED<digest> marker.",
+      "method": "read",
+      "source": "prototype/pseudex/vault.py#L1920-L1929"
+    },
+    {
+      "detail": "A diagnosis word licenses person-association for dates nearby; it is used as a signal, not as a protected relation.",
+      "fact": "AGE/MEDICAL count as sentence-is-about-a-person evidence for the context layer.",
+      "method": "read",
+      "source": "prototype/pseudex/context.py#L114-L120"
+    },
+    {
+      "detail": "Current contract: the WORD is a type; the legal person has no data subject.",
+      "fact": "The suite asserts isolated MEDICAL must be caught, and legal-person debt must not be.",
+      "method": "read",
+      "source": "prototype/test_coverage_152fz.py#L48,L57-L70"
+    },
+    {
+      "detail": "The same structural question S2 asks about attributes is already decided for dates — and the MEDICAL arm does not follow it (DX-04 measured below is masked standalone).",
+      "fact": "Dates follow an ASSOCIATION rule: a bare date is not personal data until tied to a person.",
+      "method": "read",
+      "source": "wiki/INVARIANTS.md#L154-L160"
+    },
+    {
+      "detail": "No vendor covers them for Russian; the report explicitly puts them in the detect_quasi-shaped class.",
+      "fact": "Prior registry research already classifies salary/conviction as values/categories, not patterns.",
+      "method": "read",
+      "source": "research/2026-08-16-vertical-pii-registry.md#L346-L371"
+    }
+  ],
+  "unknowns": [
+    "Whether a host/agent actually re-associates a leftover attribute with the real subject from other fields in the same call is NOT measured here; only the surfaced value is.",
+    "No production traffic was read; every episode is synthesized from the approved class list.",
+    "Recall of the MEDICAL gazetteer over real Russian medical vocabulary is not measured; the probe tests 4 conditions + 2 lexical negatives.",
+    "Whether any customer-facing contract promises semantic coverage is not checked here (no docs scan was in the S2 input scope)."
+  ]
+}

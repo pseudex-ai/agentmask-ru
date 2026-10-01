@@ -1,0 +1,338 @@
+{
+  "task": "A1",
+  "wave": "quality-sprint-design-red-1",
+  "generated_utc": "2026-09-30T20:10:07.629192+00:00",
+  "write_scope": "research/quality-sprint-2026-09-30/work/A1/",
+  "requested_routing": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "mechanism": "explicit provider/model override requested by the Lead",
+    "effective_routing_metadata": "NOT AVAILABLE to this subagent from inside its own run; claimed model identity is not technical evidence (REVIEW.md:9 precedent). Authoritative record belongs to the Lead's SUBAGENT-USAGE journal, which A1 must not edit.",
+    "self_identity_attested": false
+  },
+  "revision": {
+    "git_head_current": "890c50849a326f882eac336ba4e38c91171de473",
+    "git_branch_current": "research/hop-format-audit",
+    "product_source_pin": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "product_source_pin_note": "0bfda2363ef1a1d552e2ac093129b1026a86ad68 is the pinned product source; current HEAD 890c508 is research-only evidence per the task and B0.",
+    "porcelain_lines": 45,
+    "no_git_mutation_performed": true
+  },
+  "gates_inherited": {
+    "B0_G1_local_design": {
+      "status": "G1",
+      "record": "work/B0/GATE.json",
+      "scope": "local source, WIP, raw-run and evaluation-runtime baseline for design/RED wave",
+      "checks": {
+        "wip_files_archived_verified": 441,
+        "dependency_reference_hashes_verified": 3554,
+        "skipped_unknown_files": 0,
+        "prior_source_hashes_verified": 88,
+        "paid_raw_files_verified": 17,
+        "pinned_source_run_files": 198,
+        "complete": 802,
+        "excluded": 11,
+        "holdout_intersection": 0
+      }
+    },
+    "B0_review": {
+      "path": "work/B0/REVIEW.md",
+      "verdict": "PASS for local/design G1 only; production NOT_VERIFIED"
+    },
+    "production_artifact_gate": {
+      "status": "NOT_MEASURED",
+      "blocks": "RG release-A/B",
+      "reason": "Actual deployed digest not queried; no inference from local version.txt"
+    },
+    "paid_runs_authorized": false
+  },
+  "bundle": {
+    "recomputed_in_memory": true,
+    "version": "2a07cebae2b050ec",
+    "plaintext_bytes": 1524582,
+    "sha256": "01c19f4689450b54694b7aaa4070cbaf695efc3e98f0b59471486392a0348206",
+    "matches_b0_record": true,
+    "file_written": false
+  },
+  "bundle_b0_record": {
+    "version": "2a07cebae2b050ec",
+    "sha256": "01c19f4689450b54694b7aaa4070cbaf695efc3e98f0b59471486392a0348206",
+    "persisted": false
+  },
+  "environment": {
+    "python": "3.12.12",
+    "executable": "/Users/igor/Projects/Obscura-hop-audit/prototype/.venv/bin/python",
+    "generated_utc": "2026-09-30T20:08:40.854465+00:00",
+    "git": {
+      "head": "890c50849a326f882eac336ba4e38c91171de473",
+      "head_exit": 0,
+      "branch": "research/hop-format-audit",
+      "branch_exit": 0,
+      "porcelain_lines": 42,
+      "status_exit": 0
+    },
+    "cwd": "/Users/igor/Projects/Obscura-hop-audit"
+  },
+  "binding_inputs": {
+    "research/quality-sprint-2026-09-30/work/B0/GATE.json": {
+      "path": "research/quality-sprint-2026-09-30/work/B0/GATE.json",
+      "exists": true,
+      "kind": "file",
+      "bytes": 1444,
+      "sha256": "ed2b5d12fe78889b09871030b9645a6994a1ff773b046e7098c2878f1db7ce03"
+    },
+    "research/quality-sprint-2026-09-30/work/B0/REVIEW.md": {
+      "path": "research/quality-sprint-2026-09-30/work/B0/REVIEW.md",
+      "exists": true,
+      "kind": "file",
+      "bytes": 10599,
+      "sha256": "9056702644e907e8665b7ccd45314a4569af3a9af38b3e48f9d7b7ae31a62c87"
+    },
+    "research/quality-sprint-2026-09-30/work/B0/SPEC.md": {
+      "path": "research/quality-sprint-2026-09-30/work/B0/SPEC.md",
+      "exists": true,
+      "kind": "file",
+      "bytes": 3361,
+      "sha256": "2d7817e9203bdb98d882fbb18c92041f227253b1f558e77a3c34a6f643adadc7"
+    },
+    "research/quality-sprint-2026-09-30/work/B0/INPUTS.json": {
+      "path": "research/quality-sprint-2026-09-30/work/B0/INPUTS.json",
+      "exists": true,
+      "kind": "file",
+      "bytes": 36791,
+      "sha256": "e0ef894a9a40f489a4c770cd8a671278aaa03eaf6b82a81a9411fa3b571bf5fb"
+    },
+    "research/quality-sprint-2026-09-30/GOAL-BRIEF.md": {
+      "path": "research/quality-sprint-2026-09-30/GOAL-BRIEF.md",
+      "exists": true,
+      "kind": "file",
+      "bytes": 66641,
+      "sha256": "f7f7a2e2a31f54e3737c71a8dc4556aba0f7ca3b198d4430810b45b8607cfa77"
+    },
+    "research/quality-sprint-2026-09-30/OWNER-DECISIONS.md": {
+      "path": "research/quality-sprint-2026-09-30/OWNER-DECISIONS.md",
+      "exists": true,
+      "kind": "file",
+      "bytes": 11997,
+      "sha256": "d36927f51527862624666f66328c9547a1302e2cd466d00323e0ebb36b310090"
+    },
+    "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md": {
+      "path": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md",
+      "exists": true,
+      "kind": "file",
+      "bytes": 14709,
+      "sha256": "364982c8bf623f53f705afea4a0a2cea7a788db4c961406654df31c4bd9cd3ef"
+    },
+    "research/quality-sprint-2026-09-30/SPRINT-PLAN.md": {
+      "path": "research/quality-sprint-2026-09-30/SPRINT-PLAN.md",
+      "exists": true,
+      "kind": "file",
+      "bytes": 48373,
+      "sha256": "4d0a5a60e0ee603820ae87b094c50c40930d83de3a416a0eb2b334a4094618ec"
+    },
+    "research/quality-sprint-2026-09-30/EXECUTION.json": {
+      "path": "research/quality-sprint-2026-09-30/EXECUTION.json",
+      "exists": true,
+      "kind": "file",
+      "bytes": 10293,
+      "sha256": "ccc146b86695c6dd8611cec5439d34b39cec32efef718a4e8bdea5736695f804"
+    },
+    "research/quality-sprint-2026-09-30/work/FIRST-WAVE-TASKS.json": {
+      "path": "research/quality-sprint-2026-09-30/work/FIRST-WAVE-TASKS.json",
+      "exists": true,
+      "kind": "file",
+      "bytes": 8230,
+      "sha256": "d8d48891b8e66777df6943eff8b87a43ad74b7371733073ab87e12f087a685a5"
+    },
+    "research/quality-sprint-2026-09-30/work/FIRST-WAVE-SCOPES.md": {
+      "path": "research/quality-sprint-2026-09-30/work/FIRST-WAVE-SCOPES.md",
+      "exists": true,
+      "kind": "file",
+      "bytes": 3412,
+      "sha256": "3327ba6639997238e6cb515f5aab9c27b426d7cc9f567193caca8909eb3cb725"
+    },
+    "research/quality-sprint-2026-09-30/followup/name-labels-blind-proposal/proposal-counts.json": {
+      "path": "research/quality-sprint-2026-09-30/followup/name-labels-blind-proposal/proposal-counts.json",
+      "exists": true,
+      "kind": "file",
+      "bytes": 2902,
+      "sha256": "c610ac1d06419ccb3b1393ca12db5dffbc82b5c6063eb2840f4093a517ca7b8e"
+    },
+    "research/quality-sprint-2026-09-30/followup/cvc-context-contract/CONTEXT-MATRIX.json": {
+      "path": "research/quality-sprint-2026-09-30/followup/cvc-context-contract/CONTEXT-MATRIX.json",
+      "exists": true,
+      "kind": "file",
+      "bytes": 37218,
+      "sha256": "cc267ab3d1edc5d9db654ea0ec7f5c9a70760e23f5e35707015ed886f30a7cfa"
+    },
+    "research/quality-sprint-2026-09-30/followup/cvc-context-contract/PRIMARY-SOURCES.md": {
+      "path": "research/quality-sprint-2026-09-30/followup/cvc-context-contract/PRIMARY-SOURCES.md",
+      "exists": true,
+      "kind": "file",
+      "bytes": 13292,
+      "sha256": "5dee41ac3d32cd8a828422fc8e9dbc5886c23b94ec144f329fd704a007c53abc"
+    },
+    "research/hop-format-audit/next-sprint-review/v6-snapshot/registry-inventory.json": {
+      "path": "research/hop-format-audit/next-sprint-review/v6-snapshot/registry-inventory.json",
+      "exists": true,
+      "kind": "file",
+      "bytes": 13879,
+      "sha256": "19b11db3f013f58d323858ca3d7b63372851066609f841a16af5ff1d627e47c3"
+    },
+    "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6.md": {
+      "path": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6.md",
+      "exists": true,
+      "kind": "file",
+      "bytes": 165386,
+      "sha256": "b0cba57119b9ac687cf9134bd25cd0b96ced44f27a5d4ef53bae3b3d1c6e7171"
+    },
+    "prototype/bench/agentpii5/corpus.v5.json": {
+      "path": "prototype/bench/agentpii5/corpus.v5.json",
+      "exists": true,
+      "kind": "file",
+      "bytes": 29620615,
+      "sha256": "3ba227908d40911bd6578418b2da9d3b7925a1ffefe88ebbf5cead5ce5115118"
+    },
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/corpus.json": {
+      "path": "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/corpus.json",
+      "exists": true,
+      "kind": "file",
+      "bytes": 7461064,
+      "sha256": "d0e2788aee5fe2bc4ab66c8e955836115ca02cc21cfd7afa67e2c666f8ffa9dc"
+    },
+    "prototype/bench/gate/labels.json": {
+      "path": "prototype/bench/gate/labels.json",
+      "exists": true,
+      "kind": "file",
+      "bytes": 17401,
+      "sha256": "d2133f5d45555fadd24d97a9ca869970eef29db32745d911dc32345456cdcfbc"
+    },
+    "prototype/bench/gate/README.md": {
+      "path": "prototype/bench/gate/README.md",
+      "exists": true,
+      "kind": "file",
+      "bytes": 8167,
+      "sha256": "cc865ca12b176874f9adb784de898cf5b08ced02b59ccfcd99289de8bd2c52ed"
+    },
+    "wiki/INVARIANTS.md": {
+      "path": "wiki/INVARIANTS.md",
+      "exists": true,
+      "kind": "file",
+      "bytes": 102383,
+      "sha256": "14bf5e7df2005f18737bea77a0673ac166eea70d6c23f6c5396e8898061ae97f"
+    }
+  },
+  "external_corpora": {
+    "~/.cache/pseudex-bench/nerel/NEREL-v1.1": {
+      "path": "~/.cache/pseudex-bench/nerel/NEREL-v1.1",
+      "exists": true,
+      "kind": "dir",
+      "files": 1867
+    },
+    "~/.cache/pseudex-bench/pii-bench/data/domain-00000-of-00001.parquet": {
+      "path": "~/.cache/pseudex-bench/pii-bench/data/domain-00000-of-00001.parquet",
+      "exists": true,
+      "kind": "file",
+      "bytes": 99688,
+      "sha256": "ca9792598ef962dac7f5996ba683f2dc966e746140d31e00954660894f6ace4a"
+    },
+    "~/.cache/pseudex-bench/pii-bench/data/entity-00000-of-00001.parquet": {
+      "path": "~/.cache/pseudex-bench/pii-bench/data/entity-00000-of-00001.parquet",
+      "exists": true,
+      "kind": "file",
+      "bytes": 72271,
+      "sha256": "32b90e1ba36fc9193502b6cde53195e3efe0959d1dfaff0e6fbc26bdeb39edb5"
+    },
+    "~/.cache/pseudex-bench/massive_ru_train.parquet": {
+      "path": "~/.cache/pseudex-bench/massive_ru_train.parquet",
+      "exists": true,
+      "kind": "file",
+      "bytes": 1011532,
+      "sha256": "89ecdc8ddfd00b38d05624c8061dbd10ea7b63f4587ee82750e0e48ebdfb91eb"
+    },
+    "~/.cache/pseudex-bench/massive_ru_validation.parquet": {
+      "path": "~/.cache/pseudex-bench/massive_ru_validation.parquet",
+      "exists": true,
+      "kind": "file",
+      "bytes": 201738,
+      "sha256": "49e6bcaa82d747583052e04f150b99a059eaa15834fced08aaec5548c58a8be4"
+    },
+    "~/.cache/pseudex-bench/massive_ru_test.parquet": {
+      "path": "~/.cache/pseudex-bench/massive_ru_test.parquet",
+      "exists": true,
+      "kind": "file",
+      "bytes": 277071,
+      "sha256": "d53f1c58d753e64b7cf7f10face6c4a57ac93e7f9db82826b43058eacaf2e46a"
+    },
+    "~/.cache/pseudex-bench/voice_addresses.json": {
+      "path": "~/.cache/pseudex-bench/voice_addresses.json",
+      "exists": true,
+      "kind": "file",
+      "bytes": 284484,
+      "sha256": "65e5abdd09a1cb0571eb1efaec7e348ddddc93bdbe4421cf3abe9da95ef483da"
+    },
+    "~/.cache/pseudex-bench/rudevices_addresses.json": {
+      "path": "~/.cache/pseudex-bench/rudevices_addresses.json",
+      "exists": true,
+      "kind": "file",
+      "bytes": 159147,
+      "sha256": "771e91868c88af36ab2caea4f14131a13cc12584b70d373f00582a214c6407c9"
+    },
+    "~/.cache/pseudex-bench/speech_calls.jsonl": {
+      "path": "~/.cache/pseudex-bench/speech_calls.jsonl",
+      "exists": true,
+      "kind": "file",
+      "bytes": 981471,
+      "sha256": "218fb225f10abd0274cf0bde443d1aa201eaeb398a70af1b1e76ac960844766b"
+    },
+    "~/.cache/pseudex-bench/speech_rudevices.jsonl": {
+      "path": "~/.cache/pseudex-bench/speech_rudevices.jsonl",
+      "exists": true,
+      "kind": "file",
+      "bytes": 4027990,
+      "sha256": "aa9cffe22f4cd55546da534cd70b12fd83cbff8cb233bbedc53c4aa4b26358e6"
+    },
+    "~/.cache/pseudex-bench/gate_candidates.json": {
+      "path": "~/.cache/pseudex-bench/gate_candidates.json",
+      "exists": true,
+      "kind": "file",
+      "bytes": 599880,
+      "sha256": "508bf6de4d4ae5756bebca927fdcaf78549fc401c71c720f4702bfbe1e7a0c5f"
+    },
+    "~/.cache/pseudex-bench/ru_prose.jsonl": {
+      "path": "~/.cache/pseudex-bench/ru_prose.jsonl",
+      "exists": true,
+      "kind": "file",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "executed_commands": [
+    {
+      "cmd": "PYTHONDONTWRITEBYTECODE=1 prototype/.venv/bin/python work/A1/inventory_sources.py",
+      "exit": 0,
+      "log": "work/A1/INVENTORY.log",
+      "out": "work/A1/INVENTORY.json"
+    },
+    {
+      "cmd": "PYTHONDONTWRITEBYTECODE=1 prototype/.venv/bin/python work/A1/derive_gaps.py",
+      "exit": 0,
+      "log": "work/A1/DERIVE.log",
+      "out": "work/A1/DATA-GAPS.csv"
+    }
+  ],
+  "scope_forbidden": [
+    "no engine/licensing/scorer/benchmark/corpus/git writes",
+    "no detector prediction, eval, score, hop or judge artifact read",
+    "no downloads, installs, model training, provider/benchmark calls",
+    "no EXECUTION.json or SUBAGENT-USAGE journal edit",
+    "no final gold produced by this task"
+  ],
+  "not_claimed": [
+    "no O-DATA acceptance",
+    "no product quality result",
+    "no production verification",
+    "no G7/G11 implication",
+    "prior name-label proposal is not accepted gold"
+  ]
+}

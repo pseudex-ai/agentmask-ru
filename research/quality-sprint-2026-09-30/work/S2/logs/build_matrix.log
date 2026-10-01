@@ -1,0 +1,89 @@
+{
+  "control": {
+    "any_span": 4,
+    "episodes": [
+      "CTL-01",
+      "CTL-02",
+      "CTL-03",
+      "CTL-04"
+    ],
+    "negative": 0,
+    "not_applicable_no_subject": 1,
+    "over_masked_negative": 0,
+    "positive": 4,
+    "relation_closed": 2,
+    "relation_disclosed_by_attribute": 0,
+    "subject_not_detected": 1
+  },
+  "conviction": {
+    "any_span": 1,
+    "episodes": [
+      "CON-01",
+      "CON-02",
+      "CON-03",
+      "CON-04"
+    ],
+    "negative": 1,
+    "not_applicable_no_subject": 1,
+    "over_masked_negative": 0,
+    "positive": 3,
+    "relation_closed": 0,
+    "relation_disclosed_by_attribute": 1,
+    "subject_not_detected": 2
+  },
+  "debt": {
+    "any_span": 1,
+    "episodes": [
+      "DEB-01",
+      "DEB-02",
+      "DEB-03",
+      "DEB-04",
+      "DEB-05"
+    ],
+    "negative": 2,
+    "not_applicable_no_subject": 2,
+    "over_masked_negative": 0,
+    "positive": 3,
+    "relation_closed": 0,
+    "relation_disclosed_by_attribute": 1,
+    "subject_not_detected": 2
+  },
+  "diagnosis": {
+    "any_span": 5,
+    "episodes": [
+      "DX-01",
+      "DX-02",
+      "DX-03",
+      "DX-04",
+      "DX-05",
+      "DX-06"
+    ],
+    "negative": 2,
+    "not_applicable_no_subject": 2,
+    "over_masked_negative": 1,
+    "positive": 4,
+    "relation_closed": 1,
+    "relation_disclosed_by_attribute": 2,
+    "subject_not_detected": 1
+  },
+  "salary": {
+    "any_span": 2,
+    "episodes": [
+      "SAL-01",
+      "SAL-02",
+      "SAL-03",
+      "SAL-04",
+      "SAL-05",
+      "SAL-06",
+      "SAL-07"
+    ],
+    "negative": 2,
+    "not_applicable_no_subject": 2,
+    "over_masked_negative": 0,
+    "positive": 5,
+    "relation_closed": 0,
+    "relation_disclosed_by_attribute": 2,
+    "subject_not_detected": 3
+  }
+}
+WROTE /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/S2/GAP-MATRIX.json

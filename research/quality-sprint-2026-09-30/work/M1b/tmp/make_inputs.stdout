@@ -1,0 +1,7 @@
+{
+  "inputs": "/Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/INPUTS.json",
+  "missing_state": "/Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/MISSING-STATE.json",
+  "sources_hashed": 11,
+  "run_artifacts_hashed": 9,
+  "evidence_hashed": 12
+}

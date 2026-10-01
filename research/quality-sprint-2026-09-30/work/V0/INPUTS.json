@@ -1,0 +1,175 @@
+{
+ "task": "V0",
+ "purpose": "read-only v5/v6 semantic compatibility evidence; no merge, no product patch",
+ "refs": {
+  "v5": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+  "v6": "fad9c7466ea1221282214e6c747ca373ee7e6a55",
+  "base": "3be526a2bfb8a9b9e86a9b14b3e11758f723f3a8",
+  "evidence_commit": "890c50849a326f882eac336ba4e38c91171de473",
+  "evidence_commit_touches_prototype": false,
+  "branch": "research/hop-format-audit"
+ },
+ "snapshot_dir": "/Users/igor/Projects/Obscura-hop-audit/research/hop-format-audit/next-sprint-review/v6-snapshot",
+ "snapshot_sources": {
+  "pii_types.py": {
+   "sha256": "f0ca78cf892333935c74f51e273f52feee81cfffb22fa8e153290b0e77475d9d",
+   "v6_blob": "ee0544665b8aeab4f421eb8fadf62697306f3a4a",
+   "v6_repo_path": "prototype/bench/agentpii5/pii_types.py",
+   "byte_identical_to_v6_ref": true
+  },
+  "pii_types_a.py": {
+   "sha256": "82006cf7b7dbd05900878ef34c482b664cc5748e9fb1e35ff43fd55506504c29",
+   "v6_blob": "1b2321a2bac1df83f151c8090c8c990938fdcfee",
+   "v6_repo_path": "prototype/bench/agentpii5/pii_types_a.py",
+   "byte_identical_to_v6_ref": true
+  },
+  "pii_types_b.py": {
+   "sha256": "10739ad4bcbe99cd8d35a992e03bd6a196b4d58544a1e2e0431a67d0523cbc93",
+   "v6_blob": "03823f342bdea8df3c4e2b2355b7bb624c89f771",
+   "v6_repo_path": "prototype/bench/agentpii5/pii_types_b.py",
+   "byte_identical_to_v6_ref": true
+  },
+  "pii_types_c.py": {
+   "sha256": "6ef21928cda28f29b9fad3a13d6062ab639973794c63b2cc49dd80abb4f2ab42",
+   "v6_blob": "d13df63ba748818a24dad9b8bd4e31934f512fe4",
+   "v6_repo_path": "prototype/bench/agentpii5/pii_types_c.py",
+   "byte_identical_to_v6_ref": true
+  },
+  "contracts_v6.py": {
+   "sha256": "cb7a9fae691736c37054f013119eeefaebca334b05357aa3f6eb5bc191f4d471",
+   "v6_blob": "95761b20ccfbfa928fc436e7064c039a768b9ee6",
+   "v6_repo_path": "prototype/bench/agentpii5/contracts_v6.py",
+   "byte_identical_to_v6_ref": true
+  },
+  "tz-agentpii6.md": {
+   "sha256": "b0cba57119b9ac687cf9134bd25cd0b96ced44f27a5d4ef53bae3b3d1c6e7171",
+   "v6_blob": "cebb9537b1aabb984a3b3e78b288a780c4aff9f0",
+   "v6_repo_path": "docs/tz-agentpii6.md",
+   "byte_identical_to_v6_ref": true
+  },
+  "tz-agentpii6-registry.md": {
+   "sha256": "7bef56a6b95ded131fb1cd98a0f7171625ad6e0dbfdcc6f85ee79bb223938794",
+   "v6_blob": "91f3e3d600c344c780b0bfb130e96bbe82a24e10",
+   "v6_repo_path": "docs/tz-agentpii6-registry.md",
+   "byte_identical_to_v6_ref": true
+  },
+  "v6-evidence-matrix.md": {
+   "sha256": "856a63e4389f9e5260f7befa303234b61d898835d958d6198b82ce3f69d0b5b8",
+   "v6_blob": "6a59443e7e6e2e4c2a603f75b52565f786e68ca5",
+   "v6_repo_path": "prototype/bench/agentpii5/review/v6-evidence-matrix.md",
+   "byte_identical_to_v6_ref": true
+  },
+  "v6-tools-gap-study.md": {
+   "sha256": "781987fac99c49fce33aa7e137680fa6d018450bf272fc1d0ea9a538c9e87f66",
+   "v6_blob": "707caf90ffe4bf872938be41658c5cb59c42bef1",
+   "v6_repo_path": "prototype/bench/agentpii5/review/v6-tools-gap-study.md",
+   "byte_identical_to_v6_ref": true
+  },
+  "registry-inventory.json": {
+   "sha256": "19b11db3f013f58d323858ca3d7b63372851066609f841a16af5ff1d627e47c3",
+   "v6_blob": null,
+   "v6_repo_path": null,
+   "byte_identical_to_v6_ref": null
+  },
+  "branch-comparison.json": {
+   "sha256": "a0aa3221cb82b4c7965cf2062a8c62fb3f3f44cbbea8b6da1c30b6266e23d222",
+   "v6_blob": null,
+   "v6_repo_path": null,
+   "byte_identical_to_v6_ref": null
+  }
+ },
+ "frozen_sources": {
+  "pypath/bench/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "pypath/bench/agentpii5/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "pypath/bench/agentpii5/checksum_v6.py": "31fc5a927657e985830dfce300c562965cfedeaf8f8f0213912f8affa3e2f69e",
+  "pypath/bench/agentpii5/contracts_v6.py": "cb7a9fae691736c37054f013119eeefaebca334b05357aa3f6eb5bc191f4d471",
+  "pypath/bench/agentpii5/pii_types.py": "f0ca78cf892333935c74f51e273f52feee81cfffb22fa8e153290b0e77475d9d",
+  "pypath/bench/agentpii5/pii_types_a.py": "82006cf7b7dbd05900878ef34c482b664cc5748e9fb1e35ff43fd55506504c29",
+  "pypath/bench/agentpii5/pii_types_b.py": "10739ad4bcbe99cd8d35a992e03bd6a196b4d58544a1e2e0431a67d0523cbc93",
+  "pypath/bench/agentpii5/pii_types_c.py": "6ef21928cda28f29b9fad3a13d6062ab639973794c63b2cc49dd80abb4f2ab42",
+  "v5/INVARIANTS.md": "14bf5e7df2005f18737bea77a0673ac166eea70d6c23f6c5396e8898061ae97f",
+  "v5/bench/agentpii5/contracts.py": "d616610137519d261e0d25d8517ad82d348d83103b54ae6cd7d7ee357fb46800",
+  "v5/bench/agentpii5/fixtures.py": "40461e7ee8a57687f4b0a8b2b096da70a51a7f47e2e1d020277d2d04bec38bda",
+  "v5/bench/agentpii5/form.py": "e76f2824fccc53e0acc9508d459bcd5918f3b4c95e3f0c1250ff16fade892699",
+  "v5/bench/agentpii5/harness.py": "0cc7f9144ad8a7bdd6463ff0b5daa94d8f3711453ea4e1064056d013eb7d1eeb",
+  "v5/bench/agentpii5/judge.py": "5510aa2fc444b6fad2ee9fc3058b0c78849202ed6508246e7d6972ca847ce59d",
+  "v5/bench/agentpii5/metrics.py": "f372cd18fb0ac3a4f5a95d85895002bd9f73204bd0804a8c90aa5d18d5f6ab60",
+  "v5/bench/agentpii5/observe.py": "5d111351345642480052ecd11fe8000d9d1a14c4c00a451b94b3646429b29a90",
+  "v5/bench/agentpii5/perfect.py": "122217b9dac9d0fe46e7aff734c0802ff63f8f8d7ac287c595b99968df171976",
+  "v5/bench/agentpii5/records.py": "0c19ca6de6885331ea677d8d1776b29b22b64901a830afa4003d7fa76593fede",
+  "v5/bench/agentpii5/report.py": "0558694f37cc1ae418ce857782aba4a233aa109d5f148539786ceab427435a3a",
+  "v5/bench/agentpii5/revise.py": "4f4b14deaae87f094f98fd636ef323fdf30f19d320449dabdc41648c7e46d627",
+  "v5/bench/agentpii5/schema.py": "f1e8e2e593e4f47ec8de554be50c2cfb1400a023e5c979066d890cd57e31ad4c",
+  "v6/checksum_v6.py": "31fc5a927657e985830dfce300c562965cfedeaf8f8f0213912f8affa3e2f69e",
+  "v6/contracts.py": "6e294754f2b676910133a7e64e84e7ee9fe64dfaf0b1725356e4ae964ffad5fb",
+  "v6/contracts_v6.py": "cb7a9fae691736c37054f013119eeefaebca334b05357aa3f6eb5bc191f4d471",
+  "v6/pii_types.py": "f0ca78cf892333935c74f51e273f52feee81cfffb22fa8e153290b0e77475d9d",
+  "v6/test_metrics_v6.py": "0704e697c33f3494c7867e2eddd85438bf860729c079eeae2411c5962f8536e9",
+  "v6/test_perfect_v6.py": "d787502fd75eb81b8cfcedd8d6f0da132a95a84bffda1742285281b517929cee",
+  "v6/test_pii_types.py": "dd2a4d69badb1c5d5b2f4255f249c789037e1e919d96f024178d14bf0751c2ce"
+ },
+ "frozen_v5_sources_from_ref": {
+  "prototype/bench/agentpii5/contracts.py": "0b9eb2a0899df4645d9cf6bf768aadc545c0d33a",
+  "prototype/bench/agentpii5/fixtures.py": "44134812208a6f31ea8e7c334bdd7ecd4cef54cd",
+  "prototype/bench/agentpii5/form.py": "dd5853871ba895ddc2d6efb36604b378650a0635",
+  "prototype/bench/agentpii5/harness.py": "5426b49a8879e1758c57f9b660784f290a0451b5",
+  "prototype/bench/agentpii5/judge.py": "d4b935e6675649fc59d7e1893bb5ea309ecb76b4",
+  "prototype/bench/agentpii5/metrics.py": "a183066ad57a889f98713f6995c9faa13eeac4a9",
+  "prototype/bench/agentpii5/observe.py": "eaca2556dc443f454faa746a9db031eff9ff6af2",
+  "prototype/bench/agentpii5/perfect.py": "3ba9c000feb42cbd669764e5cd716a0f0d815639",
+  "prototype/bench/agentpii5/records.py": "8487abf3ded6665ade8bcdd814443ff4cc52a257",
+  "prototype/bench/agentpii5/report.py": "d1402d379c3ff372f166f5db6a0328707a8622dc",
+  "prototype/bench/agentpii5/revise.py": "517102ff49a4676d94519d41b1b7bc47fb0c93d2",
+  "prototype/bench/agentpii5/schema.py": "d5291caf296390394beaabbac255cd670e9a9a00"
+ },
+ "runtime": {
+  "python": "3.12.12",
+  "interpreter": "/Users/igor/Projects/Obscura-hop-audit/prototype/.venv/bin/python",
+  "PYTHONDONTWRITEBYTECODE": "1"
+ },
+ "commands": [
+  {
+   "cmd": "prototype/.venv/bin/python work/V0/checks/extract_compat.py",
+   "exit": 0,
+   "writes": [
+    "evidence/compat_raw.json",
+    "evidence/extract_compat.log"
+   ]
+  },
+  {
+   "cmd": "prototype/.venv/bin/python work/V0/checks/v0_checks.py",
+   "exit": 0,
+   "note": "9 checks, 7 declared RED reproduced, 0 unexpected",
+   "writes": [
+    "checks/v0_checks.result.json"
+   ]
+  },
+  {
+   "cmd": "prototype/.venv/bin/python work/V0/checks/probe_checksum_samples.py",
+   "exit": 0,
+   "note": "11/11 registry samples are checksum-valid"
+  },
+  {
+   "cmd": "prototype/.venv/bin/python work/V0/checks/build_artifacts.py",
+   "exit": 0
+  }
+ ],
+ "boundaries": {
+  "wrote_only": [
+   "research/quality-sprint-2026-09-30/work/V0/"
+  ],
+  "no_merge": true,
+  "no_checkout": true,
+  "no_worktree": true,
+  "no_stash": true,
+  "no_engine_or_provider": true,
+  "no_installs": true,
+  "no_source_patch": true,
+  "read_only_refs": [
+   "prototype/",
+   "licensing/",
+   "wiki/",
+   "old run directories"
+  ]
+ }
+}

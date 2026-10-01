@@ -1,0 +1,262 @@
+{
+  "task": "M1b",
+  "wave": "quality-sprint-design-red-1",
+  "required_gate": {
+    "path": "research/quality-sprint-2026-09-30/work/B0/GATE.json",
+    "gate": "G1",
+    "status": "PASS",
+    "scope_note": "LOCAL/DESIGN only; production artifact NOT_MEASURED and release-A/B still blocked"
+  },
+  "provider": {
+    "requested": "deepseek-official",
+    "model_requested": "deepseek-flash",
+    "mechanism": "explicit orchestration override; no self-attestation is technical proof",
+    "external_calls_made": 0,
+    "paid_benchmark_calls_made": 0
+  },
+  "git": {
+    "head": "8a808ca70a13b3b19b28d60c6746c443bec01ea0",
+    "head_subject": "research(quality): pin M04 truth-condition REDs and independent design findings",
+    "pinned_product_commit": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "working_tree_branch": "research/hop-format-audit",
+    "product_source_diff_pinned_to_head": "",
+    "note": "890c508 is a research-only commit; the product source is the pinned 0bfda236 content and the diff above is empty"
+  },
+  "run": {
+    "run_id": "cc3a551f-a8a5-4c0d-b90b-d3db2b26858a",
+    "label": "v5-sprint-v2-813",
+    "directory": "prototype/bench/runs/2026-09-30/v5-sprint-v2-813",
+    "meta_provenance_commit": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "meta_corpus_sha256": "7f7b1a80ba0c8fb3928d3105f9226646bc0950d65be97d37f9d4b8c7aabb8e52",
+    "meta_corpus_v5_sha256": "3de9f13199ac957870f30c552988623d76bc15fd076ac3f0cc27fa747a0ef6a6"
+  },
+  "bundle": {
+    "version": "2a07cebae2b050ec",
+    "plaintext_bytes": 1524582,
+    "plaintext_sha256": "01c19f4689450b54694b7aaa4070cbaf695efc3e98f0b59471486392a0348206",
+    "persisted": false
+  },
+  "sources": [
+    {
+      "path": "prototype/bench/agentpii5/payload_canaries.py",
+      "exists": true,
+      "bytes": 49914,
+      "sha256": "ed2e605f94cb02c8233a75ebfb6a7531fcc4c84c2a0b30e138d49c8c447ea631"
+    },
+    {
+      "path": "prototype/bench/agentpii5/test_payload_canaries.py",
+      "exists": true,
+      "bytes": 31361,
+      "sha256": "698846f266745440ed35c3e7041b62eb4ef45d459ecec373a60918f2f49abc67"
+    },
+    {
+      "path": "prototype/bench/agentpii5/test_payload_canary_integration.py",
+      "exists": true,
+      "bytes": 20404,
+      "sha256": "ac0abae1a7e5f058be684cfb3825eac27dfc668846cb2159de7366dbe006e214"
+    },
+    {
+      "path": "prototype/bench/agentpii5/harness.py",
+      "exists": true,
+      "bytes": 164260,
+      "sha256": "0cc7f9144ad8a7bdd6463ff0b5daa94d8f3711453ea4e1064056d013eb7d1eeb"
+    },
+    {
+      "path": "prototype/bench/agentpii5/mock.py",
+      "exists": true,
+      "bytes": 148351,
+      "sha256": "ca7793fda74412536a2e07e6b3d89e96212b26ceeb36a2d65e0d41aba1d245b9"
+    },
+    {
+      "path": "prototype/bench/agentpii5/schema.py",
+      "exists": true,
+      "bytes": 55000,
+      "sha256": "f1e8e2e593e4f47ec8de554be50c2cfb1400a023e5c979066d890cd57e31ad4c"
+    },
+    {
+      "path": "prototype/bench/agentpii4/gateway.py",
+      "exists": true,
+      "bytes": 16206,
+      "sha256": "551c409b82623f48034d45a8c171c3fb1f7fc1e038a73800e50254dcd494ff37"
+    },
+    {
+      "path": "prototype/pseudex/envelope.py",
+      "exists": true,
+      "bytes": 97852,
+      "sha256": "76bbc441fe44eef4fb381f7b19805bd77305a41698efee66674d30d11f16a585"
+    },
+    {
+      "path": "prototype/pseudex/vault.py",
+      "exists": true,
+      "bytes": 366016,
+      "sha256": "e10630e377febdefe0205ee1f733efdc8c24a3c5288816b43ede12a1f180163e"
+    },
+    {
+      "path": "prototype/pseudex/detect_all.py",
+      "exists": true,
+      "bytes": 20267,
+      "sha256": "e2e458de6e9bbc16c5c3d91307a0076a647115c9fa7e39fd1ce667a0e5e32e69"
+    },
+    {
+      "path": "prototype/bench/agentpii3/score.py",
+      "exists": true,
+      "bytes": 79430,
+      "sha256": "b396a97380ee7771e213238765b12fbab06738d6ac229c07cc3d46b09fd94b8b"
+    }
+  ],
+  "run_artifacts": [
+    {
+      "path": "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl",
+      "exists": true,
+      "bytes": 95241454,
+      "sha256": "3c42892960088ad08a8cded1b5dc987563cfe4af810d7b8ae283b501e2ceabb7"
+    },
+    {
+      "path": "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.triples.jsonl",
+      "exists": true,
+      "bytes": 563103,
+      "sha256": "2d257e25ffe14a68375ce856a5581fa843aba51e0896084ce38846e23c45abee"
+    },
+    {
+      "path": "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.arms.v5.jsonl",
+      "exists": true,
+      "bytes": 17366828,
+      "sha256": "252e775e602f3a59624d85efc5c6c56b35b84ffc4f0c2e59a39571d5fc0010f9"
+    },
+    {
+      "path": "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/corpus.v5.json",
+      "exists": true,
+      "bytes": 10590531,
+      "sha256": "83d46b1da3416c40fffc94e41ac9a88ac642bc405b05d217e5c5d0413a9e12e4"
+    },
+    {
+      "path": "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/corpus.json",
+      "exists": true,
+      "bytes": 7461064,
+      "sha256": "d0e2788aee5fe2bc4ab66c8e955836115ca02cc21cfd7afa67e2c666f8ffa9dc"
+    },
+    {
+      "path": "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.meta.json",
+      "exists": true,
+      "bytes": 3219,
+      "sha256": "5d4db2e76c226ea8b49c837bcbad0a490bd03c8425a19ad335a634e9cdca1505"
+    },
+    {
+      "path": "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.report.json",
+      "exists": true,
+      "bytes": 723860,
+      "sha256": "d4a9e7bbc31edd91799b5124785060f08ba05fc5ee8ba3e28e92aae06fd29985"
+    },
+    {
+      "path": "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.report.txt",
+      "exists": true,
+      "bytes": 153939,
+      "sha256": "d8e34651cd8f4e05114dccac25b87a593b8987294cee4565f3c929e5accf4412"
+    },
+    {
+      "path": "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.gate.json",
+      "exists": true,
+      "bytes": 2392,
+      "sha256": "23cbeb3c72269f8dee1a1377ab3bada351baba1b370104cbf6a322c6d695cbdf"
+    }
+  ],
+  "evidence_inputs": [
+    {
+      "path": "research/quality-sprint-2026-09-30/work/B0/GATE.json",
+      "exists": true,
+      "bytes": 1444,
+      "sha256": "ed2b5d12fe78889b09871030b9645a6994a1ff773b046e7098c2878f1db7ce03"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/B0/REVIEW.md",
+      "exists": true,
+      "bytes": 10599,
+      "sha256": "9056702644e907e8665b7ccd45314a4569af3a9af38b3e48f9d7b7ae31a62c87"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/B0/SPEC.md",
+      "exists": true,
+      "bytes": 3361,
+      "sha256": "2d7817e9203bdb98d882fbb18c92041f227253b1f558e77a3c34a6f643adadc7"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/B0/INPUTS.json",
+      "exists": true,
+      "bytes": 36791,
+      "sha256": "e0ef894a9a40f489a4c770cd8a671278aaa03eaf6b82a81a9411fa3b571bf5fb"
+    },
+    {
+      "path": "research/hop-format-audit/runs/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.excluded.json",
+      "exists": true,
+      "bytes": 5637,
+      "sha256": "521b5528c990156416ec808107695d17005835d163ab0c87d5fd14f5b9b02cb6"
+    },
+    {
+      "path": "research/hop-format-audit/runs/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.manifest.json",
+      "exists": true,
+      "bytes": 3900,
+      "sha256": "737041375be16c0373f976fe9e9716635a3ec3ebaf47acc1bcbb97e4d45fd013"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/SPRINT-PLAN.md",
+      "exists": true,
+      "bytes": 48373,
+      "sha256": "4d0a5a60e0ee603820ae87b094c50c40930d83de3a416a0eb2b334a4094618ec"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/GOAL-BRIEF.md",
+      "exists": true,
+      "bytes": 66641,
+      "sha256": "f7f7a2e2a31f54e3737c71a8dc4556aba0f7ca3b198d4430810b45b8607cfa77"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/OWNER-DECISIONS.md",
+      "exists": true,
+      "bytes": 11997,
+      "sha256": "d36927f51527862624666f66328c9547a1302e2cd466d00323e0ebb36b310090"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md",
+      "exists": true,
+      "bytes": 14709,
+      "sha256": "364982c8bf623f53f705afea4a0a2cea7a788db4c961406654df31c4bd9cd3ef"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/FIRST-WAVE-TASKS.json",
+      "exists": true,
+      "bytes": 8230,
+      "sha256": "d8d48891b8e66777df6943eff8b87a43ad74b7371733073ab87e12f087a685a5"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/FIRST-WAVE-SCOPES.md",
+      "exists": true,
+      "bytes": 3412,
+      "sha256": "3327ba6639997238e6cb515f5aab9c27b426d7cc9f567193caca8909eb3cb725"
+    }
+  ],
+  "canary_reader": {
+    "capture_version": 1,
+    "manifest_version": 1,
+    "capture_max_row_bytes": 4194304,
+    "capture_max_run_bytes": 268435456,
+    "capture_suffix": ".canary.jsonl",
+    "kill_switch": "NPY_CANARY_CAPTURE"
+  },
+  "boundaries": {
+    "write_scope": "research/quality-sprint-2026-09-30/work/M1b/",
+    "read_only": [
+      "prototype/",
+      "research/hop-format-audit/",
+      "wiki/",
+      "old raw runs and corpora",
+      "EXECUTION.json and the usage journal (Lead owns)"
+    ],
+    "forbidden_actions_performed": [
+      "git reset/stash/revert",
+      "package installs",
+      "model downloads",
+      "provider/benchmark calls",
+      "broad secret-path search"
+    ]
+  }
+}

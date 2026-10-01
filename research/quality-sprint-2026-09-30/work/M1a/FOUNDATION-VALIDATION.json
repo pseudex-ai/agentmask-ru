@@ -1,0 +1,85 @@
+{
+  "stage": "M1a evidence foundation v2-dev (after foundation-review regressions); full G2 remains FAIL",
+  "only_declared_source_changes": [
+    "prototype/bench/agentpii5/answer_restoration.py",
+    "prototype/bench/agentpii5/test_answer_restoration.py"
+  ],
+  "files": [
+    {
+      "path": "prototype/bench/agentpii5/answer_restoration.py",
+      "sha256": "c9050ded16823f41ee430e09bbd97649eb7559438d5c008555c3acf40f403ae2",
+      "bytes": 25372
+    },
+    {
+      "path": "prototype/bench/agentpii5/test_answer_restoration.py",
+      "sha256": "024e494e46a588815a303b2d3d922b1cdc2df5590e6713dd9e094ce690e6b087",
+      "bytes": 13289
+    }
+  ],
+  "prototype_tests": {
+    "count": 55,
+    "passed": 55,
+    "exit": 0
+  },
+  "legacy_regression_suites": [
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "bench.agentpii5.test_metrics"
+      ],
+      "exit": 0,
+      "log": "test_metrics.log"
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "bench.agentpii5.test_fixtures"
+      ],
+      "exit": 0,
+      "log": "test_fixtures.log"
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "bench.agentpii5.test_form"
+      ],
+      "exit": 0,
+      "log": "test_form.log"
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "bench.agentpii5.test_observe"
+      ],
+      "exit": 0,
+      "log": "test_observe.log"
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "bench.agentpii5.test_hop_report"
+      ],
+      "exit": 0,
+      "log": "test_hop_report.log"
+    },
+    {
+      "command": [
+        ".venv/bin/python",
+        "-m",
+        "bench.agentpii5.test_live"
+      ],
+      "exit": 0,
+      "log": "test_live.log"
+    }
+  ],
+  "other_source_run_pins_unchanged": 196,
+  "raw_paid_run_changed": false,
+  "engine_changed": false,
+  "historical_metrics_changed": false,
+  "m04_wiring_done": false
+}

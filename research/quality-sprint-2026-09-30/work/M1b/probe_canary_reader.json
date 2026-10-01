@@ -1,0 +1,4696 @@
+{
+  "run_dir": "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/runs/2026-09-30/v5-sprint-v2-813",
+  "bound_bytes": 4194304,
+  "run_bound_bytes": 268435456,
+  "capture_version": 1,
+  "manifest_version": 1,
+  "capture_artifacts": [
+    "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl"
+  ],
+  "geometry": [
+    {
+      "path": "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl",
+      "sha256": "3c42892960088ad08a8cded1b5dc987563cfe4af810d7b8ae283b501e2ceabb7",
+      "rows": 810,
+      "total_bytes": 95241454,
+      "max_row_bytes": 5531229,
+      "min_row_bytes": 5238,
+      "bound_bytes": 4194304,
+      "run_bound_bytes": 268435456,
+      "over_run_bound": false,
+      "oversized_rows": [
+        {
+          "line": 806,
+          "bytes": 5531229,
+          "over_by": 1336925,
+          "note": "line length includes the trailing newline"
+        },
+        {
+          "line": 810,
+          "bytes": 5470734,
+          "over_by": 1276430,
+          "note": "line length includes the trailing newline"
+        }
+      ],
+      "rows_at_or_under_bound": 808
+    }
+  ],
+  "oversized_row_validity": [
+    {
+      "line": 806,
+      "bytes": 5531229,
+      "top_keys": [
+        "arm",
+        "capture",
+        "case_id",
+        "repeat",
+        "version"
+      ],
+      "version": 1,
+      "case_id": "sequential_chain:mail-006",
+      "repeat": 0,
+      "arm": "I",
+      "payloads": [
+        {
+          "name": "model_request",
+          "text_bytes": 356,
+          "real_text_bytes": 356
+        },
+        {
+          "name": "model_input",
+          "text_bytes": 321,
+          "real_text_bytes": 321
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 470,
+          "real_text_bytes": 470
+        },
+        {
+          "name": "model_input",
+          "text_bytes": 81,
+          "real_text_bytes": 81
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 733,
+          "real_text_bytes": 733
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 1000,
+          "real_text_bytes": 1000
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 1356,
+          "real_text_bytes": 1356
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 125,
+          "real_text_bytes": 125
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 1619,
+          "real_text_bytes": 1619
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 1882,
+          "real_text_bytes": 1882
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 2145,
+          "real_text_bytes": 2145
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 2408,
+          "real_text_bytes": 2408
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 3066,
+          "real_text_bytes": 3070
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 397,
+          "real_text_bytes": 401
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 3329,
+          "real_text_bytes": 3333
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 3592,
+          "real_text_bytes": 3596
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 3855,
+          "real_text_bytes": 3859
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 4120,
+          "real_text_bytes": 4124
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 4383,
+          "real_text_bytes": 4387
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 4648,
+          "real_text_bytes": 4652
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 4913,
+          "real_text_bytes": 4917
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 5178,
+          "real_text_bytes": 5182
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 5443,
+          "real_text_bytes": 5447
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 5708,
+          "real_text_bytes": 5712
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 5973,
+          "real_text_bytes": 5977
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 6238,
+          "real_text_bytes": 6242
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 6503,
+          "real_text_bytes": 6507
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 6768,
+          "real_text_bytes": 6772
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 7033,
+          "real_text_bytes": 7037
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 7298,
+          "real_text_bytes": 7302
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 7563,
+          "real_text_bytes": 7567
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 7828,
+          "real_text_bytes": 7832
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 8093,
+          "real_text_bytes": 8097
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 8358,
+          "real_text_bytes": 8362
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 8623,
+          "real_text_bytes": 8627
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 8888,
+          "real_text_bytes": 8892
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 9153,
+          "real_text_bytes": 9157
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 9418,
+          "real_text_bytes": 9422
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 9683,
+          "real_text_bytes": 9687
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 9948,
+          "real_text_bytes": 9952
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 10213,
+          "real_text_bytes": 10217
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 10478,
+          "real_text_bytes": 10482
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 10743,
+          "real_text_bytes": 10747
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 11008,
+          "real_text_bytes": 11012
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 11273,
+          "real_text_bytes": 11277
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 11538,
+          "real_text_bytes": 11542
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 11803,
+          "real_text_bytes": 11807
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 12068,
+          "real_text_bytes": 12072
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 12333,
+          "real_text_bytes": 12337
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 12598,
+          "real_text_bytes": 12602
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 12863,
+          "real_text_bytes": 12867
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 13128,
+          "real_text_bytes": 13132
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 13393,
+          "real_text_bytes": 13397
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 13658,
+          "real_text_bytes": 13662
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 13923,
+          "real_text_bytes": 13927
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 14188,
+          "real_text_bytes": 14192
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 14453,
+          "real_text_bytes": 14457
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 14718,
+          "real_text_bytes": 14722
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 14983,
+          "real_text_bytes": 14987
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 15248,
+          "real_text_bytes": 15252
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 15513,
+          "real_text_bytes": 15517
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 15778,
+          "real_text_bytes": 15782
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 16043,
+          "real_text_bytes": 16047
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 16308,
+          "real_text_bytes": 16312
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 16573,
+          "real_text_bytes": 16577
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 16838,
+          "real_text_bytes": 16842
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 17103,
+          "real_text_bytes": 17107
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 17368,
+          "real_text_bytes": 17372
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 17633,
+          "real_text_bytes": 17637
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 17898,
+          "real_text_bytes": 17902
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 18163,
+          "real_text_bytes": 18167
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 18428,
+          "real_text_bytes": 18432
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 18693,
+          "real_text_bytes": 18697
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 18958,
+          "real_text_bytes": 18962
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 19223,
+          "real_text_bytes": 19227
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 19488,
+          "real_text_bytes": 19492
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 19753,
+          "real_text_bytes": 19757
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 20018,
+          "real_text_bytes": 20022
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 20283,
+          "real_text_bytes": 20287
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 20548,
+          "real_text_bytes": 20552
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 20813,
+          "real_text_bytes": 20817
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 21078,
+          "real_text_bytes": 21082
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 21343,
+          "real_text_bytes": 21347
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 21608,
+          "real_text_bytes": 21612
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 21873,
+          "real_text_bytes": 21877
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 22138,
+          "real_text_bytes": 22142
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 22403,
+          "real_text_bytes": 22407
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 22668,
+          "real_text_bytes": 22672
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 22933,
+          "real_text_bytes": 22937
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 23198,
+          "real_text_bytes": 23202
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 23463,
+          "real_text_bytes": 23467
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 23728,
+          "real_text_bytes": 23732
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 23993,
+          "real_text_bytes": 23997
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 24258,
+          "real_text_bytes": 24262
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 24523,
+          "real_text_bytes": 24527
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 24788,
+          "real_text_bytes": 24792
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 25053,
+          "real_text_bytes": 25057
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 25318,
+          "real_text_bytes": 25322
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 25583,
+          "real_text_bytes": 25587
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 25848,
+          "real_text_bytes": 25852
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 26113,
+          "real_text_bytes": 26117
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 26378,
+          "real_text_bytes": 26382
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 26643,
+          "real_text_bytes": 26647
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 26908,
+          "real_text_bytes": 26912
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 27173,
+          "real_text_bytes": 27177
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 27438,
+          "real_text_bytes": 27442
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 27703,
+          "real_text_bytes": 27707
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 27968,
+          "real_text_bytes": 27972
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 28235,
+          "real_text_bytes": 28239
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 28502,
+          "real_text_bytes": 28506
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 28769,
+          "real_text_bytes": 28773
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 29036,
+          "real_text_bytes": 29040
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 29303,
+          "real_text_bytes": 29307
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 29570,
+          "real_text_bytes": 29574
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 29837,
+          "real_text_bytes": 29841
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 30104,
+          "real_text_bytes": 30108
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 30371,
+          "real_text_bytes": 30375
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 30638,
+          "real_text_bytes": 30642
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 30905,
+          "real_text_bytes": 30909
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 31172,
+          "real_text_bytes": 31176
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 31439,
+          "real_text_bytes": 31443
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 31706,
+          "real_text_bytes": 31710
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 31973,
+          "real_text_bytes": 31977
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 32240,
+          "real_text_bytes": 32244
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 32507,
+          "real_text_bytes": 32511
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 32774,
+          "real_text_bytes": 32778
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 33041,
+          "real_text_bytes": 33045
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 33308,
+          "real_text_bytes": 33312
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 33575,
+          "real_text_bytes": 33579
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 457,
+          "real_text_bytes": 469
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 34454,
+          "real_text_bytes": 34460
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 156,
+          "real_text_bytes": 156
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 407,
+          "real_text_bytes": 414
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 35718,
+          "real_text_bytes": 35716
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 556,
+          "real_text_bytes": 547
+        },
+        {
+          "name": "final_answer",
+          "text_bytes": 1254,
+          "real_text_bytes": 1272
+        }
+      ],
+      "capture_from_json": "ACCEPTED",
+      "delivered_boundaries": [
+        "model_request",
+        "model_input",
+        "model_request",
+        "model_input",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "final_answer"
+      ],
+      "manifest_canaries": 20
+    },
+    {
+      "line": 810,
+      "bytes": 5470734,
+      "top_keys": [
+        "arm",
+        "capture",
+        "case_id",
+        "repeat",
+        "version"
+      ],
+      "version": 1,
+      "case_id": "sequential_chain:mail-007",
+      "repeat": 0,
+      "arm": "I",
+      "payloads": [
+        {
+          "name": "model_request",
+          "text_bytes": 356,
+          "real_text_bytes": 356
+        },
+        {
+          "name": "model_input",
+          "text_bytes": 321,
+          "real_text_bytes": 321
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 480,
+          "real_text_bytes": 480
+        },
+        {
+          "name": "model_input",
+          "text_bytes": 91,
+          "real_text_bytes": 91
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 743,
+          "real_text_bytes": 743
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 1006,
+          "real_text_bytes": 1006
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 1269,
+          "real_text_bytes": 1269
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 1532,
+          "real_text_bytes": 1532
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 1795,
+          "real_text_bytes": 1795
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 2058,
+          "real_text_bytes": 2058
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 2566,
+          "real_text_bytes": 2567
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 283,
+          "real_text_bytes": 284
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 2829,
+          "real_text_bytes": 2830
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 3092,
+          "real_text_bytes": 3093
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 3357,
+          "real_text_bytes": 3358
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 3622,
+          "real_text_bytes": 3623
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 3887,
+          "real_text_bytes": 3888
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 4152,
+          "real_text_bytes": 4153
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 4417,
+          "real_text_bytes": 4418
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 4682,
+          "real_text_bytes": 4683
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 4947,
+          "real_text_bytes": 4948
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 5212,
+          "real_text_bytes": 5213
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 5477,
+          "real_text_bytes": 5478
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 5742,
+          "real_text_bytes": 5743
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 6007,
+          "real_text_bytes": 6008
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 6272,
+          "real_text_bytes": 6273
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 6537,
+          "real_text_bytes": 6538
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 6802,
+          "real_text_bytes": 6803
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 7067,
+          "real_text_bytes": 7068
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 7332,
+          "real_text_bytes": 7333
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 7597,
+          "real_text_bytes": 7598
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 7862,
+          "real_text_bytes": 7863
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 8127,
+          "real_text_bytes": 8128
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 8392,
+          "real_text_bytes": 8393
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 8657,
+          "real_text_bytes": 8658
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 8922,
+          "real_text_bytes": 8923
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 9187,
+          "real_text_bytes": 9188
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 9452,
+          "real_text_bytes": 9453
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 9717,
+          "real_text_bytes": 9718
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 9982,
+          "real_text_bytes": 9983
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 10247,
+          "real_text_bytes": 10248
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 10512,
+          "real_text_bytes": 10513
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 10777,
+          "real_text_bytes": 10778
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 11042,
+          "real_text_bytes": 11043
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 11307,
+          "real_text_bytes": 11308
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 11572,
+          "real_text_bytes": 11573
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 11837,
+          "real_text_bytes": 11838
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 12102,
+          "real_text_bytes": 12103
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 12367,
+          "real_text_bytes": 12368
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 12632,
+          "real_text_bytes": 12633
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 12897,
+          "real_text_bytes": 12898
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 13162,
+          "real_text_bytes": 13163
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 13427,
+          "real_text_bytes": 13428
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 13692,
+          "real_text_bytes": 13693
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 13957,
+          "real_text_bytes": 13958
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 14224,
+          "real_text_bytes": 14225
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 14491,
+          "real_text_bytes": 14492
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 14758,
+          "real_text_bytes": 14759
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 15025,
+          "real_text_bytes": 15026
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 15292,
+          "real_text_bytes": 15293
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 15555,
+          "real_text_bytes": 15556
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 45,
+          "real_text_bytes": 45
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 15820,
+          "real_text_bytes": 15821
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 16085,
+          "real_text_bytes": 16086
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 16350,
+          "real_text_bytes": 16351
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 16615,
+          "real_text_bytes": 16616
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 16880,
+          "real_text_bytes": 16881
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 17145,
+          "real_text_bytes": 17146
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 17410,
+          "real_text_bytes": 17411
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 17675,
+          "real_text_bytes": 17676
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 17940,
+          "real_text_bytes": 17941
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 18205,
+          "real_text_bytes": 18206
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 18470,
+          "real_text_bytes": 18471
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 18735,
+          "real_text_bytes": 18736
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 19000,
+          "real_text_bytes": 19001
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 19265,
+          "real_text_bytes": 19266
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 19530,
+          "real_text_bytes": 19531
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 19795,
+          "real_text_bytes": 19796
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 20060,
+          "real_text_bytes": 20061
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 20325,
+          "real_text_bytes": 20326
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 20590,
+          "real_text_bytes": 20591
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 20855,
+          "real_text_bytes": 20856
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 21120,
+          "real_text_bytes": 21121
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 21385,
+          "real_text_bytes": 21386
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 21650,
+          "real_text_bytes": 21651
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 21915,
+          "real_text_bytes": 21916
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 22180,
+          "real_text_bytes": 22181
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 22445,
+          "real_text_bytes": 22446
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 22710,
+          "real_text_bytes": 22711
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 22975,
+          "real_text_bytes": 22976
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 23240,
+          "real_text_bytes": 23241
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 23505,
+          "real_text_bytes": 23506
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 23770,
+          "real_text_bytes": 23771
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 24035,
+          "real_text_bytes": 24036
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 24300,
+          "real_text_bytes": 24301
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 24565,
+          "real_text_bytes": 24566
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 24830,
+          "real_text_bytes": 24831
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 25095,
+          "real_text_bytes": 25096
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 25360,
+          "real_text_bytes": 25361
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 25625,
+          "real_text_bytes": 25626
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 25890,
+          "real_text_bytes": 25891
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 26155,
+          "real_text_bytes": 26156
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 26420,
+          "real_text_bytes": 26421
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 26685,
+          "real_text_bytes": 26686
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 26950,
+          "real_text_bytes": 26951
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 27215,
+          "real_text_bytes": 27216
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 27480,
+          "real_text_bytes": 27481
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 27745,
+          "real_text_bytes": 27746
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 28010,
+          "real_text_bytes": 28011
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 28275,
+          "real_text_bytes": 28276
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 28540,
+          "real_text_bytes": 28541
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 28807,
+          "real_text_bytes": 28808
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 29074,
+          "real_text_bytes": 29075
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 29341,
+          "real_text_bytes": 29342
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 29608,
+          "real_text_bytes": 29609
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 26,
+          "real_text_bytes": 26
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 29877,
+          "real_text_bytes": 29878
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 48,
+          "real_text_bytes": 48
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 30229,
+          "real_text_bytes": 30230
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 123,
+          "real_text_bytes": 123
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 30583,
+          "real_text_bytes": 30584
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 124,
+          "real_text_bytes": 124
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 30939,
+          "real_text_bytes": 30940
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 125,
+          "real_text_bytes": 125
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 31206,
+          "real_text_bytes": 31207
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 31473,
+          "real_text_bytes": 31474
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 31740,
+          "real_text_bytes": 31741
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 32007,
+          "real_text_bytes": 32008
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 26,
+          "real_text_bytes": 26
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 32276,
+          "real_text_bytes": 32277
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 48,
+          "real_text_bytes": 48
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 27,
+          "real_text_bytes": 27
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 32547,
+          "real_text_bytes": 32548
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 49,
+          "real_text_bytes": 49
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 32814,
+          "real_text_bytes": 32815
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 25,
+          "real_text_bytes": 25
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 33081,
+          "real_text_bytes": 33082
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 47,
+          "real_text_bytes": 47
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 33346,
+          "real_text_bytes": 33347
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 24,
+          "real_text_bytes": 24
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 33611,
+          "real_text_bytes": 33612
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 46,
+          "real_text_bytes": 46
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 23,
+          "real_text_bytes": 23
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 34119,
+          "real_text_bytes": 34121
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 283,
+          "real_text_bytes": 284
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 466,
+          "real_text_bytes": 466
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 34982,
+          "real_text_bytes": 34979
+        },
+        {
+          "name": "tool_result",
+          "text_bytes": 163,
+          "real_text_bytes": 160
+        },
+        {
+          "name": "final_answer",
+          "text_bytes": 1804,
+          "real_text_bytes": 1802
+        }
+      ],
+      "capture_from_json": "ACCEPTED",
+      "delivered_boundaries": [
+        "model_request",
+        "model_input",
+        "model_request",
+        "model_input",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "final_answer"
+      ],
+      "manifest_canaries": 19
+    }
+  ],
+  "check_run": {
+    "status": "NOT_MEASURED",
+    "ok": false,
+    "reason": "the delivered bytes could not be read: cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl:806: capture row is over the 4194304 byte bound",
+    "coverage_known": false,
+    "capture_rows": 0,
+    "intervention_rows": 0,
+    "selected_rows": 0
+  },
+  "synthetic_oversized": {
+    "run_dir": "/Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/tmp/synthetic-run",
+    "capture_file": "/Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/tmp/synthetic-run/m1b-synthetic.canary.jsonl",
+    "row_bytes": 8910569,
+    "over_row_bound": true,
+    "under_run_bound": true,
+    "check_run_status": "NOT_MEASURED",
+    "check_run_reason": "the delivered bytes could not be read: m1b-synthetic.canary.jsonl:1: capture row is over the 4194304 byte bound",
+    "check_run_ok": false
+  },
+  "raw_record_integrity": [
+    {
+      "rows": 810,
+      "bytes_on_disk": 95241454,
+      "payloads": 20201,
+      "payload_text_bytes": 32299491,
+      "payload_real_bytes": 32323337,
+      "distinct_case_repeat_keys": 810,
+      "duplicates": [],
+      "boundaries": {
+        "model_request": 7477,
+        "model_input": 3036,
+        "tool_args": 4445,
+        "tool_result": 4391,
+        "final_answer": 802,
+        "tool_error": 50
+      },
+      "unparsable_rows": 0
+    }
+  ],
+  "coverage": [
+    {
+      "triples_artifact": "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.triples.jsonl",
+      "selected_rows": 813,
+      "complete_rows": 802,
+      "expected_i_arms": 810,
+      "captured_rows": 810,
+      "covered": 810,
+      "coverage_fraction": 1.0,
+      "missing": [],
+      "missing_count": 0,
+      "unexpected_count": 0,
+      "unexpected": []
+    }
+  ]
+}

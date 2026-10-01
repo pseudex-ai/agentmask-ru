@@ -1,0 +1,65 @@
+diff --git a/prototype/bench/agentpii5/test_observe.py b/prototype/bench/agentpii5/test_observe.py
+index a4ad6e1..5742e65 100644
+--- a/prototype/bench/agentpii5/test_observe.py
++++ b/prototype/bench/agentpii5/test_observe.py
+@@ -29,4 +29,5 @@ from bench.agentpii5.fixtures import (
+     _hop,
+     _in_message,
++    _in_seed,
+     _item,
+     _result,
+@@ -308,6 +309,6 @@ def test_out_unmasked_has_nothing_to_compare() -> list[str]:
+     problems: list[str] = []
+     got = _one(case, missed).hops[0]
+-    if got.status != "unmasked" or got.verdict is not None:
+-        problems.append(f"a leaf with no substitute in it must be `unmasked`, got {got.status}")
++    if got.status != "leaf_foreign" or got.verdict is not None:
++        problems.append(f"a leaf with no substitute in it must be `leaf_foreign`, got {got.status}")
+     if _one(case, worked).hops[0].status != "observed":
+         problems.append("a leaf that DID carry a substitute must stay observed — the fixture "
+@@ -588,4 +589,31 @@ def test_extra_hop_undeclared() -> list[str]:
+ 
+ 
++def test_second_declared_hop_on_a_claimed_leaf_is_absent() -> list[str]:
++    """Е-6, the run-side backstop of R22. A saved run or a handwritten case may
++    still declare two equivalent leaves on one transition; the observer must not
++    read two `observed` from one written leaf. The FIRST declared hop claims the
++    equivalent leaf the agent wrote, and the SECOND declared hop that resolves to
++    the SAME leaf reads `absent` (or nothing when optional)."""
++    loc = _item("p4", "LOC", "Ижевск, улица Клубная, 85", "Ижевск, улица Клубная, 85",
++                "i1", _in_seed("s1", "address"))
++    first = _hop("OUT", "tool_arg", "p4", 0, 0, "courier_book", 0, -1, "address.locality")
++    second = _hop("OUT", "tool_arg", "p4", 1, 0, "delivery_create_order", 0, -1,
++                  "to_location.city")
++    case = _case("obs-claimed", "single", ("адрес",), (loc,), (first, second))
++    run = _with_subs(_with_calls(_run("obs-claimed"), (_call(
++        "crm_upsert_contact", {"contact": {"address": {"city": "Самара"}}},
++        {"contact": {"address": {"city": "Ижевск"}}}, {}, "", 0),), (0,)),
++        {"p4": "Самара, улица Луговая, 10"})
++    by_index = {hop.hop.hop_index: hop for hop in _one(case, run).hops if hop.declared}
++    problems: list[str] = []
++    if 0 not in by_index or by_index[0].status != "observed":
++        problems.append(f"the first hop must be observed; got "
++                        f"{by_index.get(0).status if 0 in by_index else 'not emitted'!r}")
++    if 1 not in by_index or by_index[1].status != "absent":
++        problems.append(f"the second hop on the claimed leaf must be absent; got "
++                        f"{by_index.get(1).status if 1 in by_index else 'not emitted'!r}")
++    return problems
++
++
+ def test_parent_path_joins_the_leaves_in_field_order() -> list[str]:
+     """One value carried by SEVERAL leaves is ONE hop.
+@@ -825,5 +853,5 @@ def test_a_decomposed_leaf_is_judged_by_its_own_role() -> list[str]:
+             ("restored", "79", "46", "observed"),
+             ("fake left standing", "79", "79", "residual"),
+-            ("never masked", "46", "46", "unmasked")):
++            ("never masked", "46", "46", "not_masked")):
+         got = _status(written, restored)
+         if got != want:
+@@ -1050,4 +1078,6 @@ def main() -> int:
+         ("optional_absent_not_emitted", test_optional_absent_not_emitted),
+         ("extra_hop_undeclared", test_extra_hop_undeclared),
++        ("second_declared_hop_on_a_claimed_leaf_is_absent",
++         test_second_declared_hop_on_a_claimed_leaf_is_absent),
+         ("parent_path_joins_the_leaves_in_field_order",
+          test_parent_path_joins_the_leaves_in_field_order),

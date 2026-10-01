@@ -1,0 +1,46 @@
+diff --git a/prototype/bench/agentpii5/judge.py b/prototype/bench/agentpii5/judge.py
+index 77e1609..d4b935e 100644
+--- a/prototype/bench/agentpii5/judge.py
++++ b/prototype/bench/agentpii5/judge.py
+@@ -74,4 +74,5 @@ from claude_agent_sdk import (
+ 
+ from bench.agentpii4.parts import parts_of
++from bench.agentpii5.connectors import ConnectorError, JudgeConnector, json_object
+ from bench.agentpii4.schema import message_text
+ from bench.agentpii5.contracts import (
+@@ -304,4 +305,28 @@ class JudgeConfig:
+ 
+ 
++@dataclass(frozen=True)
++class ConnectedJudgeConfig(JudgeConfig):
++    """Inject external I/O without replacing the rubric or quote validation."""
++
++    connector: JudgeConnector
++
++
++async def _ask_connector(prompt: str, label: str,
++                         config: ConnectedJudgeConfig) -> tuple[dict[str, object] | None, float, str]:
++    await config.ledger.reserve(config.query_cap_usd)
++    spent = 0.0
++    try:
++        schema = json_object({**_SCHEMA, 'additionalProperties': False})
++        result = await config.connector.evaluate(RUBRIC, prompt, schema, 120.0)
++        spent = result.usage.cost_usd
++        if len(result.replies) != 1:
++            raise ConnectorError('judge connector returned more than one answer')
++        return dict(json_object(json.loads(result.replies[0]))), spent, ''
++    except (ConnectorError, TimeoutError, json.JSONDecodeError) as error:
++        return None, spent, f'{type(error).__name__}: {error}'
++    finally:
++        await config.ledger.settle(label, config.query_cap_usd, spent)
++
++
+ # --- the blind guard ------------------------------------------------------------------
+ 
+@@ -864,4 +889,6 @@ async def _ask(prompt: str, label: str, config: JudgeConfig) -> tuple[dict[str,
+     # for) would otherwise be swallowed into a `judged_by="none"` verdict the
+     # run had already paid the reservation for.
++    if isinstance(config, ConnectedJudgeConfig):
++        return await _ask_connector(prompt, label, config)
+     options = _options(config.model, config.query_cap_usd, config.temperature)
+     await config.ledger.reserve(config.query_cap_usd)

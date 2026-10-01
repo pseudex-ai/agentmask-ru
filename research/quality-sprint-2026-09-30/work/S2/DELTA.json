@@ -1,0 +1,76 @@
+{
+  "task": "S2",
+  "stage": "ResearchOnly",
+  "baseline": {
+    "prerequisite": "B0 G1 local/design PASS; production digest NOT_VERIFIED",
+    "plan_clauses": [
+      "SPRINT-PLAN.md#L16 semantic PII researched and inventoried now, implementation needs a separate owner decision",
+      "SPRINT-PLAN.md#L124 S2: missing coverage classes, episodes, owner questions; research only",
+      "SPRINT-PLAN.md#L167 S2 mandatory acceptance is G0; absence of the map blocks Z1",
+      "REMAINING-DECISIONS.md#L38 diagnosis, salary, conviction and person-debt are not covered by the 55 registry types"
+    ],
+    "prior_research_reused_not_repeated": [
+      "research/2026-08-16-vertical-pii-registry.md#L346-L371 (salary/conviction are values/categories)",
+      "research/2026-08-16-industry-pii-hr-insurance-legal.md (HR/legal vertical gap)",
+      "research/dd4-C-quasi-identifiers.md (diagnosis as sensitive attribute)",
+      "wiki/INVARIANTS.md#L154-L160 (date association rule)"
+    ]
+  },
+  "added": {
+    "artifacts": {
+      "INPUTS.json": "19 read inputs hashed; 7 engine files verified against the B0 pin; 2 legal sources fetched",
+      "SPEC.md": "classes, forms, measured inventory, gaps SG-1..SG-6, mechanism options A-D, RED proposal, non-claims",
+      "GAP-MATRIX.json": "26 measured episode rows + class summary + 7 read-only source facts + unknowns",
+      "EPISODES.jsonl": "26 synthetic episodes with attribute_phrase declared before the run",
+      "OWNER-DISPOSITION.md": "6 concrete forks under O-SEMANTIC, all OWNER_PENDING",
+      "probes/semantic_probe.py": "executed observation probe on the unchanged engine, ephemeral in-memory vault",
+      "probes/build_inputs.py": "executed pin verification and INPUTS.json builder",
+      "probes/build_matrix.py": "executed derivation of GAP-MATRIX.json from probe JSON",
+      "probes/verify_outputs.py": "executed consistency check of every count recorded in GATE.json",
+      "logs/": "real stdout logs with exit codes"
+    },
+    "measured_facts": {
+      "engine_unchanged": "7/7 engine files match the B0 SHA256 pins; no diff to prototype/pseudex or prototype/licensing since 0bfda236",
+      "semantic_positives_closed": "1/15 (DX-05)",
+      "semantic_positives_attribute_left_in_clear": "6/15 (DX-01, DX-03, SAL-01, SAL-05, CON-01, DEB-01)",
+      "semantic_positives_subject_not_detected": "8/15 (DX-02, SAL-02, SAL-06, SAL-07, CON-02, CON-04, DEB-02, DEB-05)",
+      "negative_over_masked": "1/7 (DX-04)",
+      "mask_unmask_roundtrip_identical": "26/26",
+      "existing_capability_controls": "CTL-01 NAME+DOB and CTL-02 PHONE closed; CTL-03 AGE masked, CTL-04 MEDICAL partially masked (marker)",
+      "semantic_key_types_in_leased_maps": "0"
+    },
+    "new_owner_forks": [
+      {"id": "O-SEMANTIC", "status": "OWNER_PENDING", "count": 6}
+    ],
+    "new_unknowns": [
+      "host-side re-association of a leftover attribute",
+      "gazetteer recall over real medical vocabulary",
+      "v6-corpus behaviour of these classes (V0)",
+      "customer-facing promises about semantic coverage"
+    ]
+  },
+  "changed": {
+    "product_source": "none",
+    "scorer_or_benchmark": "none",
+    "git_history": "none (no commit, no reset/stash/revert)",
+    "EXECUTION_json_or_usage_journal": "none (Lead owns them)"
+  },
+  "not_added": [
+    "semantic type implementation",
+    "any quality/recall/precision number for a product claim",
+    "labels or acceptance manifest (A1 owns that)",
+    "production or provider evidence",
+    "a legal-compliance conclusion"
+  ],
+  "effect_on_dependencies": {
+    "Q1": "S2 map is now available as a required input; semantic implementation is still not required without a new owner GO",
+    "Z1": "the specific absence 'no semantic gap map' is removed; Z1 still waits on L1 + independent review",
+    "K1/M1/V1/C1": "no dependency created or unblocked by S2; no shared file touched"
+  },
+  "verification": {
+    "probe": "prototype/.venv/bin/python work/S2/probes/semantic_probe.py (cwd prototype) -> exit 0",
+    "inputs": "prototype/.venv/bin/python work/S2/probes/build_inputs.py -> exit 0, mismatches=[]",
+    "matrix": "prototype/.venv/bin/python work/S2/probes/build_matrix.py -> exit 0",
+    "consistency": "prototype/.venv/bin/python work/S2/probes/verify_outputs.py -> see logs/verify_outputs.log"
+  }
+}

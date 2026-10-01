@@ -1,0 +1,33 @@
+  test_no_pseudex                            ok
+  test_extractor_keys_equal_contract         ok
+  test_labels_closed                         ok
+  test_verdict_consistency                   ok
+  test_expected_pairs                        ok
+  test_deterministic                         ok
+  test_symmetry_of_features                  ok
+  test_name_features                         ok
+  test_phone_features                        ok
+  test_loc_features                          ok
+  test_date_features                         ok
+  test_email_features                        ok
+  test_card_features                         ok
+  test_snils_features                        ok
+  test_inn_features                          ok
+  test_passport_features                     ok
+  test_plate_features                        ok
+  test_by_fields_sentinel                    ok
+  test_unknown_type_raises                   ok
+  test_abstain_is_closed_and_one_sided       ok
+  test_an_unknown_word_says_nothing_about_its_case ok
+  test_lexeme_dependent_features_have_a_floor_of_one ok
+  test_comparators_match_the_declared_readings ok
+  test_corner_labels                         ok
+  test_letterless_abstains                   ok
+  test_nothing_is_not_a_form                 ok
+  test_a_female_surname_is_not_a_masculine_genitive ok
+  test_the_part_count_abstention_is_declared ok
+  test_features_of_covers_the_type           ok
+form: 72 pairs, 42 extractors
+form: PASS
+
+STDERR

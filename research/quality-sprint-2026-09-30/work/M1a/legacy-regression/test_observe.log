@@ -1,0 +1,37 @@
+  no_pseudex: PASS
+  in_orientation: PASS
+  out_orientation: PASS
+  template_owner: PASS
+  answer_alignment: PASS
+  an_insertion_on_the_boundary_is_not_lost: PASS
+  the_widening_still_reaches_the_whole_occurrence: PASS
+  residual_out: PASS
+  out_unmasked_has_nothing_to_compare: PASS
+  out_reformatted_substitute_is_not_unmasked: PASS
+  memory_hop_reads_what_the_harness_records: PASS
+  derived_forms_are_needles: PASS
+  memory_reads_only_what_the_model_had_seen: PASS
+  answer_needles_survive_inflection: PASS
+  residual_answer_reads_the_whole_reply: PASS
+  leaked_in_partial_cover: PASS
+  optional_absent_not_emitted: PASS
+  extra_hop_undeclared: PASS
+  second_declared_hop_on_a_claimed_leaf_is_absent: PASS
+  parent_path_joins_the_leaves_in_field_order: PASS
+  seed_item_has_no_message_span: PASS
+  a_text_that_is_the_value_contains_it: PASS
+  a_value_inside_a_longer_text_is_found: PASS
+  a_generic_word_is_not_an_identifying_piece: PASS
+  the_street_gets_one_needle_per_word: PASS
+  one_exempt_path: PASS
+  a_four_letter_name_survives_declension: PASS
+  a_decomposed_leaf_is_judged_by_its_own_role: PASS
+  a_spoken_substitute_is_found_written: PASS
+  an_unknown_needle_kind_raises: PASS
+  a_shared_answer_span_is_narrowed_to_one_item: PASS
+  a_free_leaf_is_compared_by_the_value_not_the_sentence: PASS
+  a_narrowing_never_truncates_the_value: PASS
+  an_answer_hop_is_judged_on_its_own_region: PASS
+observe: PASS
+
+STDERR

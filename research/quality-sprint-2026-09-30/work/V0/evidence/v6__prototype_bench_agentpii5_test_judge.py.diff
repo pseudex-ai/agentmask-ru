@@ -1,0 +1,11 @@
+diff --git a/prototype/bench/agentpii5/test_judge.py b/prototype/bench/agentpii5/test_judge.py
+index 3d684a0..2aba172 100644
+--- a/prototype/bench/agentpii5/test_judge.py
++++ b/prototype/bench/agentpii5/test_judge.py
+@@ -58,5 +58,5 @@ def _two_turn_case() -> CaseV5:
+     return CaseV5(base=base, behaviour="memory_anaphora", hops=(), returns=(), forced=(),
+                   memory=(), pick=None, branch=None, loop=None, rag=None, document=None,
+-                  has_result=True, streaming=False, revised_from_v4=False)
++                  has_result=True, streaming=False, revised_from_v4=False, v6=None)
+ 
+ 

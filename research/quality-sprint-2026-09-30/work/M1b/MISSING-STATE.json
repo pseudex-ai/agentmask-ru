@@ -1,0 +1,283 @@
+{
+  "generated_by": "research/quality-sprint-2026-09-30/work/M1b/make_inputs.py",
+  "scope": "the four production/counting masking divergences excluded from run cc3a551f-a8a5-4c0d-b90b-d3db2b26858a",
+  "rule": "the prior state IS on disk; the failing push's own mints are NOT. An absent input is named, never inferred.",
+  "reason_source": "research/hop-format-audit/runs/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.excluded.json",
+  "cases": [
+    {
+      "case_id": "derive-008",
+      "run_record_verdict": "NO_DIVERGENCE_THIS_TOOL",
+      "failed_arm_record": {
+        "artifact": "cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.arms.v5.jsonl",
+        "state": "empty (_empty_run): state=[], calls=[], substitutes={}, request_count=0",
+        "survives_only": "the 60-character prefix pair in the triple reason"
+      },
+      "failing_boundary": "tool_result (the last captured payload is tool_args, which the failing push_call consumes)",
+      "prior_state_recovered_from": "cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl row for derive-008",
+      "prior_state_payload_count": 5,
+      "prior_state_payloads_replayed": 4,
+      "prior_state_full_replayed": true,
+      "intermediate_hops_in_capture": 0,
+      "prefix_replayed_byte_identical": true,
+      "restored_tool_args_match_saved": true,
+      "saved_prefixes": {
+        "production": "'{\\n  \"appointment_id\": \"apt-1\",\\n  \"slot\": \"2026-02-11T10:00:0'",
+        "counting": "'{\\n  \"appointment_id\": \"apt-1\",\\n  \"slot\": \"2026-02-11T10:00:0'",
+        "prefixes_equal": true
+      },
+      "absent_state": [
+        "the two masked outputs of the failing push (production vs counting) beyond their first 60 characters",
+        "every substitute the failing push MINTED for values first seen in the tool result: the mint is `secrets`-driven (pseudex/vault.py) and no mapping is persisted, and the capture stops before that push",
+        "the vault's `shown_forms` rows written by the failing push's own restore, if any",
+        "for the multi-hop cases, a replayable description of the intermediate tool hops: the capture holds their delivered bytes but not the tool call that produced them, so this probe replays only the prefix before the first tool call"
+      ],
+      "required_instrumentation": [
+        "persist, per push, the two compared strings in full (or their first divergence offset and the 512 bytes around it) instead of raising with a truncated repr",
+        "persist the minted (entity_type, real, fake) triples of the failing push, or a seed for the mint, so a replay can be byte-exact",
+        "keep the failed arm's transcript/request_count instead of `_empty_run` whenever a capture row was already written"
+      ],
+      "not_claimed": [
+        "root cause",
+        "the mechanism is proven for this case",
+        "the other three cases have the same trigger"
+      ],
+      "captured_payloads_head": [
+        {
+          "name": "model_request",
+          "text_bytes": 187,
+          "real_text_bytes": 187
+        },
+        {
+          "name": "model_input",
+          "text_bytes": 152,
+          "real_text_bytes": 152
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 369,
+          "real_text_bytes": 368
+        },
+        {
+          "name": "model_input",
+          "text_bytes": 149,
+          "real_text_bytes": 148
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 233,
+          "real_text_bytes": 232
+        }
+      ]
+    },
+    {
+      "case_id": "sequential_chain:assistant-002",
+      "run_record_verdict": "NO_DIVERGENCE_THIS_TOOL",
+      "failed_arm_record": {
+        "artifact": "cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.arms.v5.jsonl",
+        "state": "empty (_empty_run): state=[], calls=[], substitutes={}, request_count=0",
+        "survives_only": "the 60-character prefix pair in the triple reason"
+      },
+      "failing_boundary": "tool_result (the last captured payload is tool_args, which the failing push_call consumes)",
+      "prior_state_recovered_from": "cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl row for sequential_chain:assistant-002",
+      "prior_state_payload_count": 8,
+      "prior_state_payloads_replayed": 4,
+      "prior_state_full_replayed": false,
+      "intermediate_hops_in_capture": 1,
+      "prefix_replayed_byte_identical": true,
+      "restored_tool_args_match_saved": false,
+      "saved_prefixes": {
+        "production": "'{\\n  \"memory\": {\\n    \"id\": \"mem-1\",\\n    \"scope\": \"user\",\\n    '",
+        "counting": "'{\\n  \"memory\": {\\n    \"id\": \"mem-1\",\\n    \"scope\": \"user\",\\n    '",
+        "prefixes_equal": true
+      },
+      "absent_state": [
+        "the two masked outputs of the failing push (production vs counting) beyond their first 60 characters",
+        "every substitute the failing push MINTED for values first seen in the tool result: the mint is `secrets`-driven (pseudex/vault.py) and no mapping is persisted, and the capture stops before that push",
+        "the vault's `shown_forms` rows written by the failing push's own restore, if any",
+        "for the multi-hop cases, a replayable description of the intermediate tool hops: the capture holds their delivered bytes but not the tool call that produced them, so this probe replays only the prefix before the first tool call"
+      ],
+      "required_instrumentation": [
+        "persist, per push, the two compared strings in full (or their first divergence offset and the 512 bytes around it) instead of raising with a truncated repr",
+        "persist the minted (entity_type, real, fake) triples of the failing push, or a seed for the mint, so a replay can be byte-exact",
+        "keep the failed arm's transcript/request_count instead of `_empty_run` whenever a capture row was already written"
+      ],
+      "not_claimed": [
+        "root cause",
+        "the mechanism is proven for this case",
+        "the other three cases have the same trigger"
+      ],
+      "captured_payloads_head": [
+        {
+          "name": "model_request",
+          "text_bytes": 300,
+          "real_text_bytes": 300
+        },
+        {
+          "name": "model_input",
+          "text_bytes": 265,
+          "real_text_bytes": 265
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 516,
+          "real_text_bytes": 517
+        },
+        {
+          "name": "model_input",
+          "text_bytes": 183,
+          "real_text_bytes": 184
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 36,
+          "real_text_bytes": 36
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 1212,
+          "real_text_bytes": 1206
+        }
+      ]
+    },
+    {
+      "case_id": "tool_chain-037",
+      "run_record_verdict": "NO_DIVERGENCE_THIS_TOOL",
+      "failed_arm_record": {
+        "artifact": "cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.arms.v5.jsonl",
+        "state": "empty (_empty_run): state=[], calls=[], substitutes={}, request_count=0",
+        "survives_only": "the 60-character prefix pair in the triple reason"
+      },
+      "failing_boundary": "tool_result (the last captured payload is tool_args, which the failing push_call consumes)",
+      "prior_state_recovered_from": "cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl row for tool_chain-037",
+      "prior_state_payload_count": 31,
+      "prior_state_payloads_replayed": 4,
+      "prior_state_full_replayed": false,
+      "intermediate_hops_in_capture": 8,
+      "prefix_replayed_byte_identical": true,
+      "restored_tool_args_match_saved": false,
+      "saved_prefixes": {
+        "production": "'{\\n  \"uuid\": \"ord-2\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '",
+        "counting": "'{\\n  \"uuid\": \"ord-2\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '",
+        "prefixes_equal": true
+      },
+      "absent_state": [
+        "the two masked outputs of the failing push (production vs counting) beyond their first 60 characters",
+        "every substitute the failing push MINTED for values first seen in the tool result: the mint is `secrets`-driven (pseudex/vault.py) and no mapping is persisted, and the capture stops before that push",
+        "the vault's `shown_forms` rows written by the failing push's own restore, if any",
+        "for the multi-hop cases, a replayable description of the intermediate tool hops: the capture holds their delivered bytes but not the tool call that produced them, so this probe replays only the prefix before the first tool call"
+      ],
+      "required_instrumentation": [
+        "persist, per push, the two compared strings in full (or their first divergence offset and the 512 bytes around it) instead of raising with a truncated repr",
+        "persist the minted (entity_type, real, fake) triples of the failing push, or a seed for the mint, so a replay can be byte-exact",
+        "keep the failed arm's transcript/request_count instead of `_empty_run` whenever a capture row was already written"
+      ],
+      "not_claimed": [
+        "root cause",
+        "the mechanism is proven for this case",
+        "the other three cases have the same trigger"
+      ],
+      "captured_payloads_head": [
+        {
+          "name": "model_request",
+          "text_bytes": 273,
+          "real_text_bytes": 273
+        },
+        {
+          "name": "model_input",
+          "text_bytes": 238,
+          "real_text_bytes": 238
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 371,
+          "real_text_bytes": 371
+        },
+        {
+          "name": "model_input",
+          "text_bytes": 65,
+          "real_text_bytes": 65
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 36,
+          "real_text_bytes": 36
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 1053,
+          "real_text_bytes": 1055
+        }
+      ]
+    },
+    {
+      "case_id": "tool_chain-040",
+      "run_record_verdict": "NO_DIVERGENCE_THIS_TOOL",
+      "failed_arm_record": {
+        "artifact": "cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.arms.v5.jsonl",
+        "state": "empty (_empty_run): state=[], calls=[], substitutes={}, request_count=0",
+        "survives_only": "the 60-character prefix pair in the triple reason"
+      },
+      "failing_boundary": "tool_result (the last captured payload is tool_args, which the failing push_call consumes)",
+      "prior_state_recovered_from": "cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl row for tool_chain-040",
+      "prior_state_payload_count": 31,
+      "prior_state_payloads_replayed": 4,
+      "prior_state_full_replayed": false,
+      "intermediate_hops_in_capture": 8,
+      "prefix_replayed_byte_identical": true,
+      "restored_tool_args_match_saved": false,
+      "saved_prefixes": {
+        "production": "'{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'",
+        "counting": "'{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'",
+        "prefixes_equal": true
+      },
+      "absent_state": [
+        "the two masked outputs of the failing push (production vs counting) beyond their first 60 characters",
+        "every substitute the failing push MINTED for values first seen in the tool result: the mint is `secrets`-driven (pseudex/vault.py) and no mapping is persisted, and the capture stops before that push",
+        "the vault's `shown_forms` rows written by the failing push's own restore, if any",
+        "for the multi-hop cases, a replayable description of the intermediate tool hops: the capture holds their delivered bytes but not the tool call that produced them, so this probe replays only the prefix before the first tool call"
+      ],
+      "required_instrumentation": [
+        "persist, per push, the two compared strings in full (or their first divergence offset and the 512 bytes around it) instead of raising with a truncated repr",
+        "persist the minted (entity_type, real, fake) triples of the failing push, or a seed for the mint, so a replay can be byte-exact",
+        "keep the failed arm's transcript/request_count instead of `_empty_run` whenever a capture row was already written"
+      ],
+      "not_claimed": [
+        "root cause",
+        "the mechanism is proven for this case",
+        "the other three cases have the same trigger"
+      ],
+      "captured_payloads_head": [
+        {
+          "name": "model_request",
+          "text_bytes": 273,
+          "real_text_bytes": 273
+        },
+        {
+          "name": "model_input",
+          "text_bytes": 238,
+          "real_text_bytes": 238
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 380,
+          "real_text_bytes": 380
+        },
+        {
+          "name": "model_input",
+          "text_bytes": 74,
+          "real_text_bytes": 74
+        },
+        {
+          "name": "tool_args",
+          "text_bytes": 36,
+          "real_text_bytes": 36
+        },
+        {
+          "name": "model_request",
+          "text_bytes": 1061,
+          "real_text_bytes": 1052
+        }
+      ]
+    }
+  ]
+}

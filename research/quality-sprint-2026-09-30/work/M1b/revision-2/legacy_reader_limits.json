@@ -1,0 +1,135 @@
+{
+  "task": "M1b",
+  "revision": "revision-2",
+  "artifact": {
+    "path": "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl",
+    "sha256": "3c42892960088ad08a8cded1b5dc987563cfe4af810d7b8ae283b501e2ceabb7",
+    "engine_capture_version": 1
+  },
+  "engine_limits": {
+    "row_bound_bytes": 4194304,
+    "run_bound_bytes": 268435456,
+    "behavior": "whole-run abort on the first oversized row; journal denominator discarded by the early read-error return"
+  },
+  "measured": {
+    "rows": 810,
+    "total_bytes": 95241454,
+    "total_decoded_chars": 81514019,
+    "max_row_bytes_including_newline": 5531229,
+    "oversized_rows": [
+      {
+        "line": 806,
+        "bytes_including_newline": 5531229
+      },
+      {
+        "line": 810,
+        "bytes_including_newline": 5470734
+      }
+    ],
+    "payloads": 20201,
+    "max_payload_count": 380,
+    "max_payload_utf8_bytes": 36592,
+    "max_payload_chars": 35718,
+    "per_oversized_row": [
+      {
+        "line": 806,
+        "row_bytes_including_newline": 5531229,
+        "version": 1,
+        "case_id": "sequential_chain:mail-006",
+        "payload_count": 380,
+        "max_payload_text_utf8_bytes": 36574,
+        "max_payload_real_utf8_bytes": 36592,
+        "total_payload_text_utf8_bytes": 2272799,
+        "total_payload_real_utf8_bytes": 2274078
+      },
+      {
+        "line": 810,
+        "row_bytes_including_newline": 5470734,
+        "version": 1,
+        "case_id": "sequential_chain:mail-007",
+        "payload_count": 380,
+        "max_payload_text_utf8_bytes": 35851,
+        "max_payload_real_utf8_bytes": 35852,
+        "total_payload_text_utf8_bytes": 2252174,
+        "total_payload_real_utf8_bytes": 2252666
+      }
+    ],
+    "unit_note": "revision-1 named len(str) results *_bytes; these are UTF-8 bytes, with chars reported separately"
+  },
+  "proposed_legacy_v1_limits": {
+    "max_payload_utf8_bytes": 1048576,
+    "max_payloads": 4096,
+    "max_row_utf8_bytes": 8388608,
+    "max_run_bytes": 268435456,
+    "read_chunk_bytes": 1048576
+  },
+  "rationale": {
+    "max_payload_utf8_bytes": "36592 measured max; 1 MiB is ~28x headroom",
+    "max_payloads": "380 measured max; 4096 is ~10x headroom",
+    "max_row_utf8_bytes": "5,531,229 measured max valid row; 8 MiB still refuses a hostile single object",
+    "max_run_bytes": "engine's own 256 MiB, unchanged",
+    "read_chunk_bytes": "incremental decode window, never materialises a row before admissibility"
+  },
+  "legacy_diagnostic_result": {
+    "measured_rows": 810,
+    "skipped_rows": 0,
+    "refused_rows": 0,
+    "payloads": 20201,
+    "distinct_keys": 810,
+    "status": "DIAGNOSTIC ONLY; global engine verdict stays NOT_MEASURED"
+  },
+  "engine_verdict_unchanged": {
+    "status": "NOT_MEASURED",
+    "ok": false,
+    "reason": "the delivered bytes could not be read: cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl:806: capture row is over the 4194304 byte bound",
+    "coverage_known": false,
+    "capture_rows": 0,
+    "intervention_rows": 0,
+    "selected_rows": 0
+  },
+  "controls": {
+    "ok_and_big_payload": {
+      "measured_rows": 2,
+      "skipped_rows": 1,
+      "skipped": [
+        {
+          "line": 3,
+          "reason": "payload over the 1048576 byte bound"
+        }
+      ],
+      "refused_rows": 0,
+      "refused": [],
+      "payloads": 2,
+      "distinct_keys": 2
+    },
+    "hostile_row": {
+      "measured_rows": 0,
+      "skipped_rows": 1,
+      "skipped": [
+        {
+          "line": 1,
+          "reason": "row over the 8388608 byte hard ceiling"
+        }
+      ],
+      "refused_rows": 0,
+      "refused": [],
+      "payloads": 0,
+      "distinct_keys": 0
+    }
+  },
+  "v2_declared_untrusted": {
+    "declared": {
+      "payload_count": 1,
+      "max_payload_bytes": 10,
+      "total_text_bytes": 10,
+      "row_bytes": 10
+    },
+    "declared_payload_count": 1,
+    "actual_payload_count": 0,
+    "declared_total_text_bytes": 10,
+    "actual_total_text_bytes": 0,
+    "agrees": false,
+    "verdict": "REFUSED"
+  },
+  "unmeasured_population_policy": "global NOT_MEASURED retained; partial reads never count as full coverage; parity hard fail unchanged"
+}

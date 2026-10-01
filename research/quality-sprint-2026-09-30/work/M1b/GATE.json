@@ -1,0 +1,75 @@
+{
+  "task": "M1b",
+  "gate": "G2-input — canary readback and masking parity (design/RED)",
+  "status": "NOT_MEASURED",
+  "status_meaning": "G2 itself is not passed: the canary metric is still NOT_MEASURED on the saved run and no meter patch was made. The M1b design/RED deliverable is complete and reviewed by the Lead only after this file is returned.",
+  "revision": {
+    "product_source": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "git_head": "890c50849a326f882eac336ba4e38c91171de473",
+    "note": "research-only evidence commit; the product source diff against the pin is empty",
+    "bundle_version": "2a07cebae2b050ec",
+    "bundle_sha256": "01c19f4689450b54694b7aaa4070cbaf695efc3e98f0b59471486392a0348206",
+    "skill_files_read": ["measure", "debug-leak"],
+    "read_before_work": [
+      "research/quality-sprint-2026-09-30/work/B0/GATE.json",
+      "research/quality-sprint-2026-09-30/work/B0/REVIEW.md",
+      "research/quality-sprint-2026-09-30/GOAL-BRIEF.md",
+      "research/quality-sprint-2026-09-30/OWNER-DECISIONS.md",
+      "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md",
+      "research/quality-sprint-2026-09-30/SPRINT-PLAN.md",
+      "research/quality-sprint-2026-09-30/work/FIRST-WAVE-SCOPES.md",
+      "research/quality-sprint-2026-09-30/work/FIRST-WAVE-TASKS.json"
+    ],
+    "entry_executed": "id=M1b only; A1/S1/D0/V0/C0/S2 and M1a not executed"
+  },
+  "checks": [
+    {"id": "C1", "what": "canary reader vs saved run + valid oversized synthetic", "command": "probe_canary_reader.py", "exit": 0},
+    {"id": "C2", "what": "parity replay of the four divergences from saved prior state", "command": "probe_parity_replay.py", "exit": 0},
+    {"id": "C3", "what": "parity class controls (positive/negative/echo/fragments)", "command": "probe_parity_mechanism.py", "exit": 0},
+    {"id": "C4", "what": "INPUTS/MISSING-STATE generation and hash verification", "command": "make_inputs.py", "exit": 0}
+  ],
+  "red_recorded_as_expected_failing_property": [
+    "the saved run's 810 valid rows and 810/810 journal coverage are still reported NOT_MEASURED because two rows exceed a per-row byte bound",
+    "no product or benchmark source was patched, so no suite PASS is claimed"
+  ],
+  "evidence": [
+    "SPEC.md",
+    "RED.log",
+    "DELTA.json",
+    "INPUTS.json",
+    "MISSING-STATE.json",
+    "probe_canary_reader.py",
+    "probe_canary_reader.json",
+    "probe_parity_replay.py",
+    "probe_parity_replay.json",
+    "probe_parity_mechanism.py",
+    "probe_parity_mechanism.json",
+    "make_inputs.py",
+    "tmp/probe1.stdout",
+    "tmp/probe2.stdout",
+    "tmp/probe3.stdout",
+    "tmp/make_inputs.stdout"
+  ],
+  "owner_pending": [
+    {"id": "O-M1B-1", "question": "may a run with skipped oversized rows stay MEASURED with a named partial denominator, or must it be NOT_MEASURED?", "blocks": "M1c reader contract"},
+    {"id": "O-M1B-2", "question": "may the benchmark persist the (real, fake) mint pairs or a mint seed so a parity failure is reproducible byte-exactly?", "blocks": "M1c instrumentation"},
+    {"id": "O-M1B-3", "question": "should a production/counting disagreement fail the arm (today) or be recorded and let the arm continue?", "blocks": "the four divergences being quantified instead of excluded"}
+  ],
+  "not_claimed": [
+    "clean working tree",
+    "product quality passed",
+    "G2 passed",
+    "paid GO",
+    "release or production readiness",
+    "production artifact verified (still NOT_MEASURED, release-A/B blocked)",
+    "the four divergences diagnosed to a root cause (trigger UNKNOWN)",
+    "the reader design implemented"
+  ],
+  "scope_limits": {
+    "write_scope": "research/quality-sprint-2026-09-30/work/M1b/ only",
+    "no_touch": ["EXECUTION.json", "usage journal", "prototype source", "runs/corpora", "wiki", "git history"]
+  },
+  "gates_still_open": ["G2 meter repair (M1c)", "M1a M04", "RG production digest", "all later quality/release gates"],
+  "allowed_next": ["Lead design review of this RED and D1", "M1c only after M1a and M1b are accepted"],
+  "blocked_next": ["any product patch", "any new quality publication until the G2 design meter is accepted"]
+}

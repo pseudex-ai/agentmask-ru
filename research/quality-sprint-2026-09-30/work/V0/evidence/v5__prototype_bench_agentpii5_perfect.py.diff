@@ -1,0 +1,104 @@
+diff --git a/prototype/bench/agentpii5/perfect.py b/prototype/bench/agentpii5/perfect.py
+index acac5dd..3ba9c00 100644
+--- a/prototype/bench/agentpii5/perfect.py
++++ b/prototype/bench/agentpii5/perfect.py
+@@ -44,7 +44,10 @@ places where a plausible simulation charges the gateway for the probe's own
+ bookkeeping.
+ 
+-THE OTHER HALF lives in `test_perfect.py`: SIX wrong gateways must FAIL the
++THE OTHER HALF lives in `test_perfect.py`: EIGHT wrong gateways must FAIL the
+ same bounds this one clears. An acceptance test a wrong gateway can also pass
+-is not an acceptance test.
++is not an acceptance test. Two are M04's: a right-form/wrong-identity gateway
++(`round_trip`) and one that leaves the substitute standing (`residual`).
++`reverse_action_order` below is the third M04 control: the same actions in
++another order, held to the two halves `ORDER_SENSITIVE` declares.
+ 
+ AND THE MINT IS PART OF THE SPECIFICATION TOO (§1bis). A substitute the model
+@@ -66,5 +69,5 @@ import pathlib
+ import re
+ from collections.abc import Sequence
+-from dataclasses import dataclass, field
++from dataclasses import dataclass, field, replace
+ 
+ from pymorphy3.analyzer import Parse
+@@ -108,5 +111,5 @@ _LAT_MAP = str.maketrans(_LAT_ALPHABET, _LAT_TARGET)
+ # HOW MANY OTHER LATIN MAPS THERE ARE TO TRY, and why there has to be more than
+ # one. A NAME the tracker's directory answers in is LATIN — «Polyakova
+-# Valentina» — and `form.name_script` reads a Latin name's TRANSLITERATION
++# Valentina» — and `form.name_translit` reads a Latin name's TRANSLITERATION
+ # STANDARD off short markers («ya», «yu», «kh», «ts», a final «y», «shch»,
+ # «iu», «ia», «cz», «e'»). One fixed letter map scrambles those markers away
+@@ -631,6 +634,8 @@ def _fake_name_words(text: str, fakes: dict[str, str], shift: int = 0) -> str:
+     THE STANDARD IS READ OFF THE WHOLE STRING and handed down to each word:
+     «ya» in the surname is what makes «Polyakova Valentina» BGN, and a word
+-    asked about itself would not know."""
+-    label = form.name_script(text)
++    asked about itself would not know. It is `name_translit` — the ROMANIZATION
++    feature — and not `name_script`, which since SPIKE-Ж answers the ALPHABET
++    alone (`latin`/`cyrillic`/`mixed`/`none`)."""
++    label = form.name_translit(text)
+     out: list[str] = []
+     for token in _WORD.findall(text):
+@@ -651,17 +656,23 @@ def _signature_shift(texts: Sequence[str], mint_at: object) -> int:
+ 
+     ZERO WHEN THE QUESTION DOES NOT ARISE, which is every Cyrillic name in the
+-    corpus: `form.name_script` answers `cyrillic` on both sides whatever the
+-    letters became, so the base map is chosen and nothing moves. The walk is for
+-    the LATIN names the office suite introduced, and a value for which no
+-    rotation works keeps the base map — a named miss beats a silent re-roll.
++    corpus: no Latin letter is present, so the base map is chosen and nothing
++    moves. The walk is for the LATIN names the office suite introduced, and a
++    value for which no rotation works keeps the base map — a named miss beats a
++    silent re-roll.
++
++    THE ALPHABET DECIDES WHETHER THE QUESTION ARISES, the romanization feature
++    decides whether a rotation ANSWERS it: `name_translit` answers
++    `latin:unknown` both for a Cyrillic name and for a Latin one no table
++    speaks for, and only `name_script` tells those two apart.
+     """
+-    wanted = [form.name_script(one) for one in texts if one]
+-    if not any(label.startswith("latin") or label == "mixed" for label in wanted):
++    texts = [one for one in texts if one]
++    wanted = [form.name_translit(one) for one in texts]
++    if not any(form.name_script(one) in ("latin", "mixed") for one in texts):
+         return 0
+     for shift in range(_LAT_SHIFTS):
+         if shift and _lat_fixes_a_letter(shift):
+             continue
+-        made = [mint_at(one, shift) for one in texts if one]            # type: ignore[operator]
+-        if [form.name_script(one) for one in made] == wanted:
++        made = [mint_at(one, shift) for one in texts]                    # type: ignore[operator]
++        if [form.name_translit(one) for one in made] == wanted:
+             return shift
+     return 0
+@@ -1054,5 +1065,28 @@ def simulate(case: CaseV5) -> ArmRunV5:
+         # push, messages and results alike.
+         request_count=max(len(case.base.messages) + len(results), 1),
+-        stream_mismatch=False, reply_whole=reply if case.streaming else "", turn_residual=0)
++        stream_mismatch=False, reply_whole=reply if case.streaming else "", turn_residual=0,
++        # A perfect SIMULATION observed no provider; None is the honest answer.
++        model_trace=None)
++
++
++def reverse_action_order(run: ArmRunV5) -> ArmRunV5:
++    """The same actions in the OPPOSITE order, as records that stay COHERENT.
++
++    `seq` and `call_turns` are renumbered WITH the list, because they are the
++    record of the order: reversing the tuple while leaving `seq` at 0, 1, 2
++    produces an artifact no run could have written, and a metric that reads the
++    order would then be blamed for the surgeon's inconsistency rather than for
++    its own assumption.
++
++    M04 asks that the action order be VARIED without a scheduled-turn
++    assumption. Which lines can follow a permutation and which cannot is a
++    measured fact, declared in `test_perfect.ORDER_SENSITIVE` — a line that
++    moves without being on that list is the defect this helper exists to find.
++    """
++    count = len(run.base.calls)
++    calls = tuple(replace(call, seq=count - 1 - index)
++                  for index, call in enumerate(reversed(run.base.calls)))
++    return replace(run, base=replace(run.base, calls=calls),
++                   call_turns=tuple(reversed(run.call_turns)))
+ 
+ 

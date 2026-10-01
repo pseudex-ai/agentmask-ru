@@ -1,0 +1,2362 @@
+{
+  "source_hashes_before": {
+    "prototype/bench/agentpii5/answer_restoration.py": "7d1ffd6a78266b2e86d45f3a72f8babb58d37c6902664768fdfe1542788709b0",
+    "prototype/bench/agentpii5/test_answer_restoration.py": "60dd47dab990cf077207c04ad5ede9c24d4a10f392ac1edc954a7e9935c50120"
+  },
+  "source_hashes_after": {
+    "prototype/bench/agentpii5/answer_restoration.py": "7d1ffd6a78266b2e86d45f3a72f8babb58d37c6902664768fdfe1542788709b0",
+    "prototype/bench/agentpii5/test_answer_restoration.py": "60dd47dab990cf077207c04ad5ede9c24d4a10f392ac1edc954a7e9935c50120"
+  },
+  "unchanged": true,
+  "probes": [
+    {
+      "label": "exact_B_copy_with_A_alias_repaired",
+      "expected": "must not joint-pass; raw exact B requires B literal containing Cyrillic О",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "multiple-forms",
+            "repeat": 0,
+            "event_id": "0:15:0",
+            "raw_start": 0,
+            "raw_end": 15,
+            "delivered_start": 0,
+            "delivered_end": 15,
+            "written": "8(999)000-11-22",
+            "delivered": "8(916)402-11-87",
+            "expected": "+79164021187",
+            "item_ids": [
+              "p1",
+              "p2"
+            ],
+            "pii_type": "PHONE",
+            "role": "",
+            "status": "matched",
+            "evidence": "a:provider_input=1;b:provider_input=2",
+            "measurable": true,
+            "value_ok": true,
+            "form_ok": true,
+            "form_measured": true,
+            "residual": false,
+            "joint_ok": true,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 1,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "PHONE",
+              "candidates": 1,
+              "measurable": 1,
+              "unresolved": 0,
+              "value_ok": 1,
+              "form_ok": 1,
+              "form_unmeasured": 0,
+              "residual": 0,
+              "joint_ok": 1,
+              "statuses": [
+                [
+                  "matched",
+                  1
+                ],
+                [
+                  "value_wrong",
+                  0
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  0
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "exact_B_copy_without_A_alias_repaired",
+      "expected": "must fail repaired literal",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "multiple-forms",
+            "repeat": 0,
+            "event_id": "0:15:0",
+            "raw_start": 0,
+            "raw_end": 15,
+            "delivered_start": 0,
+            "delivered_end": 15,
+            "written": "8(999)000-11-22",
+            "delivered": "8(916)402-11-87",
+            "expected": "8(916)4О2-11-87",
+            "item_ids": [
+              "p2"
+            ],
+            "pii_type": "PHONE",
+            "role": "",
+            "status": "value_wrong",
+            "evidence": "b:provider_input=2",
+            "measurable": true,
+            "value_ok": false,
+            "form_ok": true,
+            "form_measured": true,
+            "residual": false,
+            "joint_ok": false,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 0,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 0,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 0,
+            "statuses": [
+              [
+                "matched",
+                0
+              ],
+              [
+                "value_wrong",
+                1
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "PHONE",
+              "candidates": 1,
+              "measurable": 1,
+              "unresolved": 0,
+              "value_ok": 0,
+              "form_ok": 1,
+              "form_unmeasured": 0,
+              "residual": 0,
+              "joint_ok": 0,
+              "statuses": [
+                [
+                  "matched",
+                  0
+                ],
+                [
+                  "value_wrong",
+                  1
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  0
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "tool_valid_control",
+      "expected": "one matched event",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "m04",
+            "repeat": 0,
+            "event_id": "0:12:0",
+            "raw_start": 0,
+            "raw_end": 12,
+            "delivered_start": 0,
+            "delivered_end": 12,
+            "written": "+79990001122",
+            "delivered": "+79164021187",
+            "expected": "+79164021187",
+            "item_ids": [
+              "p1"
+            ],
+            "pii_type": "PHONE",
+            "role": "",
+            "status": "matched",
+            "evidence": "tool:provider_input=2",
+            "measurable": true,
+            "value_ok": true,
+            "form_ok": true,
+            "form_measured": true,
+            "residual": false,
+            "joint_ok": true,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 1,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "PHONE",
+              "candidates": 1,
+              "measurable": 1,
+              "unresolved": 0,
+              "value_ok": 1,
+              "form_ok": 1,
+              "form_unmeasured": 0,
+              "residual": 0,
+              "joint_ok": 1,
+              "statuses": [
+                [
+                  "matched",
+                  1
+                ],
+                [
+                  "value_wrong",
+                  0
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  0
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "call_request_zero",
+      "expected": "refuse invalid/unrecorded provider call ordinal, not success",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "m04",
+            "repeat": 0,
+            "event_id": "0:12:0",
+            "raw_start": 0,
+            "raw_end": 12,
+            "delivered_start": 0,
+            "delivered_end": 12,
+            "written": "+79990001122",
+            "delivered": "+79164021187",
+            "expected": "+79164021187",
+            "item_ids": [
+              "p1"
+            ],
+            "pii_type": "PHONE",
+            "role": "",
+            "status": "matched",
+            "evidence": "tool:provider_input=2",
+            "measurable": true,
+            "value_ok": true,
+            "form_ok": true,
+            "form_measured": true,
+            "residual": false,
+            "joint_ok": true,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 1,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "PHONE",
+              "candidates": 1,
+              "measurable": 1,
+              "unresolved": 0,
+              "value_ok": 1,
+              "form_ok": 1,
+              "form_unmeasured": 0,
+              "residual": 0,
+              "joint_ok": 1,
+              "statuses": [
+                [
+                  "matched",
+                  1
+                ],
+                [
+                  "value_wrong",
+                  0
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  0
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "call_request_absent",
+      "expected": "refuse invalid/unrecorded provider call ordinal, not success",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "m04",
+            "repeat": 0,
+            "event_id": "0:12:0",
+            "raw_start": 0,
+            "raw_end": 12,
+            "delivered_start": 0,
+            "delivered_end": 12,
+            "written": "+79990001122",
+            "delivered": "+79164021187",
+            "expected": "+79164021187",
+            "item_ids": [
+              "p1"
+            ],
+            "pii_type": "PHONE",
+            "role": "",
+            "status": "matched",
+            "evidence": "tool:provider_input=2",
+            "measurable": true,
+            "value_ok": true,
+            "form_ok": true,
+            "form_measured": true,
+            "residual": false,
+            "joint_ok": true,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 1,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "PHONE",
+              "candidates": 1,
+              "measurable": 1,
+              "unresolved": 0,
+              "value_ok": 1,
+              "form_ok": 1,
+              "form_unmeasured": 0,
+              "residual": 0,
+              "joint_ok": 1,
+              "statuses": [
+                [
+                  "matched",
+                  1
+                ],
+                [
+                  "value_wrong",
+                  0
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  0
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "call_request_boolean",
+      "expected": "refuse invalid/unrecorded provider call ordinal, not success",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "m04",
+            "repeat": 0,
+            "event_id": "0:12:0",
+            "raw_start": 0,
+            "raw_end": 12,
+            "delivered_start": 0,
+            "delivered_end": 12,
+            "written": "+79990001122",
+            "delivered": "+79164021187",
+            "expected": "+79164021187",
+            "item_ids": [
+              "p1"
+            ],
+            "pii_type": "PHONE",
+            "role": "",
+            "status": "matched",
+            "evidence": "tool:provider_input=2",
+            "measurable": true,
+            "value_ok": true,
+            "form_ok": true,
+            "form_measured": true,
+            "residual": false,
+            "joint_ok": true,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 1,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "PHONE",
+              "candidates": 1,
+              "measurable": 1,
+              "unresolved": 0,
+              "value_ok": 1,
+              "form_ok": 1,
+              "form_unmeasured": 0,
+              "residual": 0,
+              "joint_ok": 1,
+              "statuses": [
+                [
+                  "matched",
+                  1
+                ],
+                [
+                  "value_wrong",
+                  0
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  0
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "call_request_fractional",
+      "expected": "refuse invalid/unrecorded provider call ordinal, not success",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "m04",
+            "repeat": 0,
+            "event_id": "0:12:0",
+            "raw_start": 0,
+            "raw_end": 12,
+            "delivered_start": 0,
+            "delivered_end": 12,
+            "written": "+79990001122",
+            "delivered": "+79164021187",
+            "expected": "+79164021187",
+            "item_ids": [
+              "p1"
+            ],
+            "pii_type": "PHONE",
+            "role": "",
+            "status": "matched",
+            "evidence": "tool:provider_input=2",
+            "measurable": true,
+            "value_ok": true,
+            "form_ok": true,
+            "form_measured": true,
+            "residual": false,
+            "joint_ok": true,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 1,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "PHONE",
+              "candidates": 1,
+              "measurable": 1,
+              "unresolved": 0,
+              "value_ok": 1,
+              "form_ok": 1,
+              "form_unmeasured": 0,
+              "residual": 0,
+              "joint_ok": 1,
+              "statuses": [
+                [
+                  "matched",
+                  1
+                ],
+                [
+                  "value_wrong",
+                  0
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  0
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "fractional_available_results",
+      "expected": "refuse fractional boundary, not success",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "m04",
+            "repeat": 0,
+            "event_id": "0:12:0",
+            "raw_start": 0,
+            "raw_end": 12,
+            "delivered_start": 0,
+            "delivered_end": 12,
+            "written": "+79990001122",
+            "delivered": "+79164021187",
+            "expected": "+79164021187",
+            "item_ids": [
+              "p1"
+            ],
+            "pii_type": "PHONE",
+            "role": "",
+            "status": "matched",
+            "evidence": "tool:provider_input=2",
+            "measurable": true,
+            "value_ok": true,
+            "form_ok": true,
+            "form_measured": true,
+            "residual": false,
+            "joint_ok": true,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 1,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "PHONE",
+              "candidates": 1,
+              "measurable": 1,
+              "unresolved": 0,
+              "value_ok": 1,
+              "form_ok": 1,
+              "form_unmeasured": 0,
+              "residual": 0,
+              "joint_ok": 1,
+              "statuses": [
+                [
+                  "matched",
+                  1
+                ],
+                [
+                  "value_wrong",
+                  0
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  0
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "boolean_available_results",
+      "expected": "refuse boolean boundary, not success",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "m04",
+            "repeat": 0,
+            "event_id": "0:12:0",
+            "raw_start": 0,
+            "raw_end": 12,
+            "delivered_start": 0,
+            "delivered_end": 12,
+            "written": "+79990001122",
+            "delivered": "+79164021187",
+            "expected": "+79164021187",
+            "item_ids": [
+              "p1"
+            ],
+            "pii_type": "PHONE",
+            "role": "",
+            "status": "matched",
+            "evidence": "tool:provider_input=2",
+            "measurable": true,
+            "value_ok": true,
+            "form_ok": true,
+            "form_measured": true,
+            "residual": false,
+            "joint_ok": true,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 1,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "PHONE",
+              "candidates": 1,
+              "measurable": 1,
+              "unresolved": 0,
+              "value_ok": 1,
+              "form_ok": 1,
+              "form_unmeasured": 0,
+              "residual": 0,
+              "joint_ok": 1,
+              "statuses": [
+                [
+                  "matched",
+                  1
+                ],
+                [
+                  "value_wrong",
+                  0
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  0
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "tool_wrong_piece_type",
+      "expected": "type discrepancy must be explicit; decide if typed-evidence refusal or separate diagnostic, not invisible",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "m04",
+            "repeat": 0,
+            "event_id": "0:12:0",
+            "raw_start": 0,
+            "raw_end": 12,
+            "delivered_start": 0,
+            "delivered_end": 12,
+            "written": "+79990001122",
+            "delivered": "+79164021187",
+            "expected": "+79164021187",
+            "item_ids": [
+              "p1"
+            ],
+            "pii_type": "PHONE",
+            "role": "",
+            "status": "matched",
+            "evidence": "tool:provider_input=2",
+            "measurable": true,
+            "value_ok": true,
+            "form_ok": true,
+            "form_measured": true,
+            "residual": false,
+            "joint_ok": true,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 1,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "PHONE",
+              "candidates": 1,
+              "measurable": 1,
+              "unresolved": 0,
+              "value_ok": 1,
+              "form_ok": 1,
+              "form_unmeasured": 0,
+              "residual": 0,
+              "joint_ok": 1,
+              "statuses": [
+                [
+                  "matched",
+                  1
+                ],
+                [
+                  "value_wrong",
+                  0
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  0
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "tool_unknown_piece_type",
+      "expected": "refuse invalid piece type",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "m04",
+            "repeat": 0,
+            "event_id": "0:12:0",
+            "raw_start": 0,
+            "raw_end": 12,
+            "delivered_start": 0,
+            "delivered_end": 12,
+            "written": "+79990001122",
+            "delivered": "+79164021187",
+            "expected": "+79164021187",
+            "item_ids": [
+              "p1"
+            ],
+            "pii_type": "PHONE",
+            "role": "",
+            "status": "matched",
+            "evidence": "tool:provider_input=2",
+            "measurable": true,
+            "value_ok": true,
+            "form_ok": true,
+            "form_measured": true,
+            "residual": false,
+            "joint_ok": true,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 1,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "PHONE",
+              "candidates": 1,
+              "measurable": 1,
+              "unresolved": 0,
+              "value_ok": 1,
+              "form_ok": 1,
+              "form_unmeasured": 0,
+              "residual": 0,
+              "joint_ok": 1,
+              "statuses": [
+                [
+                  "matched",
+                  1
+                ],
+                [
+                  "value_wrong",
+                  0
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  0
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "boolean_gateway_total",
+      "expected": "refuse bool gateway total",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "m04",
+            "repeat": 0,
+            "event_id": "0:12:0",
+            "raw_start": 0,
+            "raw_end": 12,
+            "delivered_start": 0,
+            "delivered_end": 12,
+            "written": "+79990001122",
+            "delivered": "+79164021187",
+            "expected": "+79164021187",
+            "item_ids": [
+              "p1"
+            ],
+            "pii_type": "PHONE",
+            "role": "",
+            "status": "matched",
+            "evidence": "fixture-provider-input-1:provider_input=1",
+            "measurable": true,
+            "value_ok": true,
+            "form_ok": true,
+            "form_measured": true,
+            "residual": false,
+            "joint_ok": true,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 1,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "PHONE",
+              "candidates": 1,
+              "measurable": 1,
+              "unresolved": 0,
+              "value_ok": 1,
+              "form_ok": 1,
+              "form_unmeasured": 0,
+              "residual": 0,
+              "joint_ok": 1,
+              "statuses": [
+                [
+                  "matched",
+                  1
+                ],
+                [
+                  "value_wrong",
+                  0
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  0
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "fractional_gateway_mention",
+      "expected": "refuse fractional push index",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "m04",
+            "repeat": 0,
+            "event_id": "0:12:0",
+            "raw_start": 0,
+            "raw_end": 12,
+            "delivered_start": 0,
+            "delivered_end": 12,
+            "written": "+79990001122",
+            "delivered": "+79164021187",
+            "expected": "+79164021187",
+            "item_ids": [
+              "p1"
+            ],
+            "pii_type": "PHONE",
+            "role": "",
+            "status": "matched",
+            "evidence": "fixture-provider-input-1:provider_input=1",
+            "measurable": true,
+            "value_ok": true,
+            "form_ok": true,
+            "form_measured": true,
+            "residual": false,
+            "joint_ok": true,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 1,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "PHONE",
+              "candidates": 1,
+              "measurable": 1,
+              "unresolved": 0,
+              "value_ok": 1,
+              "form_ok": 1,
+              "form_unmeasured": 0,
+              "residual": 0,
+              "joint_ok": 1,
+              "statuses": [
+                [
+                  "matched",
+                  1
+                ],
+                [
+                  "value_wrong",
+                  0
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  0
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "boolean_provider_turn",
+      "expected": "refuse bool provider turn",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "m04",
+            "repeat": 0,
+            "event_id": "0:12:0",
+            "raw_start": 0,
+            "raw_end": 12,
+            "delivered_start": 0,
+            "delivered_end": 12,
+            "written": "+79990001122",
+            "delivered": "+79164021187",
+            "expected": "+79164021187",
+            "item_ids": [
+              "p1"
+            ],
+            "pii_type": "PHONE",
+            "role": "",
+            "status": "matched",
+            "evidence": "fixture-provider-input-1:provider_input=1",
+            "measurable": true,
+            "value_ok": true,
+            "form_ok": true,
+            "form_measured": true,
+            "residual": false,
+            "joint_ok": true,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 1,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "PHONE",
+              "candidates": 1,
+              "measurable": 1,
+              "unresolved": 0,
+              "value_ok": 1,
+              "form_ok": 1,
+              "form_unmeasured": 0,
+              "residual": 0,
+              "joint_ok": 1,
+              "statuses": [
+                [
+                  "matched",
+                  1
+                ],
+                [
+                  "value_wrong",
+                  0
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  0
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "unknown_competitor_before_future_capture",
+      "expected": "unknown competitor makes ownership unresolved",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "m04",
+            "repeat": 0,
+            "event_id": "0:12:0",
+            "raw_start": 0,
+            "raw_end": 12,
+            "delivered_start": 0,
+            "delivered_end": 12,
+            "written": "+79990001122",
+            "delivered": "+79164021187",
+            "expected": "+79164021187",
+            "item_ids": [
+              "p1",
+              "p2"
+            ],
+            "pii_type": "PHONE",
+            "role": "",
+            "status": "ambiguous",
+            "evidence": "fixture-provider-input-1:provider_input=1;recorded_spelling_without_linked_disclosure",
+            "measurable": false,
+            "value_ok": false,
+            "form_ok": false,
+            "form_measured": false,
+            "residual": false,
+            "joint_ok": false,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 0,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 0,
+            "unresolved": 1,
+            "value_ok": 0,
+            "form_ok": 0,
+            "form_unmeasured": 1,
+            "residual": 0,
+            "joint_ok": 0,
+            "statuses": [
+              [
+                "matched",
+                0
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                1
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "PHONE",
+              "candidates": 1,
+              "measurable": 0,
+              "unresolved": 1,
+              "value_ok": 0,
+              "form_ok": 0,
+              "form_unmeasured": 1,
+              "residual": 0,
+              "joint_ok": 0,
+              "statuses": [
+                [
+                  "matched",
+                  0
+                ],
+                [
+                  "value_wrong",
+                  0
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  1
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "unknown_competitor_after_adding_future_capture",
+      "expected": "must remain unresolved unless earlier exposure absence is explicitly proved; later positive capture is not exhaustive-history evidence",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "m04",
+            "repeat": 0,
+            "event_id": "0:12:0",
+            "raw_start": 0,
+            "raw_end": 12,
+            "delivered_start": 0,
+            "delivered_end": 12,
+            "written": "+79990001122",
+            "delivered": "+79164021187",
+            "expected": "+79164021187",
+            "item_ids": [
+              "p1"
+            ],
+            "pii_type": "PHONE",
+            "role": "",
+            "status": "matched",
+            "evidence": "fixture-provider-input-1:provider_input=1",
+            "measurable": true,
+            "value_ok": true,
+            "form_ok": true,
+            "form_measured": true,
+            "residual": false,
+            "joint_ok": true,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 1,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "PHONE",
+              "candidates": 1,
+              "measurable": 1,
+              "unresolved": 0,
+              "value_ok": 1,
+              "form_ok": 1,
+              "form_unmeasured": 0,
+              "residual": 0,
+              "joint_ok": 1,
+              "statuses": [
+                [
+                  "matched",
+                  1
+                ],
+                [
+                  "value_wrong",
+                  0
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  0
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "label": "nested_other_identity",
+      "expected": "unresolved, not matched",
+      "result": {
+        "accepted": true,
+        "events": [
+          {
+            "case_id": "m04",
+            "repeat": 0,
+            "event_id": "0:14:0",
+            "raw_start": 0,
+            "raw_end": 14,
+            "delivered_start": 0,
+            "delivered_end": 13,
+            "written": "Пахомова Ольга",
+            "delivered": "Иванова Елена",
+            "expected": "Иванова Елена",
+            "item_ids": [
+              "p1",
+              "p2"
+            ],
+            "pii_type": "NAME",
+            "role": "",
+            "status": "ambiguous",
+            "evidence": "fixture-provider-input-1:provider_input=1;recorded_spelling_without_linked_disclosure",
+            "measurable": false,
+            "value_ok": false,
+            "form_ok": false,
+            "form_measured": false,
+            "residual": false,
+            "joint_ok": false,
+            "form_differs": []
+          }
+        ],
+        "summary": {
+          "estimator": "m04-answer-restoration-2-dev",
+          "runs": 1,
+          "answers_with_substitutes": 1,
+          "answers_without_substitutes": 0,
+          "answer_restore_clean": 0,
+          "answer_text_preserved": 1,
+          "answer_text_changed": 0,
+          "answer_text_unresolved": 0,
+          "unmapped_changes": 0,
+          "overall": {
+            "pii_type": "all",
+            "candidates": 1,
+            "measurable": 0,
+            "unresolved": 1,
+            "value_ok": 0,
+            "form_ok": 0,
+            "form_unmeasured": 1,
+            "residual": 0,
+            "joint_ok": 0,
+            "statuses": [
+              [
+                "matched",
+                0
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                1
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          },
+          "by_type": [
+            {
+              "pii_type": "NAME",
+              "candidates": 1,
+              "measurable": 0,
+              "unresolved": 1,
+              "value_ok": 0,
+              "form_ok": 0,
+              "form_unmeasured": 1,
+              "residual": 0,
+              "joint_ok": 0,
+              "statuses": [
+                [
+                  "matched",
+                  0
+                ],
+                [
+                  "value_wrong",
+                  0
+                ],
+                [
+                  "form_wrong",
+                  0
+                ],
+                [
+                  "residual",
+                  0
+                ],
+                [
+                  "ambiguous",
+                  1
+                ],
+                [
+                  "provenance_unavailable",
+                  0
+                ],
+                [
+                  "alignment_unresolved",
+                  0
+                ],
+                [
+                  "form_unmeasured",
+                  0
+                ]
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

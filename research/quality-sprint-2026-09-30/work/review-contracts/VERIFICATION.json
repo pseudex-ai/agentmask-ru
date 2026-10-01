@@ -1,0 +1,210 @@
+{
+  "scope": "read-only AST/JSON/annotation count review; no engine calls",
+  "inputs_before": [
+    {
+      "path": "research/quality-sprint-2026-09-30/work/A1/SPEC.md",
+      "sha256": "fc5b01e977b241c52684e1581f24732f6b8af38fa5461540427fd3d992b364dd"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/A1/GATE.json",
+      "sha256": "c017b24b5c4f270bf98f337b821c3a4f6a97d0c66de9ec3f1068b89821b8997b"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/A1/DELTA.json",
+      "sha256": "1bc4c1dc6b450a3a7e190fee60cd53f7c3a8866c03d0ddca6c16ec10d73b46c7"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/A1/OWNER-QUESTIONS.md",
+      "sha256": "962cdfd5581bb7c632a251af452983760fb9915c25990ac66f7b02f96037abd2"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/D0/SPEC.md",
+      "sha256": "86546350b4c3b9460cbc4f0d48fd8dffe47ac68ee2e411a406ef60496e654e2f"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/D0/GATE.json",
+      "sha256": "07c7b7668bf22ea0b269c751d51b238d8a17f904e2c5a5946a0973bca231d4de"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/D0/DELTA.json",
+      "sha256": "d2ba16cf21985ac3efb5fe70f5db8620851e7faf5883ac91be25609e91ba4321"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/V0/SPEC.md",
+      "sha256": "db54bcc38d4bbeb2f32c44a9e253a3d4bfde2f6451094230c21ac037457fa6b5"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/V0/GATE.json",
+      "sha256": "0c0c17a2e93507ded0a3272b5b1f2841c1c6395eb3ac7b68b6ff09d4e0726c72"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/V0/DELTA.json",
+      "sha256": "a8d78f0f6c3fa0f5c91f6fafdd1cf90336acd97a8f9e08682ca7d0b9ff6b6df2"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/V0/OWNER-QUESTIONS.md",
+      "sha256": "50e4aa816c0c062a77d8e14e8d859858e6387af1e847412606503fb70cf93de2"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/C0/SPEC.md",
+      "sha256": "fa3038451af12a1f67fbc15ef1cd286dba70a825d821069eff1315130a2a650a"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/C0/GATE.json",
+      "sha256": "524c16ad6e75ff68b50351fbbeecb026393d7be644eb6fe8a0568cc815adcada"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/C0/DELTA.json",
+      "sha256": "b918a2d0bb6a32621fa63175241cd5b3af384b0250c55ad9126878b39dab4080"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/C0/OWNER-QUESTIONS.md",
+      "sha256": "093e089fd65f9e685a46f8409a2dc3e5ddf8e16148cee12261c5042b3705c794"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/S2/SPEC.md",
+      "sha256": "b0079161c7e404e8d61eae9466d145cc04417d6293b5676cfb4e79f5e1b0c4db"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/S2/GATE.json",
+      "sha256": "20faa203d1cc33877c6699fc4020b9e1fd092686927e8cd273a83d97b746b8c3"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/S2/DELTA.json",
+      "sha256": "446260662289852fa1707f23d327e91ec9f4a34ca8761c361a630be2b5d7dd06"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/S2/OWNER-DISPOSITION.md",
+      "sha256": "dffa5bb7ef138d1024a0518900219cc677e8fe1792c0a39704cb65341878f7d9"
+    }
+  ],
+  "status_v5": [
+    "observed",
+    "leaked",
+    "residual",
+    "unmasked",
+    "absent",
+    "engine_kept",
+    "not_masked",
+    "leaf_foreign"
+  ],
+  "status_v6": [
+    "observed",
+    "leaked",
+    "residual",
+    "unmasked",
+    "absent"
+  ],
+  "v6_is_subset_of_v5": true,
+  "registry_records": 66,
+  "registry_items": 65,
+  "native_items": 10,
+  "new_items": 55,
+  "nerel_versions": {
+    "NEREL-v1.0": {
+      "docs": 187,
+      "broad_person_rows": 1907,
+      "strict_contiguous_person_rows": 1907,
+      "strict_excluded": [],
+      "ann_manifest_sha256": "5910ac8227136ac026529f45587a6994e46aff1950fb5e0393107e4ca3e490be"
+    },
+    "NEREL-v1.1": {
+      "docs": 187,
+      "broad_person_rows": 1908,
+      "strict_contiguous_person_rows": 1908,
+      "strict_excluded": [],
+      "ann_manifest_sha256": "fe43f6acf314bad69e938d5f9b46bf273b9e8f0de9c9f993c9e7389b4f22642c"
+    }
+  },
+  "a1_cost_checked": {
+    "unit_sum": 8320,
+    "labeler_items": 16640,
+    "v6_planned_units": 1360,
+    "v6_300_per_type_units": 16500,
+    "conclusion": "arithmetic coherent only for staged proposal, not full per-type support or reviewed cost forecast"
+  },
+  "c0_recorded_counts": {
+    "fixtures_probed": 32,
+    "positive_fixtures_protected": 0,
+    "positive_fixtures_total": 14,
+    "hard_negatives_open": 10,
+    "hard_negatives_total": 10,
+    "red_confirmed": 9,
+    "red_total": 9,
+    "controls_held": 4,
+    "controls_total": 4
+  },
+  "s2_recorded_counts": {
+    "any_span": 13,
+    "episodes": 26,
+    "masked_changed": 13,
+    "no_span": 13,
+    "redaction_marker_visible": 7,
+    "roundtrip_identical": 26
+  },
+  "extra_inputs": [
+    {
+      "path": "research/quality-sprint-2026-09-30/work/A1/ACCEPTANCE-PROPOSAL.json",
+      "sha256": "4787792ad15580f5250d4fa68c6206f76b9815fe1514748923b6de8c05f109c2"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/A1/inventory_sources.py",
+      "sha256": "65b36da4ddeb83224f6899b9580df8fc9513da723f08a41088ef42bac96bcf6e"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/D0/d0_arm_compare.py",
+      "sha256": "ce9f0ed63aad252ff28d92bb04fe6e33512cd3a187d439f12d26a2efd1d10c6d"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/D0/out/arm-results.json",
+      "sha256": "189a6e50efbfd3572d51f9243107e6220dffac2f3909e5f3e35135b74232fdfb"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/V0/checks/v0_checks.py",
+      "sha256": "2b8766e4f3dad18a7222c32edec4832a04016c94f137c7df1d3be914fa11744d"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/V0/COMPATIBILITY24.json",
+      "sha256": "f1bcc02419087936e47b54ffcc3461af9cb0d40a38ff9745e7e132cf5956abca"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/V0/TYPE55.json",
+      "sha256": "2733891f90ed9fb13550cb661786f9a46de43d9199e9b19276f4029af5032137"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/C0/PROBE-FACTS.json",
+      "sha256": "b089636390412223965ef6dbdb05f108803a831beb9910357eecba1f46f80033"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/C0/TYPE-CONTRACTS.json",
+      "sha256": "1fda62525710aebdfee91453045d63aad31f1a478ca3706603a710fc41b43e00"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/S2/probes/semantic_probe.json",
+      "sha256": "960f7fafeaf9ed929ff9e9bf8617411cc2610c635e4bf0b1ce5d45f4270cb0fd"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/S2/GAP-MATRIX.json",
+      "sha256": "29574030fa9294c20729256a890798665f820b11910fa4b36caa63396e045121"
+    }
+  ],
+  "final_validation": {
+    "reviewed_input_hashes_unchanged": 30,
+    "review_local_links_resolve": 49,
+    "line_references_in_bounds": true,
+    "detector_calls": 0,
+    "engine_imports": 0,
+    "git_operations": 0,
+    "network_provider_calls": 0,
+    "writes_only": [
+      "REVIEW.md",
+      "VERIFICATION.json"
+    ],
+    "command_exits": [
+      0,
+      0,
+      0
+    ],
+    "verdict": "REVISE before protocol/adoption; accepted facts preserved"
+  }
+}

@@ -1,0 +1,23 @@
+  no_pseudex: PASS
+  every_metric_registered: PASS
+  form_lines_ignore_controls: PASS
+  chain_transitions: PASS
+  rag_identity_kept: PASS
+  public_denominators: PASS
+  empty_is_na: PASS
+  axes_split_hops_not_observations: PASS
+  hop_axis_totals_sum: PASS
+  leaf_value_is_the_part: PASS
+  answer_is_scored_on_what_it_NAMED: PASS
+  leaf_value_has_one_definition: PASS
+  chain_target_is_read_as_an_item: PASS
+  memory_stability_is_gone: PASS
+  answer_real_excludes_an_answer_that_obliges_nothing: PASS
+  spoken_axis_tells_dictated_from_written: PASS
+  coverage_of_a_value_no_message_carried: PASS
+  consistency_counts_a_tool_result_as_a_place: PASS
+  doc_extracted_counts_what_the_case_asks_for: PASS
+  a_free_leaf_is_satisfied_when_the_value_survives: PASS
+metrics: PASS
+
+STDERR

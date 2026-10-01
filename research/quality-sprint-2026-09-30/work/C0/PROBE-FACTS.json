@@ -1,0 +1,690 @@
+{
+  "probe": "C0/probe_engine.py",
+  "engine_read_only": true,
+  "bundle": "development bundle built in memory via testkit.load_dev_bundle(); no file written",
+  "note": "Values synthetic. REDs are EXPECTED failing properties on a build with no temporary-secret class; this is not a suite PASS.",
+  "mechanism_facts": {
+    "KEY_TYPE_entries": 82,
+    "CTX_TYPES_entries": 5,
+    "card_verification_keys_present_in_leased_map": [],
+    "generic_secret_keys_in_leased_map": {
+      "password": "SECRET",
+      "passwd": "SECRET",
+      "secret": "SECRET",
+      "секрет": "SECRET",
+      "пароль": "SECRET"
+    },
+    "key_type_card_cvc": "CARD",
+    "key_type_cardcvc": "CARD",
+    "key_type_cardholder_name": "CARD",
+    "key_type_cvc": null,
+    "key_type_otp": null,
+    "priority_table": {
+      "SECRET": 8,
+      "OMS": 7,
+      "ACCOUNT": 7,
+      "DRIVER_LICENSE": 7,
+      "VEHICLE_DOC": 7,
+      "INTL_PASSPORT": 7,
+      "OGRN": 7,
+      "BIRTH_CERT": 7,
+      "SNILS": 6,
+      "INN": 6,
+      "CARD": 6,
+      "VIN": 6,
+      "MAC": 5,
+      "PHONE": 5,
+      "EMAIL": 5,
+      "IP": 5,
+      "PLATE": 5,
+      "ADDR": 4,
+      "NAME": 3,
+      "DOB": 3,
+      "DATE": 2,
+      "PASSPORT": 2,
+      "LOC": 2
+    },
+    "secret_is_top_priority": true,
+    "kv_regex_matches": {
+      "json_quoted_cvc": [
+        [
+          "cvc",
+          "314"
+        ]
+      ],
+      "json_unquoted_cvc": [],
+      "form_cvv": [
+        [
+          "CVV",
+          "314"
+        ]
+      ]
+    },
+    "render_fallbacks": {
+      "CVC": "REDACTEDf40bac",
+      "OTP": "REDACTED11bf03",
+      "SECRET": "918",
+      "OPAQUE_NOT_A_TYPE": "REDACTEDc84d81"
+    },
+    "card_renderer_for_3_digits": {
+      "card_length_of_3_digits": 16,
+      "render_CARD_for_314": "0162 7271 3505 2316",
+      "note": "the CARD renderer is CSPRNG-random by design, so the sample differs on every run; the load-bearing fact is that a 3-digit value receives a 16-digit card-shaped substitute"
+    }
+  },
+  "per_fixture": [
+    {
+      "fixture_id": "POS-CVC-001",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "positive",
+      "medium": "json",
+      "text": "{\"cvc\": \"314\"}",
+      "target_value": "314",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-1"
+    },
+    {
+      "fixture_id": "POS-CVC-002",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "positive",
+      "medium": "json",
+      "text": "{\"cvv2\": \"042\"}",
+      "target_value": "042",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-1"
+    },
+    {
+      "fixture_id": "POS-CVC-003",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "positive",
+      "medium": "json",
+      "text": "{\"cid\": \"0000\"}",
+      "target_value": "0000",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-1"
+    },
+    {
+      "fixture_id": "POS-CVC-004",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "positive",
+      "medium": "json",
+      "text": "{\"card\": {\"number\": \"4111111111111111\", \"cvc\": \"999\"}}",
+      "target_value": "999",
+      "spans": [
+        {
+          "type": "CARD",
+          "start": 21,
+          "end": 37,
+          "surface": "4111111111111111"
+        }
+      ],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-1"
+    },
+    {
+      "fixture_id": "POS-CVC-005",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "positive",
+      "medium": "form",
+      "text": "CVV: 314",
+      "target_value": "314",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-2"
+    },
+    {
+      "fixture_id": "POS-CVC-006",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "positive",
+      "medium": "prose",
+      "text": "cvc 314",
+      "target_value": "314",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-3"
+    },
+    {
+      "fixture_id": "POS-CVC-007",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "positive",
+      "medium": "prose",
+      "text": "защитный код карты 042",
+      "target_value": "042",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-3"
+    },
+    {
+      "fixture_id": "POS-CVC-008",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "positive",
+      "medium": "json",
+      "text": "{\"card\": {\"number\": \"4111111111111111\", \"cvc\": \"042\"}, \"card2\": {\"number\": \"4111111111111112\", \"cvc\": \"314\"}}",
+      "target_value": "042",
+      "spans": [
+        {
+          "type": "CARD",
+          "start": 21,
+          "end": 37,
+          "surface": "4111111111111111"
+        }
+      ],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-7"
+    },
+    {
+      "fixture_id": "POS-OTP-001",
+      "family": "ISSUER_OTP",
+      "kind": "positive",
+      "medium": "prose",
+      "text": "код подтверждения из смс 991991",
+      "target_value": "991991",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-4"
+    },
+    {
+      "fixture_id": "POS-OTP-002",
+      "family": "ISSUER_OTP",
+      "kind": "positive",
+      "medium": "prose",
+      "text": "одноразовый код 042042",
+      "target_value": "042042",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-4"
+    },
+    {
+      "fixture_id": "POS-OTP-003",
+      "family": "ISSUER_OTP",
+      "kind": "positive",
+      "medium": "json",
+      "text": "{\"otp\": \"000000\"}",
+      "target_value": "000000",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-1"
+    },
+    {
+      "fixture_id": "POS-OTP-004",
+      "family": "ISSUER_OTP",
+      "kind": "positive",
+      "medium": "prose",
+      "text": "3-D Secure код 999999",
+      "target_value": "999999",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-4"
+    },
+    {
+      "fixture_id": "CAND-TOTP-001",
+      "family": "TOTP_2FA",
+      "kind": "positive",
+      "medium": "prose",
+      "text": "код 2FA 042042",
+      "target_value": "042042",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": null
+    },
+    {
+      "fixture_id": "CAND-REC-001",
+      "family": "RECOVERY_CODE",
+      "kind": "positive",
+      "medium": "prose",
+      "text": "резервный код AAAA-0002",
+      "target_value": "AAAA-0002",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": null
+    },
+    {
+      "fixture_id": "NEG-JSON-1",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "hard_negative",
+      "medium": "json",
+      "text": "{\"order_code\": \"314\"}",
+      "target_value": null,
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "NEG-1"
+    },
+    {
+      "fixture_id": "NEG-JSON-2",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "hard_negative",
+      "medium": "json",
+      "text": "{\"status\": \"042\"}",
+      "target_value": null,
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "NEG-1"
+    },
+    {
+      "fixture_id": "NEG-JSON-3",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "hard_negative",
+      "medium": "json",
+      "text": "{\"code\": \"314\"}",
+      "target_value": null,
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "NEG-1"
+    },
+    {
+      "fixture_id": "NEG-FORM-1",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "hard_negative",
+      "medium": "form",
+      "text": "код товара: 314",
+      "target_value": null,
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "NEG-1"
+    },
+    {
+      "fixture_id": "NEG-PROSE-1",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "hard_negative",
+      "medium": "prose",
+      "text": "заказ 314",
+      "target_value": null,
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "NEG-1"
+    },
+    {
+      "fixture_id": "NEG-PROSE-2",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "hard_negative",
+      "medium": "prose",
+      "text": "квартира 042",
+      "target_value": null,
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "NEG-1"
+    },
+    {
+      "fixture_id": "NEG-PROSE-3",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "hard_negative",
+      "medium": "prose",
+      "text": "код 314",
+      "target_value": null,
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "NEG-2"
+    },
+    {
+      "fixture_id": "NEG-OTP-1",
+      "family": "ISSUER_OTP",
+      "kind": "hard_negative",
+      "medium": "prose",
+      "text": "номер заказа 991991",
+      "target_value": null,
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "NEG-1"
+    },
+    {
+      "fixture_id": "NEG-OTP-2",
+      "family": "ISSUER_OTP",
+      "kind": "hard_negative",
+      "medium": "prose",
+      "text": "артикул 042042",
+      "target_value": null,
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "NEG-1"
+    },
+    {
+      "fixture_id": "NEG-OTP-3",
+      "family": "ISSUER_OTP",
+      "kind": "hard_negative",
+      "medium": "json",
+      "text": "{\"sms_count\": \"000000\"}",
+      "target_value": null,
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "NEG-1"
+    },
+    {
+      "fixture_id": "MAL-CVC-001",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "malformed_under_field",
+      "medium": "json",
+      "text": "{\"cvc\": \"31\"}",
+      "target_value": "31",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-5"
+    },
+    {
+      "fixture_id": "MAL-CVC-002",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "malformed_under_field",
+      "medium": "json",
+      "text": "{\"cvc\": \"31B\"}",
+      "target_value": "31B",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-5"
+    },
+    {
+      "fixture_id": "MAL-CVC-003",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "structural_gap",
+      "medium": "json",
+      "text": "{\"cvc\": 314}",
+      "target_value": "314",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-3"
+    },
+    {
+      "fixture_id": "FORM-CVC-001",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "form_fidelity",
+      "medium": "form",
+      "text": "cvv:314",
+      "target_value": "314",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": null
+    },
+    {
+      "fixture_id": "FORM-CVC-002",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "form_fidelity",
+      "medium": "form",
+      "text": "CVV   314",
+      "target_value": "314",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": null
+    },
+    {
+      "fixture_id": "FORM-CVC-003",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "form_fidelity",
+      "medium": "prose",
+      "text": "cvc 000",
+      "target_value": "000",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": null
+    },
+    {
+      "fixture_id": "AMB-001",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "ambiguous",
+      "medium": "prose",
+      "text": "cvc 314, код подтверждения 991991",
+      "target_value": "314",
+      "spans": [],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-6"
+    },
+    {
+      "fixture_id": "AMB-002",
+      "family": "CARD_VERIFICATION_CODE",
+      "kind": "ambiguous",
+      "medium": "json",
+      "text": "{\"card\": {\"number\": \"4111111111111111\", \"cvc\": \"000\"}, \"order\": {\"code\": \"000\"}}",
+      "target_value": "000",
+      "spans": [
+        {
+          "type": "CARD",
+          "start": 21,
+          "end": 37,
+          "surface": "4111111111111111"
+        }
+      ],
+      "target_protected": false,
+      "target_open": true,
+      "red_probe_id": "RED-7"
+    }
+  ],
+  "existing_class_controls": {
+    "CTRL-1_keyed_SECRET": [
+      {
+        "type": "SECRET",
+        "start": 14,
+        "end": 21,
+        "surface": "hunter2"
+      }
+    ],
+    "CTRL-2_keyed_CARD": [
+      {
+        "type": "CARD",
+        "start": 10,
+        "end": 26,
+        "surface": "4111111111111111"
+      }
+    ],
+    "CTRL-3_bare_PAN": [
+      {
+        "type": "CARD",
+        "start": 0,
+        "end": 19,
+        "surface": "4111 1111 1111 1111"
+      }
+    ]
+  },
+  "properties": [
+    {
+      "property_id": "RED-1",
+      "statement": "a value under an authoritative card-verification field name/alias (cvc/cvv2/cid) is protected",
+      "observed": "0/5 fielded CVC positives protected",
+      "holds_on_this_build": false,
+      "kind": "RED_intentional",
+      "status": "RED_CONFIRMED",
+      "fixtures": [
+        "POS-CVC-001",
+        "POS-CVC-002",
+        "POS-CVC-003",
+        "POS-CVC-004",
+        "POS-CVC-007"
+      ],
+      "engine_change_required_to_close": true
+    },
+    {
+      "property_id": "RED-2",
+      "statement": "a prose/form card-code field label with a colon (CVV: 314) is protected",
+      "observed": "POS-CVC-005 protected=False",
+      "holds_on_this_build": false,
+      "kind": "RED_intentional",
+      "status": "RED_CONFIRMED",
+      "fixtures": [
+        "POS-CVC-005"
+      ],
+      "engine_change_required_to_close": true
+    },
+    {
+      "property_id": "RED-3",
+      "statement": "the JSON KV regex matches the unquoted numeric form {\"cvc\": 314}",
+      "observed": "_JSON_KV matches on '{\"cvc\": 314}' = [] (quoted form does match: [['cvc', '314']])",
+      "holds_on_this_build": false,
+      "kind": "RED_intentional",
+      "status": "RED_CONFIRMED",
+      "fixtures": [
+        "MAL-CVC-003"
+      ],
+      "engine_change_required_to_close": true
+    },
+    {
+      "property_id": "RED-4",
+      "statement": "a dynamic issuer one-time code (ISSUER_OTP: 3DS/SMS/one-time wording, otp field) is protected as its own class",
+      "observed": "0/4 OTP positives protected",
+      "holds_on_this_build": false,
+      "kind": "RED_intentional",
+      "status": "RED_CONFIRMED",
+      "fixtures": [
+        "POS-OTP-001",
+        "POS-OTP-002",
+        "POS-OTP-003",
+        "POS-OTP-004"
+      ],
+      "engine_change_required_to_close": true
+    },
+    {
+      "property_id": "RED-5",
+      "statement": "a malformed value under an authoritative card-code field is masked, not passed (existing OPAQUE demotion precedent)",
+      "observed": "MAL-CVC-001 open=True, MAL-CVC-002 open=True",
+      "holds_on_this_build": false,
+      "kind": "RED_intentional",
+      "status": "RED_CONFIRMED",
+      "fixtures": [
+        "MAL-CVC-001",
+        "MAL-CVC-002"
+      ],
+      "engine_change_required_to_close": true
+    },
+    {
+      "property_id": "RED-6",
+      "statement": "one card code and one issuer OTP in one utterance are each protected with DIFFERENT classes",
+      "observed": "AMB-001 spans=[]",
+      "holds_on_this_build": false,
+      "kind": "RED_intentional",
+      "status": "RED_CONFIRMED",
+      "fixtures": [
+        "AMB-001"
+      ],
+      "engine_change_required_to_close": true
+    },
+    {
+      "property_id": "RED-7",
+      "statement": "in a payload with two card objects each code is protected and bound to its own object",
+      "observed": "POS-CVC-008 spans=[{'type': 'CARD', 'start': 21, 'end': 37, 'surface': '4111111111111111'}]",
+      "holds_on_this_build": false,
+      "kind": "RED_intentional",
+      "status": "RED_CONFIRMED",
+      "fixtures": [
+        "POS-CVC-008",
+        "AMB-002"
+      ],
+      "engine_change_required_to_close": true
+    },
+    {
+      "property_id": "RED-8",
+      "statement": "an entity type named for a card code renders a card-code-shaped substitute, never a REDACTED marker inside a numeric field",
+      "observed": "_render_token('CVC', original='314') = 'REDACTEDf40bac'",
+      "holds_on_this_build": false,
+      "kind": "RED_intentional",
+      "status": "RED_CONFIRMED",
+      "fixtures": [
+        "POS-CVC-001"
+      ],
+      "engine_change_required_to_close": true
+    },
+    {
+      "property_id": "RED-9",
+      "statement": "a compound authoritative key resolves to the most specific class: the substitute never has a different LENGTH than the value it replaced",
+      "observed": "card_cvc -> CARD; card_length('314') -> 16; render CARD for '314' -> '0162 7271 3505 2316'",
+      "holds_on_this_build": false,
+      "kind": "RED_intentional",
+      "status": "RED_CONFIRMED",
+      "fixtures": [],
+      "engine_change_required_to_close": true
+    },
+    {
+      "property_id": "NEG-1",
+      "statement": "business/status/order numbers of the same glyph shape stay OPEN",
+      "observed": "9/9 hard negatives open",
+      "holds_on_this_build": true,
+      "kind": "CONTROL_must_hold",
+      "status": "GREEN_as_expected",
+      "fixtures": [
+        "NEG-JSON-1",
+        "NEG-JSON-2",
+        "NEG-JSON-3",
+        "NEG-FORM-1",
+        "NEG-PROSE-1",
+        "NEG-PROSE-2",
+        "NEG-OTP-1",
+        "NEG-OTP-2",
+        "NEG-OTP-3"
+      ],
+      "engine_change_required_to_close": false
+    },
+    {
+      "property_id": "NEG-2",
+      "statement": "a bare 'код' does not license a card code",
+      "observed": "NEG-PROSE-3 open=True",
+      "holds_on_this_build": true,
+      "kind": "CONTROL_must_hold",
+      "status": "GREEN_as_expected",
+      "fixtures": [
+        "NEG-PROSE-3"
+      ],
+      "engine_change_required_to_close": false
+    },
+    {
+      "property_id": "CTRL-1",
+      "statement": "an existing keyed SECRET still types its value",
+      "observed": "[{'type': 'SECRET', 'start': 14, 'end': 21, 'surface': 'hunter2'}]",
+      "holds_on_this_build": true,
+      "kind": "CONTROL_must_hold",
+      "status": "GREEN_as_expected",
+      "fixtures": [],
+      "engine_change_required_to_close": false
+    },
+    {
+      "property_id": "CTRL-2",
+      "statement": "the existing CARD class still types a card-shaped value",
+      "observed": "[{'type': 'CARD', 'start': 10, 'end': 26, 'surface': '4111111111111111'}]",
+      "holds_on_this_build": true,
+      "kind": "CONTROL_must_hold",
+      "status": "GREEN_as_expected",
+      "fixtures": [],
+      "engine_change_required_to_close": false
+    }
+  ],
+  "counts": {
+    "fixtures_probed": 32,
+    "positive_fixtures_protected": 0,
+    "positive_fixtures_total": 14,
+    "hard_negatives_open": 10,
+    "hard_negatives_total": 10,
+    "red_confirmed": 9,
+    "red_total": 9,
+    "controls_held": 4,
+    "controls_total": 4
+  },
+  "suite_verdict": "NOT_A_SUITE_PASS — intentional RED on a pinned unchanged build; no engine change was made by this task",
+  "not_a_defect_claim": "The 0 detected CVC/OTP spans are expected: no recognizer claims these classes. This is a capability gap reproduced as RED, not a regression."
+}
