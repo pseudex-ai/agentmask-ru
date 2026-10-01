@@ -89,10 +89,17 @@ CAPTURE_KILL_SWITCH: str = "NPY_CANARY_CAPTURE"
 # THE SIZE, STATED AS A BOUNDARY AND NOT AS A HOPE. A capture row holds the
 # corpus's own text, so an unreadable or hostile file is a real shape (not a
 # hypothetical one) and it must be refused by ARITHMETIC rather than by running
-# out of memory. Per row is the bound that decides a triple is broken; per run
-# is the bound that decides the whole archive is not a canary run.
-CAPTURE_MAX_ROW_BYTES: int = 4 * 1024 * 1024
+# out of memory. The bound that decides a row is broken is the PAYLOAD bound,
+# not the row byte count: a chatty but valid run (380 payloads of ≤36.6 KB each)
+# legitimately exceeds the old 4 MiB row ceiling and was wrongly refused whole.
+# The row bound is a DERIVED outer ceiling; a single payload over the payload
+# bound is the hostile shape. A size-bound violation is SKIPPED (named, counted),
+# never a whole-run abort; a MALFORMED row (bad UTF-8/JSON/schema) still raises,
+# because a corrupt archive cannot produce a trustworthy denominator.
+CAPTURE_MAX_ROW_BYTES: int = 8 * 1024 * 1024
 CAPTURE_MAX_RUN_BYTES: int = 256 * 1024 * 1024
+CAPTURE_MAX_PAYLOAD_UTF8_BYTES: int = 1 * 1024 * 1024
+CAPTURE_MAX_PAYLOADS: int = 4096
 
 # The contexts a planted value can sit in. They select the last class, not the
 # first: a result-payload leak whose type was never recognised is still a
@@ -456,13 +463,17 @@ def capture_paths(run_dir: pathlib.Path) -> tuple[pathlib.Path, ...]:
     return tuple(sorted(run_dir.glob("*" + CAPTURE_SUFFIX)))
 
 
-def read_captures(run_dir: pathlib.Path) -> tuple[RunCapture, ...]:
-    """Every capture row this run holds, or a `CaptureError` saying which shape broke.
+def read_captures_detailed(run_dir: pathlib.Path) -> tuple[tuple[RunCapture, ...], tuple[str, ...]]:
+    """Read every capture row plus the named rows skipped for a SIZE bound.
 
-    The whole-run size is checked before reading; each line is read with a
-    separate bound. A blank line is skipped, but malformed JSON is an error:
-    a partly read archive cannot produce a trustworthy denominator."""
+    A row over a hard size bound (row ceiling, payload byte, payload count) is
+    SKIPPED with a named, counted record and the remaining rows are still read —
+    never a whole-run abort. A MALFORMED row (bad UTF-8, bad JSON, bad schema,
+    duplicate key) still raises `CaptureError`: a corrupt archive cannot produce
+    a trustworthy denominator. The run budget is a whole-run refusal, not a skip.
+    """
     out: list[RunCapture] = []
+    skipped: list[str] = []
     total = 0
     seen: dict[tuple[str, int], str] = {}
     for path in capture_paths(run_dir):
@@ -483,8 +494,9 @@ def read_captures(run_dir: pathlib.Path) -> tuple[RunCapture, ...]:
                         break
                     number += 1
                     if len(raw) > CAPTURE_MAX_ROW_BYTES:
-                        raise CaptureError(f"{path.name}:{number}: capture row is over the "
-                                           f"{CAPTURE_MAX_ROW_BYTES} byte bound")
+                        skipped.append(f"{path.name}:{number}: row over the "
+                                       f"{CAPTURE_MAX_ROW_BYTES} byte bound")
+                        continue
                     try:
                         line = raw.decode("utf-8")
                     except UnicodeDecodeError as error:
@@ -502,6 +514,18 @@ def read_captures(run_dir: pathlib.Path) -> tuple[RunCapture, ...]:
                         captured = capture_from_json(parsed)
                     except CaptureError as broken:
                         raise CaptureError(f"{path.name}:{number}: {broken}") from broken
+                    if len(captured.delivered) > CAPTURE_MAX_PAYLOADS:
+                        skipped.append(f"{path.name}:{number}: {len(captured.delivered)} payloads "
+                                       f"over the {CAPTURE_MAX_PAYLOADS} payload bound")
+                        continue
+                    oversized = next((one.name for one in captured.delivered
+                                      if len(one.text.encode("utf-8")) > CAPTURE_MAX_PAYLOAD_UTF8_BYTES
+                                      or len(one.real_text.encode("utf-8")) > CAPTURE_MAX_PAYLOAD_UTF8_BYTES),
+                                     None)
+                    if oversized is not None:
+                        skipped.append(f"{path.name}:{number}: payload {oversized!r} over the "
+                                       f"{CAPTURE_MAX_PAYLOAD_UTF8_BYTES} byte bound")
+                        continue
                     key = (captured.case_id, captured.repeat)
                     if key in seen:
                         raise CaptureError(f"{path.name}:{number}: duplicate capture for "
@@ -511,7 +535,14 @@ def read_captures(run_dir: pathlib.Path) -> tuple[RunCapture, ...]:
         except OSError as error:
             raise CaptureError(f"{path.name}: could not be read "
                                f"({type(error).__name__}: {error})") from error
-    return tuple(out)
+    return tuple(out), tuple(skipped)
+
+
+def read_captures(run_dir: pathlib.Path) -> tuple[RunCapture, ...]:
+    """Every capture row this run holds, or a `CaptureError` naming a malformed
+    shape. Size-bound-violating rows are SKIPPED, not raised — callers that need
+    the skip record use `read_captures_detailed`."""
+    return read_captures_detailed(run_dir)[0]
 
 def merge_reports(reports: Sequence[CanaryReport]) -> CanaryReport:
     """One report over several captures — summed by boundary, leaks preserved.
@@ -924,11 +955,23 @@ def check_run(run_dir: pathlib.Path) -> CanaryReport:
     if problem:
         return not_measured(problem)
     try:
-        captures = read_captures(run_dir)
+        captures, skipped = read_captures_detailed(run_dir)
     except CaptureError as broken:
         return not_measured(f"the delivered bytes could not be read: {broken}")
     except Exception as error:  # noqa: BLE001 — an unreadable run is unmeasured, not clean
         return not_measured(f"the saved bytes could not be read: {type(error).__name__}: {error}")
+    if skipped:
+        # A partial read is NOT full coverage: name the skipped rows and keep
+        # the denominator. No partial read may be reported as full-coverage
+        # quality.
+        try:
+            coverage = _expected_capture_keys(run_dir)
+        except CaptureError:
+            coverage = None
+        rows = len(expected) if (coverage is not None and (expected := coverage[0]) is not None) else len(captures)
+        return replace(not_measured(f"capture read skipped {len(skipped)} row(s): {skipped[:5]!r}"),
+                       coverage_known=coverage is not None, capture_rows=len(captures),
+                       intervention_rows=rows, selected_rows=(coverage[1] if coverage else 0))
     empty = _capture_problem(captures)
     if empty:
         # AN OLD SAVED RUN HAS A DENOMINATOR TOO. The triples journal names the

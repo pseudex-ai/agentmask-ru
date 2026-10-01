@@ -33,6 +33,7 @@ from __future__ import annotations
 import asyncio
 import json
 import pathlib
+import tempfile
 from collections.abc import Callable
 
 from bench.agentpii5 import payload_canaries as pc
@@ -361,6 +362,64 @@ def test_model_request_is_snapshotted_before_later_notes() -> list[str]:
     return []
 
 
+def test_bounded_reader_skips_hostile_counts_named() -> list[str]:
+    """A chatty row is readable; a size-bound-violating row is SKIPPED by name,
+    its neighbours still measured; a malformed row still raises."""
+    problems: list[str] = []
+
+    def row(payloads):
+        return {"version": pc.CAPTURE_VERSION, "case_id": "size", "repeat": 0, "arm": "I",
+                "capture": {"manifest": {"version": pc.MANIFEST_VERSION, "canaries": []},
+                            "payloads": payloads}}
+
+    def write(payloads):
+        td = tempfile.TemporaryDirectory()
+        run_dir = pathlib.Path(td.name)
+        (run_dir / pc.capture_name("size")).write_text(
+            json.dumps(row(payloads), ensure_ascii=False), encoding="utf-8")
+        return td, run_dir
+
+    # Hostile single payload (over 1 MiB) is skipped by name, not a whole abort.
+    td, run_dir = write([{"name": "model_input",
+                          "text": "x" * (pc.CAPTURE_MAX_PAYLOAD_UTF8_BYTES + 1),
+                          "real_text": ""}])
+    try:
+        captures, skipped = pc.read_captures_detailed(run_dir)
+        if captures:
+            problems.append("an oversized payload row was accepted")
+        if not skipped or "byte bound" not in skipped[0]:
+            problems.append(f"the skip was not named with its bound: {skipped!r}")
+    except pc.CaptureError as error:
+        problems.append(f"a size-bound row raised instead of being skipped: {error}")
+    finally:
+        td.cleanup()
+
+    # Hostile over-count row is skipped by name.
+    td, run_dir = write([{"name": "model_input", "text": "x", "real_text": ""}
+                         for _ in range(pc.CAPTURE_MAX_PAYLOADS + 1)])
+    try:
+        _, skipped = pc.read_captures_detailed(run_dir)
+        if not skipped or "payload bound" not in skipped[0]:
+            problems.append(f"an over-count row was not skipped by name: {skipped!r}")
+    except pc.CaptureError as error:
+        problems.append(f"an over-count row raised: {error}")
+    finally:
+        td.cleanup()
+
+    # Malformed JSON still raises (a corrupt archive is not a skip).
+    td = tempfile.TemporaryDirectory()
+    run_dir = pathlib.Path(td.name)
+    (run_dir / pc.capture_name("size")).write_text("{not json", encoding="utf-8")
+    try:
+        pc.read_captures_detailed(run_dir)
+        problems.append("malformed JSON was not raised")
+    except pc.CaptureError:
+        pass
+    finally:
+        td.cleanup()
+    return problems
+
+
 CHECKS: tuple[tuple[str, Callable[[], list[str]]], ...] = (
     ("the_real_run_is_clean_and_counted_per_boundary",
      test_the_real_run_is_clean_and_counted_per_boundary),
@@ -373,6 +432,8 @@ CHECKS: tuple[tuple[str, Callable[[], list[str]]], ...] = (
      test_the_real_runner_writes_the_capture_through_the_writer),
     ("model_request_is_snapshotted_before_later_notes",
      test_model_request_is_snapshotted_before_later_notes),
+    ("bounded_reader_skips_hostile_counts_named",
+     test_bounded_reader_skips_hostile_counts_named),
 )
 
 
