@@ -1,5 +1,7 @@
-# test_pii_types.py — the registry is the single home and reproduces v5 exactly
-# (W0-R1, W0-R2, W0-R10 of docs/tz-agentpii6.md §8.1).
+# test_pii_types.py — the registry is the single home of the form tables, the
+# LIVE `contracts.py` tables equal the registry-derived ones, and the accepted
+# widening is pinned (W0-R1, W0-R2, W0-R10 of docs/tz-agentpii6.md §8.1; V1 S4
+# SPEC §5.2 / INSTRUMENT-FIX-LEAF-READINGS / D-080).
 #
 #     cd prototype && source .venv/bin/activate && python3 -m bench.agentpii5.test_pii_types
 #
@@ -19,103 +21,6 @@ import bench.agentpii5.pii_types as pii_types
 _PROTOTYPE = str(pathlib.Path(__file__).resolve().parent.parent.parent)
 
 
-# --- the v5 literals, hand-copied (the spec is written twice) --------------------
-# These are the values the registry's derivatives must reproduce byte-for-byte.
-# They are NOT read from `contracts` — `contracts` now DERIVES its tables from
-# the registry, so reading them there would compare the registry to itself and
-# prove nothing.
-
-_LITERAL_FORM_FEATURES: dict[str, tuple[str, ...]] = {
-    "NAME": ("case_class", "gram_case", "order", "parts", "initials", "script", "hyphen_particle"),
-    "PHONE": ("prefix", "grouping", "separators", "parens"),
-    "LOC": ("case_class", "generic", "generic_position", "house_marker", "flat_marker", "commas",
-            "city_present", "city_position", "by_fields", "building_entrance_markers"),
-    "DOB": ("notation", "separator", "padding", "year_len", "month_form"),
-    "DATE": ("notation", "separator", "padding", "year_len", "month_form"),
-    "EMAIL": ("case_class",),
-    "CARD": ("grouping", "separator"),
-    "SNILS": ("separators",),
-    "INN": ("length", "separators"),
-    "PASSPORT": ("series_number_split",),
-    "PLATE": ("case_class", "spaces", "region_sep"),
-}
-
-_LITERAL_FEATURE_LABELS: dict[tuple[str, str], tuple[str, ...]] = {
-    ("NAME", "case_class"): ("lower", "title", "upper", "mixed", "none"),
-    ("NAME", "gram_case"): ("nomn", "gent", "datv", "accs", "ablt", "loct", "unknown"),
-    ("NAME", "order"): ("F-I-O", "I-F", "I-O-F", "single", "other"),
-    ("NAME", "parts"): ("1", "2", "3", "4+"),
-    ("NAME", "initials"): ("none", "given", "given_patronymic"),
-    ("NAME", "script"): ("cyrillic", "latin:gost", "latin:icao", "latin:bgn", "latin:unknown", "mixed", "none"),
-    ("NAME", "hyphen_particle"): ("none", "hyphen", "particle", "both"),
-    ("PHONE", "prefix"): ("plus7", "eight", "seven", "bare", "other"),
-    ("PHONE", "grouping"): ("3-3-2-2", "3-3-4", "solid", "other"),
-    ("PHONE", "separators"): ("none", "space", "hyphen", "dot", "mixed"),
-    ("PHONE", "parens"): ("yes", "no"),
-    ("LOC", "case_class"): ("lower", "title", "upper", "mixed", "none"),
-    ("LOC", "generic"): ("none", "full:*", "abbr:*"),
-    ("LOC", "generic_position"): ("before", "after", "none"),
-    ("LOC", "house_marker"): ("none", "d_dot_space", "d_dot_nospace", "d_nodot", "dom", "other"),
-    ("LOC", "flat_marker"): ("none", "kv_dot_space", "kv_dot_nospace", "kv_nodot", "kvartira", "other"),
-    ("LOC", "commas"): ("yes", "no"),
-    ("LOC", "city_present"): ("yes", "no"),
-    ("LOC", "city_position"): ("first", "last", "middle", "none"),
-    ("LOC", "by_fields"): ("fields", "string"),
-    ("LOC", "building_entrance_markers"): ("none", "markers:*"),
-    ("DOB", "notation"): ("dmy_dots", "dmy_slashes", "iso", "words", "solid", "other"),
-    ("DOB", "separator"): ("dot", "slash", "hyphen", "space", "none"),
-    ("DOB", "padding"): ("padded", "unpadded"),
-    ("DOB", "year_len"): ("2", "4", "none"),
-    ("DOB", "month_form"): ("number", "word_nominative", "word_genitive"),
-    ("DATE", "notation"): ("dmy_dots", "dmy_slashes", "iso", "words", "solid", "other"),
-    ("DATE", "separator"): ("dot", "slash", "hyphen", "space", "none"),
-    ("DATE", "padding"): ("padded", "unpadded"),
-    ("DATE", "year_len"): ("2", "4", "none"),
-    ("DATE", "month_form"): ("number", "word_nominative", "word_genitive"),
-    ("EMAIL", "case_class"): ("lower", "upper", "mixed", "none"),
-    ("CARD", "grouping"): ("4x4", "solid", "other"),
-    ("CARD", "separator"): ("space", "hyphen", "none", "other"),
-    ("SNILS", "separators"): ("canonical", "solid", "other"),
-    ("INN", "length"): ("10", "12", "other"),
-    ("INN", "separators"): ("none", "space", "other"),
-    ("PASSPORT", "series_number_split"): ("2-2-6", "4-6", "solid", "other"),
-    ("PLATE", "case_class"): ("lower", "upper", "mixed", "none"),
-    ("PLATE", "spaces"): ("yes", "no"),
-    ("PLATE", "region_sep"): ("space", "none", "other"),
-}
-
-_LITERAL_FORM_ABSTAIN: dict[tuple[str, str], str] = {
-    ("NAME", "gram_case"): "unknown",
-    ("LOC", "generic_position"): "none",
-    ("NAME", "case_class"): "none",
-    ("LOC", "case_class"): "none",
-    ("EMAIL", "case_class"): "none",
-    ("PLATE", "case_class"): "none",
-    ("NAME", "script"): "none",
-    ("NAME", "order"): "other",
-}
-
-_LITERAL_IDENTIFYING_ROLES: dict[str, tuple[str, ...]] = {
-    "NAME": ("surname", "given", "patronymic"),
-    "LOC": ("street",),
-    "EMAIL": ("local",),
-    "PHONE": ("digits",),
-    "CARD": ("digits",),
-    "SNILS": ("digits",),
-    "INN": ("digits",),
-    "PASSPORT": ("digits",),
-    "DOB": ("iso",),
-    "DATE": ("iso",),
-    "PLATE": (),
-}
-
-_LITERAL_DIGIT_PIECE_TYPES: frozenset[str] = frozenset({"PHONE", "CARD", "SNILS", "INN", "PASSPORT"})
-_LITERAL_DATE_PIECE_TYPES: frozenset[str] = frozenset({"DOB", "DATE"})
-_LITERAL_DERIVED_PIECE_TYPES: frozenset[str] = frozenset({"NAME"})
-_LITERAL_SQUEEZED_TYPES: frozenset[str] = frozenset({"PLATE"})
-_LITERAL_NEEDLE_KINDS: tuple[str, ...] = ("whole", "stem", "digits", "date", "initials", "squeezed")
-
-
 def _with(index: int, **changes) -> tuple[pii_types.TypeSpec, ...]:
     """Return `TYPE_REGISTRY` with the record at `index` replaced by a copy
     carrying `changes`. The broken copy is what makes a rule able to fail."""
@@ -125,32 +30,127 @@ def _with(index: int, **changes) -> tuple[pii_types.TypeSpec, ...]:
 
 
 def _v5() -> tuple[pii_types.TypeSpec, ...]:
-    """The v5 records only — the baseline the literals below reproduce. The v6
-    records extend the tables, so the v5 repro check runs over the v5 slice."""
+    """The v5 records only — the historical baseline the widening decision is
+    measured against. The v6 records extend every table, so the v5 slice is
+    where the pre-v6 cardinality is still visible."""
     return tuple(t for t in pii_types.TYPE_REGISTRY if t.origin == pii_types.ORIGIN_V5)
 
 
-def test_v5_tables_reproduced() -> list[str]:
+# --- S4: the LIVE-file equality instrument ---------------------------------------
+#
+# THE TEST THAT COULD NOT FAIL, REPLACED BY ONE THAT CAN (SPEC §3.2
+# INSTRUMENT-FIX-LEAF-READINGS, §5.2). The old `test_v5_tables_reproduced`
+# compared the registry's derivatives over the V5 SLICE against hand-copied
+# literals, so it stayed green while the LIVE `contracts.py` tables diverged —
+# and it could never see the full-registry widening. This test imports the LIVE
+# `contracts` module and asserts every form table equals the registry-derived
+# one. It reads the module that is actually loaded, so a hand copy reintroduced
+# in `contracts.py` is RED here.
+
+def test_live_contracts_tables_derive_from_registry() -> list[str]:
+    problems: list[str] = []
+    registry = pii_types.TYPE_REGISTRY
+    live = {
+        "FORM_FEATURES": (contracts.FORM_FEATURES, pii_types.form_features(registry)),
+        "FORM_TYPES": (contracts.FORM_TYPES, pii_types.form_types(registry)),
+        "FEATURE_LABELS": (contracts.FEATURE_LABELS, pii_types.feature_labels(registry)),
+        "FORM_ABSTAIN": (contracts.FORM_ABSTAIN, pii_types.form_abstain(registry)),
+        "IDENTIFYING_ROLES": (contracts.IDENTIFYING_ROLES,
+                              pii_types.identifying_roles(registry)),
+        "DERIVED_PIECE_TYPES": (contracts.DERIVED_PIECE_TYPES,
+                                pii_types.derived_piece_types(registry)),
+        "DIGIT_PIECE_TYPES": (contracts.DIGIT_PIECE_TYPES,
+                              pii_types.digit_piece_types(registry)),
+        "DATE_PIECE_TYPES": (contracts.DATE_PIECE_TYPES,
+                             pii_types.date_piece_types(registry)),
+        "SQUEEZED_TYPES": (contracts.SQUEEZED_TYPES, pii_types.squeezed_types(registry)),
+    }
+    for name, (live_value, derived) in live.items():
+        if live_value != derived:
+            problems.append(f"contracts.{name} differs from the registry-derived value")
+    # The wiring itself is the claim: these must be the registry's objects, not
+    # equal copies that a later edit could leave behind.
+    if contracts.FORM_FEATURES is not None and contracts.FORM_TYPES != tuple(contracts.FORM_FEATURES):
+        problems.append("contracts.FORM_TYPES is not built from contracts.FORM_FEATURES")
+    # THE SPLIT SURVIVES IN THE LIVE MODULE (G8 red condition).
+    if "translit" not in contracts.FORM_FEATURES.get("NAME", ()):
+        problems.append("the live FORM_FEATURES['NAME'] lost `translit`")
+    if contracts.FEATURE_LABELS.get(("NAME", "script")) == ("cyrillic", "latin:gost",
+                                                            "latin:icao", "latin:bgn",
+                                                            "latin:unknown", "mixed", "none"):
+        problems.append("the live FEATURE_LABELS[('NAME','script')] is the PRE-SPLIT table")
+    if contracts.FORM_ABSTAIN.get(("NAME", "translit")) != "latin:unknown":
+        problems.append("the live FORM_ABSTAIN lost ('NAME','translit') → latin:unknown")
+    return problems
+
+
+# THE ACCEPTED WIDENING (V1-F3 / SPEC §5.2 / D-080). These are the decision's
+# cardinalities, not a hand copy of a table: the predicate is called with the
+# FULL 66-record registry, and a registry edit that moves a set silently is RED
+# here until the decision is re-taken. The v5 slice stays the historical anchor.
+_ACCEPTED_WIDENING: dict[str, int] = {
+    "DERIVED_PIECE_TYPES": 16,
+    "DIGIT_PIECE_TYPES": 45,
+    "SQUEEZED_TYPES": 22,
+    "DATE_PIECE_TYPES": 2,
+}
+_V5_SLICE: dict[str, frozenset[str]] = {
+    "DERIVED_PIECE_TYPES": frozenset({"NAME"}),
+    "DIGIT_PIECE_TYPES": frozenset({"PHONE", "CARD", "SNILS", "INN", "PASSPORT"}),
+    "SQUEEZED_TYPES": frozenset({"PLATE"}),
+    "DATE_PIECE_TYPES": frozenset({"DOB", "DATE"}),
+}
+_LITERAL_NEEDLE_KINDS: tuple[str, ...] = ("whole", "stem", "digits", "date", "initials", "squeezed")
+
+
+def _reduce() -> dict[str, frozenset[str]]:
+    """The four predicate sets over the LIVE registry and over the v5 slice, from
+    `contracts` — the module `observe.py` binds its needle behaviour to."""
+    return {
+        "DERIVED_PIECE_TYPES": contracts.DERIVED_PIECE_TYPES,
+        "DIGIT_PIECE_TYPES": contracts.DIGIT_PIECE_TYPES,
+        "SQUEEZED_TYPES": contracts.SQUEEZED_TYPES,
+        "DATE_PIECE_TYPES": contracts.DATE_PIECE_TYPES,
+    }
+
+
+def test_accepted_widening() -> list[str]:
+    """The per-registry predicate print + the explicit widening decision (S4 RED
+    acceptance). A widening is VISIBLE, never implied: the v5 slice and the live
+    full registry are printed side by side, and the live cardinalities are
+    pinned to the decision."""
     problems: list[str] = []
     v5 = _v5()
-    if pii_types.form_features(v5) != _LITERAL_FORM_FEATURES:
-        problems.append("FORM_FEATURES differs from the literal")
-    if pii_types.form_types(v5) != tuple(_LITERAL_FORM_FEATURES):
-        problems.append("FORM_TYPES differs from the literal")
-    if pii_types.feature_labels(v5) != _LITERAL_FEATURE_LABELS:
-        problems.append("FEATURE_LABELS differs from the literal")
-    if pii_types.form_abstain(v5) != _LITERAL_FORM_ABSTAIN:
-        problems.append("FORM_ABSTAIN differs from the literal")
-    if pii_types.identifying_roles(v5) != _LITERAL_IDENTIFYING_ROLES:
-        problems.append("IDENTIFYING_ROLES differs from the literal")
-    if pii_types.digit_piece_types(v5) != _LITERAL_DIGIT_PIECE_TYPES:
-        problems.append("DIGIT_PIECE_TYPES differs from the literal")
-    if pii_types.date_piece_types(v5) != _LITERAL_DATE_PIECE_TYPES:
-        problems.append("DATE_PIECE_TYPES differs from the literal")
-    if pii_types.derived_piece_types(v5) != _LITERAL_DERIVED_PIECE_TYPES:
-        problems.append("DERIVED_PIECE_TYPES differs from the literal")
-    if pii_types.squeezed_types(v5) != _LITERAL_SQUEEZED_TYPES:
-        problems.append("SQUEEZED_TYPES differs from the literal")
+    slice_sets = {
+        "DERIVED_PIECE_TYPES": pii_types.derived_piece_types(v5),
+        "DIGIT_PIECE_TYPES": pii_types.digit_piece_types(v5),
+        "SQUEEZED_TYPES": pii_types.squeezed_types(v5),
+        "DATE_PIECE_TYPES": pii_types.date_piece_types(v5),
+    }
+    live = _reduce()
+    print("  --- per-registry predicate print (V1-F3 §5.2, decision D-080) ---")
+    for name in _ACCEPTED_WIDENING:
+        print(f"      {name}: v5 slice={len(slice_sets[name])} "
+              f"· live full registry={len(live[name])} · accepted={_ACCEPTED_WIDENING[name]}")
+    for name, accepted in _ACCEPTED_WIDENING.items():
+        if slice_sets[name] != _V5_SLICE[name]:
+            problems.append(f"{name} over the v5 slice changed: {sorted(slice_sets[name])}")
+        if len(live[name]) != accepted:
+            problems.append(f"{name} over the live registry is {len(live[name])}, "
+                            f"the accepted decision is {accepted} — re-take the decision")
+    # The predicate must READ the romanization feature, not only script/initials.
+    probe = dataclasses.replace(
+        next(t for t in pii_types.TYPE_REGISTRY if t.id == "NAME"),
+        id="PROBE_TRANSLIT", form_features=("translit",))
+    if "PROBE_TRANSLIT" not in pii_types.derived_piece_types((probe,)):
+        problems.append("derived_piece_types does not read `translit`")
+    return problems
+
+
+def test_needle_kinds_and_v6_admission() -> list[str]:
+    """The needle-kind closure and the 55 admitted v6 types — kept from the old
+    v5 repro test, which carried these beside the hand-copied form tables."""
+    problems: list[str] = []
     if pii_types.NEEDLE_KINDS[:len(_LITERAL_NEEDLE_KINDS)] != _LITERAL_NEEDLE_KINDS:
         problems.append("the v5 NEEDLE_KINDS prefix differs from the literal")
     if pii_types.NEEDLE_KINDS[len(_LITERAL_NEEDLE_KINDS):] != ("glyph", "octets", "ipv6"):
@@ -286,7 +286,8 @@ def test_printer_not_imported() -> list[str]:
     return problems
 
 
-CHECKS = (test_v5_tables_reproduced, test_registry_rules, test_no_engine,
+CHECKS = (test_live_contracts_tables_derive_from_registry, test_accepted_widening,
+          test_needle_kinds_and_v6_admission, test_registry_rules, test_no_engine,
           test_r02_admits_registered_types, test_r02_in_a_fresh_process,
           test_case_v6_field_is_invisible, test_printer_not_imported)
 

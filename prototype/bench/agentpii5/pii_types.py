@@ -83,26 +83,45 @@ class TypeSpec:
 # --- the eleven v5 records, in today's FORM_FEATURES order (§8.1) -----------------
 #
 # The order is load-bearing: `FORM_FEATURES` is built from this tuple and the
-# histogram order in the report follows it. The values transcribe the literals
-# that live in `contracts.py` today; `test_pii_types.test_v5_tables_reproduced`
-# proves the derivatives equal those literals byte-for-byte.
+# histogram order in the report follows it.
+#
+# THIS IS THE ONE HOME OF THE v5 FORM TABLES (V1 S4, SPEC §2.1 C04 / §5.1). The
+# tables used to live as literals in `contracts.py` and were transcribed here;
+# they are now read FROM here, so a divergence between the two is impossible by
+# construction and `test_pii_types.test_live_contracts_tables_derive_from_registry`
+# reads the LIVE `contracts` module to prove that the wiring did not rot.
+#
+# THE NAME RECORD CARRIES THE SPLIT ITSELF: `script` is the ALPHABET and
+# `translit` is the ROMANIZATION, with `latin:unknown` as the abstention. The
+# pinned v6 record transcribed the PRE-SPLIT table (alphabet and romanization
+# merged into one `script`); migrating it as-is would delete the v5 decision the
+# split was introduced for — 50 of the 62 `form OUT/answer` misses of g07 —
+# which is G8's red condition «Скопирована старая script/translit таблица».
 
 TYPE_REGISTRY: tuple[TypeSpec, ...] = (
     TypeSpec(
         id="NAME", origin=ORIGIN_V5, item_type=True, type_class=TYPE_CLASS_V5,
         generated_checksum="", bare_typed=False, grammar="", length="", grammar_status="ГОТОВ",
         cues=(), field_keys=(), industries=(), pd_context="",
-        form_features=("case_class", "gram_case", "order", "parts", "initials", "script", "hyphen_particle"),
+        form_features=("case_class", "gram_case", "order", "parts", "initials", "script", "translit",
+                       "hyphen_particle"),
         feature_labels=(
             ("case_class", ("lower", "title", "upper", "mixed", "none")),
             ("gram_case", ("nomn", "gent", "datv", "accs", "ablt", "loct", "unknown")),
             ("order", ("F-I-O", "I-F", "I-O-F", "single", "other")),
             ("parts", ("1", "2", "3", "4+")),
             ("initials", ("none", "given", "given_patronymic")),
-            ("script", ("cyrillic", "latin:gost", "latin:icao", "latin:bgn", "latin:unknown", "mixed", "none")),
+            # THE ALPHABET. `cyrillic`/`latin`/`mixed`/`none` only: which script
+            # the letters are written in is a different question from which
+            # romanization system spells them (the row below).
+            ("script", ("cyrillic", "latin", "mixed", "none")),
+            # THE ROMANIZATION, and it abstains through `latin:unknown` when no
+            # published table speaks (form_tables.TRANSLIT_SIGNATURES).
+            ("translit", ("latin:gost", "latin:icao", "latin:bgn", "latin:unknown")),
             ("hyphen_particle", ("none", "hyphen", "particle", "both")),
         ),
-        abstain=(("gram_case", "unknown"), ("case_class", "none"), ("script", "none"), ("order", "other")),
+        abstain=(("gram_case", "unknown"), ("case_class", "none"), ("script", "none"),
+                 ("translit", "latin:unknown"), ("order", "other")),
         identifying_roles=("surname", "given", "patronymic"),
         needle_kinds=("whole", "stem", "initials"), squeeze_separators="", signature_tail=0, value_notation="",
         engine_labels=(), mint="", hunt="", sample="Иванов Пётр Сергеевич",
@@ -330,11 +349,22 @@ def date_piece_types(registry: tuple[TypeSpec, ...]) -> frozenset[str]:
 
 
 def derived_piece_types(registry: tuple[TypeSpec, ...]) -> frozenset[str]:
-    # A type whose value a model rewrites in another alphabet or squeezes to
-    # initials: declared `script` or `initials` among its form features. NAME
-    # alone among the v5 records.
+    # A type whose value a model rewrites in another alphabet, romanizes, or
+    # squeezes to initials: declared `script`, `translit` or `initials` among
+    # its form features. NAME alone among the v5 records. The `translit` arm is
+    # what makes the predicate read the ROMANIZATION question the split added;
+    # before it, the predicate was a bare `script`-membership test (V1-F3).
+    #
+    # THE WIDENING IS AN ACCEPTED DECISION, NOT A SIDE EFFECT (V1 S4, SPEC §5.2,
+    # D-080). `contracts.py` calls this with the FULL 66-record registry, and
+    # the v6 records carry `script` for their alphanumeric identifiers, so the
+    # live set is NAME + 15 v6 types. The narrow v5 comment below is history:
+    # the widening is recorded, counted and pinned by
+    # `test_pii_types.test_accepted_widening`, and a silent move of the
+    # cardinality is RED until the decision is re-taken.
     return frozenset(t.id for t in registry
-                     if "script" in t.form_features or "initials" in t.form_features)
+                     if "script" in t.form_features or "translit" in t.form_features
+                     or "initials" in t.form_features)
 
 
 def squeezed_types(registry: tuple[TypeSpec, ...]) -> frozenset[str]:

@@ -860,59 +860,42 @@ class ResultRenderer(Protocol):
 
 # --- §4 the form comparator (spec §1.1, §8.4) ----------------------------------------
 
-# THE v6 HALF OF EVERY FORM TABLE, READ FROM ITS ONE HOME. The eleven v5 rows
-# below stay LITERALS — they are the home `pii_types` transcribes, and the
-# script/translit SPLIT lives in them — while the 55 v6 records are added from
-# `pii_types.TYPE_REGISTRY`, the one home the approved `contracts → pii_types`
-# edge points at (SPEC §3.2 O-V6-4). Neither half replaces the other: a bare
-# `pii_types.form_features(TYPE_REGISTRY)` would transcribe the registry's NAME
-# record, which still predates the split (alphabet and romanization collapsed
-# into one `script`, `translit` absent), and taking it makes
-# `form.FEATURE_EXTRACTORS[('NAME','translit')]` unreachable — the romanization
-# question would stop being asked SILENTLY instead of failing loudly (SPEC §2.1
-# C04 adopt_gate, §5.1). S4 migrates the NAME record itself, after which the
-# three tables below are one plain registry read and the v5 literals are the
-# transcription test's business — not before.
-_V6_RECORDS: tuple[pii_types.TypeSpec, ...] = tuple(
-    record for record in pii_types.TYPE_REGISTRY if record.origin == pii_types.ORIGIN_V6)
-
-# EXACTLY the feature names of spec §8.4, per type. `DATE` is a non-birth date
-# the engine substituted (an appointment slot, a document date): same features
-# as DOB, listed separately because the spec lists «DOB/DATE» and a metric
-# slice by type must not fold the two.
-FORM_FEATURES: dict[str, tuple[str, ...]] = {
-    # `script` IS THE ALPHABET AND `translit` IS THE ROMANIZATION (SPIKE-Ж, Ж-5).
-    # One feature used to answer both: `form.name_script` returned
-    # `latin:gost|icao|bgn|unknown`, so two LATIN strings whose letters no
-    # published table spells differently — `unknown`, which is the extractor
-    # saying «no opinion» — were charged a `script` difference. That is 50 of
-    # the 62 `form OUT/answer` misses of g07 (17 cases), and it punishes the
-    # instrument's own resolution limit, exactly as `order` → `other` already
-    # abstains next door. The alphabet is a real question and stays (3
-    # Cyrillic-versus-Latin hops in the archives, 202 in g06, are class Г and
-    # MUST remain a difference); the romanization system is a separate one and
-    # abstains when no table speaks.
-    "NAME": ("case_class", "gram_case", "order", "parts", "initials", "script", "translit",
-             "hyphen_particle"),
-    "PHONE": ("prefix", "grouping", "separators", "parens"),
-    "LOC": ("case_class", "generic", "generic_position", "house_marker", "flat_marker", "commas",
-            "city_present", "city_position", "by_fields", "building_entrance_markers"),
-    "DOB": ("notation", "separator", "padding", "year_len", "month_form"),
-    "DATE": ("notation", "separator", "padding", "year_len", "month_form"),
-    "EMAIL": ("case_class",),
-    "CARD": ("grouping", "separator"),
-    "SNILS": ("separators",),
-    "INN": ("length", "separators"),
-    "PASSPORT": ("series_number_split",),
-    "PLATE": ("case_class", "spaces", "region_sep"),
-}
-# THE 55 v6 ROWS ARE ADDED, NEVER SUBSTITUTED FOR THE v5 ONES (SPEC §2.1 C02:
-# keep_v5 + adopt_v6). The split above survives because `NAME` is a v5 record and
-# `_V6_RECORDS` does not carry it; the v6 additions survive because nothing here
-# filters them out. `test_form.test_extractor_keys_equal_contract` is the pin:
-# `form.FEATURE_EXTRACTORS` is built from `form_v6`'s v6 half as well, so a
-# v5-only `FORM_FEATURES` would leave those extractors unreachable and RED.
-FORM_FEATURES.update(pii_types.form_features(_V6_RECORDS))
+# THE FORM TABLES ARE NOW ONE PLAIN REGISTRY READ (V1 S4). They used to be the
+# eleven v5 records written out HERE, with the 55 v6 records added from
+# `pii_types`; the v5 rows were then transcribed into `pii_types` and the two
+# copies could drift — exactly the failure `INSTRUMENT-FIX-LEAF-READINGS` and
+# SPEC §3.2 O-V6-4 named. S4 migrated the v5 NAME record WITH the
+# `script`/`translit` split into the registry, so `pii_types.TYPE_REGISTRY` is
+# the ONE home of every form table and `_V6_RECORDS` is gone.
+#
+# WHY THE SPLIT SURVIVES THE MIGRATION (SPEC §2.1 C04 adopt_gate, §5.1). The
+# NAME record carries `script` — THE ALPHABET, `cyrillic`/`latin`/`mixed`/`none`
+# — AND `translit` — THE ROMANIZATION, `latin:gost|icao|bgn|unknown`, abstaining
+# through `latin:unknown`. One feature used to answer both: `form.name_script`
+# returned `latin:gost|icao|bgn|unknown`, so two LATIN strings whose letters no
+# published table spells differently — `unknown`, which is the extractor saying
+# «no opinion» — were charged a `script` difference. That is 50 of the 62
+# `form OUT/answer` misses of g07 (17 cases), and it punishes the instrument's
+# own resolution limit, exactly as `order` → `other` already abstains next door.
+# The alphabet is a real question and stays (3 Cyrillic-versus-Latin hops in the
+# archives, 202 in g06, are class Г and MUST remain a difference); the
+# romanization system is a separate one and abstains when no table speaks. The
+# pinned v6 record transcribed the PRE-SPLIT table (alphabet and romanization
+# merged into one `script`, `translit` absent); adopting it as-is would delete
+# the v5 decision silently — G8's red condition «Скопирована старая
+# script/translit таблица» — and make `form.FEATURE_EXTRACTORS[('NAME',
+# 'translit')]` unreachable.
+#
+# THE PIN is `test_pii_types.test_live_contracts_tables_derive_from_registry`:
+# it imports THIS module and asserts the four tables equal the registry-derived
+# ones, so a hand copy reintroduced here is RED instead of silently green
+# (SPEC §5.2 RED acceptance).
+#
+# `FORM_FEATURES[type]` is EXACTLY the feature names of spec §8.4, and `DATE`
+# keeps its own record: it is the non-birth date the engine substituted (an
+# appointment slot, a document date), with DOB's features but a type a metric
+# sliced by type must not fold into DOB.
+FORM_FEATURES: dict[str, tuple[str, ...]] = pii_types.form_features(pii_types.TYPE_REGISTRY)
 FORM_TYPES: tuple[str, ...] = tuple(FORM_FEATURES)
 # The closed label set each feature extractor returns. Two strings with the
 # same label agree on the feature; anything else is a difference named by the
@@ -922,58 +905,18 @@ FORM_TYPES: tuple[str, ...] = tuple(FORM_FEATURES)
 # adversarial fixtures of `form_hIN`/`form_hOUT` can name the label they
 # expect, and so two extractors written by two people cannot disagree about
 # what «title case» means.
-FEATURE_LABELS: dict[tuple[str, str], tuple[str, ...]] = {
-    ("NAME", "case_class"): ("lower", "title", "upper", "mixed", "none"),
-    ("NAME", "gram_case"): ("nomn", "gent", "datv", "accs", "ablt", "loct", "unknown"),
-    ("NAME", "order"): ("F-I-O", "I-F", "I-O-F", "single", "other"),
-    ("NAME", "parts"): ("1", "2", "3", "4+"),
-    ("NAME", "initials"): ("none", "given", "given_patronymic"),
-    ("NAME", "script"): ("cyrillic", "latin", "mixed", "none"),
-    ("NAME", "translit"): ("latin:gost", "latin:icao", "latin:bgn", "latin:unknown"),
-    ("NAME", "hyphen_particle"): ("none", "hyphen", "particle", "both"),
-    ("PHONE", "prefix"): ("plus7", "eight", "seven", "bare", "other"),
-    ("PHONE", "grouping"): ("3-3-2-2", "3-3-4", "solid", "other"),
-    ("PHONE", "separators"): ("none", "space", "hyphen", "dot", "mixed"),
-    ("PHONE", "parens"): ("yes", "no"),
-    ("LOC", "case_class"): ("lower", "title", "upper", "mixed", "none"),
-    ("LOC", "generic"): ("none", "full:*", "abbr:*"),
-    ("LOC", "generic_position"): ("before", "after", "none"),
-    ("LOC", "house_marker"): ("none", "d_dot_space", "d_dot_nospace", "d_nodot", "dom", "other"),
-    ("LOC", "flat_marker"): ("none", "kv_dot_space", "kv_dot_nospace", "kv_nodot", "kvartira", "other"),
-    ("LOC", "commas"): ("yes", "no"),
-    ("LOC", "city_present"): ("yes", "no"),
-    ("LOC", "city_position"): ("first", "last", "middle", "none"),
-    ("LOC", "by_fields"): ("fields", "string"),
-    ("LOC", "building_entrance_markers"): ("none", "markers:*"),
-    ("DOB", "notation"): ("dmy_dots", "dmy_slashes", "iso", "words", "solid", "other"),
-    ("DOB", "separator"): ("dot", "slash", "hyphen", "space", "none"),
-    ("DOB", "padding"): ("padded", "unpadded"),
-    ("DOB", "year_len"): ("2", "4", "none"),
-    ("DOB", "month_form"): ("number", "word_nominative", "word_genitive"),
-    ("DATE", "notation"): ("dmy_dots", "dmy_slashes", "iso", "words", "solid", "other"),
-    ("DATE", "separator"): ("dot", "slash", "hyphen", "space", "none"),
-    ("DATE", "padding"): ("padded", "unpadded"),
-    ("DATE", "year_len"): ("2", "4", "none"),
-    ("DATE", "month_form"): ("number", "word_nominative", "word_genitive"),
-    ("EMAIL", "case_class"): ("lower", "upper", "mixed", "none"),
-    ("CARD", "grouping"): ("4x4", "solid", "other"),
-    ("CARD", "separator"): ("space", "hyphen", "none", "other"),
-    ("SNILS", "separators"): ("canonical", "solid", "other"),
-    ("INN", "length"): ("10", "12", "other"),
-    ("INN", "separators"): ("none", "space", "other"),
-    ("PASSPORT", "series_number_split"): ("2-2-6", "4-6", "solid", "other"),
-    ("PLATE", "case_class"): ("lower", "upper", "mixed", "none"),
-    ("PLATE", "spaces"): ("yes", "no"),
-    ("PLATE", "region_sep"): ("space", "none", "other"),
-}
-# THE v6 LABELS ARE ADDED, AND `NAME`'s TWO ROMANIZATION-ADJACENT ROWS ABOVE ARE
-# NOT TOUCHED: the registry's NAME record still declares the seven-label pre-split
-# `script` and no `translit` at all, so reading it would (a) drop the abstention
-# `("NAME","translit") → latin:unknown`, (b) re-open the 50-of-62 g07 form misses
-# the split removed, and (c) leave `contracts.FORM_ABSTAIN` with a key no label
-# set declares — `test_form.test_abstain_is_closed_and_one_sided` reads exactly
-# that (SPEC §2.1 C04 adopt_gate, §5.1).
-FEATURE_LABELS.update(pii_types.feature_labels(_V6_RECORDS))
+# READ FROM THE REGISTRY, in registry order — every type's feature_labels in the
+# order the record declares them, the eleven v5 records first (S4). The v6 rows
+# are added by the same read (SPEC §2.1 C02: keep_v5 + adopt_v6), and `NAME`'s
+# TWO ROMANIZATION-ADJACENT ROWS COME FROM THE MIGRATED RECORD: the four-label
+# alphabet and the romanization table with its `latin:unknown` abstention. A
+# registry NAME that still declared the seven-label pre-split `script` and no
+# `translit` would (a) drop that abstention, (b) re-open the 50-of-62 g07 form
+# misses the split removed, and (c) leave `contracts.FORM_ABSTAIN` with a key no
+# label set declares — `test_form.test_abstain_is_closed_and_one_sided` reads
+# exactly that (SPEC §2.1 C04 adopt_gate, §5.1).
+FEATURE_LABELS: dict[tuple[str, str], tuple[str, ...]] = pii_types.feature_labels(
+    pii_types.TYPE_REGISTRY)
 
 # ABSTAIN (ruling 2026-09-22 on the comparator's question): `form_match` adds a
 # feature to `differs` iff a != b AND neither side carries the feature's abstain
@@ -996,32 +939,18 @@ FEATURE_LABELS.update(pii_types.feature_labels(_V6_RECORDS))
 # (Ирина, Марина, Дмитрий, Аркадий) is surname-shaped — so comparing `other`
 # as a reading made a PERFECT restoration a form MISS whenever the real value
 # and the minted substitute fell on opposite sides of the guess.
-FORM_ABSTAIN: dict[tuple[str, str], str] = {
-    ("NAME", "gram_case"): "unknown",
-    ("LOC", "generic_position"): "none",
-    ("NAME", "case_class"): "none",
-    ("LOC", "case_class"): "none",
-    ("EMAIL", "case_class"): "none",
-    ("PLATE", "case_class"): "none",
-    ("NAME", "script"): "none",
-    # THE ROMANIZATION SYSTEM ABSTAINS WHEN THERE IS NO OPINION, and the label
-    # `latin:unknown` IS that opinion's absence — the extractor's own words in
-    # `form_tables.TRANSLIT_SIGNATURES` («nothing discriminating»). Comparing it
-    # as though it were a CONVENTION is what made `DMITRIY KUZNETSOV` against
-    # `EGOR BOBROV` differ. The same shape as `order` → `other` below,
-    # and `test_form` pins the two abstentions together.
-    ("NAME", "translit"): "latin:unknown",
-    ("NAME", "order"): "other",
-}
-# THE v6 ABSTENTIONS ARE ADDED ON TOP (SPEC §2.1 C02: keep v5 PLUS any v6 rows) —
-# never instead of them. The v5 rows above are all v5 records and every one of
-# them is also a key `FEATURE_LABELS` declares and `form.FEATURE_EXTRACTORS`
-# answers; the v6 rows arrive together with their labels and their extractors, so
-# `test_form.test_abstain_is_closed_and_one_sided` stays a live check on all of
-# them. The registry's NAME abstentions are a strict subset of the v5 rows here
-# (gram_case / case_class / script / order), which is why the split's `translit`
-# row has to be kept literally: the registry does not declare it.
-FORM_ABSTAIN.update(pii_types.form_abstain(_V6_RECORDS))
+# READ FROM THE REGISTRY (S4). Every v5 row above is now the record's own
+# `abstain` tuple, including the one the split added:
+#   ("NAME", "translit") → "latin:unknown"
+# THE ROMANIZATION SYSTEM ABSTAINS WHEN THERE IS NO OPINION, and the label
+# `latin:unknown` IS that opinion's absence — the extractor's own words in
+# `form_tables.TRANSLIT_SIGNATURES` («nothing discriminating»). Comparing it as
+# though it were a CONVENTION is what made `DMITRIY KUZNETSOV` against
+# `EGOR BOBROV` differ; the same shape as `order` → `other`. `test_form` pins
+# the two abstentions together; a registry that dropped the row would leave
+# `FEATURE_LABELS` declaring `latin:unknown` with no abstention, which
+# `test_form.test_abstain_is_closed_and_one_sided` reads (SPEC §2.1 C04).
+FORM_ABSTAIN: dict[tuple[str, str], str] = pii_types.form_abstain(pii_types.TYPE_REGISTRY)
 # LEXEME-DEPENDENT FEATURES, and why a label is not enough for them.
 #
 # `form_match` is handed two DIFFERENT LEXEMES on the OUT leg — `observe.
@@ -1378,10 +1307,23 @@ PHONE_SIGNATURE_DIGITS: int = 10
 DIGIT_PIECE_TYPES: frozenset[str] = pii_types.digit_piece_types(pii_types.TYPE_REGISTRY)
 # A date is neither: «14.03.1987» and «1987-03-14» share no substring at all.
 DATE_PIECE_TYPES: frozenset[str] = pii_types.date_piece_types(pii_types.TYPE_REGISTRY)
-# Types whose value a model rewrites in another ALPHABET or squeezes to
-# initials. NAME only, and deliberately: `FORM_FEATURES` declares `script` and
-# `initials` for NAME alone, and a transliterated STREET needle would fire on
-# ordinary Latin text in an address field with no derived form present.
+# Types whose value a model rewrites in another ALPHABET, ROMANIZES, or squeezes
+# to initials.
+#
+# THE WIDENING IS AN ACCEPTED, RECORDED DECISION (V1-F3, SPEC §5.2, D-080), NOT
+# A SILENT CONSEQUENCE OF THE registry EDGE. The v5 literal was {NAME} and the
+# v5 comment said so deliberately; the predicate now fires for every record that
+# declares `script` or `translit` or `initials`, and it is called with the FULL
+# 66-record registry, so the live set is NAME + 15 v6 alphanumeric identifiers.
+# The same read widens DIGIT_PIECE_TYPES 5 → 45 and SQUEEZED_TYPES 1 → 22 (DATE
+# stays 2). `observe.py` binds these at import (`DERIVED_TYPES`/`DIGIT_TYPES`/
+# `SQUEEZED_TYPES`) and uses them to GENERATE needles and to decide survival, so
+# the widening moves measurement behaviour: for an alphanumeric identifier a
+# `script` question is legitimate, which is why the decision is accept-and-pin
+# rather than refuse. The v6 test could not see it because it compared the v5
+# SLICE against hand-copied literals; `test_pii_types.test_accepted_widening`
+# pins the live cardinalities against the decision and prints the per-registry
+# values, so a silent move is RED until the decision is re-taken.
 DERIVED_PIECE_TYPES: frozenset[str] = pii_types.derived_piece_types(pii_types.TYPE_REGISTRY)
 # The one type matched with every separator dropped. A plate is a letter, three
 # digits, a letter pair and a region: the four groups cannot form by accident
