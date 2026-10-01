@@ -1,26 +1,28 @@
-# M1a: состояние уникального выравнивания — открытый элемент (step 6)
+# M1a: выравнивание — исправлено (round 7)
 
-Результат adversarial-прогона [red_alignment.py](<research/quality-sprint-2026-09-30/work/M1a/red_alignment.py>) → [RED-ALIGNMENT.json](<research/quality-sprint-2026-09-30/work/M1a/RED-ALIGNMENT.json>), на текущем char-level `_mapped_window` (с уточнением границы `a<x<b` для вставок).
+G2-readiness review (`76fef59f`) поставил NOT_READY с жёстким блокером: LOC false-negative от char-level SequenceMatcher (финальная «4» дома падала как boundary insert на `x==b`, правило `a<x<b` её отбрасывало). Исправлено двумя изменениями:
 
-| Случай | Текущий вердикт | Оценка |
+1. **Word-level выравнивание — primary.** `_word_window` (whitespace-токены) мапит значение по границам слов; оно не фрагментирует «Липовая→Пушкина» и «21→14» и не сливает соседние литералы. При чистом соответствии (равное число слов, contiguous) используется оно; иначе fallback на char-level `_mapped_window`.
+2. **Exact-copy narrowing.** На exact-copy пути (`raw==fake` с единственным proved literal) окно сужается до точного вхождения literal (`text.find(literal)`), чтобы граничная вставка соседнего литерала не давала `value_wrong`; излишек остаётся gap-change (`text_status=changed`).
+
+## Проверка adversarial-кейсов (red_alignment.py)
+
+| Случай | Было | Стало |
 |---|---|---|
-| repeated-fake-one-restored | matched + residual | корректно (пер-вхождение локально) |
-| insertion-around-token | **value_wrong** | **известное ограничение**: соседняя вставка литерала («X »/« Y») сливается char-level SequenceMatcher в replace-opcode; правильный вердикт — value_ok + отдельный gap-change |
-| deletion-around-token | alignment_unresolved | корректно (консервативно) |
-| shared-surrounding-literals | matched | корректно |
-| wrong-real-elsewhere | value_wrong | корректно |
-| two-fakes-collapse-to-one-real | alignment_unresolved | корректно |
+| correct LOC verbatim | value_wrong | **matched** |
+| wrong street type | value_wrong | value_wrong ✓ |
+| insertion-around-token | value_wrong | **matched + text_status=changed** |
+| deletion-around-token | alignment_unresolved | alignment_unresolved ✓ |
+| shared-surrounding-literals | matched | matched ✓ |
+| wrong-real-elsewhere | value_wrong | value_wrong ✓ |
+| two-fakes-collapse | alignment_unresolved | alignment_unresolved ✓ |
 
-## Почему не word-level
+59/59 контролов, 6 legacy suites зелёные. Позитивный LOC control добавлен в suite.
 
-Пробная word-level (whitespace) версия ломала телефоны с внутренними пробелами/разделителями (`+7 999 000-11-22` → одна word vs три), регрессируя существующий контроль «value cannot excuse format repair». Откат выполнен; 55/55 контролов снова зелёные.
+## Осталось до G2 (по reviewer)
 
-## Требование reviewer (не выполнено)
+- **Known-unknown surfacing** (обязательно): Latin/partial-roles должны давать видимый счётчик unsupported, не 0 candidates без пометки.
+- **Swapped-person pin** (обязательно, но уже корректно по point 5 — см. существующий unknown-competitor и wrong-real-elsewhere тесты).
+- Optional: Latin/translit value, partial-role proof, spoken/stream completeness.
 
-Уникальное монотонное соответствие по literal anchors/token boundaries/length changes, где неоднозначные случаи (повторяющиеся anchors, соседние токены, crossing edits, вставка/удаление внутри значения) дают `alignment_unresolved`, а соседняя вставка литерала — отдельный gap-change, а не value_wrong. Нужен выравниватель, который не теряет многословные значения (phone/date с разделителями) и не сливает граничные вставки с заменой значения.
-
-## Следующий шаг
-
-Отдельный RED→GREEN цикл: токенизация по «жёстким» границам (не-знаковые символы) + анкерное монотонное соответствие с проверкой единственности; пер-тип длина/форма реального значения как ограничение, но без выбора mapping «чтобы value стало зелёным». До этого alignment остаётся открытым, G2 не повышается.
-
-Сам по себе этот документ и RED-ALIGNMENT не меняют product source; единственная правка кода в этом цикле — уточнение границы вставки в `_mapped_window` (без регрессии, 55/55).
+Единственная правка кода — два M1a файла; engine/scorer/raw неизменны.

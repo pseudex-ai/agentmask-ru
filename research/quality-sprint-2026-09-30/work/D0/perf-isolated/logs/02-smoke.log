@@ -1,0 +1,16 @@
+[FULL run0] n=60 corpus=500 msgs (60 unique timed)
+  cold_start_ms=1355.994 (parent_recorded_before_subprocess_run) in_process=30.112 ms interpreter_startup=9.83 ms
+  p50=4.9628 p95=17.53 p99=514.0367 mean=15.1165 stdev=65.6625 ms
+  rss modules/import/load/warmup/after_n = 87.1/208.6/461.8/461.8/461.8 MiB
+  throughput=66.15 msg/s  model_bytes=29020160  bundle=2a07cebae2b050ec
+  controls: positive=2 spans ['NAME', 'PHONE'] negative=0
+  -> /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/D0/perf-isolated/logs/SMOKE-FULL.tsv
+EXIT=0
+[NER_ONLY run0] n=60 corpus=500 msgs (60 unique timed)
+  cold_start_ms=1254.038 (parent_recorded_before_subprocess_run) in_process=1.874 ms interpreter_startup=8.405 ms
+  p50=0.6989 p95=1.4857 p99=1.569 mean=0.8054 stdev=0.3881 ms
+  rss modules/import/load/warmup/after_n = 79.3/232.1/494.2/494.2/494.2 MiB
+  throughput=1241.02 msg/s  model_bytes=29020160  bundle=2a07cebae2b050ec
+  controls: positive=1 spans ['NAME'] negative=0
+  -> /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/D0/perf-isolated/logs/SMOKE-NER_ONLY.tsv
+EXIT=0

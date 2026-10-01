@@ -1,0 +1,26 @@
+== run_matrix: n=1000 warmup=50 repeats=3 ==
+== python: /Users/igor/Projects/Obscura-hop-audit/prototype/.venv/bin/python ==
+== command shape: cd /Users/igor/Projects/Obscura-hop-audit/prototype && PYTHONDONTWRITEBYTECODE=1 /usr/bin/time -l /Users/igor/Projects/Obscura-hop-audit/prototype/.venv/bin/python /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/D0/perf-isolated/perf_one_arm.py --arm <ARM> --corpus /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/D0/perf-isolated/corpus.jsonl --n 1000 --warmup 50 --repeat <k> --out /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/D0/perf-isolated/raw/<ARM>-run<k>.tsv ==
+== start 2026-10-01T05:02:17Z ==
+10:02  up 2 days, 17:32, 3 users, load averages: 3.97 4.61 5.16
+100.0 31169 .venv/bin/python -m bench.agentpii5.live bench/runs/2026-09-30/v5-sprint-v2-813 --web --host 127.0.0.1 --port 8099 --baseline-dir /Users/igor/Projects/Obscura-hop-audit/research/hop-format-audit/evidence/prev-813
+ 31.3   930 /Applications/OrbStack.app/Contents/Frameworks/OrbStack Helper.app/Contents/MacOS/OrbStack Helper vmgr -build-id macho:05775f98b4bb3d75b88520220872c248 -handoff
+ 23.3   412 /System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon
+ 14.6   923 /Applications/Zen.app/Contents/MacOS/zen -os-restarted
+ 13.2  1122 /Applications/Zen.app/Contents/MacOS/gpu-helper.app/Contents/MacOS/Zen GPU Helper -parentBuildID 20260922050124 -prefsHandle 0:42106 -prefMapHandle 1:307108 -sbStartup -sbAppPath /Applications/Zen.app -ipcHandle 0 -initialChannelId {d24b6e8c-5858-49fd-a07a-6e274615593c} -parentPid 923 -appDir /Applications/Zen.app/Contents/Resources/browser -profile /Users/igor/Library/Application Support/zen/Profiles/aknmvh5n.Default (release) org.mozilla.machname.582151701 1 gpu
+  8.1  1843 /Applications/Zen.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container -isForBrowser -prefsHandle 0:51324 -prefMapHandle 1:307108 -jsInitHandle 2:162620 -sbStartup -sbAppPath /Applications/Zen.app -sbLevel 3 -parentBuildID 20260922050124 -ipcHandle 0 -initialChannelId {3edf1014-f4c7-4564-ab73-c4040e3c1a9e} -parentPid 923 -greomni /Applications/Zen.app/Contents/Resources/omni.ja -appomni /Applications/Zen.app/Contents/Resources/browser/omni.ja -appDir /Applications/Zen.app/Contents/Resources/browser -profile /Users/igor/Library/Application Support/zen/Profiles/aknmvh5n.Default (release) org.mozilla.machname.410909418 375 tab
+--- FULL run1 -> /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/D0/perf-isolated/raw/FULL-run1.tsv
+--- exit=0
+--- FULL run2 -> /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/D0/perf-isolated/raw/FULL-run2.tsv
+--- exit=0
+--- FULL run3 -> /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/D0/perf-isolated/raw/FULL-run3.tsv
+--- exit=0
+--- NER_ONLY run1 -> /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/D0/perf-isolated/raw/NER_ONLY-run1.tsv
+--- exit=0
+--- NER_ONLY run2 -> /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/D0/perf-isolated/raw/NER_ONLY-run2.tsv
+--- exit=0
+--- NER_ONLY run3 -> /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/D0/perf-isolated/raw/NER_ONLY-run3.tsv
+--- exit=0
+== end 2026-10-01T05:02:56Z ==
+10:02  up 2 days, 17:33, 3 users, load averages: 4.08 4.55 5.11
+== run_matrix exit=0 (0 = every measurement process exited 0) ==

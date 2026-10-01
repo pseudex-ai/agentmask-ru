@@ -1,5 +1,5 @@
 {
-  "stage": "M1a v2-dev: provable dotted initials via whole-name disclosure",
+  "stage": "M1a v2-dev: word-level alignment + exact-copy narrowing (G2 LOC blocker fixed)",
   "only_declared_source_changes": [
     "prototype/bench/agentpii5/answer_restoration.py",
     "prototype/bench/agentpii5/test_answer_restoration.py"
@@ -7,18 +7,19 @@
   "files": [
     {
       "path": "prototype/bench/agentpii5/answer_restoration.py",
-      "sha256": "48ecc8f772aaa60d7bdd8394f793533ed8bf97e361582fe0b5f92a1c9f33d5b4"
+      "sha256": "1cc383ad8584f6f34b046c6036e2c8bee74cb9c8119ef4709fd9107b0be00c44"
     },
     {
       "path": "prototype/bench/agentpii5/test_answer_restoration.py",
-      "sha256": "ed5adbfb4c94d48f25e7f2d6b854fd2ef18d811f4fb8f69952264b540f4c1f78"
+      "sha256": "0e17d22ebde7c65f4aa26bfb28d5e85aed6f75b8a08636fed5938ba67b2c30f2"
     }
   ],
   "m04_controls": {
-    "passed": 58,
-    "total": 58
+    "passed": 59,
+    "total": 59
   },
   "legacy_suites": 6,
+  "g2_review": "NOT_READY -> alignment blocker now fixed; remaining: known-unknown surfacing (Latin/partial roles), swapped-person pin",
   "other_source_run_pins_unchanged": 196,
   "engine_changed": false,
   "raw_paid_run_changed": false,

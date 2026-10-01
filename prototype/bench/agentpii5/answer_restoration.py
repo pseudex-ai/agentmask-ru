@@ -424,6 +424,42 @@ def _candidates(case: CaseV5, run: ArmRunV5,
     return out
 
 
+def _words(text: str) -> tuple[tuple[int, int, str], ...]:
+    """Whitespace-delimited tokens with char spans, in order."""
+    return tuple((m.start(), m.end(), m.group()) for m in re.finditer(r'\S+', text))
+
+
+def _word_window(a: int, b: int, raw: str, delivered: str) -> tuple[int, int, bool] | None:
+    """Map a raw span to its delivered interval via word-token boundaries.
+
+    Returns `None` when no clean word-level mapping exists, so the caller falls
+    back to the char-level window. Word-level alignment keeps a value replacement
+    from swallowing adjacent inserted literals AND from being fragmented by
+    shared single characters («Липовая→Пушкина», «21→14»); it is the primary
+    mapping, not a heuristic. A non-unique mapping is `None`, never a guess.
+    """
+    rw=_words(raw); dw=_words(delivered)
+    ridx=[i for i,(s,e,_) in enumerate(rw) if not (e<=a or b<=s)]
+    if not ridx:
+        return None
+    first=rw[ridx[0]]; last=rw[ridx[-1]]
+    if a > first[0] or b < last[1]:
+        return None
+    sm=SequenceMatcher(None, [t[2] for t in rw], [t[2] for t in dw], autojunk=False)
+    r2d: dict[int, int] = {}
+    for tag, i1, i2, j1, j2 in sm.get_opcodes():
+        if tag == 'equal':
+            for k in range(i2-i1): r2d[i1+k] = j1+k
+        elif tag == 'replace' and (i2-i1) == (j2-j1):
+            for k in range(i2-i1): r2d[i1+k] = j1+k
+    mapped=[r2d.get(i) for i in ridx]
+    if any(m is None for m in mapped):
+        return None
+    if mapped != list(range(min(mapped), max(mapped)+1)):
+        return None
+    return dw[min(mapped)][0], dw[max(mapped)][1], False
+
+
 def _mapped_window(a: int,b: int,opcodes: Sequence[tuple], spans: Sequence[tuple[int,int]]) -> tuple[int,int,bool]:
     slices=[]; unresolved=False
     for tag,x,y,u,v in opcodes:
@@ -453,9 +489,11 @@ def answer_events(case: CaseV5, run: ArmRunV5, *,
     events=[]
     for i,(a,b,maps) in enumerate(candidates):
         keys={m.key for m in maps}; available={m.key for m in maps if m.available}
-        u,v,unknown=_mapped_window(a,b,opcodes,spans)
         available_maps=[m for m in maps if m.available]
-        status=''; chosen=(available_maps or list(maps))[0]; text=delivered[u:v]
+        chosen=(available_maps or list(maps))[0]
+        word_win=_word_window(a,b,raw,delivered)
+        u,v,unknown=(word_win if word_win is not None else _mapped_window(a,b,opcodes,spans))
+        status=''; text=delivered[u:v]
         literal_choices={m.literal for m in available_maps if m.fake==raw[a:b]}
         value=False; form=False; measured=False; residual=False; differs=()
         # A raw fake equal to somebody else's real value has ambiguous intent.
@@ -483,7 +521,16 @@ def answer_events(case: CaseV5, run: ArmRunV5, *,
                 # exact raw spelling with a single proved literal is the copy path;
                 # anything else (renotation, non-literal fake) is the value path.
                 exact_copy = len(literal_choices) == 1
-                value = (text == next(iter(literal_choices))) if exact_copy else _equal(chosen.pii_type,text,chosen.real)
+                if exact_copy:
+                    literal = next(iter(literal_choices))
+                    # A boundary insertion widens the aligned window; narrow to the
+                    # exact source literal (single occurrence, no identity choice).
+                    idx = text.find(literal)
+                    if idx >= 0:
+                        text = text[idx:idx+len(literal)]
+                    value = (text == literal)
+                else:
+                    value = _equal(chosen.pii_type,text,chosen.real)
                 residual=_equal(chosen.pii_type,text,raw[a:b]) and not value
                 if chosen.pii_type in contracts.FORM_FEATURES and text.strip():
                     verdict=form_match(chosen.pii_type,text,raw[a:b])

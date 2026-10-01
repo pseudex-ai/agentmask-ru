@@ -197,6 +197,11 @@ def main():
           'bare two-letter form is not an initials candidate (lexical ambiguity, P09)')
     c,r,e=sample('переулок Липовый, дом 21','улица Пушкина, дом 14','LOC','переулок Пушкина, дом 14','переулок Липовый, дом 21')
     check(score(c,r,e).overall.value_ok==0,'street type belongs to identity')
+    # Positive LOC control (G2 acceptance): verbatim correct restore -> matched.
+    c,r,e=sample('улица Липовая, дом 21','улица Пушкина, дом 14','LOC','улица Пушкина, дом 14','улица Липовая, дом 21')
+    s=score(c,r,e)
+    check(s.overall.candidates==1 and s.overall.value_ok==1 and s.overall.joint_ok==1,
+          'correct verbatim LOC restore is matched, not value_wrong')
     c,r,e=sample('8','8')
     check(score(c,r,e).overall.candidates==0,'short fragment cannot nominate phone')
     c,r,e=sample('','')

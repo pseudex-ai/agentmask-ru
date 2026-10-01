@@ -1,0 +1,105 @@
+{
+ "task": "O-DETECT — isolated detector resource experiment (preliminary pass)",
+ "folder": "research/quality-sprint-2026-09-30/work/D0/perf-isolated/",
+ "created_utc": "2026-10-01T05:01:34Z",
+ "root": "/Users/igor/Projects/Obscura-hop-audit",
+ "authorization": {
+  "runbook": "work/D0/RUNBOOK-PERF.md",
+  "spec": "work/D0/SPEC.md",
+  "metrics_correction": "work/contracts-revision-2/D0-METRICS-CORRECTED.md",
+  "requirement": "REMAINING-DECISIONS block 4 / SPRINT-PLAN §7 — the measured CPU/RAM/latency numbers O-DETECT needs before any mechanism is adopted",
+  "write_scope": "research/quality-sprint-2026-09-30/work/D0/perf-isolated/"
+ },
+ "model_routing": {
+  "requested_provider": "deepseek-official",
+  "requested_model": "deepseek-flash",
+  "effective_model": "NOT_AVAILABLE_FROM_RUNTIME",
+  "note": "routing metadata was not exposed to this agent; no self-identity attestation is made and no other model name is claimed — self-identity is not proof of routing"
+ },
+ "revision": {
+  "head": "b81cbfd6d96cebe2efd5aa58b81f9b43c7e07656",
+  "branch": "research/hop-format-audit",
+  "head_subject": "research(quality): record legacy capture adapter feasibility",
+  "head_committed_at": "2026-10-01T09:57:59+05:00",
+  "status_porcelain_prototype": [
+   "M prototype/bench/agentpii5/answer_restoration.py",
+   " M prototype/bench/agentpii5/live.py",
+   " M prototype/bench/agentpii5/runs.json"
+  ],
+  "status_porcelain_scope": [
+   "?? research/quality-sprint-2026-09-30/work/D0/perf-isolated/"
+  ],
+  "status_porcelain_repo_count": 34,
+  "note": "read-only `git rev-parse` / `git status`; no stash, reset, checkout or revert was issued at any point in this run"
+ },
+ "read": [
+  "work/D0/RUNBOOK-PERF.md",
+  "work/D0/SPEC.md",
+  "work/contracts-revision-2/D0-METRICS-CORRECTED.md",
+  "work/D0/INPUTS.json (format reference)",
+  "prototype/pseudex/detect_all.py, assets.py, ru_pii.py, address.py (read-only)",
+  "prototype/licensing/pack.py, prototype/testkit.py (read-only)"
+ ],
+ "not_read": [
+  "the 359-ID holdout (no holdout file exists in prototype/ and none was opened)",
+  "the paid-run directory",
+  "any corpus of real speech copied into artifacts"
+ ],
+ "forbidden_and_honoured": [
+  "no engine/licensing/scorer/corpus/wiki/git modification",
+  "no install, download or model download",
+  "no provider/production/paid call",
+  "no holdout (359-ID) read; no paid-run directory read",
+  "no stash/reset/revert/checkout",
+  "no writes outside the scope folder"
+ ],
+ "inputs_frozen": {
+  "corpus_sha256": "3c59140f6a586d588ee4494a4757b6769d0d4ffa4ddf0a15d26ccd4abd4822a0",
+  "module_manifest_sha256": "ce441ebbdd30698464c61c5472f9d2a2ca56607325beae8067ed17dbce2dfab1",
+  "module_count": 65,
+  "bundle_identity": {
+   "version": "2a07cebae2b050ec",
+   "bytes": 1524582,
+   "sha256": "01c19f4689450b54694b7aaa4070cbaf695efc3e98f0b59471486392a0348206",
+   "source": "licensing.pack.build_plaintext() in-process"
+  },
+  "model_weights": [
+   {
+    "file": "natasha/data/model/slovnet_ner_news_v1.tar",
+    "bytes": 2385920,
+    "sha256": "16c3343a6572ddf0e2b2fc1923113de15a7f5ca5bde90e780dd590418665603e"
+   },
+   {
+    "file": "natasha/data/emb/navec_news_v1_1B_250K_300d_100q.tar",
+    "bytes": 26634240,
+    "sha256": "f07270833d78523edc5781538d67038e95b43975e4a7ae757c693b687f9cbfca"
+   }
+  ]
+ },
+ "outputs": [
+  "INPUTS.json",
+  "env.json",
+  "isolation-start.json",
+  "isolation-end.json",
+  "corpus.jsonl",
+  "corpus.sha256",
+  "corpus.meta.json",
+  "perf_common.py",
+  "gen_corpus.py",
+  "make_env.py",
+  "perf_one_arm.py",
+  "summarise.py",
+  "raw/<arm>-run<k>.tsv",
+  "raw/<arm>-run<k>.meta.json",
+  "raw/report-lines.tsv",
+  "summary.json",
+  "GATE.json",
+  "REPORT.md",
+  "logs/*.log"
+ ],
+ "arms": {
+  "FULL": "current Detector.detect (detect_all) — product path in-process",
+  "NER_ONLY": "diagnostic ablation: Natasha PER/LOC only, rules layer disabled; NOT a production candidate"
+ },
+ "status": "EXPLORATORY_PRELIMINARY — contended host, 3 repeats not 5"
+}

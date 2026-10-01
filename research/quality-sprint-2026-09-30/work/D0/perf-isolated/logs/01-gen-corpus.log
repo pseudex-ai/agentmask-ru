@@ -1,0 +1,11 @@
+corpus.jsonl: 500 messages, 114187 bytes, sha256 3c59140f6a586d588ee4494a4757b6769d0d4ffa4ddf0a15d26ccd4abd4822a0
+  chat     n=125  mean_chars=57.6
+  kv       n=125  mean_chars=132.4
+  prose    n=150  mean_chars=190.6
+  sloppy   n=100  mean_chars=75.4
+  chars min/p50/mean/max = {'min': 37, 'p50': 124, 'mean': 119.8, 'max': 261}
+  engine validator snils: 200/200 pass
+  engine validator inn10: 200/200 pass
+  engine validator inn12: 200/200 pass
+  engine validator card: 200/200 pass
+  engine validator ogrn: 200/200 pass
