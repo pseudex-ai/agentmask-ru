@@ -49,3 +49,12 @@ Invocation `subagent_fork:7ac9e839-fe35-4124-9b90-33d9eea930d7`, inherited Lead 
 Собственная фраза модели не является доказательством маршрутизации.
 
 - `workflow-5` `d0-isolated-perf`, job `workflow-5`, explicit deepseek-official/deepseek-flash, 1 agent. Изолированный ресурсный замер FULL vs NER_ONLY (2 arm × 3 процесса, N≥1000) по RUNBOOK-PERF; writes only work/D0/perf-isolated/. RUNNING. Предварительный проход, не финальный O-DETECT бюджет. Не трогает holdout/paid run, не ставит модели.
+
+## Round 7
+
+- `subagent_fork:76fef59f` — G2-readiness review = NOT_READY (LOC false-negative hard blocker). Root cause: char-level SequenceMatcher truncated LOC «…дом 14» to «…дом 1».
+- `workflow-5` `d0-isolated-perf` — completed; EXPLORATORY only (pre-existing bench.agentpii5.live holds a full core 100% CPU). FULL p50 4.77ms vs NER_ONLY 0.64ms; O-DETECT stays OWNER_PENDING.
+- Lead M1a (round 7): fixed alignment (word-level + exact-copy narrowing), known-unknown surfacing, positive LOC control; 60/60 controls, 6 legacy suites. All 4 G2-required items closed.
+- `subagent_fork:6034ec57-f80e-4d97-90b0-c11ac474e331` — G2 re-review на замороженных входах; writes only work/M1a/g2-review-2/. RUNNING.
+
+Собственная фраза модели не является доказательством маршрутизации.
