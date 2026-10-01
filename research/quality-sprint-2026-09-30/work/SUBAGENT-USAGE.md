@@ -79,3 +79,9 @@ Invocation `subagent_fork:7ac9e839-fe35-4124-9b90-33d9eea930d7`, inherited Lead 
 - Lead M1b bounded canary reader implemented (payload_canaries.py): 8 MiB row ceiling + 1 MiB payload / 4096 count bounds; saved run 810/810 readable, hostile refused; integration test pins it.
 
 Собственная фраза модели не является доказательством маршрутизации.
+
+## Round 10
+
+- Lead M1c Phase 1: reader contract implemented (payload_canaries.py skip-never-abort + denominator survival). Saved run 810/810 / 20201 payloads, 0 skips, check_run MEASURED. Integration test pins chatty-accept/hostile-skip-by-name/malformed-raise. M1c SPEC records 3-phase plan.
+
+Собственная фраза модели не является доказательством маршрутизации.
