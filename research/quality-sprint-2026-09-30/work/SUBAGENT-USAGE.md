@@ -85,3 +85,12 @@ Invocation `subagent_fork:7ac9e839-fe35-4124-9b90-33d9eea930d7`, inherited Lead 
 - Lead M1c Phase 1: reader contract implemented (payload_canaries.py skip-never-abort + denominator survival). Saved run 810/810 / 20201 payloads, 0 skips, check_run MEASURED. Integration test pins chatty-accept/hostile-skip-by-name/malformed-raise. M1c SPEC records 3-phase plan.
 
 Собственная фраза модели не является доказательством маршрутизации.
+
+## Round 11 (model-policy correction)
+
+Владелец поправил модель: **только Flash — исполнители, pro (gpt-6-astra) — ревью и лид**. Запущен `workflow-6` `m1c-parallel-wave` — 3 параллельных Flash-исполнителя (explicit deepseek-official/deepseek-flash):
+- `m1c-adapter`: legacy capture adapter (SPEC в work/M1c/ADAPTER-SPEC.md); scope legacy_adapter.py + test + work/M1c/adapter/.
+- `d0-perf`: O-DETECT budget-grade замер (RUNBOOK-PERF); scope work/D0/perf-isolated-2/.
+- `a1-manifest`: финальный O-DATA manifest по EX-O-DATA-1/2/3; scope work/A1/final/.
+
+Собственная фраза модели не является доказательством маршрутизации.
