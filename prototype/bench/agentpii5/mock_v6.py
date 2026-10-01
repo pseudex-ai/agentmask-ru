@@ -59,9 +59,11 @@ from bench.agentpii5.tools_v6 import TOOLS_V6, UNSCHEMED_TOOLS
 
 V6_SPECS: dict[str, object] = {spec.base.name: spec for spec in TOOLS_V6}
 V6_NAMES: frozenset[str] = frozenset(V6_SPECS)
-# The 3 names D-069 left unschemed (closed/synthetic mirrors). NO HANDLER: they
-# have no ToolSpecV5, so there is nothing to parse or to render, and this module
-# asserts nothing about them — a call to one is a caller bug, not a mock one.
+# The 3 names the v6 pilot-tools decision (D-078, renumbered from the id the v6
+# branch spent before the V1 merge) left unschemed (closed/synthetic mirrors).
+# NO HANDLER: they have no ToolSpecV5, so there is nothing to parse or to
+# render, and this module asserts nothing about them — a call to one is a caller
+# bug, not a mock one.
 UNSCHEMED_NAMES: frozenset[str] = frozenset(
     entry.partition(":")[0].strip() for entry in UNSCHEMED_TOOLS)
 

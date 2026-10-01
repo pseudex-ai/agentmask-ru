@@ -206,7 +206,7 @@ def test_no_collision() -> list[str]:
 def test_unschemed_named() -> list[str]:
     problems: list[str] = []
     if not UNSCHEMED_TOOLS:
-        problems.append("UNSCHEMED_TOOLS is empty — every D-069 tool needs a line")
+        problems.append("UNSCHEMED_TOOLS is empty — every D-078 tool needs a line")
     for entry in UNSCHEMED_TOOLS:
         head, _, reason = entry.partition(":")
         if not head.strip():

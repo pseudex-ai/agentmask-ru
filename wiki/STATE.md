@@ -631,3 +631,14 @@ bodies stay; the v6 records moved to unused ids and the v5 ids are unchanged:
 documents (`docs/tz-agentpii6.md`, `docs/tz-agentpii6-registry.md`, the v6 review
 files) mean the renumbered records. This is `D-ID-RENUMBER` from the V1 plan — an
 engineering assignment, not a reopened owner decision.
+
+**Verified after the merge (V1 S6).** The renumbering is checked by instruments
+rather than by reading. `wiki/check.py` refuses a duplicated `### D-` id in
+`check_state`, and `wiki/check.py --selftest` plants one and demands the red —
+so the uniqueness clause is covered by the repository. The OTHER clause, «every
+`D-NNN` reference under `wiki/` resolves to exactly one heading», is NOT checked
+by `wiki/check.py`; the V1 S6 stage adds it as an instrument with its own
+planted-break controls. The collided ids also do not survive in the benchmark
+package's code (`prototype/bench/agentpii5/mock_v6.py`,
+`prototype/bench/agentpii5/test_tools_v6.py` now cite `D-078`); the v6 review
+prose keeps the old ids deliberately, under the map above.
