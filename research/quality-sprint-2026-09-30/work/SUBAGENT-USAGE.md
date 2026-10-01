@@ -72,3 +72,10 @@ Invocation `subagent_fork:7ac9e839-fe35-4124-9b90-33d9eea930d7`, inherited Lead 
 - `subagent_fork:8e6a267f-2e0e-4f2d-a959-9dd032563b38` — FINAL G2 re-review (3-я) на замороженных входах 63 controls; writes only work/M1a/g2-review-3/. RUNNING.
 
 Собственная фраза модели не является доказательством маршрутизации.
+
+## Round 9
+
+- `subagent_fork:8e6a267f` — G2 re-review #3 = **PASS_G2_READY** (M1a G2 MET). 63/63 controls, 6 legacy suites, reviewer probe 7/7, own adversarial hunt clean. Optional items deferrable to M1c.
+- Lead M1b bounded canary reader implemented (payload_canaries.py): 8 MiB row ceiling + 1 MiB payload / 4096 count bounds; saved run 810/810 readable, hostile refused; integration test pins it.
+
+Собственная фраза модели не является доказательством маршрутизации.
