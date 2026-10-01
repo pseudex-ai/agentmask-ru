@@ -66,3 +66,9 @@ Invocation `subagent_fork:7ac9e839-fe35-4124-9b90-33d9eea930d7`, inherited Lead 
 - D0 quality evidence answered: RAW_NER 100% clean NAME, ~69% LOC, 0% structured IDs and 0/295 on real speech (news-trained NER collapses); RULES_ONLY==FULL==HYBRID on gatectx (NER adds nothing over rules on real speech).
 
 Собственная фраза модели не является доказательством маршрутизации.
+
+## Round 9
+
+- `subagent_fork:8e6a267f-2e0e-4f2d-a959-9dd032563b38` — FINAL G2 re-review (3-я) на замороженных входах 63 controls; writes only work/M1a/g2-review-3/. RUNNING.
+
+Собственная фраза модели не является доказательством маршрутизации.

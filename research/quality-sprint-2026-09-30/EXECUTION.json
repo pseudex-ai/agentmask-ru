@@ -134,10 +134,10 @@
       ],
       "model": "lead:gpt-6-astra",
       "scope": "answer_restoration module/tests only; no shared wiring",
-      "status": "RUNNING",
+      "status": "PASS",
       "gate": "G2",
       "wave": "Lead",
-      "execution_stage": "v2-dev: provenance foundation + provable initials + word-level alignment + known-unknown surfacing; 60/60 controls; all 4 G2-required items closed; awaiting independent re-review"
+      "execution_stage": "G2 MET (re-review #3 PASS_G2_READY); 63/63 controls; optional items (Latin/partial-role/spoken/stream/legacy-adapter) deferrable to M1c as known-unknown"
     },
     {
       "id": "M1b",
@@ -149,7 +149,7 @@
       "status": "RUNNING",
       "gate": "G2",
       "wave": "workflow-3",
-      "execution_stage": "independent review REVISE; revision-2 corrections; independent re-review PASS_CORRECTIONS. Full G3 still REVISED_NOT_PASS (pending M1a G2 + O-CORE/O-DETECT)"
+      "execution_stage": "bounded legacy-v1 canary reader implemented (810/810 readable, hostile payloads refused) + unit test; independent review pending for G2"
     },
     {
       "id": "M1c",
