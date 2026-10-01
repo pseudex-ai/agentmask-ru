@@ -149,7 +149,7 @@
       "status": "RUNNING",
       "gate": "G2",
       "wave": "workflow-3",
-      "execution_stage": "bounded legacy-v1 canary reader implemented (810/810 readable, hostile payloads refused) + unit test; independent review pending for G2"
+      "execution_stage": "design/RED corrected + independent re-review PASS_CORRECTIONS; diagnostic bounded legacy-v1 reader in revision-2 (810/810 readable in separate namespace); ENGINE stays NOT_MEASURED (4 MiB). Engine reader change (8 MiB + payload bounds + skip-never-abort) is M1c."
     },
     {
       "id": "M1c",
