@@ -77,6 +77,14 @@ COMMANDS: tuple[Command, ...] = (
             "корпус и лестница: --check доказывает рендер моком, --provenance — §6.1"),
     Command("provider", "bench.agentpii5.provider", (),
             "что прогон ЗАПИШЕТ о провайдере, моделях и ценах — без единого вызова"),
+    # V1 S7 / G8: the two acceptance matrices. They print the counts (all 55
+    # visible, none supported, 24 overlap records) and `--write` regenerates the
+    # review JSON a reviewer reads, so they belong in the door with the rest of
+    # the instruments rather than in the exclusion list.
+    Command("type-visibility", "bench.agentpii5.type_visibility", (),
+            "все 55 типов v6 со статусом по осям: --write обновляет review/type-visibility-55.json"),
+    Command("overlap-review", "bench.agentpii5.overlap_review", (),
+            "24 записи пересечения путей: --write обновляет review/overlap-24.json"),
 )
 BY_NAME: dict[str, Command] = {one.name: one for one in COMMANDS}
 

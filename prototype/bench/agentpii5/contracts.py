@@ -2023,6 +2023,80 @@ OUT_HOP_RESTORABLE_STATUSES: frozenset[str] = frozenset({
     "observed", "residual", "leaf_foreign"})
 
 
+# --- THE v6 FUNNEL IS A SEPARATE, NAMED PROJECTION ------------------------------
+#
+# V1 SPEC §4 (`COV-INTEGRATION-KEEP-V5`). The live conflict between the two
+# branches is a DENOMINATOR, not a vocabulary: the v6 five names are a STRICT
+# SUBSET of the eight above. The resolution is three statements that this block
+# makes mechanical rather than remembered:
+#
+#   1. `HOP_STATUSES` stays the eight-entry READ vocabulary. It is not edited
+#      here, and a saved row keeps reading — legacy `unmasked` included.
+#   2. The v5 write funnel and its denominators (`OUT_HOP_WRITTEN_STATUSES`,
+#      `OUT_HOP_RESTORABLE_STATUSES`) stay exactly as they are. The eight
+#      status-split diagnostic rows keep printing.
+#   3. The v6 five-status funnel is adopted as THIS projection: named, total
+#      over the read vocabulary, with its OWN declared denominator — never by
+#      editing the v5 line and never by silently re-mapping one label into
+#      three.
+#
+# WHY THE THREE v5-ONLY OUT STATUSES LAND ON `unmasked`, STATED HONESTLY. v6 has
+# ONE name for «no substitute of ours was restored at this leaf»; the v5 split
+# names THREE causes (`engine_kept` nothing to restore, `not_masked` the leaf
+# already held the real value, `leaf_foreign` a third value arrived). The v6
+# funnel cannot recover that distinction, and the projection does NOT pretend
+# to: it folds them into the one v6 name and the v5 split counts keep being
+# printed beside it (`l9.statuses` beside `l9.read_split` in the v6 report). The
+# forbidden move is the REVERSE one — inventing `engine_kept` / `not_masked` /
+# `leaf_foreign` for an old row whose information was destroyed at the status
+# assignment. Nothing here does that, and no caller re-derives this by hand:
+# `v6_funnel_status` is the only door.
+V6_FUNNEL_STATUSES: tuple[str, ...] = ("observed", "leaked", "residual", "unmasked",
+                                       "absent")
+# THE PROJECTION'S OWN DECLARED DENOMINATOR — the population the v6 `form_hOUT`
+# line counts, written down here so it cannot be borrowed from the v5 line. It
+# is NOT `OUT_HOP_WRITTEN_STATUSES`: the v6 line counts the write as
+# `observed ∪ unmasked`, while the v5 line counts
+# `observed ∪ residual ∪ engine_kept ∪ not_masked ∪ leaf_foreign`. The two
+# populations are incomparable and both are printed.
+V6_FUNNEL_DENOMINATOR: frozenset[str] = frozenset({"observed", "unmasked"})
+V6_FUNNEL_READ_TO_FUNNEL: dict[str, str] = {
+    "observed": "observed",
+    "leaked": "leaked",
+    "residual": "residual",
+    "unmasked": "unmasked",
+    "absent": "absent",
+    # the three v5-only OUT statuses — folded, declared, and never invented back
+    "engine_kept": "unmasked",
+    "not_masked": "unmasked",
+    "leaf_foreign": "unmasked",
+}
+
+
+def v6_funnel_status(read_status: str) -> str:
+    """The one door from the eight-entry READ vocabulary into the v6 five.
+
+    Raises on a status outside `HOP_STATUSES` rather than inventing a sixth
+    funnel name: a reader that met an unknown label must be repaired, not
+    silently bucketed."""
+    if read_status not in HOP_STATUSES:
+        raise ValueError(f"v6_funnel_status: {read_status!r} is not one of "
+                         f"contracts.HOP_STATUSES {list(HOP_STATUSES)}")
+    return V6_FUNNEL_READ_TO_FUNNEL[read_status]
+
+
+def v6_funnel_split(statuses: dict[str, int]) -> dict[str, int]:
+    """The five v6 counts for one hop-status histogram, beside the read split.
+
+    `statuses` is keyed by the READ vocabulary (what the observer emits); the
+    return is keyed by `V6_FUNNEL_STATUSES`. An unknown key raises through
+    `v6_funnel_status`."""
+    out = {name: 0 for name in V6_FUNNEL_STATUSES}
+    for read_status, count in statuses.items():
+        out[v6_funnel_status(read_status)] += count
+    return out
+
+
 @dataclass(frozen=True)
 class RunObservation:
     """Everything the metrics read about ONE (case, repeat) of the gateway

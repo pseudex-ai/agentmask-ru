@@ -3,7 +3,7 @@
  "phase": "full",
  "corpus_sha256": "18ed3a98526dc9360a683b9f8b7fa12f170c9535ee00b23b61dbc7c19c1cf993",
  "ladder_sha256": "5d1699a214b66fdb76b276fd120df95a0c6a2f9961bb86e89e18f4b12397651a",
- "registry_sha256": "ed88c032f0450579c716692798760b85a8693eeddebb55e54bd9c214393553e7",
+ "registry_sha256": "e369e07b743bf66a8548d6f458cfa3c928261323f2515299f5cb7c380064ee0a",
  "l1": {
   "perfect": {
    "nano": {
@@ -31,6 +31,10 @@
      "hits": 130,
      "total": 152
     },
+    "end_to_end_written": {
+     "hits": 130,
+     "total": 149
+    },
     "overmask": {
      "hits": 65,
      "total": 65
@@ -52,15 +56,35 @@
      "total": 29
     },
     "form_hIN": {
-     "hits": 268,
+     "hits": 265,
      "total": 294
     },
     "form_hOUT": {
      "hits": 170,
-     "total": 191
+     "total": 208
     },
     "out_absent": {
+     "hits": 3,
+     "total": 183
+    },
+    "out_written": {
+     "hits": 180,
+     "total": 183
+    },
+    "out_no_mint": {
      "hits": 0,
+     "total": 183
+    },
+    "out_engine_kept": {
+     "hits": 0,
+     "total": 183
+    },
+    "out_not_masked": {
+     "hits": 0,
+     "total": 183
+    },
+    "out_leaf_foreign": {
+     "hits": 1,
      "total": 183
     },
     "toolresult_masked": {
@@ -83,7 +107,19 @@
      "hits": 1,
      "total": 1
     },
+    "chain_value_written": {
+     "hits": 1,
+     "total": 1
+    },
+    "chain_form_written": {
+     "hits": 1,
+     "total": 1
+    },
     "multi_all_out": {
+     "hits": 13,
+     "total": 28
+    },
+    "multi_all_out_written": {
      "hits": 13,
      "total": 28
     },
@@ -116,8 +152,8 @@
      "total": 2
     },
     "residual": {
-     "hits": 219,
-     "total": 241
+     "hits": 216,
+     "total": 238
     },
     "stream_fidelity": {
      "hits": 2,
@@ -128,7 +164,7 @@
      "total": 0
     },
     "fake_checksum_invalid": {
-     "hits": 52,
+     "hits": 2,
      "total": 52
     },
     "overmask_result": {
@@ -161,6 +197,10 @@
      "hits": 427,
      "total": 503
     },
+    "end_to_end_written": {
+     "hits": 427,
+     "total": 494
+    },
     "overmask": {
      "hits": 253,
      "total": 253
@@ -182,15 +222,35 @@
      "total": 115
     },
     "form_hIN": {
-     "hits": 900,
+     "hits": 893,
      "total": 971
     },
     "form_hOUT": {
      "hits": 593,
-     "total": 666
+     "total": 729
     },
     "out_absent": {
+     "hits": 9,
+     "total": 630
+    },
+    "out_written": {
+     "hits": 621,
+     "total": 630
+    },
+    "out_no_mint": {
      "hits": 0,
+     "total": 630
+    },
+    "out_engine_kept": {
+     "hits": 0,
+     "total": 630
+    },
+    "out_not_masked": {
+     "hits": 0,
+     "total": 630
+    },
+    "out_leaf_foreign": {
+     "hits": 7,
      "total": 630
     },
     "toolresult_masked": {
@@ -213,8 +273,20 @@
      "hits": 2,
      "total": 2
     },
+    "chain_value_written": {
+     "hits": 2,
+     "total": 2
+    },
+    "chain_form_written": {
+     "hits": 2,
+     "total": 2
+    },
     "multi_all_out": {
      "hits": 43,
+     "total": 87
+    },
+    "multi_all_out_written": {
+     "hits": 46,
      "total": 87
     },
     "multi_consistency": {
@@ -246,8 +318,8 @@
      "total": 6
     },
     "residual": {
-     "hits": 774,
-     "total": 858
+     "hits": 765,
+     "total": 849
     },
     "stream_fidelity": {
      "hits": 9,
@@ -258,7 +330,7 @@
      "total": 0
     },
     "fake_checksum_invalid": {
-     "hits": 176,
+     "hits": 14,
      "total": 176
     },
     "overmask_result": {
@@ -291,6 +363,10 @@
      "hits": 1029,
      "total": 1216
     },
+    "end_to_end_written": {
+     "hits": 1029,
+     "total": 1189
+    },
     "overmask": {
      "hits": 637,
      "total": 637
@@ -312,15 +388,35 @@
      "total": 284
     },
     "form_hIN": {
-     "hits": 2129,
+     "hits": 2107,
      "total": 2319
     },
     "form_hOUT": {
-     "hits": 1437,
-     "total": 1631
+     "hits": 1436,
+     "total": 1772
     },
     "out_absent": {
+     "hits": 27,
+     "total": 1530
+    },
+    "out_written": {
+     "hits": 1503,
+     "total": 1530
+    },
+    "out_no_mint": {
      "hits": 0,
+     "total": 1530
+    },
+    "out_engine_kept": {
+     "hits": 0,
+     "total": 1530
+    },
+    "out_not_masked": {
+     "hits": 0,
+     "total": 1530
+    },
+    "out_leaf_foreign": {
+     "hits": 22,
      "total": 1530
     },
     "toolresult_masked": {
@@ -343,9 +439,21 @@
      "hits": 10,
      "total": 10
     },
+    "chain_value_written": {
+     "hits": 10,
+     "total": 10
+    },
+    "chain_form_written": {
+     "hits": 10,
+     "total": 10
+    },
     "multi_all_out": {
      "hits": 98,
      "total": 208
+    },
+    "multi_all_out_written": {
+     "hits": 103,
+     "total": 205
     },
     "multi_consistency": {
      "hits": 113,
@@ -376,8 +484,8 @@
      "total": 17
     },
     "residual": {
-     "hits": 1902,
-     "total": 2099
+     "hits": 1875,
+     "total": 2072
     },
     "stream_fidelity": {
      "hits": 17,
@@ -388,7 +496,7 @@
      "total": 0
     },
     "fake_checksum_invalid": {
-     "hits": 446,
+     "hits": 30,
      "total": 446
     },
     "overmask_result": {
@@ -421,6 +529,10 @@
      "hits": 1717,
      "total": 2032
     },
+    "end_to_end_written": {
+     "hits": 1717,
+     "total": 1982
+    },
     "overmask": {
      "hits": 1060,
      "total": 1060
@@ -442,15 +554,35 @@
      "total": 469
     },
     "form_hIN": {
-     "hits": 3558,
+     "hits": 3524,
      "total": 3871
     },
     "form_hOUT": {
-     "hits": 2387,
-     "total": 2722
+     "hits": 2384,
+     "total": 2954
     },
     "out_absent": {
+     "hits": 50,
+     "total": 2554
+    },
+    "out_written": {
+     "hits": 2504,
+     "total": 2554
+    },
+    "out_no_mint": {
      "hits": 0,
+     "total": 2554
+    },
+    "out_engine_kept": {
+     "hits": 0,
+     "total": 2554
+    },
+    "out_not_masked": {
+     "hits": 0,
+     "total": 2554
+    },
+    "out_leaf_foreign": {
+     "hits": 36,
      "total": 2554
     },
     "toolresult_masked": {
@@ -473,9 +605,21 @@
      "hits": 20,
      "total": 20
     },
+    "chain_value_written": {
+     "hits": 20,
+     "total": 20
+    },
+    "chain_form_written": {
+     "hits": 20,
+     "total": 20
+    },
     "multi_all_out": {
      "hits": 161,
      "total": 352
+    },
+    "multi_all_out_written": {
+     "hits": 168,
+     "total": 342
     },
     "multi_consistency": {
      "hits": 210,
@@ -506,8 +650,8 @@
      "total": 22
     },
     "residual": {
-     "hits": 3171,
-     "total": 3504
+     "hits": 3121,
+     "total": 3454
     },
     "stream_fidelity": {
      "hits": 28,
@@ -518,7 +662,7 @@
      "total": 0
     },
     "fake_checksum_invalid": {
-     "hits": 792,
+     "hits": 54,
      "total": 792
     },
     "overmask_result": {
@@ -548,12 +692,12 @@
     "label": "восстанавливает цифры слитно, выбрасывая разделители",
     "catch": "form_hOUT",
     "perfect": {
-     "hits": 2387,
-     "total": 2722
+     "hits": 2384,
+     "total": 2954
     },
     "mutant": {
      "hits": 2268,
-     "total": 2757
+     "total": 2954
     },
     "caught": true,
     "changed": true
@@ -563,12 +707,12 @@
     "label": "оставляет подмену в переставленном пробелами листе",
     "catch": "residual",
     "perfect": {
-     "hits": 3171,
-     "total": 3504
+     "hits": 3121,
+     "total": 3454
     },
     "mutant": {
-     "hits": 1528,
-     "total": 3504
+     "hits": 1478,
+     "total": 3454
     },
     "caught": true,
     "changed": true
@@ -593,12 +737,12 @@
     "label": "восстанавливает латиницей там, где агент писал кириллицей",
     "catch": "form_hOUT",
     "perfect": {
-     "hits": 2387,
-     "total": 2722
+     "hits": 2384,
+     "total": 2954
     },
     "mutant": {
-     "hits": 2356,
-     "total": 2773
+     "hits": 2353,
+     "total": 2954
     },
     "caught": true,
     "changed": true
@@ -638,7 +782,7 @@
     "label": "чеканит подмены, проходящие свою КС",
     "catch": "fake_checksum_invalid",
     "perfect": {
-     "hits": 792,
+     "hits": 54,
      "total": 792
     },
     "mutant": {
@@ -683,11 +827,11 @@
     "label": "чеканит подмену другой длины",
     "catch": "form_hIN",
     "perfect": {
-     "hits": 3558,
+     "hits": 3524,
      "total": 3871
     },
     "mutant": {
-     "hits": 2730,
+     "hits": 2696,
      "total": 3871
     },
     "caught": true,
@@ -788,6 +932,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 120
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -809,6 +960,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 119
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -830,6 +988,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 121
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -851,6 +1016,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 126
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -872,6 +1044,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 122
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -893,6 +1072,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 124
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [
      "ACCOUNT"
     ],
@@ -916,6 +1102,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 116
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -937,6 +1130,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 134
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -958,6 +1158,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 122
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -979,6 +1186,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 122
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [
      "OGRN"
     ],
@@ -1002,6 +1216,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 119
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1023,6 +1244,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 120
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [
      "OMS"
     ],
@@ -1046,6 +1274,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 123
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1067,6 +1302,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 119
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1088,6 +1330,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 120
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1109,6 +1358,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 128
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1130,6 +1386,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 154
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1151,6 +1414,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 119
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1172,6 +1442,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 120
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1193,6 +1470,14 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 68,
+     "residual": 43
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1214,6 +1499,14 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 69,
+     "residual": 44
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1235,6 +1528,14 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 70,
+     "residual": 45
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1256,6 +1557,14 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 70,
+     "residual": 47
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1277,6 +1586,14 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 87,
+     "residual": 34
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1298,6 +1615,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 134
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [
      "VEHICLE_DOC"
     ],
@@ -1321,6 +1645,14 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 93,
+     "residual": 30
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [
      "VEHICLE_DOC"
     ],
@@ -1344,6 +1676,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 123
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1365,6 +1704,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 122
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1386,6 +1732,14 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 75,
+     "residual": 39
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1407,6 +1761,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 126
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1428,6 +1789,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 127
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1449,6 +1817,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 126
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1470,6 +1845,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 131
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1491,6 +1873,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 122
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1512,6 +1901,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 126
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1533,6 +1929,14 @@
      "unmasked": 36,
      "absent": 0
     },
+    "read_split": {
+     "observed": 81,
+     "leaf_foreign": 36
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [
      "IP"
     ],
@@ -1556,6 +1960,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 128
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1577,6 +1988,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 120
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1598,6 +2016,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 127
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1619,6 +2044,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 122
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1640,6 +2072,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 120
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1658,14 +2097,22 @@
      "observed": 118,
      "leaked": 0,
      "residual": 0,
-     "unmasked": 50,
-     "absent": 0
+     "unmasked": 0,
+     "absent": 50
     },
+    "read_split": {
+     "observed": 118,
+     "absent": 50
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
      "leaked": 0,
-     "unmasked": 50,
+     "unmasked": 0,
      "observed": 118
     }
    },
@@ -1682,6 +2129,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 120
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1703,6 +2157,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 122
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1724,6 +2185,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 170
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1745,6 +2213,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 116
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1766,6 +2241,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 130
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1787,6 +2269,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 134
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1808,6 +2297,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 123
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1829,6 +2325,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 120
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1850,6 +2353,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 128
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1871,6 +2381,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 119
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1892,6 +2409,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 134
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1913,6 +2437,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 126
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1934,6 +2465,13 @@
      "unmasked": 0,
      "absent": 0
     },
+    "read_split": {
+     "observed": 128
+    },
+    "funnel_denominator": [
+     "observed",
+     "unmasked"
+    ],
     "engine_labels": [],
     "in_phase": true,
     "leak": {
@@ -1949,7 +2487,7 @@
   "ladder_corpus_sha256": "18ed3a98526dc9360a683b9f8b7fa12f170c9535ee00b23b61dbc7c19c1cf993",
   "identity": true,
   "pinned_v5": {
-   "corpus.v5.json": "51c37b6d88efe4d3478b8fa0e678de3ec0b9336f1b0c948862b2f7a54dcee01f",
+   "corpus.v5.json": "3ba227908d40911bd6578418b2da9d3b7925a1ffefe88ebbf5cead5ce5115118",
    "ladder.json": "3e088f66334309feedd32f8d860a34d215e3ca94561b2a8d55425c01317708d9",
    "v6/corpus.v5.json": "76b5bffe5a00bf7858212d0280b8d69bf8dfeeaf3c63372fbfd616745da23ad7",
    "v6/ladder.json": "5d1699a214b66fdb76b276fd120df95a0c6a2f9961bb86e89e18f4b12397651a"

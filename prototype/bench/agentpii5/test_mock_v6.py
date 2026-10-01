@@ -839,12 +839,30 @@ def test_no_control_chars() -> list[str]:
         slice_text = log.result_text[start:end]
         if any(unicodedata.category(ch) == "Cc" for ch in slice_text):
             problems.append(f"slot {tag!r} carries a control character: {slice_text!r}")
-    # THE NEGATIVE: a value carrying a newline cannot be laid down as a slot.
-    try:
-        serialise({"x": Slot("a\nb", "t")})
-        problems.append("the writer accepted a control character inside a slot")
-    except WriterError:
-        pass
+    # THE NEGATIVE, UNDER THE SEMANTICS THE INTEGRATION KEPT (`COV-KEEP-V5`).
+    #
+    # The v6 branch refused a value carrying a newline (`_escape_free`). The v5
+    # writer replaced that refusal with `_escape` ON PURPOSE — its docstring says
+    # so in as many words: the refusal «turned a model's multi-line summary into
+    # an excluded triple rather than a valid result». `bench/agentpii4/writer.py`
+    # is NOT one of the 24 overlap paths, so the merge kept the v5 half, and this
+    # expectation has to follow the writer that is actually loaded instead of the
+    # one v6 authored the test against.
+    #
+    # R-21 is NOT weakened by that: what it forbids is a RAW control character
+    # inside a slot, and that is asserted directly below on the emitted text.
+    # What the writer promises instead is the ESCAPED form, whose span covers the
+    # escaped bytes and round-trips back to the source value.
+    value = "a\nb\nc"
+    text, spans = serialise({"x": Slot(value, "t")})
+    if json.loads(text)["x"] != value:
+        problems.append(f"an escaped control character did not round-trip: {text!r}")
+    start, end = spans["t"]
+    emitted = text[start:end]
+    if any(unicodedata.category(ch) == "Cc" for ch in emitted):
+        problems.append(f"the writer laid a RAW control character in a slot: {emitted!r}")
+    if emitted != "a\\nb\\nc":
+        problems.append(f"the slot span is {emitted!r}, not the escaped value")
     return problems
 
 
@@ -895,9 +913,14 @@ def test_negatives_render_as_result_slots() -> list[str]:
     base = ArmRun(case_id=case.base.id, arm="I", repeat=0, calls=(), state=(),
                   reply="", termination="done", cost_usd=0.0, substitutes={},
                   masked_spans={})
+    # `model_trace` has NO default on purpose (see `contracts.ArmRunV5`): every
+    # constructor states whether the provider was observed. This observation is
+    # built by hand from a `CallLog`, not from a harness run, so there is no
+    # chronology to carry — `None` is that statement, not an omission.
     run = ArmRunV5(base=base, reply_raw="", control_reply="", tool_results=(record,),
                    mentions=(), turn_replies=(), call_turns=(), request_count=1,
-                   stream_mismatch=False, reply_whole="", turn_residual=0)
+                   stream_mismatch=False, reply_whole="", turn_residual=0,
+                   model_trace=None)
     observation = RunObservation(case=case, repeat=0, hops=(), run=run, ic=None, cc=None)
     line = overmask_result((observation,))
     if (line.hits, line.total) != (2, 2):

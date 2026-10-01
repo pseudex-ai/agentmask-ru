@@ -66,7 +66,7 @@ lives in this package, which by contract never imports `pseudex`;
 `bench/agentpii4.tools.parse_snils` is read only as the tool's own ground truth.
 """
 from bench.agentpii4.tools import parse_snils
-from bench.agentpii5 import contracts, form, metrics, observe, revise
+from bench.agentpii5 import contracts, form, metrics, observe, pii_types, revise
 from bench.agentpii5.scenarios5.retry_same_tool import _SNILS_MESSAGE
 from bench.agentpii5.tools import (
     LEAF_NOTATION,
@@ -132,16 +132,47 @@ def _item(item_id: str, pii_type: str, value: str, canonical: str,
 
 # --- Ж-1: one closed table, one predicate, three thin callers --------------------------
 
+# THE V5 SLICE THIS INSTRUMENT IS ABOUT, READ FROM THE LIVE REGISTRY — NEVER
+# HAND-COPIED, AND NEVER WIDENED BY INVENTION.
+#
+# `contracts.VALUE_NORMALISERS` is the v5 value table: eleven rows, one per v5
+# type (`_V5_ITEM_TYPES` below is the ten item types of `v4.TYPES`) plus DATE.
+# After the V1 registry migration `contracts.TYPES` is `v4.TYPES +
+# pii_types.NEW_ITEM_TYPES` (66 ids), so a loop over `contracts.TYPES` demands a
+# reading for all 55 v6 records — and there is none, BY DECISION: the v6 value
+# comparison reads the registry's own `value_notation` (`metrics._v6_value_matches`),
+# it deliberately does not route through this v5 table. Inventing 55 readings to
+# satisfy a v5 instrument would be the instrument rewriting the decision it is
+# supposed to measure (V1 SPEC §3.2 `INSTRUMENT-FIX-LEAF-READINGS`), so the
+# instrument is RE-SCOPED to the slice it was built over.
+_V5_ITEM_TYPES: tuple[str, ...] = tuple(
+    spec.id for spec in pii_types.TYPE_REGISTRY
+    if spec.origin == pii_types.ORIGIN_V5 and spec.item_type)
+_V5_SLICE: tuple[str, ...] = _V5_ITEM_TYPES + ("DATE",)
+
+
 def test_the_table_is_closed_and_every_type_reads_it() -> list[str]:
-    """`contracts.VALUE_NORMALISERS` names a reading for EVERY type, the reading
-    is one the implementation declares, and the names on both sides are the same
-    set — a table with a reading nothing implements would be a router to `KeyError`
-    in the middle of a run."""
+    """`contracts.VALUE_NORMALISERS` names a reading for EVERY v5-slice type, the
+    reading is one the implementation declares, and the names on both sides are
+    the same set — a table with a reading nothing implements would be a router to
+    `KeyError` in the middle of a run.
+
+    The table is also pinned to EXACTLY the v5 slice: a v6 row appearing here
+    would be a reading the v6 decision never took, and it would be caught here
+    rather than silently answering for 55 types."""
     problems: list[str] = []
     if set(contracts.VALUE_READINGS) != set(observe.VALUE_READINGS):
         problems.append(f"contracts declares {sorted(contracts.VALUE_READINGS)}, "
                         f"observe implements {sorted(observe.VALUE_READINGS)}")
-    for pii_type in contracts.TYPES + ("DATE",):
+    if len(_V5_SLICE) != 11 or len(set(_V5_SLICE)) != 11:
+        problems.append(f"the v5 slice reads {sorted(_V5_SLICE)} — expected the "
+                        f"eleven v5 records (10 item types + DATE)")
+    if set(contracts.VALUE_NORMALISERS) != set(_V5_SLICE):
+        extra = sorted(set(contracts.VALUE_NORMALISERS) - set(_V5_SLICE))
+        missing = sorted(set(_V5_SLICE) - set(contracts.VALUE_NORMALISERS))
+        problems.append(f"VALUE_NORMALISERS is not exactly the v5 slice: "
+                        f"extra={extra} missing={missing}")
+    for pii_type in _V5_SLICE:
         reading = contracts.VALUE_NORMALISERS.get(pii_type)
         if reading is None:
             problems.append(f"{pii_type} has no row: the default would answer silently")

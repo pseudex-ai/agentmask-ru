@@ -155,12 +155,17 @@ def _assemble(case: CaseV5, subs: dict[str, perfect.Substitute]) -> ArmRunV5:
                   substitutes={item_id: (fake.value, dict(fake.parts))
                                for item_id, fake in subs.items()},
                   masked_spans=masked_spans)
+    # `model_trace` has NO default on purpose (see `contracts.ArmRunV5`). This
+    # arm is assembled from `perfect`'s own helpers — no provider was observed,
+    # so the explicit statement is `None` (the same one `perfect.simulate`
+    # makes), never a silently defaulted field.
     return ArmRunV5(
         base=base, reply_raw=reply_raw, control_reply=reply + " ",
         tool_results=tuple(results), mentions=tuple(message_mentions + result_mentions),
         turn_replies=(reply,), call_turns=tuple(call_turns),
         request_count=max(len(case.base.messages) + len(results), 1),
-        stream_mismatch=False, reply_whole=reply if case.streaming else "", turn_residual=0)
+        stream_mismatch=False, reply_whole=reply if case.streaming else "", turn_residual=0,
+        model_trace=None)
 
 
 def observations(cases: Sequence[CaseV5],
@@ -485,7 +490,16 @@ def l8_section(cases: Sequence[CaseV5]) -> dict[str, object]:
 def l9_section(cases: Sequence[CaseV5], phase: str, stamp: str | None) -> dict[str, object]:
     """One row per registered new type of the phase: cases, hops, exception,
     absent_required, statuses, engine_labels — and the leak table only once the
-    ladder is stamped (R6-33)."""
+    ladder is stamped (R6-33).
+
+    THE STATUS HISTOGRAM IS THE v6 FUNNEL, AND IT IS FILLED THROUGH ITS ONE DOOR
+    (`contracts.v6_funnel_status`, V1 SPEC §4 `COV-INTEGRATION-KEEP-V5`). The
+    observer emits the eight-entry READ vocabulary (`HOP_STATUSES`); the v6 row
+    is keyed by the five-entry projection, so `row["statuses"][hop.status]` is a
+    `KeyError` the first time a v5-only status (`leaf_foreign`) occurs — which is
+    exactly what it was. The v5 split is NOT destroyed by the fold: every read
+    status is counted beside it under `read_split`, so the three v5-only causes
+    stay legible on the same row."""
     phase_types = tuple(t for t in pii_types.NEW_ITEM_TYPES if phase == "full"
                         or t in _admitted_types(cases))
     seen = observations(cases, perfect.simulate)
@@ -497,8 +511,11 @@ def l9_section(cases: Sequence[CaseV5], phase: str, stamp: str | None) -> dict[s
         rows[spec.id] = {
             "type": spec.id, "cases": 0, "hops": 0, "exception": 0,
             "absent_required": 0,
-            "statuses": {"observed": 0, "leaked": 0, "residual": 0, "unmasked": 0,
-                         "absent": 0},
+            # the v6 five, in `contracts.V6_FUNNEL_STATUSES` order
+            "statuses": {name: 0 for name in contracts.V6_FUNNEL_STATUSES},
+            # the v5 READ split, beside the projection — never instead of it
+            "read_split": {},
+            "funnel_denominator": sorted(contracts.V6_FUNNEL_DENOMINATOR),
             "engine_labels": list(spec.engine_labels),
             "in_phase": in_phase,
         }
@@ -511,7 +528,10 @@ def l9_section(cases: Sequence[CaseV5], phase: str, stamp: str | None) -> dict[s
             row = rows[hop.pii_type]
             case_ids[hop.pii_type].add(hop.case_id)
             row["hops"] += 1
-            row["statuses"][hop.status] += 1
+            split = row["read_split"]
+            assert isinstance(split, dict)
+            split[hop.status] = split.get(hop.status, 0) + 1
+            row["statuses"][contracts.v6_funnel_status(hop.status)] += 1
             if hop.status == "absent" and hop.hop.kind == "IN" \
                     and hop.hop.owner in ("tool", "document"):
                 row["absent_required"] += 1

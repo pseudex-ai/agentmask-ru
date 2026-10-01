@@ -99,6 +99,107 @@ def test_no_pseudex() -> list[str]:
     return [f"the engine is imported: {sorted(bad)}"] if bad else []
 
 
+# The v5 READ vocabulary as it was BEFORE this integration, written out so the
+# projection cannot be "fixed" by editing the vocabulary it projects from.
+V5_READ_STATUSES: tuple[str, ...] = ("observed", "leaked", "residual", "unmasked",
+                                     "absent", "engine_kept", "not_masked",
+                                     "leaf_foreign")
+V5_OUT_WRITTEN: frozenset[str] = frozenset({"observed", "residual", "engine_kept",
+                                            "not_masked", "leaf_foreign"})
+
+
+def test_the_v6_funnel_is_a_named_projection() -> list[str]:
+    """SPEC §4 (`COV-INTEGRATION-KEEP-V5`): the eight-entry READ vocabulary is
+    untouched, the five-entry v6 funnel is a SEPARATE, NAMED projection, total
+    over the read vocabulary, with its OWN declared denominator — and the v5
+    line is not what it is computed from."""
+    problems: list[str] = []
+    if tuple(contracts.HOP_STATUSES) != V5_READ_STATUSES:
+        problems.append(f"HOP_STATUSES moved: {contracts.HOP_STATUSES}")
+    if contracts.OUT_HOP_WRITTEN_STATUSES != V5_OUT_WRITTEN:
+        problems.append("the v5 form_hOUT denominator moved: "
+                        f"{sorted(contracts.OUT_HOP_WRITTEN_STATUSES)}")
+    funnel = tuple(contracts.V6_FUNNEL_STATUSES)
+    if funnel != ("observed", "leaked", "residual", "unmasked", "absent"):
+        problems.append(f"V6_FUNNEL_STATUSES is {funnel}")
+    if not set(funnel) < set(contracts.HOP_STATUSES):
+        problems.append("the v6 funnel is not a strict subset of the read vocabulary")
+    if set(contracts.V6_FUNNEL_READ_TO_FUNNEL) != set(contracts.HOP_STATUSES):
+        problems.append("the projection is not total over HOP_STATUSES")
+    if set(contracts.V6_FUNNEL_READ_TO_FUNNEL.values()) != set(funnel):
+        problems.append("the projection's image is not the v6 funnel")
+    if not contracts.V6_FUNNEL_DENOMINATOR <= set(funnel):
+        problems.append("the v6 denominator is not a subset of the v6 funnel")
+    if contracts.V6_FUNNEL_DENOMINATOR == contracts.OUT_HOP_WRITTEN_STATUSES:
+        problems.append("the v6 denominator was borrowed from the v5 line")
+    if contracts.V6_FUNNEL_DENOMINATOR != frozenset({"observed", "unmasked"}):
+        problems.append(f"the v6 denominator is {sorted(contracts.V6_FUNNEL_DENOMINATOR)}")
+    # Each of the three v5-only OUT statuses folds to the ONE v6 name, and the
+    # read vocabulary keeps them: nothing is re-labelled back into three.
+    for read_status in ("engine_kept", "not_masked", "leaf_foreign"):
+        if contracts.v6_funnel_status(read_status) != "unmasked":
+            problems.append(f"{read_status} does not fold to unmasked")
+    split = contracts.v6_funnel_split({"observed": 2, "leaf_foreign": 3, "absent": 1})
+    if split != {"observed": 2, "leaked": 0, "residual": 0, "unmasked": 3, "absent": 1}:
+        problems.append(f"v6_funnel_split gave {split}")
+    # THE NEGATIVE: a status outside the read vocabulary raises rather than
+    # being bucketed into a sixth funnel name.
+    try:
+        contracts.v6_funnel_status("healthy")
+        problems.append("an undeclared status was projected instead of refused")
+    except ValueError:
+        pass
+    return problems
+
+
+def test_l9_rows_are_keyed_by_the_v6_id() -> list[str]:
+    """The alias guard at the report level: an l9 row is keyed by the v6 type's
+    OWN id, its status histogram is the named projection (never the eight-entry
+    read vocabulary), and the v5 split rides beside it."""
+    problems: list[str] = []
+    section = integrate_v6.l9_section((), "full", None)
+    rows = {str(row["type"]): row for row in section["types"]}
+    if set(rows) != set(pii_types.NEW_ITEM_TYPES):
+        problems.append("the l9 rows are not exactly the registered v6 item types")
+    v5 = {spec.id for spec in pii_types.TYPE_REGISTRY
+          if spec.origin == pii_types.ORIGIN_V5}
+    for type_id, row in rows.items():
+        if type_id in v5:
+            problems.append(f"{type_id}: a v5 id carries an l9 row")
+        if set(row["statuses"]) != set(contracts.V6_FUNNEL_STATUSES):
+            problems.append(f"{type_id}: statuses {sorted(row['statuses'])} are not "
+                            f"the v6 funnel")
+        if row.get("funnel_denominator") != sorted(contracts.V6_FUNNEL_DENOMINATOR):
+            problems.append(f"{type_id}: no declared v6 denominator")
+        if "read_split" not in row:
+            problems.append(f"{type_id}: the v5 read split is absent")
+        if sum(row["statuses"].values()) != row["hops"]:
+            problems.append(f"{type_id}: the funnel does not sum to its hops")
+    # THE POSITIVE CONTROL: a read status the v5 funnel emits and the v6 funnel
+    # does not name (`leaf_foreign`) is counted — through the one door — and the
+    # v5 cause stays legible beside it. Without this, the guard above would pass
+    # on a corpus that never produced the status the bug was about.
+    from types import SimpleNamespace
+
+    target = next(iter(pii_types.NEW_ITEM_TYPES))
+    hop = SimpleNamespace(pii_type=target, case_id="synthetic", status="leaf_foreign",
+                          hop=SimpleNamespace(kind="OUT", owner="tool"))
+    real = integrate_v6.observations
+    try:
+        integrate_v6.observations = lambda cases, simulate: (SimpleNamespace(hops=(hop,)),)
+        probe = {str(row["type"]): row
+                 for row in integrate_v6.l9_section((), "full", None)["types"]}
+    finally:
+        integrate_v6.observations = real
+    row = probe[target]
+    if row["statuses"]["unmasked"] != 1:
+        problems.append(f"{target}: a leaf_foreign hop was not projected to unmasked "
+                        f"({row['statuses']})")
+    if row.get("read_split") != {"leaf_foreign": 1}:
+        problems.append(f"{target}: the v5 cause was lost: read_split={row.get('read_split')}")
+    return problems
+
+
 def main() -> int:
     # The report is a generated artifact (never committed). If it is absent —
     # a fresh checkout that ran the tests before the writer — build it first so
@@ -115,6 +216,8 @@ def main() -> int:
         ("leak_table_needs_stamp", test_leak_table_needs_stamp),
         ("dry_run_cost", test_dry_run_cost),
         ("no_pseudex", test_no_pseudex),
+        ("the_v6_funnel_is_a_named_projection", test_the_v6_funnel_is_a_named_projection),
+        ("l9_rows_are_keyed_by_the_v6_id", test_l9_rows_are_keyed_by_the_v6_id),
     )
     failures: list[str] = []
     for name, check in checks:
