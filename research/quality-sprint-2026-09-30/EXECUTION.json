@@ -137,7 +137,7 @@
       "status": "RUNNING",
       "gate": "G2",
       "wave": "Lead",
-      "execution_stage": "v2-dev evidence foundation PASS_FOUNDATION (55 controls, 4 defects fixed); G2 FAIL: legacy capture adapter, derived role/initials proof, unique monotone alignment open"
+      "execution_stage": "v2-dev: provenance foundation PASS_FOUNDATION + provable dotted initials; 58/58 controls. G2 FAIL: legacy adapter, Latin/partial roles, unique monotone alignment open"
     },
     {
       "id": "M1b",
@@ -149,7 +149,7 @@
       "status": "RUNNING",
       "gate": "G2",
       "wave": "workflow-3",
-      "execution_stage": "independent review REVISE; revision-2 corrections recorded; no full G3 acceptance"
+      "execution_stage": "independent review REVISE; revision-2 corrections; independent re-review PASS_CORRECTIONS. Full G3 still REVISED_NOT_PASS (pending M1a G2 + O-CORE/O-DETECT)"
     },
     {
       "id": "M1c",
@@ -184,7 +184,7 @@
       "status": "RUNNING",
       "gate": "G3",
       "wave": "workflow-3",
-      "execution_stage": "independent review REVISE; revision-2 corrections recorded; no full G3 acceptance"
+      "execution_stage": "independent review REVISE; revision-2 corrections; independent re-review PASS_CORRECTIONS. Full G3 still REVISED_NOT_PASS (pending M1a G2 + O-CORE/O-DETECT)"
     },
     {
       "id": "D0",
