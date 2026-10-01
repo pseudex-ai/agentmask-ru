@@ -41,3 +41,11 @@ Invocation `subagent_fork:7ac9e839-fe35-4124-9b90-33d9eea930d7`, inherited Lead 
 - Lead M1a (round 4): доказуемые инициалы через whole-name disclosure, 58/58 controls, 6 legacy suites. Bare «ПО» намеренно не кандидат (P09).
 
 Собственная фраза модели не является доказательством маршрутизации.
+
+## Round 5
+
+- `subagent_fork:76fef59f-83bc-430e-802b-dde035c7e75e` — inherited gpt-6-astra, независимый implementation review M1a v2-dev на G2-readiness; writes only work/M1a/g2-review/. RUNNING. Входы заморожены (2 M1a файла + docs). Задача — вердикт PASS_G2_READY/NOT_READY по 10 пунктам M04-READINESS + adversarial false-pass попытки.
+
+Собственная фраза модели не является доказательством маршрутизации.
+
+- `workflow-5` `d0-isolated-perf`, job `workflow-5`, explicit deepseek-official/deepseek-flash, 1 agent. Изолированный ресурсный замер FULL vs NER_ONLY (2 arm × 3 процесса, N≥1000) по RUNBOOK-PERF; writes only work/D0/perf-isolated/. RUNNING. Предварительный проход, не финальный O-DETECT бюджет. Не трогает holdout/paid run, не ставит модели.
