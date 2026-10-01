@@ -94,3 +94,9 @@ Invocation `subagent_fork:7ac9e839-fe35-4124-9b90-33d9eea930d7`, inherited Lead 
 - `a1-manifest`: финальный O-DATA manifest по EX-O-DATA-1/2/3; scope work/A1/final/.
 
 Собственная фраза модели не является доказательством маршрутизации.
+
+## Round 11 (доп.)
+
+- `workflow-7` `v1-spec-prep` — 4-й параллельный Flash-исполнитель: V1 SPEC (план интеграции v6) независимо от M1c; scope work/V1/. RUNNING.
+
+Собственная фраза модели не является доказательством маршрутизации.
