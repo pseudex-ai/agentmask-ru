@@ -1418,7 +1418,7 @@ live**; v1–v3 stay for the numbers cited from them and are not developed.
 | `bench/agentpii2/` | `superseded by agentpii4` | v2: case schema and family taxonomy (families/, live/) | `bench/agentpii2/schema.py` | `docs/tz-agentpii2.md`, `bench/agentpii2/README.md` |
 | `bench/agentpii3/` | `superseded by agentpii4` | v3: полнота on speech-like agent traffic; mined dispatch calls and reference forms (`bench/agentpii3/mine_*.py`, `bench/agentpii3/mined/`); audit + crosscheck. **The 69.6% NAME полнота number cited in CLAUDE.md is from here** — kept for that number, not for new work | `bench/agentpii3/schema.py` | `docs/tz-agentpii3.md` |
 | `bench/agentpii4/` | `live` | v4 «шлюз не ломает агента»: three arms (control, control′, gateway) over a mock CRM; levels calls/fields/state; TOST at δ=3pp with cluster bootstrap; `autopsy`, `microscope`, `compare_runs`; fresh-seed corpora `bench/agentpii4/fresh5150/` … `bench/agentpii4/fresh8080/` | `bench/agentpii4/schema.py` | `docs/tz-agentpii4.md`, `bench/agentpii4/README.md`, `research/2026-09-05-agent-scenario-coverage.md`, `research/2026-09-06-benchmark-tiers.md`, `research/2026-09-07-benchmark-critics.md` |
-| `bench/agentpii5/` | `live` | v5 «tool-result-first, форма на каждом хопе, живой агент»: a value's FORM is compared at every hop it crosses (`Hop`, `HopObservation`), not once at the tool. Contracts and rules: `bench/agentpii5/contracts.py` (hops, `CaseV5`, `ToolSpecV5`, form features, metric `Line`s + the refuse-to-report gate, judge I/O, the v4-vs-v5 side-by-side), `bench/agentpii5/schema.py` (R01–R23 per case, K01–K15 per corpus, the corpus snapshot), `bench/agentpii5/RULINGS.md` (the architect's decisions the builders were held to), `bench/agentpii5/CHECKLIST.md` (191 conformance items), `bench/agentpii5/briefs/` (one brief per component). Tools and backend: `bench/agentpii5/tools.py` (43 tools over 11 verticals, 8 return forms), `bench/agentpii5/mock.py` (the seeded CRM the three arms share). Form: `bench/agentpii5/form.py` + `bench/agentpii5/form_tables.py` (`form_match` per type and feature, with the ABSTAIN rule). Corpus: `bench/agentpii5/scenarios5/` (`bench/agentpii5/scenarios5/common.py` the builder, `bench/agentpii5/scenarios5/plan_a.py` / `bench/agentpii5/scenarios5/plan_b.py` the two halves, one module per behaviour — `retry_same_tool`, `same_tool_other_target`, `sequential_chain`, `parallel`, `fanout_pick`, `branching`, `user_in_loop`, `memory_anaphora`, `rag`, `document`), `bench/agentpii5/revise.py` (v4's 834 cases given a behaviour and hops, bytes untouched), `bench/agentpii5/build.py` (assemble, check, freeze the ladder). Run: `bench/agentpii5/harness.py` (the ONLY module here that imports `pseudex` — the gateway arm is the production path), `bench/agentpii5/records.py` (every run file, both ways), `bench/agentpii5/judge.py` + `bench/agentpii5/calibration.py` (the blind judge and its κ stamp). Read-back: `bench/agentpii5/observe.py`, `bench/agentpii5/metrics.py`, `bench/agentpii5/fixtures.py` (three fixtures per metric, one adversarial), `bench/agentpii5/report.py` (the side-by-side, refused metrics named), `bench/agentpii5/reportjson.py` (the same report as one versioned machine schema), `bench/agentpii5/live.py` (real-time watch face, engine-free; `--latest`/`--once`/`--web` — terminal or an HTTP page at `http://host:port/`). Acceptance: `bench/agentpii5/perfect.py` + `bench/agentpii5/test_perfect.py` — a PERFECT gateway must clear every bounded line and four WRONG ones must fail them, on the whole corpus; an instrument that cannot fail is not an instrument. The harness as a tool (`docs/tz-bench-harness.md`, D-066): `bench/agentpii5/runinfo.py` (the estimate before a dollar, the run registry the runs write themselves, and the refusal that keeps a key or a corpus value out of it), `bench/agentpii5/provider.py` (what answered and what masked, with prices and key NAMES), `bench/agentpii5/compare.py` (any run against any other, case by case, with the cluster bootstrap), `bench/agentpii5/microscope.py` (one case whole, no model and no spend), `bench/agentpii5/trend.py` (the runs by date), `bench/agentpii5/repro.py` (the one command that repeats a run), `bench/agentpii5/quarantine.py` (cases unstable at ALL arms — a defect of the CASE; it prints and never marks). One `test_*.py` per module, each a script with `main()`; imports `bench/agentpii4/`; the base gateway exposes one no-op request-capture hook so v5 records the exact existing mask result without another mask pass | `bench/agentpii5/contracts.py` | `docs/tz-agentpii5.md`, `wiki/BENCHMARK.md`, `research/2026-09-22-toolresult-derisk.md` |
+| `bench/agentpii5/` | `live` | v5 «tool-result-first, форма на каждом хопе, живой агент»: a value's FORM is compared at every hop it crosses (`Hop`, `HopObservation`), not once at the tool. Contracts and rules: `bench/agentpii5/contracts.py` (hops, `CaseV5`, `ToolSpecV5`, form features, metric `Line`s + the refuse-to-report gate, judge I/O, the v4-vs-v5 side-by-side), `bench/agentpii5/schema.py` (R01–R23 per case, K01–K15 per corpus, the corpus snapshot), `bench/agentpii5/pii_types.py` (v6 type registry — `TypeSpec`, `TYPE_REGISTRY`, rules T1–T8; the one home of the type tables), `bench/agentpii5/contracts_v6.py` (`INDUSTRIES`, `V6_AXES`, `V6_PROVENANCE_KINDS`, `CaseV6Meta`), `bench/agentpii5/RULINGS.md` (the architect's decisions the builders were held to), `bench/agentpii5/CHECKLIST.md` (191 conformance items), `bench/agentpii5/briefs/` (one brief per component). Tools and backend: `bench/agentpii5/tools.py` (43 tools over 11 verticals, 8 return forms), `bench/agentpii5/mock.py` (the seeded CRM the three arms share). Form: `bench/agentpii5/form.py` + `bench/agentpii5/form_tables.py` (`form_match` per type and feature, with the ABSTAIN rule). Corpus: `bench/agentpii5/scenarios5/` (`bench/agentpii5/scenarios5/common.py` the builder, `bench/agentpii5/scenarios5/plan_a.py` / `bench/agentpii5/scenarios5/plan_b.py` the two halves, one module per behaviour — `retry_same_tool`, `same_tool_other_target`, `sequential_chain`, `parallel`, `fanout_pick`, `branching`, `user_in_loop`, `memory_anaphora`, `rag`, `document`), `bench/agentpii5/revise.py` (v4's 834 cases given a behaviour and hops, bytes untouched), `bench/agentpii5/build.py` (assemble, check, freeze the ladder). Run: `bench/agentpii5/harness.py` (one of the two modules that import `pseudex` — the gateway arm is the production path), `bench/agentpii5/regress_print.py` (the same path offline, no model — the G4/L9 product-path printer), `bench/agentpii5/records.py` (every run file, both ways), `bench/agentpii5/judge.py` + `bench/agentpii5/calibration.py` (the blind judge and its κ stamp). Read-back: `bench/agentpii5/observe.py`, `bench/agentpii5/metrics.py`, `bench/agentpii5/fixtures.py` (three fixtures per metric, one adversarial), `bench/agentpii5/report.py` (the side-by-side, refused metrics named), `bench/agentpii5/reportjson.py` (the same report as one versioned machine schema), `bench/agentpii5/live.py` (real-time watch face, engine-free; `--latest`/`--once`/`--web` — terminal or an HTTP page at `http://host:port/`). Acceptance: `bench/agentpii5/perfect.py` + `bench/agentpii5/test_perfect.py` — a PERFECT gateway must clear every bounded line and four WRONG ones must fail them, on the whole corpus; an instrument that cannot fail is not an instrument. The harness as a tool (`docs/tz-bench-harness.md`, D-066): `bench/agentpii5/runinfo.py` (the estimate before a dollar, the run registry the runs write themselves, and the refusal that keeps a key or a corpus value out of it), `bench/agentpii5/provider.py` (what answered and what masked, with prices and key NAMES), `bench/agentpii5/compare.py` (any run against any other, case by case, with the cluster bootstrap), `bench/agentpii5/microscope.py` (one case whole, no model and no spend), `bench/agentpii5/trend.py` (the runs by date), `bench/agentpii5/repro.py` (the one command that repeats a run), `bench/agentpii5/quarantine.py` (cases unstable at ALL arms — a defect of the CASE; it prints and never marks). One `test_*.py` per module, each a script with `main()`; imports `bench/agentpii4/` and never edits it; the base gateway exposes one no-op request-capture hook so v5 records the exact existing mask result without another mask pass | `bench/agentpii5/contracts.py` | `docs/tz-agentpii5.md`, `wiki/BENCHMARK.md`, `research/2026-09-22-toolresult-derisk.md` |
 | `bench/agentpii5/payload_canaries.py` | `live` | Case-declared S02 canary manifest with raw-payload placement, exact model-request snapshots and boundary scan; missing, duplicate and oversized captures or missing I-arm rows are `NOT_MEASURED`, never a clean result. `bench/agentpii5/test_payload_canaries.py` pins the scanner and `bench/agentpii5/test_payload_canary_integration.py` pins the gateway capture seam. Saved 450 runs have no manifest and remain unmeasured. | `bench/agentpii5/payload_canaries.py` | `docs/plan-hop-form-before-450.md`, `research/hop-format-audit/PROGRESS.md` |
 | `bench/agentpii5/test_spike_e.py` | `live` | Класс Е of the hop-format sprint: the OUT leaf funnel answers ONE fact per status (`observed` / `residual` / `engine_kept` / `not_masked` / `leaf_foreign` / `absent` — `unmasked` used to be three of them at once), the strict headline denominators stay the corpus's and the engine's honest share is published BESIDE them (`end_to_end_written` + the `out_*` counts), `optional` is read off the LEAF and off the generic role (`GENERIC_PIECE_ROLES`), and a declared hop is satisfied by the semantically equal leaf the run really wrote (`contracts.LEAF_EQUIVALENCE`, an AUTHORED table, never a guess off a tool name). Runs the real observer and the real metric functions on hand-built records, no model and no network. | `bench/agentpii5/test_spike_e.py` | `research/hop-format-audit/SPIKE-Е.md`, `research/hop-format-audit/DECISIONS-SPRINT.md` |
 | `bench/agentpii5/test_spike_zh.py` | `live` | Класс Ж of the hop-format sprint: the VALUE question («did this leaf receive THAT value») is answered by ONE table (`contracts.VALUE_NORMALISERS`) through ONE predicate (`observe.values_equal`) with three thin callers (`metrics.value_matches`, `observe.part_matches`, `revise._same_value` — a third copy that had already drifted); NAME compares as a multiset of parts, LOC by the roles street/house/flat, PLATE squeezed, the digital documents by digits, a date by ISO, and PHONE by the last ten digits **plus the prefix class** (the one place the value line deliberately does not reduce to the needle layer: `+1…` ≠ `+7…`); `script` is the ALPHABET and `translit` the ROMANIZATION SYSTEM, abstaining on `latin:unknown`; and the tool schema is the authoritative notation marker (`tools.LEAF_NOTATION`, proved against each leaf's own parser by rule V08) while the value line stays notation-blind. Runs the real comparator on hand-built pairs — no model, no network, no engine. | `bench/agentpii5/test_spike_zh.py` | `research/hop-format-audit/SPIKE-Ж.md`, `research/hop-format-audit/DECISIONS-SPRINT.md` |
@@ -1427,6 +1427,210 @@ live**; v1–v3 stay for the numbers cited from them and are not developed.
 | `bench/gate/` | `frozen` | the ceiling of the dictionary gate: 600 hand-labelled OCCURRENCES pinned to a snapshot; the live detector re-runs and prints MOVEMENT | `bench/gate/labels.json` | `bench/gate/README.md` |
 | `bench/voice/` | `frozen` | real taxi-dispatch transcripts (RuDevices), addresses hand-labelled in two strata (400 marker-carrying + 250 of 4 805 number-only; weight the second 250/4805); `bench/voice/score.py` filters to LOC | `~/.cache/pseudex-bench/rudevices_addresses.json` | `bench/voice/README.md` |
 | `bench/runs/` | `frozen` | measurement outputs by date (2026-09-01 … ); `README.md` says what each run answered. Never edit. | — | `bench/runs/README.md` |
+
+### 4.1.1 AgentPII-RU v6 — the new modules in `bench/agentpii5/`
+
+v6 (`branch bench/agentpii6`) is built **inside** the `bench/agentpii5/` package,
+mirroring v5 and importing it; it does not replace v5. The 55-type registry that
+was one table in `bench/agentpii5/pii_types.py` is now split across
+`bench/agentpii5/pii_types_a.py` / `bench/agentpii5/pii_types_b.py` /
+`bench/agentpii5/pii_types_c.py` (`GROUP_A`/`GROUP_B`/`GROUP_C`, re-assembled by
+`bench/agentpii5/pii_types.py` into `TYPE_REGISTRY`). Spec `docs/tz-agentpii6.md`, registry
+`docs/tz-agentpii6-registry.md`. `Uses` / `Used by` are the real import edges
+inside `bench/`; the v5 modules that gained a v6 branch are listed at the end.
+
+#### `bench/agentpii5/contracts_v6.py` — 331 lines · `live`
+The v6 tables that are NOT about PII types: the axis vocabulary (`INDUSTRIES`,
+`V6_AXES`, `V6_PROVENANCE_KINDS`), `CaseV6Meta` (what `CaseV5.v6` carries),
+`ProcedureRecord`, `V6_DIR`, the v6 negative families and `neg_value`. Pure and
+self-contained — imports nothing from `contracts`/`pseudex`/`licensing`;
+`bench/agentpii5/contracts.py` imports IT, never the reverse.
+- **API:** `INDUSTRIES`, `V6_PROVENANCE_KINDS`, `ProcedureRecord`, `CaseV6Meta`, `V6_AXES`, `V6_DIR`, `V6_NEGATIVE_FAMILIES`, `neg_value`
+- **Uses:** — · **Used by:** contracts, build_v6, scenarios6/build_full
+- **Tests:** test_contracts_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/pii_types_a.py` — 396 lines · `live`
+`GROUP_A`, the first third of the v6 `TypeSpec` registry — one `TypeSpec` per
+v6 type, imported by `bench/agentpii5/pii_types.py` (which re-assembles
+`TYPE_REGISTRY`). Split out of `bench/agentpii5/pii_types.py` so each type table
+stays one definition.
+- **API:** `GROUP_A`
+- **Uses:** pii_types · **Used by:** pii_types
+- **Tests:** via pii_types → test_pii_types
+- **Docs:** `docs/tz-agentpii6-registry.md`
+
+#### `bench/agentpii5/pii_types_b.py` — 360 lines · `live`
+`GROUP_B`, the second third of the v6 `TypeSpec` registry.
+- **API:** `GROUP_B`
+- **Uses:** pii_types · **Used by:** pii_types
+- **Tests:** via pii_types → test_pii_types
+- **Docs:** `docs/tz-agentpii6-registry.md`
+
+#### `bench/agentpii5/pii_types_c.py` — 538 lines · `live`
+`GROUP_C`, the last third of the v6 `TypeSpec` registry.
+- **API:** `GROUP_C`
+- **Uses:** pii_types · **Used by:** pii_types
+- **Tests:** via pii_types → test_pii_types
+- **Docs:** `docs/tz-agentpii6-registry.md`
+
+#### `bench/agentpii5/checksum_v6.py` — 397 lines · `live`
+The v6 checksum validators — IMEI, OMS/ENP, ICCID, bank account/IBAN (CBR 515),
+ОГРНИП, ЭПТС, УИН, VIN, loyalty card, ICAO-731 international passport, S10
+track, GS1. `validate(type_id, value)` is the one entry point every consumer
+calls.
+- **API:** `validate`, `validate_luhn`, `validate_imei`, `validate_oms_enp`, `validate_iccid`, `validate_account`, `validate_iban`, `validate_ogrnip`, `validate_epts_number`, `validate_uin`, `validate_vin`, `validate_intl_passport`, `validate_loyalty_card_number`, `validate_s10_track`
+- **Uses:** — · **Used by:** tools_v6, metrics, perfect, report, integrate_v6
+- **Tests:** test_checksum_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/gen_v6.py` — 728 lines · `live`
+The deterministic v6 value mint: `generate(type_id, seed)` builds a
+checksum-VALID value from the seed — never a search of a finished string (the
+R6-26 discipline). ~50 private `_gen_*` minters, one per type.
+- **API:** `generate`, `vin_is_russian_wmi`
+- **Uses:** pii_types · **Used by:** tools_v6, integrate_v6, scenarios6/common6, scenarios6/build_full
+- **Tests:** test_gen_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/form_v6.py` — 308 lines · `live`
+The v6 form-feature extractors and `FEATURE_EXTRACTORS`; `bench/agentpii5/form.py` unpacks the
+whole table into the v5 form matcher (`form_v6.FEATURE_EXTRACTORS`) so the v6
+types get a `form_match` with no second copy.
+- **API:** `separators`, `case_class`, `script`, `by_fields`, `padding`, `notation`, `FEATURE_EXTRACTORS`
+- **Uses:** contracts, pii_types · **Used by:** form
+- **Tests:** via form → test_form_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/tools_v6.py` — 4 098 lines · `live`
+The v6 tool registry: `TOOLS_V6` (78 `ToolSpecV5` over the v6 verticals with
+exact producer/consumer fields), `V6_META` (a `V6ToolMeta` per tool),
+`UNSCHEMED_TOOLS`.
+- **API:** `V6ToolMeta`, `TOOLS_V6`, `V6_META`, `UNSCHEMED_TOOLS`
+- **Uses:** checksum_v6, gen_v6, contracts · **Used by:** schema_v6, build_v6, mock_v6, scenarios6/common6, scenarios6/build_full
+- **Tests:** test_tools_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/mock_v6.py` — 1 425 lines · `live`
+The v6 seeded backend the arms share: `BackendV6` (extends `BackendV5`),
+`seed_backend_v6`, `call_v6`, `call_arguments_v6`, `drive_v6`,
+`render_problems_v6`.
+- **API:** `BackendV6`, `seed_backend_v6`, `call_v6`, `call_arguments_v6`, `drive_v6`, `render_problems_v6`, `V6_SPECS`, `V6_NAMES`, `UNSCHEMED_NAMES`
+- **Uses:** contracts, metrics, mock, tools_v6 · **Used by:** build_v6
+- **Tests:** test_mock_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/schema_v6.py` — 786 lines · `live`
+The v6 corpus rules (K6-01…K6-22): type/industry/register floors,
+`merged_registry` (v5+v6 tools), `validate_corpus_v6`, `type_floor_table`,
+`PILOT_INDUSTRIES`.
+- **API:** `FLOORS`, `PILOT_INDUSTRIES`, `REGISTER_SHARES_V6`, `INDUSTRY_WEIGHTS`, `merged_registry`, `type_floor_table`, `validate_corpus_v6`
+- **Uses:** contracts, pii_types, tools, tools_v6 · **Used by:** build_v6, integrate_v6, scenarios6/plan_v6, scenarios6/build_full
+- **Tests:** test_schema_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/build_v6.py` — 453 lines · `live`
+Assemble, check and freeze the v6 corpus and ladder: `build_ladder_v6`,
+`draw_holdout_v6`, `stratified_order_v6`, `write_corpus`, `write_ladder_v6`,
+`proof_v6` (the L8 unprovable → 0 gate), `main`.
+- **API:** `stratified_order_v6`, `draw_holdout_v6`, `build_ladder_v6`, `ladder_problems_v6`, `write_corpus`, `write_ladder_v6`, `proof_v6`, `main`
+- **Uses:** contracts_v6, mock_v6, pii_types, contracts, schema, schema_v6, tools_v6 · **Used by:** integrate_v6, scenarios6/build_full
+- **Tests:** test_build_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/integrate_v6.py` — 636 lines · `live`
+The v6 integration report and acceptance (G1): `measure` (single-arm metrics),
+`MUTANTS` (12 wrong-gateway mutants the metrics must fail), `build_report`,
+`dry_run_cost`, `regress_section`, `main`.
+- **API:** `measure`, `MUTANTS`, `l1_section`, `l7_section`, `l8_section`, `l9_section`, `dry_run_cost`, `regress_section`, `build_report`, `main`
+- **Uses:** build_v6, checksum_v6, contracts, gen_v6, metrics, observe, perfect, pii_types, form_tables, schema, schema_v6, scenarios6/common6, scenarios6/build_full · **Used by:** — (entry point)
+- **Tests:** test_integration_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/regress_print.py` — 192 lines · `live`
+The offline product-path printer for the v6 corpus (no model, no spend): the
+same masking path as the gateway arm — one of the two modules that import
+`pseudex` (vault, audit, detect_all, maskcache) plus `harness.GatewayV5`. Run
+`python3 -m bench.agentpii5.regress_print`.
+- **API:** `main`
+- **Uses:** pseudex (vault, audit, detect_all, maskcache), contracts, harness, mock, schema, testkit · **Used by:** — (entry point)
+- **Tests:** test_pii_types (R6-42), test_cli
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/scenarios6/__init__.py` — 9 lines · `live`
+The v6 case-family package — one module per behaviour of `contracts.BEHAVIOURS`
+that v6 authors anew. Mirrors v5, does not replace it.
+- **Used by:** integrate_v6, test_scenarios6, test_scenarios6_plan (import the submodules)
+
+#### `bench/agentpii5/scenarios6/common6.py` — 472 lines · `live`
+What every v6 family shares: `CaseBuilderV6` (HOLDS a v5 `CaseBuilderV5`, adds
+`CaseV6Meta` + `gen_v6.generate`), `PROCEDURES`/`procedure_records`, the
+`bench/agentpii5/v6/skeletons.json` loader, `v6_parts`/`v6_rendered`, and the family entry points
+(`single_case`, `sequential_chain_case`, `memory_anaphora_case`).
+- **API:** `CaseBuilderV6`, `new_builder_v6`, `procedure_records`, `load_skeletons`, `skeleton_ids`, `v6_parts`, `v6_rendered`, `single_case`, `sequential_chain_case`, `memory_anaphora_case`
+- **Uses:** gen_v6, pii_types, contracts, tools, tools_v6, scenarios5/common · **Used by:** scenarios6/build_full, integrate_v6
+- **Tests:** test_scenarios6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/scenarios6/plan_v6.py` — 236 lines · `live`
+The deterministic 500-case allocation (`PlanRow`, `PLAN_V6`): every admitted
+type in 34 distinct cases, the industry axis steered toward `INDUSTRY_CASES`,
+the `sequential_chain` pairs.
+- **API:** `PlanRow`, `PLAN_V6`, `INDUSTRY_CASES`, `CHAIN_PAIRS`, `plan_type_table`, `plan_industry_table`, `main`
+- **Uses:** contracts, pii_types, schema_v6 · **Used by:** scenarios6/build_full
+- **Tests:** test_scenarios6_plan
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/scenarios6/build_full.py` — 803 lines · `live`
+Instantiate every `plan_v6.PlanRow` into a `CaseV5` (`Recipe`, `RECIPES`,
+`CHAIN_SPECS`, `build_full`); the value source is always `gen_v6.generate`,
+never a search of a finished string.
+- **API:** `Recipe`, `RECIPES`, `CHAIN_SPECS`, `build_full`, `main`
+- **Uses:** build_v6, contracts_v6, gen_v6, pii_types, schema_v6, contracts, scenarios5/common, scenarios6/plan_v6, scenarios6/common6, tools_v6 · **Used by:** integrate_v6
+- **Tests:** test_scenarios6_plan
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/v6/` — the generated v6 corpus and ladder · `generated`
+`bench/agentpii5/v6/corpus.v5.json` (the 500-case v6 corpus in the v5 shape),
+`bench/agentpii5/v6/corpus.json`, `bench/agentpii5/v6/ladder.json`
+(nano/small/medium/pool/max tiers), `bench/agentpii5/v6/denylist.json`, and
+`bench/agentpii5/v6/skeletons.json` (the authored skeleton registry `common6`
+loads). Written by `bench/agentpii5/build_v6.py`; never edit by hand.
+
+#### The v6 test files · `live`
+
+| test | pins |
+|---|---|
+| `bench/agentpii5/test_checksum_v6.py` | `checksum_v6` — every v6 validator on valid + broken values |
+| `bench/agentpii5/test_gen_v6.py` | `gen_v6` — minted values pass checksum_v6/pii_types |
+| `bench/agentpii5/test_form_v6.py` | `form_v6` via `form` — the v6 form features |
+| `bench/agentpii5/test_observe_v6.py` | `observe`'s v6 branch — IPv6 types and `survives_in` |
+| `bench/agentpii5/test_tools_v6.py` | `tools_v6` — producer/consumer fields, forms |
+| `bench/agentpii5/test_mock_v6.py` | `mock_v6` — the v6 seeded backend |
+| `bench/agentpii5/test_schema_v6.py` | `schema_v6` — the K6 corpus rules |
+| `bench/agentpii5/test_build_v6.py` | `build_v6` — build/check/freeze the ladder |
+| `bench/agentpii5/test_metrics_v6.py` | `metrics`' v6 branch — `V6_METRIC_FUNCTIONS` |
+| `bench/agentpii5/test_perfect_v6.py` | `perfect`'s v6 branch — `mint_v6` |
+| `bench/agentpii5/test_report_v6.py` | `report`'s v6 branch — the v6 axes/rows |
+| `bench/agentpii5/test_judge_v6.py` | `judge`'s v6 branch — `_V6_SPECS` |
+| `bench/agentpii5/test_calibration_v6.py` | `calibration`'s v6 branch — new v6 item types |
+| `bench/agentpii5/test_scenarios6.py` | `bench/agentpii5/scenarios6/common6.py` — the family builder |
+| `bench/agentpii5/test_scenarios6_plan.py` | `bench/agentpii5/scenarios6/plan_v6.py` + `bench/agentpii5/scenarios6/build_full.py` |
+| `bench/agentpii5/test_integration_v6.py` | `integrate_v6` — the G1 acceptance |
+| `bench/agentpii5/test_contracts_v6.py` | `contracts_v6` — the axis tables |
+
+#### The v5 modules that gained a v6 branch
+`bench/agentpii5/form.py` (imports `form_v6`, unpacks `form_v6.FEATURE_EXTRACTORS`),
+`bench/agentpii5/observe.py` (`IPV6_TYPES`, `_is_ipv6`, `_ipv6_spans`),
+`bench/agentpii5/metrics.py` (`V6_AXES`, `V6_METRIC_FUNCTIONS`, `_v6_value_matches`),
+`bench/agentpii5/perfect.py` (`mint_v6`, `_v6_checksum_valid`),
+`bench/agentpii5/fixtures.py` (`V6_FIXTURES`), `bench/agentpii5/report.py`
+(`has_v6_case`, `v6_axis_rows`, `v6_new_row_lines`), `bench/agentpii5/judge.py`
+(`_V6_SPECS`), `bench/agentpii5/calibration.py` (samples the new v6 item types,
+`origin == "v6"`), `bench/agentpii5/records.py` (`CaseV5.v6` omitted at None — a
+v5 record stays byte-for-byte), `bench/agentpii5/harness.py` (reached by
+`regress_print`'s product path, `GatewayV5`), `bench/agentpii5/build.py` (reached
+by `bench/agentpii5/report.py`'s v6 path, `run_provenance`).
 
 ### 4.2 Evals on corpora we did not write
 

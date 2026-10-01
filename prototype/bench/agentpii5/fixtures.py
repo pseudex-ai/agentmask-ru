@@ -55,6 +55,7 @@ from bench.agentpii5.contracts import (
     ToolResultRecord,
 )
 from bench.agentpii5.form import form_match
+from bench.agentpii5.metrics import NEG_TAG_PREFIX
 
 # One person, one substitute, one other person. Written out here so every
 # fixture reads as a sentence and a reader can check the expected fraction
@@ -124,7 +125,7 @@ def _case(case_id: str, behaviour: str, texts: tuple[str, ...], items: tuple[Pii
     return CaseV5(base=base, behaviour=behaviour, hops=hops, returns=(), forced=(), memory=(),
                   pick=None, branch=None, loop=None, rag=None, document=None,
                   has_result=any(hop.kind == "IN" and hop.owner == "tool" for hop in hops),
-                  streaming=False, revised_from_v4=False)
+                  streaming=False, revised_from_v4=False, v6=None)
 
 
 def _run(case_id: str) -> ArmRunV5:
@@ -180,6 +181,14 @@ def _with_results(run: ArmRunV5, results: tuple[ToolResultRecord, ...]) -> ArmRu
 
 def _with_masked(run: ArmRunV5, spans: dict[int, tuple[tuple[int, int], ...]]) -> ArmRunV5:
     return replace(run, base=replace(run.base, masked_spans=spans))
+
+
+def _with_message_pieces(run: ArmRunV5,
+                         pieces: tuple[tuple[int, int, int, str], ...]) -> ArmRunV5:
+    """The OD-76 message-piece record: (msg, start, end, engine_type) entries a
+    v6 run writes for the IN/user leg (`ArmRunV5.message_pieces`). The v5 path
+    never sets it, so an old-corpus replay stays byte-identical."""
+    return replace(run, message_pieces=pieces)
 
 
 def _hop(kind: str, owner: str, item_id: str, index: int, turn: int, tool: str,
@@ -1541,6 +1550,108 @@ FIXTURES: dict[str, tuple[Fixture, Fixture, Fixture]] = {
     "doc_masked": _doc_masked_fixtures(),
     "doc_extracted": _doc_extracted_fixtures(),
     "residual": _residual_fixtures(),
+}
+
+
+# --- §6.3 the three v6 rows (OD-54) ---------------------------------------------------
+#
+# Each ships its own zero / one / adversarial, exactly like a v5 metric, but in a
+# SEPARATE table: `FIXTURES` is the closed v5 surface `test_fixtures` pins, and a
+# v6 row registered there would turn the v5 gate red without a v6 case anywhere.
+# The report gates these rows on a v6 case and runs them against this table.
+
+
+def _enp_item(item_id: str, value: str, start: int, end: int) -> PiiItem:
+    """An OMS_ENP item: a Luhn checksum type with `engine_labels` = («OMS»,)."""
+    return _item(item_id, "OMS_ENP", value, value, "i1", _in_message(0, start, end))
+
+
+def _typed_user_fixtures() -> tuple[Fixture, Fixture, Fixture]:
+    item = _enp_item("e1", "7707536455681514", 0, 16)
+    hop = _hop("IN", "user", "e1", 0, 0, "", -1, -1, "")
+    case = _case("fx-typed_user", "single", ("7707536455681514",), (item,), (hop,))
+
+    def one(engine_type: str) -> RunObservation:
+        run = _with_message_pieces(_run("fx-typed_user"), ((0, 0, 16, engine_type),))
+        return _obs(case, run, (_seen(case, hop, "OMS_ENP", "0030869788914847", item.value),))
+
+    # ADVERSARIAL. ONE piece covers the ENP and the customer's NAME, labelled
+    # OMS: the ENP hop is a hit (OMS is its alias), the NAME hop is a miss (OMS
+    # is nobody's alias for a name). Counted per HOP it is 1/2; a metric that
+    # counted PIECES instead of hops prints 1/1.
+    name_item = _item("p1", "NAME", REAL_NAME, REAL_NAME, "i1", _in_message(0, 17, 17 + len(REAL_NAME)))
+    name_hop = _hop("IN", "user", "p1", 1, 0, "", -1, -1, "")
+    both_case = _case("fx-typed_user-2", "single",
+                      (f"7707536455681514 {REAL_NAME}",), (item, name_item), (hop, name_hop))
+    shared_run = _with_message_pieces(_run("fx-typed_user-2"),
+                                      ((0, 0, 17 + len(REAL_NAME), "OMS"),))
+    shared = _obs(both_case, shared_run,
+                  (_seen(both_case, hop, "OMS_ENP", "0030869788914847", item.value),
+                   _seen(both_case, name_hop, "NAME", FAKE_NAME, REAL_NAME)))
+    return (_fx("typed_user", "zero", "", (one("CARD"),), 0, 1),
+            _fx("typed_user", "one", "", (one("OMS"),), 1, 1),
+            _fx("typed_user", "adversarial", "one piece covering the ENP and a name "
+                "is two hops — counted per piece a wrong metric prints 1/1", (shared,), 1, 2))
+
+
+def _fake_checksum_fixtures() -> tuple[Fixture, Fixture, Fixture]:
+    item = _enp_item("e1", "7707536455681514", 0, 16)
+    case = _case("fx-fcs", "single", ("7707536455681514",), (item,), ())
+
+    def one(substitute: str) -> RunObservation:
+        return _obs(case, _with_subs(_run("fx-fcs"), {"e1": substitute}), ())
+
+    # ADVERSARIAL. The substitute is GROUPED with spaces and its digit run IS
+    # Luhn-valid («7707536455681514»). The correct metric folds by
+    # `value_notation` and sees a valid substitute — not an invalid one — so it
+    # prints 0/1; a metric that feeds the raw grouped string to the validator
+    # rejects it for its spaces and prints 1/1.
+    return (_fx("fake_checksum_invalid", "zero", "",
+                (one("7707536455681514"),), 0, 1),
+            _fx("fake_checksum_invalid", "one", "",
+                (one("7707536455681515"),), 1, 1),
+            _fx("fake_checksum_invalid", "adversarial",
+                "a grouped substitute whose digit run IS valid — the correct metric strips "
+                "the separators (0/1), a raw-string metric prints 1/1",
+                (one("7707 5364 5568 1514"),), 0, 1))
+
+
+def _overmask_result_fixtures() -> tuple[Fixture, Fixture, Fixture]:
+    # A statement result carrying a BIK NEGATIVE tagged in `spans_real` under
+    # `NEG_TAG_PREFIX`. `text_real` is the mock's output; `text_masked` is what
+    # the model read after the gateway's `pieces` were laid down.
+    real = "БИК 044525225, счёт 0445252259876543210987"
+    bik_span = (4, 13)
+
+    def case_with(pieces: tuple[tuple[int, int, str, str], ...], masked: str) -> RunObservation:
+        case = _plain_case("fx-omr", ())
+        run = _with_results(_run("fx-omr"), (_result(
+            "account_statement", 0, 0, "list", real, masked,
+            {NEG_TAG_PREFIX + "n1": bik_span}, pieces, False),))
+        return _obs(case, run, ())
+
+    masked = case_with(((bik_span[0], bik_span[1], "000000000", "BIK"),),
+                       "БИК 000000000, счёт 0445252259876543210987")
+    free = case_with((), real)
+    # ADVERSARIAL. The BIK is MASKED (over-masking, the defect) while its digits
+    # also OPEN the neighbouring account, which is left standing. A span-reading
+    # metric sees the BIK's own slot covered and prints 0/1; a needle-reading
+    # metric finds «044525225» inside the account and reports a survival (1/1).
+    return (_fx("overmask_result", "zero", "", (masked,), 0, 1),
+            _fx("overmask_result", "one", "", (free,), 1, 1),
+            _fx("overmask_result", "adversarial",
+                "the BIK is masked and its digits open the neighbouring account — a span "
+                "metric prints 0/1, a needle metric finds the digits in the account and "
+                "prints 1/1",
+                (masked,), 0, 1))
+
+
+# The OD-54 rows' fixtures. NOT in `FIXTURES` (the v5 gate); `report` runs them
+# through the same `report.gate` shape only on a v6 run (TZ §6.3).
+V6_FIXTURES: dict[str, tuple[Fixture, Fixture, Fixture]] = {
+    "typed_user": _typed_user_fixtures(),
+    "fake_checksum_invalid": _fake_checksum_fixtures(),
+    "overmask_result": _overmask_result_fixtures(),
 }
 
 

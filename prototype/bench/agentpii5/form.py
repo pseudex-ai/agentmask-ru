@@ -52,6 +52,7 @@ import pymorphy3
 
 from bench.agentpii4.parts import _PATRONYMIC_TAIL
 from bench.agentpii5 import contracts
+from bench.agentpii5 import form_v6
 from bench.agentpii5.contracts import FORM_ABSTAIN, FormVerdict
 from bench.agentpii5.form_tables import (
     CYRILLIC_SURNAME_SUFFIX,
@@ -1007,6 +1008,9 @@ FEATURE_EXTRACTORS: dict[tuple[str, str], contracts.FeatureExtractor] = {
     ("PLATE", "case_class"): plate_case_class,
     ("PLATE", "spaces"): plate_spaces,
     ("PLATE", "region_sep"): plate_region_sep,
+    # §5.1: the v6 extractors live in form_v6.py; this ONE unpack is the whole
+    # merge — the v5 extractors above stay the same objects, never re-ordered.
+    **form_v6.FEATURE_EXTRACTORS,
 }
 
 

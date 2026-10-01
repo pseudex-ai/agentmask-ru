@@ -336,15 +336,23 @@ def _scrubbed_model_trace(trace: object) -> object:
 
 
 def _v5_block(run: ArmRunV5) -> dict[str, object]:
-    return {"reply_raw": run.reply_raw, "control_reply": run.control_reply,
-            "tool_results": [tool_result_to_json(one) for one in run.tool_results],
-            "mentions": [mention_to_json(one) for one in run.mentions],
-            "turn_replies": list(run.turn_replies),
-            "call_turns": list(run.call_turns), "request_count": run.request_count,
-            "stream_mismatch": run.stream_mismatch, "reply_whole": run.reply_whole,
-            "turn_residual": run.turn_residual,
-            "model_trace": None if run.model_trace is None
-            else model_trace_to_json(run.model_trace)}
+    block = {"reply_raw": run.reply_raw, "control_reply": run.control_reply,
+             "tool_results": [tool_result_to_json(one) for one in run.tool_results],
+             "mentions": [mention_to_json(one) for one in run.mentions],
+             "turn_replies": list(run.turn_replies),
+             "call_turns": list(run.call_turns), "request_count": run.request_count,
+             "stream_mismatch": run.stream_mismatch, "reply_whole": run.reply_whole,
+             "turn_residual": run.turn_residual,
+             "model_trace": None if run.model_trace is None
+             else model_trace_to_json(run.model_trace)}
+    # OD-76: the message-piece record is OMITTED when empty, exactly like
+    # `CaseV5.v6` is omitted at None — so a v5 arm record stays byte-for-byte
+    # the row it was before the field existed and the old-corpus replay is
+    # unchanged. A v6 run carries the key only when it actually recorded a
+    # piece, never as a trailing `[]`.
+    if run.message_pieces:
+        block["message_pieces"] = [list(piece) for piece in run.message_pieces]
+    return block
 
 
 def _scrubbed_v5_block(block: dict[str, object]) -> dict[str, object]:
@@ -423,6 +431,23 @@ def arm_v5_from_record(record: dict[str, object]) -> ArmRunV5:
                 raise RecordError(f"{kind}.model_trace: call {index} is recorded in turn "
                                   f"{turns[index]}, but request {request} was answered in "
                                   f"turn {response.turn}")
+    # OD-76: an OLD record (written before the field existed) carries no
+    # `message_pieces` key; reading it as () is what lets the old replay print
+    # «н/п» for `typed_user` rather than refuse the row. The key is OPTIONAL by
+    # contract, so it is read with a default — the one place in this module a
+    # missing field is a legal state and not a writer bug.
+    pieces: list[tuple[int, int, int, str]] = []
+    for piece in _rows(block, "message_pieces", kind) if "message_pieces" in block else []:
+        if not isinstance(piece, (list, tuple)) or len(piece) != 4:
+            raise RecordError(f"{kind}.message_pieces: expected [msg, start, end, type], "
+                              f"found {piece!r}")
+        msg, start, end, engine_type = piece[0], piece[1], piece[2], piece[3]
+        if (not isinstance(msg, int) or isinstance(msg, bool)
+                or not isinstance(start, int) or isinstance(start, bool)
+                or not isinstance(end, int) or isinstance(end, bool)
+                or not isinstance(engine_type, str)):
+            raise RecordError(f"{kind}.message_pieces: malformed piece {piece!r}")
+        pieces.append((int(msg), int(start), int(end), engine_type))
     return ArmRunV5(
         base=base, reply_raw=_text(block, "reply_raw", kind),
         control_reply=_text(block, "control_reply", kind),
@@ -433,7 +458,8 @@ def arm_v5_from_record(record: dict[str, object]) -> ArmRunV5:
         stream_mismatch=_flag(block, "stream_mismatch", kind),
         reply_whole=_text(block, "reply_whole", kind),
         turn_residual=_whole(block, "turn_residual", kind),
-        model_trace=model_trace)
+        model_trace=model_trace,
+        message_pieces=tuple(pieces))
 
 
 def _as_object(value: object, kind: str, key: str) -> dict[str, object]:

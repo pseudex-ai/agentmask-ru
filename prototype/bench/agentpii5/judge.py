@@ -75,6 +75,7 @@ from claude_agent_sdk import (
 from bench.agentpii4.parts import parts_of
 from bench.agentpii5.connectors import ConnectorError, JudgeConnector, json_object
 from bench.agentpii4.schema import message_text
+from bench.agentpii5 import pii_types
 from bench.agentpii5.contracts import (
     ECHO_TAG_PREFIX, JUDGE_LABELS, ArmRunV5, CaseV5, DialogueTurn, JudgeInput, JudgeVerdict,
     Needle)
@@ -88,7 +89,8 @@ from bench.agentpii5.contracts import (
 # (`contracts.PSEUDEX_ALLOWED_MODULES`) and neither imports this one, so the
 # edge is one-way.
 from bench.agentpii5.form_tables import GENERIC_WORDS
-from bench.agentpii5.observe import fold, latin_prefixes, stem_of, survival, value_needles
+from bench.agentpii5.observe import (
+    digits_of, fold, glyph_fold, latin_prefixes, squeeze, stem_of, survival, value_needles)
 
 # The roles of a substitute that are NOT ours to flag. The settlement inside a
 # minted address is the customer's own city (vault `_settlement_of`), and
@@ -448,6 +450,46 @@ def _exempt_words(surface: str) -> frozenset[str]:
 # words of an answer into a needle.
 NEEDLE_TYPES: tuple[str, ...] = ("NAME", "LOC", "EMAIL", "PHONE", "DOB")
 
+# --- the v6 hunt shape gate (TZ §9.2) -----------------------------------------------
+# The pre-gate is handed STRINGS and no types, so a v6 type is hunted only when
+# the surface matches that type's own grammar — the one shape the registry owns.
+# A prose grammar (digit types, free-form) has no regex and is left to the PHONE
+# signature, exactly the «случайно» F3 already recorded.
+_V6_SPECS: dict[str, pii_types.TypeSpec] = {t.id: t for t in pii_types.TYPE_REGISTRY}
+
+
+def _grammar_regex(grammar: str) -> str | None:
+    head = grammar.split(";", 1)[0].strip()
+    head = re.sub(r"\s*\(\d+\)\s*", "", head)
+    head = re.sub(r"\s+", "", head)
+    # A DEGENERATE pattern that matches any digit run («\d+» — ESIA_OID's «length
+    # not established») pins no shape: hunting it would add every surface with a
+    # digit to the hunt, which is exactly what PHONE's signature already does.
+    # Those types are left to the accidental PHONE hunt F3 recorded.
+    if head in ("\\d+", "\\d*", ".+", ".*"):
+        return None
+    return head if re.search(r"\\d|\[", head) else None
+
+
+def _hunt_fold(spec: pii_types.TypeSpec, surface: str) -> str:
+    if spec.value_notation == "glyph_fold":
+        return glyph_fold(surface)
+    if spec.value_notation == "squeezed":
+        return squeeze(surface)
+    if spec.value_notation == "digits":
+        return digits_of(surface)
+    return surface
+
+
+def _hunt_shape_holds(spec: pii_types.TypeSpec, surface: str) -> bool:
+    pattern = _grammar_regex(spec.grammar)
+    if pattern is None:
+        return False
+    try:
+        return re.fullmatch(pattern, _hunt_fold(spec, surface), re.IGNORECASE) is not None
+    except re.error:
+        return False
+
 
 def hunted_types(surface: str) -> tuple[str, ...]:
     """The types ONE minted substitute is looked for under.
@@ -455,10 +497,31 @@ def hunted_types(surface: str) -> tuple[str, ...]:
     THE SPLITTER IS WHAT SAYS «THIS IS A PLATE». `parts.plate_parts` returns
     nothing for a string that is not one, so the squeeze is asked for exactly
     where §4bis allows it and a guess of ours is not a second plate rule.
-    """
+
+    A v6 type joins from the registry's `hunt` (TZ §9.2, R6-15/R6-16):
+    `always` is hunted unconditionally (none today), `by_shape` and `covered`
+    only when the surface MATCHES that type's grammar regex — so a VIN
+    substitute written with homoglyphs is caught, while a NAME, a PHONE or a
+    PLATE surface matches no v6 grammar and is hunted exactly as today. Digit
+    v6 types have prose grammars and stay caught by the PHONE signature, as F3
+    already recorded them («случайно, через сигнатуру PHONE»)."""
+    types = list(NEEDLE_TYPES)
     if parts_of("PLATE", surface):
-        return (*NEEDLE_TYPES, "PLATE")
-    return NEEDLE_TYPES
+        types.append("PLATE")
+    for spec in _V6_SPECS.values():
+        if spec.origin != pii_types.ORIGIN_V6:
+            continue
+        if spec.hunt == "always":
+            types.append(spec.id)
+        # `covered` types are the ALPHANUMERIC ones F3 recorded as missed: they
+        # are hunted when the surface matches their grammar, which is the only
+        # reading that keeps the LETTERS. `by_shape` types are the DIGIT ones,
+        # already caught by the PHONE signature (§9.2: «случайно, через сигнатуру
+        # PHONE») — shape-hunting them here would match a v5 10-digit INN or
+        # PASSPORT for an STS/DRIVER grammar and break the old-hunt identity.
+        elif spec.hunt == "covered" and _hunt_shape_holds(spec, surface):
+            types.append(spec.id)
+    return tuple(dict.fromkeys(types))
 
 
 @lru_cache(maxsize=2048)

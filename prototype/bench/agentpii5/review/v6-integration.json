@@ -1,0 +1,1959 @@
+{
+ "generated_by": "bench.agentpii5.integrate_v6",
+ "phase": "full",
+ "corpus_sha256": "18ed3a98526dc9360a683b9f8b7fa12f170c9535ee00b23b61dbc7c19c1cf993",
+ "ladder_sha256": "5d1699a214b66fdb76b276fd120df95a0c6a2f9961bb86e89e18f4b12397651a",
+ "registry_sha256": "ed88c032f0450579c716692798760b85a8693eeddebb55e54bd9c214393553e7",
+ "l1": {
+  "perfect": {
+   "nano": {
+    "leak": {
+     "hits": 294,
+     "total": 294
+    },
+    "coverage": {
+     "hits": 276,
+     "total": 294
+    },
+    "typed": {
+     "hits": 148,
+     "total": 148
+    },
+    "round_trip": {
+     "hits": 125,
+     "total": 147
+    },
+    "round_trip_repaired": {
+     "hits": 125,
+     "total": 147
+    },
+    "end_to_end": {
+     "hits": 130,
+     "total": 152
+    },
+    "overmask": {
+     "hits": 65,
+     "total": 65
+    },
+    "consistency": {
+     "hits": 0,
+     "total": 0
+    },
+    "stability": {
+     "hits": 0,
+     "total": 0
+    },
+    "rewrite_ratio_v5": {
+     "hits": 0,
+     "total": 30
+    },
+    "shared_block_answer": {
+     "hits": 28,
+     "total": 29
+    },
+    "form_hIN": {
+     "hits": 268,
+     "total": 294
+    },
+    "form_hOUT": {
+     "hits": 170,
+     "total": 191
+    },
+    "out_absent": {
+     "hits": 0,
+     "total": 183
+    },
+    "toolresult_masked": {
+     "hits": 129,
+     "total": 147
+    },
+    "answer_real": {
+     "hits": 26,
+     "total": 30
+    },
+    "answer_optional_only": {
+     "hits": 0,
+     "total": 30
+    },
+    "chain_value": {
+     "hits": 1,
+     "total": 1
+    },
+    "chain_form": {
+     "hits": 1,
+     "total": 1
+    },
+    "multi_all_out": {
+     "hits": 13,
+     "total": 28
+    },
+    "multi_consistency": {
+     "hits": 8,
+     "total": 26
+    },
+    "retry_form": {
+     "hits": 0,
+     "total": 0
+    },
+    "memory_consistency": {
+     "hits": 0,
+     "total": 0
+    },
+    "rag_masked": {
+     "hits": 1,
+     "total": 1
+    },
+    "rag_identity_kept": {
+     "hits": 1,
+     "total": 1
+    },
+    "doc_masked": {
+     "hits": 0,
+     "total": 0
+    },
+    "doc_extracted": {
+     "hits": 2,
+     "total": 2
+    },
+    "residual": {
+     "hits": 219,
+     "total": 241
+    },
+    "stream_fidelity": {
+     "hits": 2,
+     "total": 2
+    },
+    "typed_user": {
+     "hits": 0,
+     "total": 0
+    },
+    "fake_checksum_invalid": {
+     "hits": 52,
+     "total": 52
+    },
+    "overmask_result": {
+     "hits": 35,
+     "total": 35
+    }
+   },
+   "small": {
+    "leak": {
+     "hits": 971,
+     "total": 971
+    },
+    "coverage": {
+     "hits": 912,
+     "total": 971
+    },
+    "typed": {
+     "hits": 489,
+     "total": 489
+    },
+    "round_trip": {
+     "hits": 412,
+     "total": 487
+    },
+    "round_trip_repaired": {
+     "hits": 412,
+     "total": 487
+    },
+    "end_to_end": {
+     "hits": 427,
+     "total": 503
+    },
+    "overmask": {
+     "hits": 253,
+     "total": 253
+    },
+    "consistency": {
+     "hits": 2,
+     "total": 2
+    },
+    "stability": {
+     "hits": 2,
+     "total": 2
+    },
+    "rewrite_ratio_v5": {
+     "hits": 0,
+     "total": 120
+    },
+    "shared_block_answer": {
+     "hits": 108,
+     "total": 115
+    },
+    "form_hIN": {
+     "hits": 900,
+     "total": 971
+    },
+    "form_hOUT": {
+     "hits": 593,
+     "total": 666
+    },
+    "out_absent": {
+     "hits": 0,
+     "total": 630
+    },
+    "toolresult_masked": {
+     "hits": 426,
+     "total": 485
+    },
+    "answer_real": {
+     "hits": 98,
+     "total": 120
+    },
+    "answer_optional_only": {
+     "hits": 0,
+     "total": 120
+    },
+    "chain_value": {
+     "hits": 2,
+     "total": 2
+    },
+    "chain_form": {
+     "hits": 2,
+     "total": 2
+    },
+    "multi_all_out": {
+     "hits": 43,
+     "total": 87
+    },
+    "multi_consistency": {
+     "hits": 45,
+     "total": 85
+    },
+    "retry_form": {
+     "hits": 2,
+     "total": 2
+    },
+    "memory_consistency": {
+     "hits": 4,
+     "total": 4
+    },
+    "rag_masked": {
+     "hits": 3,
+     "total": 3
+    },
+    "rag_identity_kept": {
+     "hits": 3,
+     "total": 3
+    },
+    "doc_masked": {
+     "hits": 0,
+     "total": 0
+    },
+    "doc_extracted": {
+     "hits": 6,
+     "total": 6
+    },
+    "residual": {
+     "hits": 774,
+     "total": 858
+    },
+    "stream_fidelity": {
+     "hits": 9,
+     "total": 9
+    },
+    "typed_user": {
+     "hits": 0,
+     "total": 0
+    },
+    "fake_checksum_invalid": {
+     "hits": 176,
+     "total": 176
+    },
+    "overmask_result": {
+     "hits": 133,
+     "total": 133
+    }
+   },
+   "medium": {
+    "leak": {
+     "hits": 2319,
+     "total": 2319
+    },
+    "coverage": {
+     "hits": 2187,
+     "total": 2319
+    },
+    "typed": {
+     "hits": 1175,
+     "total": 1175
+    },
+    "round_trip": {
+     "hits": 984,
+     "total": 1165
+    },
+    "round_trip_repaired": {
+     "hits": 984,
+     "total": 1165
+    },
+    "end_to_end": {
+     "hits": 1029,
+     "total": 1216
+    },
+    "overmask": {
+     "hits": 637,
+     "total": 637
+    },
+    "consistency": {
+     "hits": 9,
+     "total": 9
+    },
+    "stability": {
+     "hits": 9,
+     "total": 9
+    },
+    "rewrite_ratio_v5": {
+     "hits": 0,
+     "total": 300
+    },
+    "shared_block_answer": {
+     "hits": 269,
+     "total": 284
+    },
+    "form_hIN": {
+     "hits": 2129,
+     "total": 2319
+    },
+    "form_hOUT": {
+     "hits": 1437,
+     "total": 1631
+    },
+    "out_absent": {
+     "hits": 0,
+     "total": 1530
+    },
+    "toolresult_masked": {
+     "hits": 1024,
+     "total": 1156
+    },
+    "answer_real": {
+     "hits": 246,
+     "total": 300
+    },
+    "answer_optional_only": {
+     "hits": 0,
+     "total": 300
+    },
+    "chain_value": {
+     "hits": 10,
+     "total": 10
+    },
+    "chain_form": {
+     "hits": 10,
+     "total": 10
+    },
+    "multi_all_out": {
+     "hits": 98,
+     "total": 208
+    },
+    "multi_consistency": {
+     "hits": 113,
+     "total": 211
+    },
+    "retry_form": {
+     "hits": 5,
+     "total": 9
+    },
+    "memory_consistency": {
+     "hits": 12,
+     "total": 12
+    },
+    "rag_masked": {
+     "hits": 10,
+     "total": 12
+    },
+    "rag_identity_kept": {
+     "hits": 12,
+     "total": 12
+    },
+    "doc_masked": {
+     "hits": 0,
+     "total": 0
+    },
+    "doc_extracted": {
+     "hits": 14,
+     "total": 17
+    },
+    "residual": {
+     "hits": 1902,
+     "total": 2099
+    },
+    "stream_fidelity": {
+     "hits": 17,
+     "total": 17
+    },
+    "typed_user": {
+     "hits": 0,
+     "total": 0
+    },
+    "fake_checksum_invalid": {
+     "hits": 446,
+     "total": 446
+    },
+    "overmask_result": {
+     "hits": 337,
+     "total": 337
+    }
+   },
+   "max": {
+    "leak": {
+     "hits": 3871,
+     "total": 3871
+    },
+    "coverage": {
+     "hits": 3649,
+     "total": 3871
+    },
+    "typed": {
+     "hits": 1966,
+     "total": 1966
+    },
+    "round_trip": {
+     "hits": 1638,
+     "total": 1946
+    },
+    "round_trip_repaired": {
+     "hits": 1638,
+     "total": 1946
+    },
+    "end_to_end": {
+     "hits": 1717,
+     "total": 2032
+    },
+    "overmask": {
+     "hits": 1060,
+     "total": 1060
+    },
+    "consistency": {
+     "hits": 20,
+     "total": 20
+    },
+    "stability": {
+     "hits": 20,
+     "total": 20
+    },
+    "rewrite_ratio_v5": {
+     "hits": 0,
+     "total": 500
+    },
+    "shared_block_answer": {
+     "hits": 450,
+     "total": 469
+    },
+    "form_hIN": {
+     "hits": 3558,
+     "total": 3871
+    },
+    "form_hOUT": {
+     "hits": 2387,
+     "total": 2722
+    },
+    "out_absent": {
+     "hits": 0,
+     "total": 2554
+    },
+    "toolresult_masked": {
+     "hits": 1704,
+     "total": 1926
+    },
+    "answer_real": {
+     "hits": 404,
+     "total": 500
+    },
+    "answer_optional_only": {
+     "hits": 0,
+     "total": 500
+    },
+    "chain_value": {
+     "hits": 20,
+     "total": 20
+    },
+    "chain_form": {
+     "hits": 20,
+     "total": 20
+    },
+    "multi_all_out": {
+     "hits": 161,
+     "total": 352
+    },
+    "multi_consistency": {
+     "hits": 210,
+     "total": 360
+    },
+    "retry_form": {
+     "hits": 9,
+     "total": 20
+    },
+    "memory_consistency": {
+     "hits": 21,
+     "total": 21
+    },
+    "rag_masked": {
+     "hits": 18,
+     "total": 21
+    },
+    "rag_identity_kept": {
+     "hits": 21,
+     "total": 21
+    },
+    "doc_masked": {
+     "hits": 0,
+     "total": 0
+    },
+    "doc_extracted": {
+     "hits": 18,
+     "total": 22
+    },
+    "residual": {
+     "hits": 3171,
+     "total": 3504
+    },
+    "stream_fidelity": {
+     "hits": 28,
+     "total": 28
+    },
+    "typed_user": {
+     "hits": 0,
+     "total": 0
+    },
+    "fake_checksum_invalid": {
+     "hits": 792,
+     "total": 792
+    },
+    "overmask_result": {
+     "hits": 560,
+     "total": 560
+    }
+   }
+  },
+  "mutants": [
+   {
+    "id": "M1",
+    "label": "слеп к новым типам",
+    "catch": "leak",
+    "perfect": {
+     "hits": 3871,
+     "total": 3871
+    },
+    "mutant": {
+     "hits": 2,
+     "total": 3871
+    },
+    "caught": true,
+    "changed": true
+   },
+   {
+    "id": "M2",
+    "label": "восстанавливает цифры слитно, выбрасывая разделители",
+    "catch": "form_hOUT",
+    "perfect": {
+     "hits": 2387,
+     "total": 2722
+    },
+    "mutant": {
+     "hits": 2268,
+     "total": 2757
+    },
+    "caught": true,
+    "changed": true
+   },
+   {
+    "id": "M3",
+    "label": "оставляет подмену в переставленном пробелами листе",
+    "catch": "residual",
+    "perfect": {
+     "hits": 3171,
+     "total": 3504
+    },
+    "mutant": {
+     "hits": 1528,
+     "total": 3504
+    },
+    "caught": true,
+    "changed": true
+   },
+   {
+    "id": "M4",
+    "label": "оставляет новые типы открытыми в результатах",
+    "catch": "toolresult_masked",
+    "perfect": {
+     "hits": 1704,
+     "total": 1926
+    },
+    "mutant": {
+     "hits": 1,
+     "total": 1926
+    },
+    "caught": true,
+    "changed": true
+   },
+   {
+    "id": "M5",
+    "label": "восстанавливает латиницей там, где агент писал кириллицей",
+    "catch": "form_hOUT",
+    "perfect": {
+     "hits": 2387,
+     "total": 2722
+    },
+    "mutant": {
+     "hits": 2356,
+     "total": 2773
+    },
+    "caught": true,
+    "changed": true
+   },
+   {
+    "id": "M6",
+    "label": "составной лист: префикс восстановлен, хвост — подмена",
+    "catch": "round_trip",
+    "perfect": {
+     "hits": 1638,
+     "total": 1946
+    },
+    "mutant": {
+     "hits": 4,
+     "total": 1946
+    },
+    "caught": true,
+    "changed": true
+   },
+   {
+    "id": "M7",
+    "label": "ЕНП с карто-образной подменой и меткой CARD",
+    "catch": "typed",
+    "perfect": {
+     "hits": 1966,
+     "total": 1966
+    },
+    "mutant": {
+     "hits": 1932,
+     "total": 1966
+    },
+    "caught": true,
+    "changed": true
+   },
+   {
+    "id": "M8",
+    "label": "чеканит подмены, проходящие свою КС",
+    "catch": "fake_checksum_invalid",
+    "perfect": {
+     "hits": 792,
+     "total": 792
+    },
+    "mutant": {
+     "hits": 88,
+     "total": 792
+    },
+    "caught": true,
+    "changed": true
+   },
+   {
+    "id": "M9",
+    "label": "маскирует негативы в результатах",
+    "catch": "overmask_result",
+    "perfect": {
+     "hits": 560,
+     "total": 560
+    },
+    "mutant": {
+     "hits": 0,
+     "total": 560
+    },
+    "caught": true,
+    "changed": true
+   },
+   {
+    "id": "M10",
+    "label": "маскирует только первые N строк выгрузки",
+    "catch": "toolresult_masked",
+    "perfect": {
+     "hits": 1704,
+     "total": 1926
+    },
+    "mutant": {
+     "hits": 1684,
+     "total": 1926
+    },
+    "caught": true,
+    "changed": true
+   },
+   {
+    "id": "M11",
+    "label": "чеканит подмену другой длины",
+    "catch": "form_hIN",
+    "perfect": {
+     "hits": 3558,
+     "total": 3871
+    },
+    "mutant": {
+     "hits": 2730,
+     "total": 3871
+    },
+    "caught": true,
+    "changed": true
+   },
+   {
+    "id": "M12",
+    "label": "меняет только буквы серии при верных цифрах",
+    "catch": "round_trip",
+    "perfect": {
+     "hits": 1638,
+     "total": 1946
+    },
+    "mutant": {
+     "hits": 1491,
+     "total": 1946
+    },
+    "caught": true,
+    "changed": true
+   }
+  ]
+ },
+ "l7": {
+  "primary_examples": {
+   "problems": [],
+   "pass": true
+  },
+  "mutation_classes": {
+   "problems": [],
+   "pass": true
+  },
+  "by_type": {
+   "BANK_ACCOUNT": {
+    "generated": "40817810029141777631",
+    "validator": false
+   },
+   "IBAN": {
+    "generated": "RU5729141777631706690743915000806",
+    "validator": true
+   },
+   "LOAN_UID": {
+    "generated": "4283fefc-63f0-cd0e-873a-0000c6d07ef7-5",
+    "validator": true
+   },
+   "OGRNIP": {
+    "generated": "329141777631702",
+    "validator": true
+   },
+   "OMS_ENP": {
+    "generated": "2914177763170666",
+    "validator": true
+   },
+   "VIN": {
+    "generated": "XTAG7YVXRD6Y16690",
+    "validator": false
+   },
+   "EPTS_NUMBER": {
+    "generated": "191401777631702",
+    "validator": true
+   },
+   "UIN": {
+    "generated": "91417776317066907430",
+    "validator": true
+   },
+   "IMEI": {
+    "generated": "291417776317061",
+    "validator": true
+   },
+   "ICCID": {
+    "generated": "8929141777631706699",
+    "validator": true
+   },
+   "LOYALTY_CARD_NUMBER": {
+    "generated": "291417776317066906",
+    "validator": true
+   }
+  }
+ },
+ "l8": {
+  "declared": 5791,
+  "proven": 5791,
+  "absent": 0,
+  "unprovable": []
+ },
+ "l9": {
+  "phase": "full",
+  "types": [
+   {
+    "type": "INTL_PASSPORT",
+    "cases": 34,
+    "hops": 120,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 120,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 120
+    }
+   },
+   {
+    "type": "BIRTH_CERT",
+    "cases": 34,
+    "hops": 119,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 119,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 119
+    }
+   },
+   {
+    "type": "CIVIL_ACT_CERT",
+    "cases": 34,
+    "hops": 121,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 121,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 121
+    }
+   },
+   {
+    "type": "RESIDENCE_PERMIT",
+    "cases": 34,
+    "hops": 126,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 126,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 126
+    }
+   },
+   {
+    "type": "MILITARY_ID",
+    "cases": 34,
+    "hops": 122,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 122,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 122
+    }
+   },
+   {
+    "type": "BANK_ACCOUNT",
+    "cases": 34,
+    "hops": 124,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 124,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [
+     "ACCOUNT"
+    ],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 124
+    }
+   },
+   {
+    "type": "IBAN",
+    "cases": 36,
+    "hops": 116,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 116,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 116
+    }
+   },
+   {
+    "type": "LOAN_CONTRACT_NUMBER",
+    "cases": 34,
+    "hops": 134,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 134,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 134
+    }
+   },
+   {
+    "type": "LOAN_UID",
+    "cases": 34,
+    "hops": 122,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 122,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 122
+    }
+   },
+   {
+    "type": "OGRNIP",
+    "cases": 36,
+    "hops": 122,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 122,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [
+     "OGRN"
+    ],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 122
+    }
+   },
+   {
+    "type": "CREDIT_SUBJECT_CODE",
+    "cases": 34,
+    "hops": 119,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 119,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 119
+    }
+   },
+   {
+    "type": "OMS_ENP",
+    "cases": 34,
+    "hops": 120,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 120,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [
+     "OMS"
+    ],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 120
+    }
+   },
+   {
+    "type": "DMS_POLICY",
+    "cases": 34,
+    "hops": 123,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 123,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 123
+    }
+   },
+   {
+    "type": "OSAGO_POLICY",
+    "cases": 37,
+    "hops": 119,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 119,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 119
+    }
+   },
+   {
+    "type": "KASKO_POLICY",
+    "cases": 34,
+    "hops": 120,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 120,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 120
+    }
+   },
+   {
+    "type": "INSURANCE_CLAIM_NUMBER",
+    "cases": 34,
+    "hops": 128,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 128,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 128
+    }
+   },
+   {
+    "type": "VIN",
+    "cases": 44,
+    "hops": 154,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 154,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 154
+    }
+   },
+   {
+    "type": "EPTS_NUMBER",
+    "cases": 37,
+    "hops": 119,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 119,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 119
+    }
+   },
+   {
+    "type": "UIN",
+    "cases": 34,
+    "hops": 120,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 120,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 120
+    }
+   },
+   {
+    "type": "COURT_CASE_UID",
+    "cases": 34,
+    "hops": 111,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 68,
+     "leaked": 0,
+     "residual": 43,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 68
+    }
+   },
+   {
+    "type": "ARBITRAZH_CASE_NO",
+    "cases": 34,
+    "hops": 113,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 69,
+     "leaked": 0,
+     "residual": 44,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 69
+    }
+   },
+   {
+    "type": "COURT_CASE_NO_SOU",
+    "cases": 34,
+    "hops": 115,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 70,
+     "leaked": 0,
+     "residual": 45,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 70
+    }
+   },
+   {
+    "type": "FSSP_IP_NO",
+    "cases": 34,
+    "hops": 117,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 70,
+     "leaked": 0,
+     "residual": 47,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 70
+    }
+   },
+   {
+    "type": "EXEC_DOC_NO",
+    "cases": 34,
+    "hops": 121,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 87,
+     "leaked": 0,
+     "residual": 34,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 87
+    }
+   },
+   {
+    "type": "STS_NUMBER",
+    "cases": 34,
+    "hops": 134,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 134,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [
+     "VEHICLE_DOC"
+    ],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 134
+    }
+   },
+   {
+    "type": "PTS_NUMBER",
+    "cases": 34,
+    "hops": 123,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 93,
+     "leaked": 0,
+     "residual": 30,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [
+     "VEHICLE_DOC"
+    ],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 93
+    }
+   },
+   {
+    "type": "DRIVER_LICENSE",
+    "cases": 34,
+    "hops": 123,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 123,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 123
+    }
+   },
+   {
+    "type": "CADASTRAL_NUMBER",
+    "cases": 34,
+    "hops": 122,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 122,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 122
+    }
+   },
+   {
+    "type": "GIS_ZHKH_ELS",
+    "cases": 34,
+    "hops": 114,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 75,
+     "leaked": 0,
+     "residual": 39,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 75
+    }
+   },
+   {
+    "type": "UTILITY_ACCOUNT",
+    "cases": 34,
+    "hops": 126,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 126,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 126
+    }
+   },
+   {
+    "type": "ESIA_OID",
+    "cases": 34,
+    "hops": 127,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 127,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 127
+    }
+   },
+   {
+    "type": "IMEI",
+    "cases": 34,
+    "hops": 126,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 126,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 126
+    }
+   },
+   {
+    "type": "ICCID",
+    "cases": 34,
+    "hops": 131,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 131,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 131
+    }
+   },
+   {
+    "type": "IMSI",
+    "cases": 34,
+    "hops": 122,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 122,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 122
+    }
+   },
+   {
+    "type": "MAC",
+    "cases": 34,
+    "hops": 126,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 126,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 126
+    }
+   },
+   {
+    "type": "IP_ADDRESS",
+    "cases": 34,
+    "hops": 117,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 81,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 36,
+     "absent": 0
+    },
+    "engine_labels": [
+     "IP"
+    ],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 36,
+     "observed": 81
+    }
+   },
+   {
+    "type": "SUBSCRIBER_ACCOUNT",
+    "cases": 34,
+    "hops": 128,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 128,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 128
+    }
+   },
+   {
+    "type": "MEDCARD_NUMBER",
+    "cases": 34,
+    "hops": 120,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 120,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 120
+    }
+   },
+   {
+    "type": "ELN_NUMBER",
+    "cases": 34,
+    "hops": 127,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 127,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 127
+    }
+   },
+   {
+    "type": "PRESCRIPTION_NUMBER",
+    "cases": 34,
+    "hops": 122,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 122,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 122
+    }
+   },
+   {
+    "type": "REFERRAL_NUMBER",
+    "cases": 34,
+    "hops": 120,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 120,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 120
+    }
+   },
+   {
+    "type": "DIPLOMA_NUMBER",
+    "cases": 40,
+    "hops": 168,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 118,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 50,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 50,
+     "observed": 118
+    }
+   },
+   {
+    "type": "SCHOOL_CERT_NUMBER",
+    "cases": 34,
+    "hops": 120,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 120,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 120
+    }
+   },
+   {
+    "type": "STUDENT_ID_NUMBER",
+    "cases": 34,
+    "hops": 122,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 122,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 122
+    }
+   },
+   {
+    "type": "EMPLOYEE_TAB_NUMBER",
+    "cases": 40,
+    "hops": 170,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 170,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 170
+    }
+   },
+   {
+    "type": "EMPLOYMENT_CONTRACT_NUMBER",
+    "cases": 34,
+    "hops": 116,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 116,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 116
+    }
+   },
+   {
+    "type": "ACCESS_PASS_NUMBER",
+    "cases": 34,
+    "hops": 130,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 130,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 130
+    }
+   },
+   {
+    "type": "PNR",
+    "cases": 34,
+    "hops": 134,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 134,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 134
+    }
+   },
+   {
+    "type": "E_TICKET_NUMBER",
+    "cases": 34,
+    "hops": 123,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 123,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 123
+    }
+   },
+   {
+    "type": "LOYALTY_CARD_NUMBER",
+    "cases": 34,
+    "hops": 120,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 120,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 120
+    }
+   },
+   {
+    "type": "MOBILE_AD_ID",
+    "cases": 34,
+    "hops": 128,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 128,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 128
+    }
+   },
+   {
+    "type": "APP_DEVICE_ID",
+    "cases": 34,
+    "hops": 119,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 119,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 119
+    }
+   },
+   {
+    "type": "METRICA_CLIENT_ID",
+    "cases": 34,
+    "hops": 134,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 134,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 134
+    }
+   },
+   {
+    "type": "CDP_CUSTOMER_ID",
+    "cases": 34,
+    "hops": 126,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 126,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 126
+    }
+   },
+   {
+    "type": "LOGIN",
+    "cases": 34,
+    "hops": 128,
+    "exception": 0,
+    "absent_required": 0,
+    "statuses": {
+     "observed": 128,
+     "leaked": 0,
+     "residual": 0,
+     "unmasked": 0,
+     "absent": 0
+    },
+    "engine_labels": [],
+    "in_phase": true,
+    "leak": {
+     "leaked": 0,
+     "unmasked": 0,
+     "observed": 128
+    }
+   }
+  ]
+ },
+ "regress": {
+  "corpus_digest": "18ed3a98526dc9360a683b9f8b7fa12f170c9535ee00b23b61dbc7c19c1cf993",
+  "ladder_corpus_sha256": "18ed3a98526dc9360a683b9f8b7fa12f170c9535ee00b23b61dbc7c19c1cf993",
+  "identity": true,
+  "pinned_v5": {
+   "corpus.v5.json": "51c37b6d88efe4d3478b8fa0e678de3ec0b9336f1b0c948862b2f7a54dcee01f",
+   "ladder.json": "3e088f66334309feedd32f8d860a34d215e3ca94561b2a8d55425c01317708d9",
+   "v6/corpus.v5.json": "76b5bffe5a00bf7858212d0280b8d69bf8dfeeaf3c63372fbfd616745da23ad7",
+   "v6/ladder.json": "5d1699a214b66fdb76b276fd120df95a0c6a2f9961bb86e89e18f4b12397651a"
+  }
+ },
+ "ladder_stamp": "51da21302e2c3f31ae46813f0ffbd044e996fd52b5b9bdb4a5ae23f22632493d"
+}

@@ -2139,6 +2139,9 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("corpus", nargs="?", default=str(here / "corpus.v5.json"))
     parser.add_argument("--ladder", default=str(here / "ladder.json"))
+    parser.add_argument("--v6", action="store_true",
+                        help="корпус v6 (v6/corpus.v5.json + v6/ladder.json) вместо v5, "
+                             "когда corpus/ladder не названы явно")
     parser.add_argument("--tier", default="nano",
                         choices=("nano", "small", "medium", "large", "holdout", "max"))
     parser.add_argument("--ids", default="", help="запятые: точный список случаев вместо яруса")
@@ -2230,6 +2233,16 @@ def main() -> int:
         parser.error('--timeout-scale must be > 0')
     if args.resume and (args.agent_connector == 'deepseek' or args.judge_connector == 'codex'):
         parser.error('new connector resume is not yet validated; use a fresh output directory')
+
+    # `--v6` — сокращение для корпуса v6: меняет ТОЛЬКО незаданные corpus/ladder,
+    # заданные явно остаются (так можно срезать v6-корпус, лежащий не в v6/).
+    if args.v6:
+        default_corpus = str(here / "corpus.v5.json")
+        default_ladder = str(here / "ladder.json")
+        if args.corpus == default_corpus:
+            args.corpus = str(here / "v6" / "corpus.v5.json")
+        if args.ladder == default_ladder:
+            args.ladder = str(here / "v6" / "ladder.json")
 
     # ОБА БЕСПЛАТНЫХ ПУТИ — ДО ВСЕГО ОСТАЛЬНОГО, и оба возвращаются отсюда: ни
     # бандла, ни модели, ни каталога прогона, ни строки в реестре. `--replay`

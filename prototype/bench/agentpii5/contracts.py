@@ -43,6 +43,9 @@ from bench.agentpii4.schema import (  # noqa: F401 - re-exported on purpose
 from bench.agentpii4.stats import clopper_pearson, zero_failure_floor
 from bench.agentpii4.tools import REGISTRY, FieldSpec, Refusal, ToolSpec  # noqa: F401
 
+from bench.agentpii5 import contracts_v6
+from bench.agentpii5 import pii_types
+
 # --- §0 package rules ------------------------------------------------------------
 
 V4_PACKAGE: str = "bench.agentpii4"
@@ -51,15 +54,34 @@ V5_PACKAGE: str = "bench.agentpii5"
 # not. `test_contracts.py` checks `sys.modules` after importing this file; each
 # component's test does the same for its own modules.
 FORBIDDEN_IMPORT_PREFIX: str = "pseudex"
-# The ONE module allowed to import the engine: it runs the gateway arm on the
-# production path. Everything it learns is written to the run files (§8) so
-# every other module reads records, never the engine.
-PSEUDEX_ALLOWED_MODULES: tuple[str, ...] = ("bench.agentpii5.harness",)
+# The two modules allowed to import the engine: `harness` runs the gateway arm
+# on the production path, and `regress_print` prints the SAME path offline
+# (bundle + GatewayV5 + mock, no model) for G4/L9. Everything each learns is
+# written to the run files (§8) or printed, so every other module reads records,
+# never the engine.
+PSEUDEX_ALLOWED_MODULES: tuple[str, ...] = ("bench.agentpii5.harness",
+                                            "bench.agentpii5.regress_print")
 # Never published. The public harness lives in `public/agentmask-ru/`; this
 # package shares no file with it and writes nothing under `public/`.
 PUBLISHED: bool = False
 
-TYPES: tuple[str, ...] = v4.TYPES
+TYPES: tuple[str, ...] = v4.TYPES + pii_types.NEW_ITEM_TYPES
+# Re-exported so `schema.R02` and the orchestrator's `reg_types` read the same
+# set from the one home (pii_types), never a copy.
+NEW_ITEM_TYPES: tuple[str, ...] = pii_types.NEW_ITEM_TYPES
+# The v6 tables, re-exported from their home (contracts_v6) — one definition,
+# never a copy. `INDUSTRIES`/`V6_AXES`/`V6_PROVENANCE_KINDS`/`V6_DIR` are the
+# axis vocabulary, `CaseV6Meta`/`ProcedureRecord` the shapes a v6 case carries.
+INDUSTRIES: tuple[str, ...] = contracts_v6.INDUSTRIES
+V6_AXES: tuple[str, ...] = contracts_v6.V6_AXES
+V6_PROVENANCE_KINDS: tuple[str, ...] = contracts_v6.V6_PROVENANCE_KINDS
+V6_DIR: str = contracts_v6.V6_DIR
+CaseV6Meta = contracts_v6.CaseV6Meta
+ProcedureRecord = contracts_v6.ProcedureRecord
+# The v6 negative families (§1.6 of tz-agentpii6-registry.md). R02 admits a
+# v4.validate «negative family … unknown» line for exactly these; the list
+# lives in `contracts_v6.py`.
+V6_NEGATIVE_FAMILIES: tuple[str, ...] = contracts_v6.V6_NEGATIVE_FAMILIES
 REGISTERS: tuple[str, ...] = v4.REGISTERS
 SPEECH_REGISTERS: tuple[str, ...] = v4.SPEECH_REGISTERS
 V4_SCENARIO_KINDS: tuple[str, ...] = v4.SCENARIO_KINDS
@@ -509,6 +531,19 @@ class CaseV5:
     has_result: bool
     streaming: bool
     revised_from_v4: bool            # True for the 834; False for a case a v5 generator built
+    # v6 industry + provenance; None for every v5-authored case.
+    #
+    # DEFAULTED, and the default is what keeps the KEEP_V5 row working (S2
+    # `scenarios5/common.py`, decision C13: `checkout_v5`, v6's `v6=None` line
+    # deliberately dropped because it sits next to the `optional` fix that keeps
+    # a required hop off a settlement). That file builds `CaseV5` with no `v6`
+    # keyword and `test_schema` drives it: with no default the constructor raises
+    # `TypeError: missing 1 required positional argument: 'v6'` — a red that is
+    # not about the contract but about a builder that never heard of v6.
+    # `schema.py` (corpus JSON) and `fixtures.py`/`revise.py`/`test_judge.py`
+    # (the S2 rows) pass it explicitly either way, so the default changes no
+    # reading and only admits the v5-only construction path.
+    v6: CaseV6Meta | None = None
 
 
 MIN_STREAMING_CASES: int = 60
@@ -630,6 +665,10 @@ NEW_TOOL_NAMES: tuple[str, ...] = (
     "mail_read", "mail_search", "mail_send", "calendar_invite",
     "tracker_find_user", "tracker_issue_create", "crm_upsert_card",
     "sheet_append_row", "doc_append", "memory_save", "reminder_set")
+# The 55 tool names v5 shipped, PINNED so the old-corpus checks keep reading
+# them after v6 tools land (F17/F13). `REGISTRY_V5` grows to 55 + v6; this tuple
+# never does, and `test_tools` pins the count at 55.
+V5_TOOL_NAMES: tuple[str, ...] = (*V4_TOOL_NAMES, *NEW_TOOL_NAMES)
 # The suite a tool belongs to. Lookup, not a column: 44 of the 55 belong to none.
 TOOL_SUITE: dict[str, str] = {
     "mail_read": "office", "mail_search": "office", "mail_send": "office",
@@ -821,6 +860,22 @@ class ResultRenderer(Protocol):
 
 # --- §4 the form comparator (spec §1.1, §8.4) ----------------------------------------
 
+# THE v6 HALF OF EVERY FORM TABLE, READ FROM ITS ONE HOME. The eleven v5 rows
+# below stay LITERALS — they are the home `pii_types` transcribes, and the
+# script/translit SPLIT lives in them — while the 55 v6 records are added from
+# `pii_types.TYPE_REGISTRY`, the one home the approved `contracts → pii_types`
+# edge points at (SPEC §3.2 O-V6-4). Neither half replaces the other: a bare
+# `pii_types.form_features(TYPE_REGISTRY)` would transcribe the registry's NAME
+# record, which still predates the split (alphabet and romanization collapsed
+# into one `script`, `translit` absent), and taking it makes
+# `form.FEATURE_EXTRACTORS[('NAME','translit')]` unreachable — the romanization
+# question would stop being asked SILENTLY instead of failing loudly (SPEC §2.1
+# C04 adopt_gate, §5.1). S4 migrates the NAME record itself, after which the
+# three tables below are one plain registry read and the v5 literals are the
+# transcription test's business — not before.
+_V6_RECORDS: tuple[pii_types.TypeSpec, ...] = tuple(
+    record for record in pii_types.TYPE_REGISTRY if record.origin == pii_types.ORIGIN_V6)
+
 # EXACTLY the feature names of spec §8.4, per type. `DATE` is a non-birth date
 # the engine substituted (an appointment slot, a document date): same features
 # as DOB, listed separately because the spec lists «DOB/DATE» and a metric
@@ -851,6 +906,13 @@ FORM_FEATURES: dict[str, tuple[str, ...]] = {
     "PASSPORT": ("series_number_split",),
     "PLATE": ("case_class", "spaces", "region_sep"),
 }
+# THE 55 v6 ROWS ARE ADDED, NEVER SUBSTITUTED FOR THE v5 ONES (SPEC §2.1 C02:
+# keep_v5 + adopt_v6). The split above survives because `NAME` is a v5 record and
+# `_V6_RECORDS` does not carry it; the v6 additions survive because nothing here
+# filters them out. `test_form.test_extractor_keys_equal_contract` is the pin:
+# `form.FEATURE_EXTRACTORS` is built from `form_v6`'s v6 half as well, so a
+# v5-only `FORM_FEATURES` would leave those extractors unreachable and RED.
+FORM_FEATURES.update(pii_types.form_features(_V6_RECORDS))
 FORM_TYPES: tuple[str, ...] = tuple(FORM_FEATURES)
 # The closed label set each feature extractor returns. Two strings with the
 # same label agree on the feature; anything else is a difference named by the
@@ -904,6 +966,14 @@ FEATURE_LABELS: dict[tuple[str, str], tuple[str, ...]] = {
     ("PLATE", "spaces"): ("yes", "no"),
     ("PLATE", "region_sep"): ("space", "none", "other"),
 }
+# THE v6 LABELS ARE ADDED, AND `NAME`'s TWO ROMANIZATION-ADJACENT ROWS ABOVE ARE
+# NOT TOUCHED: the registry's NAME record still declares the seven-label pre-split
+# `script` and no `translit` at all, so reading it would (a) drop the abstention
+# `("NAME","translit") → latin:unknown`, (b) re-open the 50-of-62 g07 form misses
+# the split removed, and (c) leave `contracts.FORM_ABSTAIN` with a key no label
+# set declares — `test_form.test_abstain_is_closed_and_one_sided` reads exactly
+# that (SPEC §2.1 C04 adopt_gate, §5.1).
+FEATURE_LABELS.update(pii_types.feature_labels(_V6_RECORDS))
 
 # ABSTAIN (ruling 2026-09-22 on the comparator's question): `form_match` adds a
 # feature to `differs` iff a != b AND neither side carries the feature's abstain
@@ -943,6 +1013,15 @@ FORM_ABSTAIN: dict[tuple[str, str], str] = {
     ("NAME", "translit"): "latin:unknown",
     ("NAME", "order"): "other",
 }
+# THE v6 ABSTENTIONS ARE ADDED ON TOP (SPEC §2.1 C02: keep v5 PLUS any v6 rows) —
+# never instead of them. The v5 rows above are all v5 records and every one of
+# them is also a key `FEATURE_LABELS` declares and `form.FEATURE_EXTRACTORS`
+# answers; the v6 rows arrive together with their labels and their extractors, so
+# `test_form.test_abstain_is_closed_and_one_sided` stays a live check on all of
+# them. The registry's NAME abstentions are a strict subset of the v5 rows here
+# (gram_case / case_class / script / order), which is why the split's `translit`
+# row has to be kept literally: the registry does not declare it.
+FORM_ABSTAIN.update(pii_types.form_abstain(_V6_RECORDS))
 # LEXEME-DEPENDENT FEATURES, and why a label is not enough for them.
 #
 # `form_match` is handed two DIFFERENT LEXEMES on the OUT leg — `observe.
@@ -1095,32 +1174,20 @@ class FeatureComparator(Protocol):
 #   squeezed  — the surface with every separator dropped, for the one type
 #               whose notation carries no other robust needle (see
 #               SQUEEZED_TYPES)
-NEEDLE_KINDS: tuple[str, ...] = ("whole", "stem", "digits", "date", "initials", "squeezed")
+NEEDLE_KINDS: tuple[str, ...] = pii_types.NEEDLE_KINDS
 
 # WHAT A PIECE OF A VALUE IS, BY TYPE. The roles named here are the ones whose
 # survival in free text is evidence that THIS value stood there; a role not
 # named is either generic (N4) or too short to identify (a house number, a
 # passport series — every street has a 79 and the leaf that holds one is judged
 # by N6 instead).
-IDENTIFYING_ROLES: dict[str, tuple[str, ...]] = {
-    "NAME": ("surname", "given", "patronymic"),
-    "LOC": ("street",),
-    "EMAIL": ("local",),
-    "PHONE": ("digits",),
-    "CARD": ("digits",),
-    "SNILS": ("digits",),
-    "INN": ("digits",),
-    "PASSPORT": ("digits",),
-    "DOB": ("iso",),
-    "DATE": ("iso",),
-    # Every part `parts_of` reads off a plate is one to three characters — a
-    # letter, three digits, a letter pair, a region — so a plate has no piece
-    # that identifies on its own and the whole is matched instead, respacing
-    # included (SQUEEZED_TYPES). Leaving the tuple empty and saying why is the
-    # point: a silent absence read as «no needles» is how the fake plate came
-    # to be invisible to `residual` for three rounds.
-    "PLATE": (),
-}
+IDENTIFYING_ROLES: dict[str, tuple[str, ...]] = pii_types.identifying_roles(pii_types.TYPE_REGISTRY)
+# A plate carries no identifying role: every part `parts_of` reads off it is one
+# to three characters — a letter, three digits, a letter pair, a region — so a
+# plate has no piece that identifies on its own and the whole is matched instead,
+# respacing included (SQUEEZED_TYPES). Leaving the tuple empty and saying why is
+# the point: a silent absence read as «no needles» is how the fake plate came to
+# be invisible to `residual` for three rounds.
 # Roles that belong to EVERYBODY, so a needle built from one proves nothing
 # about which value stood in a string: the settlement (a place reference every
 # Russian city shares), the grammatical gender, the mail domain, the street's
@@ -1308,14 +1375,14 @@ PHONE_SIGNATURE_DIGITS: int = 10
 # Types whose identity is a DIGIT SIGNATURE and never a spelling: the model
 # reformats «+79990001122» as «8 999 000-11-22» and a letters-and-stems test
 # finds nothing at all.
-DIGIT_PIECE_TYPES: frozenset[str] = frozenset({"PHONE", "CARD", "SNILS", "INN", "PASSPORT"})
+DIGIT_PIECE_TYPES: frozenset[str] = pii_types.digit_piece_types(pii_types.TYPE_REGISTRY)
 # A date is neither: «14.03.1987» and «1987-03-14» share no substring at all.
-DATE_PIECE_TYPES: frozenset[str] = frozenset({"DOB", "DATE"})
+DATE_PIECE_TYPES: frozenset[str] = pii_types.date_piece_types(pii_types.TYPE_REGISTRY)
 # Types whose value a model rewrites in another ALPHABET or squeezes to
 # initials. NAME only, and deliberately: `FORM_FEATURES` declares `script` and
 # `initials` for NAME alone, and a transliterated STREET needle would fire on
 # ordinary Latin text in an address field with no derived form present.
-DERIVED_PIECE_TYPES: frozenset[str] = frozenset({"NAME"})
+DERIVED_PIECE_TYPES: frozenset[str] = pii_types.derived_piece_types(pii_types.TYPE_REGISTRY)
 # The one type matched with every separator dropped. A plate is a letter, three
 # digits, a letter pair and a region: the four groups cannot form by accident
 # across a word boundary, which is why the squeeze is safe HERE and is not
@@ -1323,7 +1390,7 @@ DERIVED_PIECE_TYPES: frozenset[str] = frozenset({"NAME"})
 # needle. Without it a gateway that left the fake plate in the tool argument
 # RESPACED was invisible to all 29 lines while the same fake written verbatim
 # was caught — the critical-defect line defeated by inserting spaces.
-SQUEEZED_TYPES: frozenset[str] = frozenset({"PLATE"})
+SQUEEZED_TYPES: frozenset[str] = pii_types.squeezed_types(pii_types.TYPE_REGISTRY)
 
 # --- THE ONE READING OF «IS THIS THE SAME VALUE» (SPIKE-Ж, Ж-1) ----------------
 #
@@ -1911,6 +1978,22 @@ class ArmRunV5:
     # a path that forgot the field fails at construction instead of silently
     # writing `None` and looking like «the connector has no chronology».
     model_trace: ModelTrace | None
+    # OD-76 / TZ §14.3: the MESSAGE-span replacements with the engine's type
+    # label — the IN/user analogue of `ToolResultRecord.pieces`, which carry
+    # the same four fields for a TOOL RESULT's spans. Written ONLY on a run with
+    # a v6 case; empty (and omitted from the record) otherwise, so the
+    # old-corpus replay stays byte-identical and `typed_user` prints «н/п»
+    # (0/0) rather than a fabricated zero. Each entry is
+    # (msg index, start, end, engine_type) in the ORIGINAL message's offsets.
+    #
+    # BOTH FIELDS STAY (SPEC §2.1 C02 keep_v5 + adopt_v6, and the S2 rows' own
+    # cross-row dependency): `model_trace` is v5's field with NO default — S2's
+    # `test_judge` calls `ArmRunV5(..., model_trace=None)` and would raise
+    # TypeError without it — and `message_pieces` is v6's, defaulted so the 834
+    # old-corpus constructors that never heard of it keep building the same
+    # record. `message_pieces` is last on purpose: a defaulted field may not
+    # precede an undefaulted one in a dataclass.
+    message_pieces: tuple[tuple[int, int, int, str], ...] = ()
 
 
 @dataclass(frozen=True)

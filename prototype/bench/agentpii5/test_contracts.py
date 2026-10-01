@@ -112,13 +112,26 @@ def main() -> int:
     if loaded:
         failures.append(f"importing contracts loaded {sorted(loaded)}")
 
-    # 1. features, per type, exactly
+    # 1. features, per type, exactly — over the v5 spec's own keys, read from the
+    # LIVE contract (C16 adopt_gate / V1-F2). Two corrections meet here and the
+    # auto-merge got only one of them:
+    #   * F15 — the v6 records add form rows the v5 spec never knew, so the
+    #     literal comparison stays a comparison about the v5 baseline;
+    #   * V1-F2 — it must read `contracts.FORM_FEATURES`, not the registry.
+    #     The registry's NAME record still transcribes the PRE-SPLIT table
+    #     (alphabet and romanization collapsed into `script`, no `translit`), so
+    #     comparing `pii_types` against this table was red for a reason that is
+    #     not the contract's: S4 migrates that record, and until then the LIVE
+    #     table is the only place the split can be pinned. A test that reads the
+    #     copy it is supposed to police cannot police it.
     spec = _spec_features()
-    if set(c.FORM_FEATURES) != set(spec):
-        failures.append(f"form types {sorted(c.FORM_FEATURES)} != spec {sorted(spec)}")
+    live = {kind: c.FORM_FEATURES.get(kind) for kind in spec}
+    missing = [kind for kind, features in live.items() if features is None]
+    if missing:
+        failures.append(f"v5 form types missing from contracts.FORM_FEATURES: {missing}")
     for kind, features in spec.items():
-        if tuple(c.FORM_FEATURES.get(kind, ())) != features:
-            failures.append(f"{kind}: contracts {c.FORM_FEATURES.get(kind)} != spec {features}")
+        if tuple(live.get(kind) or ()) != features:
+            failures.append(f"{kind}: contracts {live.get(kind)} != spec {features}")
     pairs = c.feature_pairs()
     if set(c.FEATURE_LABELS) != set(pairs):
         failures.append(f"FEATURE_LABELS keys differ from feature pairs: "

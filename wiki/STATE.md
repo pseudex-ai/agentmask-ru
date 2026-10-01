@@ -593,3 +593,32 @@ any claim.
 **Rejected:** версионный гейт вместо удаления (лечил бы Б35 заплаткой, оставляя нереализуемый вопрос); квота-движок на лиц-сервере (дубль готового биллинга витрины); чистый `granted`-подсчёт (дрейф гасил бы платящего) и чистый `billable` (переслуж при одновременном старте) — обе грани закрывает только рекенси-модель.
 **Price:** одна колонка `last_seen_at` в `meter` + рекенси-проход; допущение — лиц-сервер должен оставаться однопроцессным (иначе граница переслужа слабеет, подстраховка — часовой цикл витрины). Закрывает Б20, Б26*, Б30, Б34, Б35 удалением механизма.
 **Related:** `docs/tz-license-volume-quota.md` (заменил `docs/tz-license-slots-and-epochs.md`) · INVARIANTS.md#billing · `docs/known-issues.md` (Б35) · D-051 · D-063
+### D-077 · 2026-09-26 · v6 implements pilot types before expanding industry coverage
+**Status:** approved scope; implementation awaits explicit GO
+**Context:** implementing generators for every researched candidate before the pilot would spend time and agent budget before the instrument is accepted.
+**Decision:** the authoritative scope and partial owner rulings are in `docs/tz-agentpii6.md` §13, G1-1 and G1-3. Research remains in `docs/tz-agentpii6-registry.md`; expansion gets a concrete scenario package after pilot acceptance.
+**Alternative rejected:** implementing all researched types immediately, or starting with the full corpus.
+**Price:** coverage outside the pilot arrives later. The exact pilot type list, acceptance thresholds and ambiguous-value scoring still need decisions; scope approval does not approve them.
+
+### D-078 · 2026-09-26 · Pilot tools require an evidence-backed schema
+**Status:** active
+**Context:** the v6 research proves many industry identifiers and processes, but some proposed pilot tools had only a plausible process name without an evidenced producer field, consumer field or agent action.
+**Decision:** a pilot API schema is never synthetic. It must be grounded in an existing v5 implementation, official schema, OSS implementation or documented procedure with named fields. Synthetic PII values and reconstructed language remain allowed; they are not an API schema. A type with no such tool stays a candidate for the extension.
+**Alternative rejected:** synthetic mirrors of KYC, collection, DMS, device service, CDP or seller-requisites processes just to carry an identifier through the benchmark.
+**Price:** the first pilot may contain fewer proposed types and needs an evidence matrix before its final type list is approved.
+
+### D-079 · 2026-09-28 · v6 is built as the full corpus, not as a pilot followed by expansion
+**Status:** active
+**Context:** the former 180-case pilot and G2-pilot gate delayed implementation of the complete 500-case, 15-industry v6 scope.
+**Decision:** build the full v6 corpus directly. The pilot calculations remain reference material only; they neither limit the implemented types nor require a separate owner GO. Before coding, the full evidence matrix still has to identify a documented end-to-end tool path for each admitted type; D-069 remains unchanged.
+**Alternative rejected:** completing a three-industry pilot first and deciding whether to expand later.
+**Price:** more implementation work starts together, so the full evidence matrix and per-component ownership become the first acceptance gate.
+
+**D-ID renumbering (V1 merge).** `D-068`/`D-069`/`D-070` were spent twice — once
+on this branch and once by the v6 branch (2026-09-26…28). Both records and both
+bodies stay; the v6 records moved to unused ids and the v5 ids are unchanged:
+`D-068 (v6, pilot types) → D-077`, `D-069 (v6, pilot tools) → D-078`,
+`D-070 (v6, full corpus) → D-079`. References to those three ids inside the v6
+documents (`docs/tz-agentpii6.md`, `docs/tz-agentpii6-registry.md`, the v6 review
+files) mean the renumbered records. This is `D-ID-RENUMBER` from the V1 plan — an
+engineering assignment, not a reopened owner decision.

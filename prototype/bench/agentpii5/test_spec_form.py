@@ -38,6 +38,7 @@ from bench.agentpii4.schema import PiiItem
 from bench.agentpii5 import contracts
 from bench.agentpii5.contracts import ArmRunV5, CaseV5
 from bench.agentpii5.contracts import FIELD_SEP as SEP
+from bench.agentpii5.pii_types import ORIGIN_V5, TYPE_REGISTRY
 from bench.agentpii5.fixtures import (
     FAKE_NAME,
     REAL_NAME,
@@ -72,6 +73,13 @@ SPEC_MINIMAL_LOOP: tuple[tuple[str, str], ...] = (
     ("IN", "user"), ("OUT", "tool_arg"), ("IN", "tool"), ("OUT", "answer"))
 
 REAL_PHONE_TEXT: str = "+7 916 123-45-67"
+
+# The v5 half of the registry — the only half this file's STRINGS matrix knows.
+# F.5: `STRINGS` is a v5-area fixture; the v6 feature matrix lives in
+# `test_form_v6`, and the pairwise-comparison checks here must not reach for a
+# v6 pair whose strings were never written.
+V5_TYPES: frozenset[str] = frozenset(
+    record.id for record in TYPE_REGISTRY if record.origin == ORIGIN_V5)
 
 
 def _name_item(item_id: str) -> PiiItem:
@@ -332,9 +340,12 @@ def _plain_features() -> tuple[tuple[str, str], ...]:
     """Признаки, которые ТЗ §8.4 велит сравнивать попарно — то есть все, кроме
     тех, у кого в `contracts.FORM_LEXEME_READINGS` записана причина не делать
     этого. Список берётся из контракта, а не переписывается: две копии одного
-    исключения — это одно исключение, которое однажды разойдётся."""
+    исключения — это одно исключение, которое однажды разойдётся.
+
+    v6-область исключена (F.5): матрица строк v5 не знает новых типов, и её
+    признаковая матрица живёт в `test_form_v6`, а не здесь."""
     return tuple(pair for pair in contracts.feature_pairs()
-                 if pair not in contracts.FORM_LEXEME_READINGS)
+                 if pair not in contracts.FORM_LEXEME_READINGS and pair[0] in V5_TYPES)
 
 
 def test_a_plain_feature_is_decided_by_its_labels_and_the_abstain_rule() -> list[str]:
@@ -411,6 +422,8 @@ def test_every_declared_abstention_actually_abstains() -> list[str]:
     записей, включая те три, где сравнитель свой."""
     problems: list[str] = []
     for (kind, feature), abstain in contracts.FORM_ABSTAIN.items():
+        if kind not in V5_TYPES:      # F.5: the v6 abstentions are tested in test_form_v6
+            continue
         extractor = FEATURE_EXTRACTORS[(kind, feature)]
         pairs = [(produced, reference)
                  for produced in STRINGS[kind] for reference in STRINGS[kind]
