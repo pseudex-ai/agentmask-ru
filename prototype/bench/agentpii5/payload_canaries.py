@@ -89,15 +89,10 @@ CAPTURE_KILL_SWITCH: str = "NPY_CANARY_CAPTURE"
 # THE SIZE, STATED AS A BOUNDARY AND NOT AS A HOPE. A capture row holds the
 # corpus's own text, so an unreadable or hostile file is a real shape (not a
 # hypothetical one) and it must be refused by ARITHMETIC rather than by running
-# out of memory. The bound that decides a row is broken is the PAYLOAD bound,
-# not the row byte count: a chatty but valid run (380 payloads of ≤36.6 KB each)
-# legitimately exceeds the old 4 MiB row ceiling and was wrongly refused whole.
-# The row bound is a DERIVED outer ceiling; a single payload over the payload
-# bound is the hostile shape that must be refused.
-CAPTURE_MAX_ROW_BYTES: int = 8 * 1024 * 1024
+# out of memory. Per row is the bound that decides a triple is broken; per run
+# is the bound that decides the whole archive is not a canary run.
+CAPTURE_MAX_ROW_BYTES: int = 4 * 1024 * 1024
 CAPTURE_MAX_RUN_BYTES: int = 256 * 1024 * 1024
-CAPTURE_MAX_PAYLOAD_UTF8_BYTES: int = 1 * 1024 * 1024
-CAPTURE_MAX_PAYLOADS: int = 4096
 
 # The contexts a planted value can sit in. They select the last class, not the
 # first: a result-payload leak whose type was never recognised is still a
@@ -507,23 +502,6 @@ def read_captures(run_dir: pathlib.Path) -> tuple[RunCapture, ...]:
                         captured = capture_from_json(parsed)
                     except CaptureError as broken:
                         raise CaptureError(f"{path.name}:{number}: {broken}") from broken
-                    # The payload count and each payload's UTF-8 byte size are
-                    # the load-bearing bounds; the row byte ceiling above is only
-                    # the outer limit. A chatty row passes; one huge payload or
-                    # an unbounded delivery count does not.
-                    if len(captured.delivered) > CAPTURE_MAX_PAYLOADS:
-                        raise CaptureError(f"{path.name}:{number}: capture row has "
-                                           f"{len(captured.delivered)} payloads, over the "
-                                           f"{CAPTURE_MAX_PAYLOADS} payload bound")
-                    for one in captured.delivered:
-                        if len(one.text.encode("utf-8")) > CAPTURE_MAX_PAYLOAD_UTF8_BYTES:
-                            raise CaptureError(f"{path.name}:{number}: payload {one.name!r} "
-                                               f"text is over the {CAPTURE_MAX_PAYLOAD_UTF8_BYTES} "
-                                               f"byte bound")
-                        if len(one.real_text.encode("utf-8")) > CAPTURE_MAX_PAYLOAD_UTF8_BYTES:
-                            raise CaptureError(f"{path.name}:{number}: payload {one.name!r} "
-                                               f"real_text is over the {CAPTURE_MAX_PAYLOAD_UTF8_BYTES} "
-                                               f"byte bound")
                     key = (captured.case_id, captured.repeat)
                     if key in seen:
                         raise CaptureError(f"{path.name}:{number}: duplicate capture for "

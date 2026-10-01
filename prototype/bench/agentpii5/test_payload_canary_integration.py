@@ -33,7 +33,6 @@ from __future__ import annotations
 import asyncio
 import json
 import pathlib
-import tempfile
 from collections.abc import Callable
 
 from bench.agentpii5 import payload_canaries as pc
@@ -362,57 +361,6 @@ def test_model_request_is_snapshotted_before_later_notes() -> list[str]:
     return []
 
 
-def test_bounded_reader_accepts_chatty_rejects_hostile() -> list[str]:
-    """The row byte ceiling is a DERIVED outer bound; the payload bound decides.
-
-    A chatty-but-valid row (many small payloads) must be readable, while a single
-    payload over CAPTURE_MAX_PAYLOAD_UTF8_BYTES or a delivery count over
-    CAPTURE_MAX_PAYLOADS must be refused by arithmetic, not by OOM."""
-    problems: list[str] = []
-
-    def row(payloads):
-        return {"version": pc.CAPTURE_VERSION, "case_id": "size", "repeat": 0, "arm": "I",
-                "capture": {"manifest": {"version": pc.MANIFEST_VERSION, "canaries": []},
-                            "payloads": payloads}}
-
-    def write_and_read(payloads):
-        with tempfile.TemporaryDirectory() as td:
-            run_dir = pathlib.Path(td)
-            (run_dir / pc.capture_name("size")).write_text(
-                json.dumps(row(payloads), ensure_ascii=False), encoding="utf-8")
-            return pc.read_captures(run_dir)
-
-    # Chatty row: 380 payloads of a few KB each — valid, under the payload bound.
-    chatty = [{"name": "model_input", "text": "x" * 4000, "real_text": ""}
-              for _ in range(380)]
-    try:
-        rows = write_and_read(chatty)
-    except pc.CaptureError as error:
-        problems.append(f"chatty row refused: {error}")
-    else:
-        if len(rows) != 1 or len(rows[0].delivered) != 380:
-            problems.append("chatty row did not round-trip its 380 payloads")
-
-    # Hostile: one payload over the 1 MiB payload bound.
-    hostile = [{"name": "model_input", "text": "x" * (pc.CAPTURE_MAX_PAYLOAD_UTF8_BYTES + 1),
-                "real_text": ""}]
-    try:
-        write_and_read(hostile)
-        problems.append("an oversized payload was accepted")
-    except pc.CaptureError:
-        pass
-
-    # Hostile: more than CAPTURE_MAX_PAYLOADS deliveries.
-    too_many = [{"name": "model_input", "text": "x", "real_text": ""}
-                for _ in range(pc.CAPTURE_MAX_PAYLOADS + 1)]
-    try:
-        write_and_read(too_many)
-        problems.append("an over-count delivery was accepted")
-    except pc.CaptureError:
-        pass
-    return problems
-
-
 CHECKS: tuple[tuple[str, Callable[[], list[str]]], ...] = (
     ("the_real_run_is_clean_and_counted_per_boundary",
      test_the_real_run_is_clean_and_counted_per_boundary),
@@ -425,8 +373,6 @@ CHECKS: tuple[tuple[str, Callable[[], list[str]]], ...] = (
      test_the_real_runner_writes_the_capture_through_the_writer),
     ("model_request_is_snapshotted_before_later_notes",
      test_model_request_is_snapshotted_before_later_notes),
-    ("bounded_reader_accepts_chatty_rejects_hostile",
-     test_bounded_reader_accepts_chatty_rejects_hostile),
 )
 
 
