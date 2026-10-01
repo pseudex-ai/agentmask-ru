@@ -587,8 +587,13 @@ def _shift_digits(text: str, by: int) -> str:
 # checksum-valid share standing (a +3 digit shift keeps a Luhn-valid body valid
 # ~12 % of the time, §6.3). A v6 identifier is minted from the registry's `mint`
 # rule — `id_digits`, `id_alnum`, `hex` — which changes EVERY alphanumeric
-# character in place, keeps every separator (so the grammar holds), and for a
-# `generated_checksum` type re-mints until the published checksum FAILS (R6-39).
+# character in place and keeps every separator (so the grammar holds).
+#
+# FOR A `generated_checksum` TYPE THE SUBSTITUTE INHERITS THE SOURCE'S VERDICT
+# (V1 S5, MUTANT-LINE-REDEFINE, COV-CHECKSUM-INHERIT): a valid source mints a
+# valid substitute, a faulty source is not repaired. The old R6-39 rule
+# (re-mint until the checksum FAILS) is the `mint_v6_remint_invalid` mutant, kept
+# for the re-versioned metric to separate, NOT the accepted semantics.
 # This module CALLS `checksum_v6` (the third module may call it, R6-07); it never
 # re-derives the arithmetic.
 _V6_SPECS: dict[str, pii_types.TypeSpec] = {t.id: t for t in pii_types.TYPE_REGISTRY}
@@ -683,35 +688,136 @@ def _v6_checksum_valid(spec: pii_types.TypeSpec, text: str) -> bool:
         return False
 
 
-def mint_v6(spec: pii_types.TypeSpec, texts: Sequence[str]) -> list[str]:
-    """The R6-39 re-mint loop over `texts` (surface, canonical, parts), ONE shift
-    for all of them: grammar preserved, no alphanumeric position shared, and —
-    for a `generated_checksum` type — the checksum BROKEN. A shift that still
-    passes (Luhn's ~12 %) is skipped and the next shift tried, so the substitute
-    always fails its own checksum. Returns the inputs unchanged on a named miss:
-    a shift loop that never lands is better than a fake that violates T8."""
+def mint_v6_remint_invalid(spec: pii_types.TypeSpec, texts: Sequence[str]) -> list[str]:
+    """The HISTORICAL R6-39 arm: re-mint until the fake's checksum FAILS.
+
+    Kept because it is the mutant the re-versioned line must separate, and
+    because a saved v6 result may name it. NOT the accepted semantics (V1 S5,
+    MUTANT-LINE-REDEFINE): COV-CHECKSUM-INHERIT says a VALID source mints a
+    VALID substitute, and this arm turns a valid source into an invalid fake —
+    the `valid -> invalid` mutant. `_mint_with(wanted=False)` is exactly the old
+    loop: skip every shift whose surface still passes, so the result always
+    fails."""
+    made = _mint_with(spec, texts, False)
+    return made if made is not None else list(texts)
+
+
+def _same_class(ch: str) -> str:
+    """The characters a single-position checksum repair may try, in the CLASS of
+    `ch`: a digit stays a digit (a Luhn/GS1/OGRNIP check digit), a lowercase
+    letter stays lowercase hex (LOAN_UID's trailing check CHARACTER), upper
+    likewise. A repair that crossed the class would break the grammar and be
+    refused by `_grammar_holds` anyway."""
+    if ch.isdigit():
+        return "0123456789"
+    if ch.islower():
+        return "0123456789abcdef"
+    if ch.isupper():
+        return "0123456789ABCDEF"
+    return ""
+
+
+def _repair_checksum(spec: pii_types.TypeSpec, text: str, wanted: bool,
+                     sample: str) -> tuple[int, str] | None:
+    """`(index, replacement)` that makes `text`'s checksum verdict `wanted`, or
+    None. `(-1, "")` means `text` already carries the wanted verdict.
+
+    A uniform shift moves every character and often flips validity: of the 22
+    usable shifts, IBAN/OGRNIP/OMS_ENP/UIN/EPTS/ICCID/LOAN_UID present NO
+    checksum-valid spelling at all, and `COV-CHECKSUM-INHERIT` needs a VALID
+    substitute for a valid source. So the check character is RE-DERIVED rather
+    than hoped for: rewrite ONE position and ask the published validator. The
+    search is algorithm-agnostic on purpose — the arithmetic stays in
+    `checksum_v6`, this only asks it (R6-07). Positions are tried from the TAIL,
+    where a check digit usually sits, and a repair that would share the SAMPLE's
+    character at that position is refused: identity is not inheritance."""
+    if _v6_checksum_valid(spec, text) == wanted:
+        return (-1, "")
+    for index in reversed([i for i, ch in enumerate(text) if ch.isalnum()]):
+        for replacement in _same_class(text[index]):
+            if replacement == text[index]:
+                continue
+            if index < len(sample) and replacement == sample[index]:
+                continue
+            candidate = text[:index] + replacement + text[index + 1:]
+            if not _grammar_holds(spec, candidate):
+                continue
+            if _v6_checksum_valid(spec, candidate) == wanted:
+                return (index, replacement)
+    return None
+
+
+def _apply_repair(spec: pii_types.TypeSpec, made: Sequence[str],
+                  index: int, replacement: str) -> list[str]:
+    """The repaired surface PLUS every other spelling kept consistent with it.
+
+    The ONE character change reaches the canonical (and the parts) too: at the
+    same index when the two spellings are position-aligned there, else the
+    canonical is re-folded from the repaired surface by `_mint_fold` — the same
+    five-way fold `gen_v6._canonical` uses. Without this the fake would have TWO
+    spellings that differ by the check character, and a tool result rendered from
+    the canonical would show a value the model never wrote: a simulation defect
+    invented by its own bookkeeping."""
+    if index < 0:
+        return list(made)
+    surface = made[0][:index] + replacement + made[0][index + 1:]
+    out = [surface]
+    for other in made[1:]:
+        if index < len(other) and other[index] == made[0][index]:
+            out.append(other[:index] + replacement + other[index + 1:])
+        else:
+            out.append(_mint_fold(spec, surface) or other)
+    return out
+
+
+def _mint_with(spec: pii_types.TypeSpec, texts: Sequence[str],
+               wanted: bool | None) -> list[str] | None:
+    """One shift for ALL `texts` (surface, canonical, parts), repaired so the
+    SURFACE's checksum verdict is `wanted` (None = the type carries no checksum).
+    Two families of candidate, in the order the old R6-39 loop used them:
+    a class-preserving shift of every alphanumeric character, then a digit-only
+    shift that leaves a STRUCTURAL identifier's fixed letters in place («А31-…»,
+    «…-ИП», UUID hex). Returns None when no candidate holds; the caller keeps
+    the inputs (a named miss beats a fake that violates T8)."""
     for shift in range(1, 26):
         if shift % 10 == 0:
             continue
         made = [_shift_text(text, shift) for text in texts]
         if not all(_grammar_holds(spec, one) for one in made):
             continue
-        if spec.generated_checksum and _v6_checksum_valid(spec, made[0]):
-            continue
-        return made
-    # FALLBACK for a STRUCTURAL identifier whose grammar fixes a LITERAL letter
-    # («А31-…», «…-ИП», «60АА…»): shift only the digits — the free part — and
-    # keep every fixed letter in place. The digits still all change, so the
-    # substitute shares no DIGIT position with the sample; the fixed letters are
-    # the type's own structure, not the customer's data.
+        if wanted is None:
+            return made
+        repair = _repair_checksum(spec, made[0], wanted, texts[0])
+        if repair is not None:
+            return _apply_repair(spec, made, *repair)
     for shift in range(1, 10):
         made = [_shift_digits(text, shift) for text in texts]
         if not all(_grammar_holds(spec, one) for one in made):
             continue
-        if spec.generated_checksum and _v6_checksum_valid(spec, made[0]):
-            continue
-        return made
-    return list(texts)
+        if wanted is None:
+            return made
+        repair = _repair_checksum(spec, made[0], wanted, texts[0])
+        if repair is not None:
+            return _apply_repair(spec, made, *repair)
+    return None
+
+
+def mint_v6(spec: pii_types.TypeSpec, texts: Sequence[str]) -> list[str]:
+    """The ACCEPTED v6 mint (V1 S5, MUTANT-LINE-REDEFINE, COV-CHECKSUM-INHERIT).
+
+    THE SUBSTITUTE INHERITS THE SOURCE'S CHECKSUM VALIDITY: a VALID source mints
+    a VALID substitute and a faulty source is NOT repaired. The old R6-39 rule —
+    re-mint until the checksum FAILS — is kept as `mint_v6_remint_invalid` and is
+    the `valid -> invalid` mutant, never the accepted semantics: under the
+    owner's choice it turns every real (valid) identifier into an invalid fake,
+    and the historical `fake_checksum_invalid` line then rewards it (1.0) while
+    the correct arm prints 0.0 — the line could not separate the behaviour it
+    exists to catch. The source's own verdict is read off `texts[0]`, the
+    surface, and `_repair_checksum` re-derives the check character to hold it.
+    Returns the inputs unchanged on a named miss."""
+    wanted = _v6_checksum_valid(spec, texts[0]) if spec.generated_checksum else None
+    made = _mint_with(spec, texts, wanted)
+    return made if made is not None else list(texts)
 
 
 def _fake_digits(text: str, pii_type: str) -> str:
@@ -817,10 +923,10 @@ def mint(pii_type: str, surface: str, canonical: str, parts: dict[str, str],
     the conversation's NAME assignment (`name_pool_map`) and nothing else reads
     it."""
     # A v6 type with a mint rule is minted by IDENTIFIER (T8): every alphanumeric
-    # character changes in place and a checksum-carrying type re-mints until the
-    # checksum breaks (R6-39). The ONE shift is chosen over the surface, the
-    # canonical AND every part together, so the substitute is one value, not
-    # three independent re-rolls.
+    # character changes in place and a checksum-carrying type INHERITS the
+    # source's checksum verdict (S5 / COV-CHECKSUM-INHERIT). The ONE shift is
+    # chosen over the surface, the canonical AND every part together, so the
+    # substitute is one value, not three independent re-rolls.
     spec = _V6_SPECS.get(pii_type)
     if spec is not None and spec.origin == pii_types.ORIGIN_V6 and spec.mint:
         keys = list(parts.keys())

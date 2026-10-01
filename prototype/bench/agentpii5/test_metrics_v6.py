@@ -1,5 +1,6 @@
 """`metrics.py` v6 pinned: the value_notation comparison, the certificate over
-CASES, and the three OD-54 rows with their fixtures.
+CASES, the three OD-54 rows with their fixtures, and the re-versioned checksum
+line (V1 S5 / OC-2 / MUTANT-LINE-REDEFINE).
 
     cd prototype && source .venv/bin/activate
     && python3 -m bench.agentpii5.test_metrics_v6
@@ -8,12 +9,14 @@ Everything here is offline: hand-built observations, the real `metrics`
 functions, no model, no engine. The three new rows live in
 `metrics.V6_METRIC_FUNCTIONS` + `fixtures.V6_FIXTURES` — OUTSIDE the v5
 `METRIC_FUNCTIONS`/`FIXTURES` — so `test_metrics` and `test_fixtures` keep
-pinning the closed v5 surface while these rows are gated to a v6 run.
+pinning the closed v5 surface while these rows are gated to a v6 run. The
+checksum line is VERSIONED on top of that: v1 is historical and v2 is the
+accepted semantics under COV-CHECKSUM-INHERIT.
 """
 import sys
 from collections.abc import Callable
 
-from bench.agentpii5 import contracts
+from bench.agentpii5 import contracts, perfect, pii_types
 from bench.agentpii5.fixtures import (
     FAKE_NAME,
     REAL_NAME,
@@ -25,8 +28,11 @@ from bench.agentpii5.fixtures import (
     _obs,
     _run,
     _seen,
+    _with_subs,
 )
 from bench.agentpii5.metrics import (
+    CHECKSUM_LINE_VERSIONS,
+    CHECKSUM_METRIC_FUNCTIONS,
     V6_METRIC_FUNCTIONS,
     certified_over_cases,
     leak,
@@ -145,6 +151,79 @@ def test_three_new_rows() -> list[str]:
     return problems
 
 
+def _checksum_obs(pii_type: str, source: str, substitute: str):
+    """One observation: a checksum-carrying item whose substitute is `substitute`."""
+    item = _item("e1", pii_type, source, source, "i1", _in_message(0, 0, len(source)))
+    case = _case("s5-cs", "single", (source,), (item,), ())
+    return _obs(case, _with_subs(_run("s5-cs"), {"e1": substitute}), ())
+
+
+def test_checksum_line_reversioned() -> list[str]:
+    """V1 S5 / OC-2 / MUTANT-LINE-REDEFINE. The checksum line is VERSIONED: v1
+    (`fake_checksum_invalid`, "the fake fails its checksum") is kept as the
+    HISTORICAL row so no saved result is reinterpreted, and v2
+    (`fake_checksum_inherited`, "the fake's verdict matches the SOURCE's") is the
+    accepted semantics under COV-CHECKSUM-INHERIT. The new mutant set is
+    reproducibly distinct from the correct arm: `valid -> invalid` and
+    `invalid -> valid` are misses on v2, while the historical v1 line REWARDS the
+    `valid -> invalid` arm — which is exactly why v1 cannot stay the live line."""
+    problems: list[str] = []
+    if CHECKSUM_LINE_VERSIONS != {"fake_checksum_invalid": 1, "fake_checksum_inherited": 2}:
+        problems.append(f"the version map is {CHECKSUM_LINE_VERSIONS}")
+    if set(CHECKSUM_METRIC_FUNCTIONS) != set(CHECKSUM_LINE_VERSIONS):
+        problems.append("CHECKSUM_METRIC_FUNCTIONS and CHECKSUM_LINE_VERSIONS disagree")
+    if CHECKSUM_METRIC_FUNCTIONS.get("fake_checksum_invalid") is not V6_METRIC_FUNCTIONS.get(
+            "fake_checksum_invalid"):
+        problems.append("the V6 report row is not the historical v1 function")
+    if CHECKSUM_METRIC_FUNCTIONS.get("fake_checksum_invalid") is CHECKSUM_METRIC_FUNCTIONS.get(
+            "fake_checksum_inherited"):
+        problems.append("the two versions are the same function")
+
+    # The historical row still gates on its own fixtures (a saved result reads).
+    for fixture in V6_FIXTURES["fake_checksum_invalid"]:
+        line = CHECKSUM_METRIC_FUNCTIONS["fake_checksum_invalid"](fixture.input)
+        if (line.hits, line.total) != (fixture.expected_hits, fixture.expected_total):
+            problems.append(f"the historical fixture {fixture.name} printed "
+                            f"{line.hits}/{line.total}, declared "
+                            f"{fixture.expected_hits}/{fixture.expected_total}")
+
+    oms = next(t for t in pii_types.TYPE_REGISTRY if t.id == "OMS_ENP")
+    ok_src, bad_src = "7707536455681514", "7707536455681515"    # Luhn valid / invalid
+    if not (perfect._v6_checksum_valid(oms, ok_src)
+            and not perfect._v6_checksum_valid(oms, bad_src)):
+        return problems + ["the OMS_ENP fixtures do not carry the expected verdicts"]
+    live = CHECKSUM_METRIC_FUNCTIONS["fake_checksum_inherited"]
+    historical = CHECKSUM_METRIC_FUNCTIONS["fake_checksum_invalid"]
+    correct = perfect.mint_v6(oms, (ok_src,))[0]              # valid -> valid
+    old_arm = perfect.mint_v6_remint_invalid(oms, (ok_src,))[0]  # valid -> invalid
+
+    def live_verdicts() -> list[tuple[int, int]]:
+        arms = ((ok_src, correct), (ok_src, old_arm), (bad_src, ok_src))
+        out = []
+        for source, substitute in arms:
+            line = live((_checksum_obs("OMS_ENP", source, substitute),))
+            out.append((line.hits, line.total))
+        return out
+
+    first = live_verdicts()
+    if first[0] != (1, 1):
+        problems.append(f"the correct arm scored {first[0]} on v2, expected (1, 1)")
+    if first[1] != (0, 1):
+        problems.append(f"the valid->invalid mutant scored {first[1]} on v2, expected (0, 1)")
+    if first[2] != (0, 1):
+        problems.append(f"the invalid->valid mutant scored {first[2]} on v2, expected (0, 1)")
+    if live_verdicts() != first:
+        problems.append("the mutant verdicts are not reproducible across two runs")
+    # The historical line is what makes v1 unusable as the live line: it gives
+    # the valid->invalid arm the SAME perfect score the correct arm would hold
+    # under the old rule (1/1), and 0/1 to the correct inheritance arm.
+    if historical((_checksum_obs("OMS_ENP", ok_src, old_arm),)).hits != 1:
+        problems.append("the historical v1 line no longer rewards valid->invalid")
+    if historical((_checksum_obs("OMS_ENP", ok_src, correct),)).hits != 0:
+        problems.append("the historical v1 line unexpectedly accepts the correct arm")
+    return problems
+
+
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("no_pseudex", test_no_pseudex),
@@ -153,6 +232,7 @@ def main() -> int:
         ("ip_strict", test_ip_strict),
         ("certificate_by_cases", test_certificate_by_cases),
         ("three_new_rows", test_three_new_rows),
+        ("checksum_line_reversioned", test_checksum_line_reversioned),
     )
     failures: list[str] = []
     for name, check in checks:

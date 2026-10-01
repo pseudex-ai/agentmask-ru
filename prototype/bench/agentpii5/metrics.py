@@ -1705,14 +1705,18 @@ def typed_user(observations: Sequence[RunObservation]) -> Line:
 
 
 def fake_checksum_invalid(observations: Sequence[RunObservation]) -> Line:
-    """Checksum-carrying elements whose SUBSTITUTE fails its own checksum (§6.3).
+    """HISTORICAL v1 — checksum-carrying elements whose SUBSTITUTE fails its own
+    checksum (§6.3).
 
-    The boundary is 1.0 and the perfect gateway holds it: for a type with a
-    `generated_checksum`, a right gateway re-mints until the fake fails the
-    published algorithm (R6-39, §6.2), so a substitute that PASSES is a wrong
-    gateway's work and this line prints 0 for it. The substitute is folded by
-    `value_notation` before validating — a grouped «7707 5364 …» is the digit
-    run, never the raw string."""
+    KEPT AS A VERSIONED ROW, NEVER REWRITTEN IN PLACE (V1 S5, MUTANT-LINE-
+    REDEFINE). Its accepted semantics were the R6-39 re-mint-until-invalid rule,
+    boundary 1.0; `COV-CHECKSUM-INHERIT` replaces them with inheritance — a VALID
+    source mints a VALID substitute — under which this line prints 0/11 for the
+    correct arm and an identical 0/11 for the old `valid -> invalid` arm, so it
+    cannot separate the behaviour it exists to catch; on a faulty source it
+    REWARDS the forbidden repair. The live line is `fake_checksum_inherited`
+    (v2). The substitute is folded by `value_notation` before validating — a
+    grouped «7707 5364 …» is the digit run, never the raw string."""
     hits = 0
     total = 0
     for one in observations:
@@ -1726,6 +1730,69 @@ def fake_checksum_invalid(observations: Sequence[RunObservation]) -> Line:
             total += 1
             hits += 0 if _checksum_valid(spec, minted[0]) else 1
     return _line("fake_checksum_invalid", hits, total)
+
+
+# --- §6.3 THE CHECKSUM LINE, RE-VERSIONED (V1 S5 / OC-2 / MUTANT-LINE-REDEFINE) ---
+#
+# THE TWO VERSIONS AND WHY BOTH STAY. v1 (`fake_checksum_invalid`) counts a hit
+# when the fake FAILS its checksum; v2 (`fake_checksum_inherited`) counts a hit
+# when the fake's verdict MATCHES the source's. `COV-CHECKSUM-INHERIT` decides
+# the policy — a VALID source mints a VALID substitute, a faulty source is NOT
+# repaired — so v1's accepted semantics are gone while its SAVED results are
+# not: the migration keeps the old row under its own version instead of
+# reinterpreting a printed number.
+#
+# THE NEW MUTANT SET (V1 S5): `valid -> invalid` (the old R6-39 arm), `invalid
+# -> valid` (a repair), `wrong form`, `unsafe identity/collision`. Each is
+# distinct from the correct arm by at least one fixture, reproducibly —
+# `test_metrics_v6.test_checksum_line_reversioned` and
+# `test_perfect_v6.test_mutants_are_distinct_from_the_correct_arm` hold it.
+#
+# WIRING NOTE (routed, not hidden): `V6_METRIC_FUNCTIONS` still holds the v1 row
+# so a saved v6 report keeps printing exactly what it printed, and the v2 line
+# is exposed here plus in `CHECKSUM_METRIC_FUNCTIONS`. Moving the REPORT to v2
+# needs a v2 fixture row in `fixtures.py` and a `report.py` edit, neither of
+# which is in this stage's write set.
+CHECKSUM_LINE_VERSIONS: dict[str, int] = {
+    "fake_checksum_invalid": 1,
+    "fake_checksum_inherited": 2,
+}
+
+
+def fake_checksum_inherited(observations: Sequence[RunObservation]) -> Line:
+    """v2 / LIVE — checksum-carrying elements whose substitute's validity MATCHES
+    its SOURCE's (§6.3, COV-CHECKSUM-INHERIT).
+
+    A hit is `validity(substitute) == validity(source)`: a valid source mints a
+    valid fake, a faulty source is not repaired. The perfect arm holds 1.0. The
+    `invalid -> valid` repair and the `valid -> invalid` flip are the two misses;
+    `wrong form` and `unsafe identity/collision` are held by the mint contract
+    (`perfect._grammar_holds`, the no-shared-position rule) and named in the S5
+    mutant set. Both sides are folded by `value_notation` before validating, the
+    same rule v1 used, so a grouped spelling is the digit run and never the raw
+    string."""
+    hits = 0
+    total = 0
+    for one in observations:
+        for item in one.case.base.pii:
+            spec = _SPECS.get(item.type)
+            if spec is None or not spec.generated_checksum:
+                continue
+            minted = one.run.base.substitutes.get(item.id)
+            if minted is None or not minted[0]:
+                continue
+            total += 1
+            if _checksum_valid(spec, item.value) == _checksum_valid(spec, minted[0]):
+                hits += 1
+    return _line("fake_checksum_inherited", hits, total)
+
+
+# BOTH ROWS, BY VERSION. v1 is historical and must keep answering; v2 is the
+# accepted semantics under the owner's inheritance choice.
+CHECKSUM_METRIC_FUNCTIONS: dict[str, Metric] = {
+    "fake_checksum_invalid": fake_checksum_invalid,
+    "fake_checksum_inherited": fake_checksum_inherited,
+}
 
 
 def overmask_result(observations: Sequence[RunObservation]) -> Line:
@@ -1751,6 +1818,12 @@ def overmask_result(observations: Sequence[RunObservation]) -> Line:
 
 # The three OD-54 rows, gated by the report only on a v6 run (F7). Their names
 # are deliberately NOT in `contracts.METRIC_NAMES`.
+#
+# `fake_checksum_invalid` here is the HISTORICAL v1 row (see the re-version block
+# above): the report keeps printing what a saved run printed. The LIVE checksum
+# semantics under `COV-CHECKSUM-INHERIT` is `fake_checksum_inherited`, exposed in
+# `CHECKSUM_METRIC_FUNCTIONS`; moving the report to it needs a v2 fixture row and
+# a `report.py` edit beyond this stage's write set.
 V6_METRIC_FUNCTIONS: dict[str, Metric] = {
     "typed_user": typed_user,
     "fake_checksum_invalid": fake_checksum_invalid,
