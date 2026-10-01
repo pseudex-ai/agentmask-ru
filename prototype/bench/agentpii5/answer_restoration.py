@@ -248,6 +248,7 @@ class AnswerRestoreRun:
     text_status: str                 # preserved / changed / unresolved
     unmapped_changes: int
     raw_empty: bool
+    unsupported_spellings: int       # hint item_ids whose fake never placed in raw
 
 
 @dataclass(frozen=True)
@@ -275,6 +276,7 @@ class AnswerRestoreAggregate:
     answer_text_changed: int
     answer_text_unresolved: int
     unmapped_changes: int
+    unsupported_spellings: int
     overall: AnswerRestoreLine
     by_type: tuple[AnswerRestoreLine, ...]
 
@@ -298,13 +300,21 @@ def _response_regions(run: ArmRunV5) -> tuple[tuple[int, int, object], ...]:
     return ()
 
 
+def _hints(case: CaseV5, run: ArmRunV5, evidence: AnswerEvidence | None) -> set[tuple[str, str]]:
+    """Every (item_id, fake spelling) the run records, for unsupported-surfacing."""
+    hints = {(m.item_id, m.substitute) for m in run.mentions if m.substitute}
+    hints.update((i, m[0]) for i, m in run.base.substitutes.items() if m[0])
+    if evidence is not None:
+        hints.update((p.item_id, p.masked_text[p.masked_start:p.masked_end])
+                     for p in evidence.disclosures)
+    return hints
+
+
 def _mapping_rows(case: CaseV5, run: ArmRunV5, response: object | None,
                   evidence: AnswerEvidence | None = None) -> tuple[Mapping, ...]:
     items = {p.id: p for p in case.base.pii}
-    hints = {(m.item_id,m.substitute) for m in run.mentions if m.substitute}
-    hints.update((i,m[0]) for i,m in run.base.substitutes.items() if m[0])
+    hints = _hints(case, run, evidence)
     proofs = () if evidence is None else evidence.disclosures
-    hints.update((p.item_id,p.masked_text[p.masked_start:p.masked_end]) for p in proofs)
     rows=[]
     for item_id,fake in sorted(hints):
         item=items.get(item_id)
@@ -556,7 +566,10 @@ def answer_events(case: CaseV5, run: ArmRunV5, *,
             if text_status!='changed': text_status='unresolved'
     if any(e.status=='alignment_unresolved' for e in events) and text_status!='changed':
         text_status='unresolved'
-    return AnswerRestoreRun(case.base.id,run.base.repeat,tuple(events),text_status,outside,not raw.strip())
+    hint_items={i for i,_ in _hints(case,run,evidence)}
+    placed_items={m.item_id for _,_,maps in candidates for m in maps}
+    unsupported=len(hint_items-placed_items)
+    return AnswerRestoreRun(case.base.id,run.base.repeat,tuple(events),text_status,outside,not raw.strip(),unsupported)
 
 
 def _line(kind: str, events: Sequence[AnswerRestoreEvent]) -> AnswerRestoreLine:
@@ -575,6 +588,7 @@ def aggregate(runs: Sequence[AnswerRestoreRun]) -> AnswerRestoreAggregate:
         sum(r.text_status=='preserved' and all(e.joint_ok for e in r.events) for r in eligible),
         sum(r.text_status=='preserved' for r in runs),sum(r.text_status=='changed' for r in runs),
         sum(r.text_status=='unresolved' for r in runs),sum(r.unmapped_changes for r in runs),
+        sum(r.unsupported_spellings for r in runs),
         _line('all',events),tuple(_line(t,[e for e in events if e.pii_type==t]) for t in types))
 
 
@@ -583,6 +597,7 @@ def render(result: AnswerRestoreAggregate) -> tuple[str,...]:
     out=[f'Actual answer restoration — {result.estimator}',
          'RAW written occurrences only; no required case hops. Delivered stream, not whole-text fallback.',
          'Unresolved candidates stay in headline; they are uncertainty, not proven engine failures.',
+         f'unsupported_spellings: {result.unsupported_spellings} (written fakes not recognized in raw; NOT silently zero)',
          f'answer_restore_clean: {pct(result.answer_restore_clean,result.answers_with_substitutes)}',
          f'answer_text_preserved: {pct(result.answer_text_preserved,result.runs)}; changed={result.answer_text_changed}; unresolved={result.answer_text_unresolved}',
          f'answers_without_substitutes: {result.answers_without_substitutes}/{result.runs} (no restoration score)',

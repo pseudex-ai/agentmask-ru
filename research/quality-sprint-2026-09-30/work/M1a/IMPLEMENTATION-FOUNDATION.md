@@ -37,7 +37,17 @@
 
 Инициалы теперь доказуемы через раскрытие полного имени. `initials_of` возвращает squeezed-инициалы (кириллица+латиница); `_spelling_matches` и `_initials_value_equal` сопоставляют raw-вхождение «П.О.» с fake «Пахомова Ольга» и сверяют delivered с реальными инициалами «И.Е.». Кандидат становится available при доказанном whole-name disclosure. Bare «ПО» намеренно не кандидат (лексическая неоднозначность, P09). 58/58 контролов.
 
-## Открыто — не скрывать ради58/58
+## G2-readiness round 7 (после review NOT_READY)
+
+Reviewer `76fef59f` = NOT_READY с жёстким блокером (LOC false-negative). Исправлено:
+- word-level выравнивание (`_word_window`) как primary + char-level fallback;
+- exact-copy narrowing до proved source literal (граничная вставка → value_ok + gap-change).
+- known-unknown surfacing: `unsupported_spellings` счётчик в aggregate/render (Latin/частичные роли не молча исчезают).
+- позитивный LOC control + latin-unsupported тест добавлены. 60/60 контролов, 6 legacy suites.
+
+Все 4 REQUIRED пункта G2-review закрыты. Optional (Latin value/partial-role proof/spoken/stream) — publishable как known-unknown.
+
+## Открыто — не скрывать ради60/60
 
 - Legacyadapterвывода providerlinkedproof изсуществующихcaptures. Пока noneevidenceконсервативноUNKNOWN, неновыйenginequalityrate.
 - Latin (транслитерация) и partial roles (только фамилия/имя) всё ещё unknown-кандидаты, не доказуемые — нужен тот же механизм привязки derived-формы к whole-name disclosure.

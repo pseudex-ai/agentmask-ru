@@ -204,6 +204,9 @@ def main():
           'correct verbatim LOC restore is matched, not value_wrong')
     c,r,e=sample('8','8')
     check(score(c,r,e).overall.candidates==0,'short fragment cannot nominate phone')
+    # Unsupported spelling must be surfaced, not silently dropped from the denominator.
+    c,r,e=sample(raw='Pakhomova Olga',delivered='Ivanova Elena',kind='NAME',real='Иванова Елена',fake='Пахомова Ольга')
+    check(score(c,r,e).unsupported_spellings>=1,'unsupported (Latin) spelling surfaces a count, not a silent zero')
     c,r,e=sample('','')
     check(score(c,r,e).answers_without_substitutes==1,'empty output not restoration100')
     c,r,e=sample()

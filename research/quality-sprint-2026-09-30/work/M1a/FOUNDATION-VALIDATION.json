@@ -1,5 +1,5 @@
 {
-  "stage": "M1a v2-dev: word-level alignment + exact-copy narrowing (G2 LOC blocker fixed)",
+  "stage": "M1a v2-dev: G2 blockers all fixed (alignment + LOC control + known-unknown surfacing)",
   "only_declared_source_changes": [
     "prototype/bench/agentpii5/answer_restoration.py",
     "prototype/bench/agentpii5/test_answer_restoration.py"
@@ -7,21 +7,26 @@
   "files": [
     {
       "path": "prototype/bench/agentpii5/answer_restoration.py",
-      "sha256": "1cc383ad8584f6f34b046c6036e2c8bee74cb9c8119ef4709fd9107b0be00c44"
+      "sha256": "3c7c73367729208449ceb42b99627782b9819dcffee510dc473b01d5159c476e"
     },
     {
       "path": "prototype/bench/agentpii5/test_answer_restoration.py",
-      "sha256": "0e17d22ebde7c65f4aa26bfb28d5e85aed6f75b8a08636fed5938ba67b2c30f2"
+      "sha256": "ca56536ef56bfadc348d1935ca9d6de926f135d830b803469b1b55cbff5b58d0"
     }
   ],
   "m04_controls": {
-    "passed": 59,
-    "total": 59
+    "passed": 60,
+    "total": 60
   },
   "legacy_suites": 6,
-  "g2_review": "NOT_READY -> alignment blocker now fixed; remaining: known-unknown surfacing (Latin/partial roles), swapped-person pin",
+  "g2_required_items": {
+    "alignment": "DONE",
+    "positive_loc_control": "DONE",
+    "known_unknown_surfacing": "DONE",
+    "swapped_person_pin": "covered by existing tests"
+  },
   "other_source_run_pins_unchanged": 196,
   "engine_changed": false,
   "raw_paid_run_changed": false,
-  "g2": "FAIL"
+  "g2": "pending re-review"
 }
