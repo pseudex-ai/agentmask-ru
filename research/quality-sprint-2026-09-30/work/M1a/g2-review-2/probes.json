@@ -1,0 +1,211 @@
+[
+  {
+    "name": "loc-positive-verbatim",
+    "verdict": "PASS",
+    "note": "expect matched",
+    "candidates": 1,
+    "value_ok": 1,
+    "joint_ok": 1,
+    "residual": 0,
+    "text_status": "preserved",
+    "unmapped": 0,
+    "unsupported": 0,
+    "statuses": {
+      "matched": 1,
+      "value_wrong": 0,
+      "form_wrong": 0,
+      "residual": 0,
+      "ambiguous": 0,
+      "provenance_unavailable": 0,
+      "alignment_unresolved": 0,
+      "form_unmeasured": 0
+    },
+    "events": [
+      {
+        "raw": 0,
+        "delivered": "улица Пушкина, дом 14",
+        "status": "matched",
+        "text": "улица Пушкина, дом 14",
+        "value_ok": true
+      }
+    ]
+  },
+  {
+    "name": "loc-wrong-street-type",
+    "verdict": "PASS",
+    "note": "expect value_wrong",
+    "candidates": 1,
+    "value_ok": 0,
+    "joint_ok": 0,
+    "residual": 0,
+    "text_status": "preserved",
+    "unmapped": 0,
+    "unsupported": 0,
+    "statuses": {
+      "matched": 0,
+      "value_wrong": 1,
+      "form_wrong": 0,
+      "residual": 0,
+      "ambiguous": 0,
+      "provenance_unavailable": 0,
+      "alignment_unresolved": 0,
+      "form_unmeasured": 0
+    },
+    "events": [
+      {
+        "raw": 0,
+        "delivered": "улица Пушкина, дом 14",
+        "status": "value_wrong",
+        "text": "улица Пушкина, дом 14",
+        "value_ok": false
+      }
+    ]
+  },
+  {
+    "name": "insertion-around-token",
+    "verdict": "PASS",
+    "note": "expect value_ok + changed",
+    "candidates": 1,
+    "value_ok": 1,
+    "joint_ok": 1,
+    "residual": 0,
+    "text_status": "changed",
+    "unmapped": 2,
+    "unsupported": 0,
+    "statuses": {
+      "matched": 1,
+      "value_wrong": 0,
+      "form_wrong": 0,
+      "residual": 0,
+      "ambiguous": 0,
+      "provenance_unavailable": 0,
+      "alignment_unresolved": 0,
+      "form_unmeasured": 0
+    },
+    "events": [
+      {
+        "raw": 3,
+        "delivered": "+79164021187",
+        "status": "matched",
+        "text": "+79164021187",
+        "value_ok": true
+      }
+    ]
+  },
+  {
+    "name": "latin-unsupported-surfaced",
+    "verdict": "PASS",
+    "note": "expect unsupported>=1",
+    "candidates": 0,
+    "value_ok": 0,
+    "joint_ok": 0,
+    "residual": 0,
+    "text_status": "changed",
+    "unmapped": 1,
+    "unsupported": 1,
+    "statuses": {
+      "matched": 0,
+      "value_wrong": 0,
+      "form_wrong": 0,
+      "residual": 0,
+      "ambiguous": 0,
+      "provenance_unavailable": 0,
+      "alignment_unresolved": 0,
+      "form_unmeasured": 0
+    },
+    "events": []
+  },
+  {
+    "name": "swapped-person-value-wrong",
+    "verdict": "PASS",
+    "note": "expect value_wrong (identity from source)",
+    "candidates": 1,
+    "value_ok": 0,
+    "joint_ok": 0,
+    "residual": 0,
+    "text_status": "preserved",
+    "unmapped": 0,
+    "unsupported": 0,
+    "statuses": {
+      "matched": 0,
+      "value_wrong": 1,
+      "form_wrong": 0,
+      "residual": 0,
+      "ambiguous": 0,
+      "provenance_unavailable": 0,
+      "alignment_unresolved": 0,
+      "form_unmeasured": 0
+    },
+    "events": [
+      {
+        "raw": 0,
+        "delivered": "+79261234567",
+        "status": "value_wrong",
+        "text": "+79261234567",
+        "value_ok": false
+      }
+    ]
+  },
+  {
+    "name": "boundary-insertion-gap-flagged",
+    "verdict": "PASS",
+    "note": "must not silently pass",
+    "candidates": 1,
+    "value_ok": 1,
+    "joint_ok": 1,
+    "residual": 0,
+    "text_status": "changed",
+    "unmapped": 1,
+    "unsupported": 0,
+    "statuses": {
+      "matched": 1,
+      "value_wrong": 0,
+      "form_wrong": 0,
+      "residual": 0,
+      "ambiguous": 0,
+      "provenance_unavailable": 0,
+      "alignment_unresolved": 0,
+      "form_unmeasured": 0
+    },
+    "events": [
+      {
+        "raw": 0,
+        "delivered": "+79164021187",
+        "status": "matched",
+        "text": "+79164021187",
+        "value_ok": true
+      }
+    ]
+  },
+  {
+    "name": "two-identical-real-literals",
+    "verdict": "PASS",
+    "note": "extra literal must not hide",
+    "candidates": 1,
+    "value_ok": 1,
+    "joint_ok": 1,
+    "residual": 0,
+    "text_status": "changed",
+    "unmapped": 1,
+    "unsupported": 0,
+    "statuses": {
+      "matched": 1,
+      "value_wrong": 0,
+      "form_wrong": 0,
+      "residual": 0,
+      "ambiguous": 0,
+      "provenance_unavailable": 0,
+      "alignment_unresolved": 0,
+      "form_unmeasured": 0
+    },
+    "events": [
+      {
+        "raw": 0,
+        "delivered": "+79164021187",
+        "status": "matched",
+        "text": "+79164021187",
+        "value_ok": true
+      }
+    ]
+  }
+]

@@ -137,7 +137,7 @@
       "status": "RUNNING",
       "gate": "G2",
       "wave": "Lead",
-      "execution_stage": "v2-dev: provenance foundation PASS_FOUNDATION + provable dotted initials; 58/58 controls. G2 FAIL: legacy adapter, Latin/partial roles, unique monotone alignment open"
+      "execution_stage": "v2-dev: provenance foundation + provable initials + word-level alignment + known-unknown surfacing; 60/60 controls; all 4 G2-required items closed; awaiting independent re-review"
     },
     {
       "id": "M1b",
@@ -172,7 +172,7 @@
       "status": "OWNER_PENDING",
       "gate": "G0",
       "wave": "workflow-3",
-      "execution_stage": "independent review REVISE; contracts-revision-2 corrections; owner checkpoints recorded"
+      "execution_stage": "design/RED reviewed; owner forks answered (O-DATA/O-SECRET/O-SEMANTIC); runtime artifact deferred to freeze/C1/Q1"
     },
     {
       "id": "S1",
@@ -196,7 +196,7 @@
       "status": "OWNER_PENDING",
       "gate": "G3",
       "wave": "workflow-3",
-      "execution_stage": "independent review REVISE; contracts-revision-2 corrections; owner checkpoints recorded"
+      "execution_stage": "isolated perf (workflow-5) EXPLORATORY (pre-existing live job holds a core); O-DETECT OWNER_PENDING for budget-grade numbers"
     },
     {
       "id": "V0",
@@ -220,7 +220,7 @@
       "status": "OWNER_PENDING",
       "gate": "G3",
       "wave": "workflow-3",
-      "execution_stage": "independent review REVISE; contracts-revision-2 corrections; owner checkpoints recorded"
+      "execution_stage": "design/RED reviewed; owner forks answered (O-DATA/O-SECRET/O-SEMANTIC); runtime artifact deferred to freeze/C1/Q1"
     },
     {
       "id": "S2",
@@ -232,7 +232,7 @@
       "status": "RUNNING",
       "gate": "G0",
       "wave": "workflow-3",
-      "execution_stage": "independent review REVISE; contracts-revision-2 corrections; owner checkpoints recorded"
+      "execution_stage": "design/RED reviewed; owner forks answered (O-DATA/O-SECRET/O-SEMANTIC); runtime artifact deferred to freeze/C1/Q1"
     },
     {
       "id": "K1",

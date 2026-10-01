@@ -503,6 +503,7 @@ def answer_events(case: CaseV5, run: ArmRunV5, *,
         chosen=(available_maps or list(maps))[0]
         word_win=_word_window(a,b,raw,delivered)
         u,v,unknown=(word_win if word_win is not None else _mapped_window(a,b,opcodes,spans))
+        nu,nv=u,v
         status=''; text=delivered[u:v]
         literal_choices={m.literal for m in available_maps if m.fake==raw[a:b]}
         value=False; form=False; measured=False; residual=False; differs=()
@@ -538,6 +539,8 @@ def answer_events(case: CaseV5, run: ArmRunV5, *,
                     idx = text.find(literal)
                     if idx >= 0:
                         text = text[idx:idx+len(literal)]
+                        nu = u + idx
+                        nv = nu + len(literal)
                     value = (text == literal)
                 else:
                     value = _equal(chosen.pii_type,text,chosen.real)
@@ -549,23 +552,33 @@ def answer_events(case: CaseV5, run: ArmRunV5, *,
                     'form_unmeasured' if not measured else 'form_wrong' if not form else 'matched')
         measurable=status not in ('ambiguous','provenance_unavailable','alignment_unresolved')
         expected_text = next(iter(literal_choices)) if len(literal_choices)==1 else chosen.real
-        events.append(AnswerRestoreEvent(case.base.id,run.base.repeat,f'{a}:{b}:{i}',a,b,u,v,
+        events.append(AnswerRestoreEvent(case.base.id,run.base.repeat,f'{a}:{b}:{i}',a,b,nu,nv,
             raw[a:b],text,expected_text,
             tuple(sorted({m.item_id for m in maps})),
             chosen.pii_type if len({m.pii_type for m in maps})==1 else '',chosen.role,status,
             ';'.join(sorted({m.evidence for m in maps})),measurable,value,form,measured,residual,
             measurable and value and form and not residual,differs))
-    # Every change must be attributable to a MINIMAL raw token, not a broad diff.
-    text_status='preserved'; outside=0
-    for tag,x,y,u,v in opcodes:
-        if tag=='equal': continue
-        owners=[(a,b) for a,b in spans if (a<=x<=b if x==y else x<b and a<y)]
-        if not owners:
-            outside+=1; text_status='changed'
-        elif not any(a<=x and y<=b for a,b in owners):
-            if text_status!='changed': text_status='unresolved'
-    if any(e.status=='alignment_unresolved' for e in events) and text_status!='changed':
-        text_status='unresolved'
+    # Literal-gap fidelity: the delivered text must be the raw text with each
+    # value span replaced by its narrowed window — nothing else may change. This
+    # is more robust than the char-level opcode "owner" pass, which fragments a
+    # duplicated value and absorbs its shared characters into the span.
+    pairs = sorted(((e.raw_start, e.raw_end, e.delivered_start, e.delivered_end)
+                    for e in events), key=lambda p: (p[0], p[1]))
+    changed_gaps = 0; unresolved_gap = False
+    pa = pu = 0
+    for a, b, u, v in pairs:
+        if (u, v) == (0, 0) and b > a:
+            unresolved_gap = True
+            continue
+        if raw[pa:a] != delivered[pu:u]:
+            changed_gaps += 1
+        pa, pu = b, v
+    if raw[pa:] != delivered[pu:]:
+        changed_gaps += 1
+    text_status = 'changed' if changed_gaps else ('unresolved' if unresolved_gap else 'preserved')
+    outside = changed_gaps
+    if any(e.status == 'alignment_unresolved' for e in events) and text_status != 'changed':
+        text_status = 'unresolved'
     hint_items={i for i,_ in _hints(case,run,evidence)}
     placed_items={m.item_id for _,_,maps in candidates for m in maps}
     unsupported=len(hint_items-placed_items)

@@ -202,6 +202,19 @@ def main():
     s=score(c,r,e)
     check(s.overall.candidates==1 and s.overall.value_ok==1 and s.overall.joint_ok==1,
           'correct verbatim LOC restore is matched, not value_wrong')
+    # Boundary-insertion/duplication must flag a gap change, not report clean.
+    c,r,e=sample(FAKE,'X'+REAL)
+    s=score(c,r,e)
+    check(s.answer_restore_clean==0 and s.answer_text_changed==1,'glued boundary insertion is a gap change, not clean')
+    c,r,e=sample(FAKE,REAL+' '+REAL)
+    s=score(c,r,e)
+    check(s.answer_restore_clean==0 and s.answer_text_changed==1,'duplicated real value is a gap change, not clean')
+    # Strong swapped-person pin: p2 declares the delivered real; identity from source.
+    c,r,e=sample(raw=FAKE,delivered='+79261234567')
+    other=replace(c.base.pii[0],id='p2',identity='person2',canonical='+79261234567',value='+79261234567')
+    c=replace(c,base=replace(c.base,pii=c.base.pii+(other,)))
+    check(score(c,r,e).overall.value_ok==0 and score(c,r,e).overall.joint_ok==0,
+          'swapped-person: identity from source, not delivered real')
     c,r,e=sample('8','8')
     check(score(c,r,e).overall.candidates==0,'short fragment cannot nominate phone')
     # Unsupported spelling must be surfaced, not silently dropped from the denominator.

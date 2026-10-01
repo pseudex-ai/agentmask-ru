@@ -388,7 +388,7 @@ def _render_main(snapshot: dict[str, object]) -> str:
         order = tuple(o for o in TRANSITION_ORDER if o in owners) + tuple(
             o for o in sorted(owners) if o not in TRANSITION_ORDER)
         out.append('<section><h2>Переходы<span class="sub">форма на самом хопе: прошлый '
-                   'прогон (весь, 450) против идущего на тех же переходах; прочие колонки — '
+                   'прогон (весь эталон) против идущего на тех же переходах; прочие колонки — '
                    'только текущий</span></h2>')
         out.append('<table class="grid"><thead><tr><th>Переход</th>'
                    '<th>Форма: прошлый</th><th class="hl">Форма: сейчас</th><th>Δ</th>'
@@ -501,24 +501,43 @@ tick();setInterval(tick,2000);
 
 
 _SNAPSHOT_LOCK = threading.Lock()
-_SNAPSHOT_CACHE: dict[str, tuple[float, dict[str, object]]] = {}
+_SNAPSHOT_CACHE: dict[str, tuple[float, int, dict[str, object]]] = {}
 # `live_snapshot` walks EVERY finished triple through the actual and causal
 # estimators; on a long run that is seconds, not milliseconds (measured 3.3 s at
-# 119 triples). A browser asking every 2 s would pile requests up until it gave
-# up — the page just said «загрузка…» forever. One computation is shared, and a
-# request that arrives while it runs waits for it rather than starting its own.
+# 119 triples, ~20 s at 802). A browser asking every 2 s would pile requests up
+# until it gave up. One computation is shared, and a request that arrives while
+# it runs waits for it rather than starting its own. The cache is keyed on the
+# run's data mtime so a FINISHED run (no new arms) is computed once and never
+# recomputed, instead of re-walking 802 triples every SNAPSHOT_TTL.
 SNAPSHOT_TTL: float = 2.5
 
 
+def _run_data_mtime(run_dir: Path) -> int:
+    """Newest mtime among the run's observation/corpus files, or 0 if absent.
+
+    `nanos` granularity: the estimator walks finished triples, and a triple that
+    has not moved on disk since the last snapshot cannot have changed its score.
+    """
+    newest = 0
+    for pattern in ("*.arms.jsonl", "*.arms.v5.jsonl", "corpus.v5.json", "*.triples.jsonl"):
+        for path in run_dir.glob(pattern):
+            try:
+                newest = max(newest, path.stat().st_mtime_ns)
+            except OSError:
+                continue
+    return newest
+
+
 def cached_snapshot(run_dir: Path) -> dict[str, object]:
-    """The snapshot, recomputed at most once per `SNAPSHOT_TTL`."""
+    """The snapshot, recomputed only when the run's data actually changed."""
     key = str(run_dir)
+    mtime = _run_data_mtime(run_dir)
     with _SNAPSHOT_LOCK:
         entry = _SNAPSHOT_CACHE.get(key)
-        if entry is not None and time.monotonic() - entry[0] < SNAPSHOT_TTL:
-            return entry[1]
+        if entry is not None and entry[0] == mtime:
+            return entry[2]
         snapshot = live_snapshot(run_dir)
-        _SNAPSHOT_CACHE[key] = (time.monotonic(), snapshot)
+        _SNAPSHOT_CACHE[key] = (mtime, time.monotonic(), snapshot)
         return snapshot
 
 
@@ -585,12 +604,19 @@ def main() -> int:
     parser.add_argument("--compare-run", type=Path, default=None,
                         help="каталог прогона-эталона для колонки «прошлый»; по умолчанию — "
                              "сохранённый аудит (evidence/case-index.json) на тех же кейсах")
+    parser.add_argument("--baseline-dir", type=Path, default=None,
+                        help="каталог с сохранённой per-case базой (case-index.json + audit.json) "
+                             "вместо встроенной evidence/: сравнивать с ПРЕДЫДУЩИМ прогоном тех же кейсов")
     parser.add_argument("--port", type=int, default=8787,
                         help="порт для --web (по умолчанию 8787)")
     args = parser.parse_args()
 
-    global COMPARE_RUN
+    global COMPARE_RUN, BASELINE_INDEX, BASELINE_AUDIT
     COMPARE_RUN = args.compare_run.resolve() if args.compare_run is not None else None
+    if args.baseline_dir is not None:
+        base_dir = args.baseline_dir.resolve()
+        BASELINE_INDEX = base_dir / "case-index.json"
+        BASELINE_AUDIT = base_dir / "audit.json"
 
     run_dir: Path
     if args.latest:

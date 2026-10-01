@@ -1,31 +1,35 @@
 {
-  "stage": "M1a v2-dev: G2 blockers all fixed (alignment + LOC control + known-unknown surfacing)",
-  "only_declared_source_changes": [
-    "prototype/bench/agentpii5/answer_restoration.py",
-    "prototype/bench/agentpii5/test_answer_restoration.py"
-  ],
+  "stage": "M1a v2-dev: literal-gaps text_status + boundary/duplication gap-flag; live.py snapshot cache mtime-keyed",
+  "declared_source_changes": {
+    "m1a_metric": [
+      "prototype/bench/agentpii5/answer_restoration.py",
+      "prototype/bench/agentpii5/test_answer_restoration.py"
+    ],
+    "live_ui_cpu_fix": [
+      "prototype/bench/agentpii5/live.py"
+    ]
+  },
   "files": [
     {
       "path": "prototype/bench/agentpii5/answer_restoration.py",
-      "sha256": "3c7c73367729208449ceb42b99627782b9819dcffee510dc473b01d5159c476e"
+      "sha256": "b6472f455cd603a6475d9cbc1be53cb8acb915f97317725871a6a78693866e7b"
     },
     {
       "path": "prototype/bench/agentpii5/test_answer_restoration.py",
-      "sha256": "ca56536ef56bfadc348d1935ca9d6de926f135d830b803469b1b55cbff5b58d0"
+      "sha256": "be574f298f9a30817ad1075bc2656e9e5ee48e82aef39d87f7b965c72e0bcae4"
+    },
+    {
+      "path": "prototype/bench/agentpii5/live.py",
+      "sha256": "f8fa072499c123a5fa39839ee732414954bf8dd37b3c73d83adffbf8ed3deb75"
     }
   ],
   "m04_controls": {
-    "passed": 60,
-    "total": 60
+    "passed": 63,
+    "total": 63
   },
   "legacy_suites": 6,
-  "g2_required_items": {
-    "alignment": "DONE",
-    "positive_loc_control": "DONE",
-    "known_unknown_surfacing": "DONE",
-    "swapped_person_pin": "covered by existing tests"
-  },
-  "other_source_run_pins_unchanged": 196,
+  "reviewer_probe_fixes": "7/7 PASS",
+  "other_source_run_pins_unchanged": 195,
   "engine_changed": false,
   "raw_paid_run_changed": false,
   "g2": "pending re-review"
