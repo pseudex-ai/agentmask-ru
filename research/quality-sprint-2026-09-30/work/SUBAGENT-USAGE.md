@@ -58,3 +58,11 @@ Invocation `subagent_fork:7ac9e839-fe35-4124-9b90-33d9eea930d7`, inherited Lead 
 - `subagent_fork:6034ec57-f80e-4d97-90b0-c11ac474e331` — G2 re-review на замороженных входах; writes only work/M1a/g2-review-2/. RUNNING.
 
 Собственная фраза модели не является доказательством маршрутизации.
+
+## Round 8
+
+- `subagent_fork:6034ec57` — G2 re-review = NOT_READY: text_status used inclusive a<=x<=b so glued boundary insertion + duplicated real were reported clean (false PASS). Fixed by literal-gaps fidelity pass + swapped-person strong pin; 63/63 controls, reviewer probe_fixes 7/7 PASS.
+- Lead live.py CPU fix (owner-requested): snapshot cache now mtime-keyed (was re-walking 802 triples every 2.5s, holding a full core). Live job restarted as bash-2160, now 0% CPU.
+- D0 quality evidence answered: RAW_NER 100% clean NAME, ~69% LOC, 0% structured IDs and 0/295 on real speech (news-trained NER collapses); RULES_ONLY==FULL==HYBRID on gatectx (NER adds nothing over rules on real speech).
+
+Собственная фраза модели не является доказательством маршрутизации.
