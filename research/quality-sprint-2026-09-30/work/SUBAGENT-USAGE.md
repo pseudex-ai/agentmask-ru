@@ -28,3 +28,9 @@ Invocation `subagent_fork:7ac9e839-fe35-4124-9b90-33d9eea930d7`, inherited Lead 
 `quality-sprint-design-revision-2`, job `workflow-4`, explicit `deepseek-official/deepseek-flash` на2agentвызова. `critical-revision` пишеттолько work/M1b/revision-2/ иwork/S1/revision-2/; `contracts-revision` —только work/contracts-revision-2/. Входы—independentreviews, originalfrozenchildoutputs, latestownerdecisions. Задача—исправитьevidence/протоколы/повторныевопросы,неproductpatch. Завершено2/2, job_output collected; оба результата REVISE в собственных scope, noG3promotion. ОбеM1a sourceправкиLeadобъявленыкакразрешённые,неатрибутируютсядругимагентам.
 
 Собственная фраза модели не является доказательством маршрутизации. Для Flash-волн нужен explicit workflow provider/model override; он фиксируется здесь вместе с job и результирующими артефактами. Никакие paid benchmark calls этим журналом не разрешаются.
+
+## Round 3
+
+- `subagent_fork:840196d9-9a08-4802-a6b5-22ea67844f55` — inherited gpt-6-astra, независимый re-review исправлений M1b/S1 revision-2; writes only work/review-critical-revision2/. RUNNING. Вход — findings work/review-critical/REVIEW.md против revision-2 пакетов. G3 не повышается без этого.
+
+Собственная фраза модели не является доказательством маршрутизации.
