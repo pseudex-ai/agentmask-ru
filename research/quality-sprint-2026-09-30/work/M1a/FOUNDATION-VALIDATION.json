@@ -1,5 +1,5 @@
 {
-  "stage": "M1a evidence foundation v2-dev (after foundation-review regressions); full G2 remains FAIL",
+  "stage": "M1a v2-dev: alignment boundary refinement + adversarial REDs recorded",
   "only_declared_source_changes": [
     "prototype/bench/agentpii5/answer_restoration.py",
     "prototype/bench/agentpii5/test_answer_restoration.py"
@@ -7,79 +7,24 @@
   "files": [
     {
       "path": "prototype/bench/agentpii5/answer_restoration.py",
-      "sha256": "c9050ded16823f41ee430e09bbd97649eb7559438d5c008555c3acf40f403ae2",
-      "bytes": 25372
+      "sha256": "914726337ceef714aaf23db592f33f3ce46aadf4cce1d1292df49d3d3318996a"
     },
     {
       "path": "prototype/bench/agentpii5/test_answer_restoration.py",
-      "sha256": "024e494e46a588815a303b2d3d922b1cdc2df5590e6713dd9e094ce690e6b087",
-      "bytes": 13289
+      "sha256": "024e494e46a588815a303b2d3d922b1cdc2df5590e6713dd9e094ce690e6b087"
     }
   ],
-  "prototype_tests": {
-    "count": 55,
+  "m04_controls": {
     "passed": 55,
-    "exit": 0
+    "total": 55
   },
-  "legacy_regression_suites": [
-    {
-      "command": [
-        ".venv/bin/python",
-        "-m",
-        "bench.agentpii5.test_metrics"
-      ],
-      "exit": 0,
-      "log": "test_metrics.log"
-    },
-    {
-      "command": [
-        ".venv/bin/python",
-        "-m",
-        "bench.agentpii5.test_fixtures"
-      ],
-      "exit": 0,
-      "log": "test_fixtures.log"
-    },
-    {
-      "command": [
-        ".venv/bin/python",
-        "-m",
-        "bench.agentpii5.test_form"
-      ],
-      "exit": 0,
-      "log": "test_form.log"
-    },
-    {
-      "command": [
-        ".venv/bin/python",
-        "-m",
-        "bench.agentpii5.test_observe"
-      ],
-      "exit": 0,
-      "log": "test_observe.log"
-    },
-    {
-      "command": [
-        ".venv/bin/python",
-        "-m",
-        "bench.agentpii5.test_hop_report"
-      ],
-      "exit": 0,
-      "log": "test_hop_report.log"
-    },
-    {
-      "command": [
-        ".venv/bin/python",
-        "-m",
-        "bench.agentpii5.test_live"
-      ],
-      "exit": 0,
-      "log": "test_live.log"
-    }
+  "legacy_suites": 6,
+  "alignment_cases": 6,
+  "alignment_open": [
+    "insertion-around-token -> value_wrong (should be value_ok + gap-change)"
   ],
   "other_source_run_pins_unchanged": 196,
-  "raw_paid_run_changed": false,
   "engine_changed": false,
-  "historical_metrics_changed": false,
-  "m04_wiring_done": false
+  "raw_paid_run_changed": false,
+  "g2": "FAIL"
 }

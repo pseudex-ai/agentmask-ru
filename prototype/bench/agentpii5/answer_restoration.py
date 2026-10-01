@@ -400,8 +400,11 @@ def _mapped_window(a: int,b: int,opcodes: Sequence[tuple], spans: Sequence[tuple
     slices=[]; unresolved=False
     for tag,x,y,u,v in opcodes:
         if x==y:
-            owners=sum(1 for s,e in spans if s<=x<=e)
-            if a<=x<=b:
+            # Insertion in DELIVERED at raw position x. Only an insertion STRICTLY
+            # inside the value span extends the value; one at the boundary is an
+            # adjacent literal change and belongs to gap fidelity, not the value.
+            if a < x < b:
+                owners=sum(1 for s,e in spans if s<=x<=e)
                 if owners==1: slices.append((u,v))
                 else: unresolved=True
         elif x<b and a<y:

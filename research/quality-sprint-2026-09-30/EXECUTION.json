@@ -1,0 +1,387 @@
+{
+  "version": "quality-sprint-plan-2",
+  "status": "APPROVED",
+  "approval": {
+    "question_id": "final-sprint-plan-approval",
+    "answer": "Утверждаю план",
+    "scope": "plan, roles, gates; next B0 and first design/RED wave only under named dependent approvals"
+  },
+  "binding_plan": "research/quality-sprint-2026-09-30/SPRINT-PLAN.md",
+  "decisions": [
+    "research/quality-sprint-2026-09-30/OWNER-DECISIONS.md",
+    "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md"
+  ],
+  "research_completed": {
+    "initial_flash_delegates": 6,
+    "followup_flash_delegates": 3,
+    "jobs_collected": [
+      "workflow-1",
+      "workflow-2"
+    ],
+    "requested_provider": "deepseek-official",
+    "requested_model": "deepseek-flash"
+  },
+  "authorization": {
+    "implementation_plan": true,
+    "new_paid_benchmark_runs": false,
+    "pull_request": false,
+    "main_merge": false,
+    "release": false,
+    "production_changes": false,
+    "cvc_production_payment_enablement": false
+  },
+  "deferred_scope": [
+    "temporary-secret lifecycle storage implementation",
+    "CVC retention defaults and admin controls",
+    "new API/HITL expiry handling"
+  ],
+  "owner_checkpoints": {
+    "O-DATA": {
+      "status": "OWNER_ANSWERED",
+      "blocks": [
+        "D1-N",
+        "D1-A",
+        "D1-I",
+        "Q1",
+        "RG"
+      ],
+      "requires": "exact acceptance units/slices/CI/PPV/clusters/split access/annotation budget manifest",
+      "answers": [
+        "EX-O-DATA-1",
+        "EX-O-DATA-2",
+        "EX-O-DATA-3"
+      ],
+      "note": "forks closed; exact acceptance manifest still to be finalized in A1 per these answers before D1/Q1/RG"
+    },
+    "O-DETECT": {
+      "status": "OWNER_PENDING",
+      "blocks": [
+        "D1-N",
+        "D1-A",
+        "D1-I"
+      ],
+      "requires": "measured architecture options and CPU/RAM/latency tradeoff approval"
+    },
+    "O-CORE": {
+      "status": "NOT_RUN",
+      "blocks": [
+        "K1"
+      ],
+      "requires": "new substantive policy choices or independent covered_by_decision_ids proof"
+    },
+    "O-SECRET": {
+      "status": "OWNER_ANSWERED",
+      "blocks": [
+        "C1"
+      ],
+      "requires": "precise temporary-secret quality scope, no current lifecycle implementation",
+      "answers": [
+        "EX-O-SECRET-1"
+      ],
+      "note": "all family visible, card/issuer measured, rest NOT_MEASURED gap; precise type registry still to be built for C1"
+    },
+    "O-V6": {
+      "status": "NOT_RUN",
+      "blocks": [
+        "V1"
+      ],
+      "requires": "new registry semantic conflicts resolved or existing decision lineage"
+    },
+    "O-LIVE": {
+      "status": "OWNER_PENDING",
+      "blocks": [
+        "L1"
+      ],
+      "requires": "exact model/cohort/ceiling/stop budget GO after offline gates"
+    },
+    "O-RELEASE": {
+      "status": "OWNER_PENDING",
+      "blocks": [],
+      "requires": "separate rollout approval for reviewed actual candidate digest"
+    },
+    "O-SEMANTIC": {
+      "status": "OWNER_ANSWERED",
+      "answers": [
+        "EX-O-SEMANTIC-1"
+      ],
+      "blocks": [
+        "S2 disposition"
+      ],
+      "requires": "research-only gap map + disposition; semantic PD deferred to next sprint"
+    }
+  },
+  "gate_applicability": {
+    "C1": "G4-G7 synthetic isolated quality + G8 compatibility only; retention/admin/API/HITL G9 and payment-ready G11 deferred",
+    "RG": "G9/G11 on pinned stabilization tree; prove unfinished CVC payment capability not accidentally enabled, no new admin flag mandated",
+    "S2": "research inventory and owner disposition required for final closure, NOT semantic implementation"
+  },
+  "task_state_policy": "Not run cannot pass. Every PASS attaches revision, commands/exits, input hashes, counts, independent review and decision ids. New dependent changes invalidate affected previous PASS.",
+  "tasks": [
+    {
+      "id": "B0",
+      "depends_on": [],
+      "model": "lead:gpt-6-astra",
+      "scope": "new baseline/WIP preservation outputs; no source changes",
+      "status": "PASS",
+      "gate": "G1",
+      "evidence": "work/B0/GATE.json",
+      "limitation": "local/design baseline passed; production digest NOT_VERIFIED until RG"
+    },
+    {
+      "id": "M1a",
+      "depends_on": [
+        "B0"
+      ],
+      "model": "lead:gpt-6-astra",
+      "scope": "answer_restoration module/tests only; no shared wiring",
+      "status": "RUNNING",
+      "gate": "G2",
+      "wave": "Lead",
+      "execution_stage": "v2-dev evidence foundation PASS_FOUNDATION (55 controls, 4 defects fixed); G2 FAIL: legacy capture adapter, derived role/initials proof, unique monotone alignment open"
+    },
+    {
+      "id": "M1b",
+      "depends_on": [
+        "B0"
+      ],
+      "model": "deepseek-flash + lead review",
+      "scope": "benchmark canary/parity reader tests; named files assigned before launch",
+      "status": "RUNNING",
+      "gate": "G2",
+      "wave": "workflow-3",
+      "execution_stage": "independent review REVISE; revision-2 corrections recorded; no full G3 acceptance"
+    },
+    {
+      "id": "M1c",
+      "depends_on": [
+        "M1a",
+        "M1b"
+      ],
+      "model": "lead:gpt-6-astra",
+      "scope": "sole writer benchmark contracts/observe/metrics/report/live wiring",
+      "status": "NOT_RUN",
+      "gate": "G2"
+    },
+    {
+      "id": "A1",
+      "depends_on": [
+        "B0"
+      ],
+      "model": "two independent labelers + human adjudication",
+      "scope": "new versioned label/acceptance manifests; no detector outputs shown to labelers",
+      "status": "OWNER_PENDING",
+      "gate": "G0",
+      "wave": "workflow-3",
+      "execution_stage": "independent review REVISE; contracts-revision-2 corrections; owner checkpoints recorded"
+    },
+    {
+      "id": "S1",
+      "depends_on": [
+        "B0"
+      ],
+      "model": "deepseek-flash probes + lead design",
+      "scope": "new critical class RED/probe/design files only",
+      "status": "RUNNING",
+      "gate": "G3",
+      "wave": "workflow-3",
+      "execution_stage": "independent review REVISE; revision-2 corrections recorded; no full G3 acceptance"
+    },
+    {
+      "id": "D0",
+      "depends_on": [
+        "B0"
+      ],
+      "model": "deepseek-flash comparison + lead",
+      "scope": "isolated rules/localNER/hybrid research harness; no shipped changes",
+      "status": "OWNER_PENDING",
+      "gate": "G3",
+      "wave": "workflow-3",
+      "execution_stage": "independent review REVISE; contracts-revision-2 corrections; owner checkpoints recorded"
+    },
+    {
+      "id": "V0",
+      "depends_on": [
+        "B0"
+      ],
+      "model": "deepseek-flash",
+      "scope": "v5/v6 compatibility evidence, 24 overlapping paths, 55 type contracts",
+      "status": "OWNER_PENDING",
+      "gate": "G3",
+      "wave": "workflow-3",
+      "execution_stage": "independent review REVISE; contracts-revision-2 corrections; owner checkpoints recorded"
+    },
+    {
+      "id": "C0",
+      "depends_on": [
+        "B0"
+      ],
+      "model": "deepseek-flash + lead",
+      "scope": "CVC/OTP/SMS/3DS recognition/restoration quality contracts, no lifecycle implementation",
+      "status": "OWNER_PENDING",
+      "gate": "G3",
+      "wave": "workflow-3",
+      "execution_stage": "independent review REVISE; contracts-revision-2 corrections; owner checkpoints recorded"
+    },
+    {
+      "id": "S2",
+      "depends_on": [
+        "B0"
+      ],
+      "model": "deepseek-flash + lead",
+      "scope": "semantic-PII gap research only; new implementation needs owner decision",
+      "status": "RUNNING",
+      "gate": "G0",
+      "wave": "workflow-3",
+      "execution_stage": "independent review REVISE; contracts-revision-2 corrections; owner checkpoints recorded"
+    },
+    {
+      "id": "K1",
+      "depends_on": [
+        "M1c",
+        "S1"
+      ],
+      "model": "lead:gpt-6-astra",
+      "scope": "sole writer vault/redact/envelope/stream/shared identity helpers",
+      "status": "NOT_RUN",
+      "gate": "G4+G5+G6",
+      "additional_approval": "design decisions unresolved by policy must be approved before patch"
+    },
+    {
+      "id": "V1",
+      "depends_on": [
+        "M1c",
+        "V0"
+      ],
+      "model": "one benchmark writer + lead",
+      "scope": "separate integration worktree, sole writer shared v5/v6 benchmark files",
+      "status": "NOT_RUN",
+      "gate": "G8"
+    },
+    {
+      "id": "D1-N",
+      "depends_on": [
+        "K1",
+        "A1",
+        "D0"
+      ],
+      "model": "deepseek-flash",
+      "scope": "names/morph_names + own tests; shared assets via D1-X",
+      "status": "NOT_RUN",
+      "gate": "G4+G7",
+      "additional_approval": "detector architecture/resource tradeoffs after measured comparison"
+    },
+    {
+      "id": "D1-A",
+      "depends_on": [
+        "K1",
+        "A1",
+        "D0"
+      ],
+      "model": "deepseek-flash",
+      "scope": "address/morph_places + own tests; no overlap with active K1",
+      "status": "NOT_RUN",
+      "gate": "G4+G7",
+      "additional_approval": "detector architecture/resource tradeoffs after measured comparison"
+    },
+    {
+      "id": "D1-I",
+      "depends_on": [
+        "K1",
+        "A1",
+        "D0",
+        "D1-N",
+        "D1-A"
+      ],
+      "model": "deepseek-flash",
+      "scope": "ru_pii/spoken/structured + own tests, shared composition via D1-X",
+      "status": "NOT_RUN",
+      "gate": "G4+G7"
+    },
+    {
+      "id": "D1-X",
+      "depends_on": [
+        "D1-N",
+        "D1-A",
+        "D1-I"
+      ],
+      "model": "lead:gpt-6-astra",
+      "scope": "sole writer detect_all/context/assets/licensing integrated detector",
+      "status": "NOT_RUN",
+      "gate": "G5+G6+G7+G9"
+    },
+    {
+      "id": "N1",
+      "depends_on": [
+        "V1",
+        "D1-X"
+      ],
+      "model": "deepseek-flash family writers + lead shared integrator",
+      "scope": "all 55 v6 type families remain visible; common vault/type/lease files sole lead writer",
+      "status": "NOT_RUN",
+      "gate": "G4+G5+G6+G7+G8"
+    },
+    {
+      "id": "C1",
+      "depends_on": [
+        "C0",
+        "K1",
+        "V1",
+        "N1"
+      ],
+      "model": "deepseek-flash + lead integrator",
+      "scope": "temporary-secret recognition/restoration quality on synthetic isolated path; no retention/admin/API/HITL implementation",
+      "status": "NOT_RUN",
+      "gate": "G4+G5+G6+G7",
+      "additional_approval": "precise temporary-secret type registry before implementation; no real CVC production enablement"
+    },
+    {
+      "id": "RG",
+      "depends_on": [
+        "K1",
+        "M1c",
+        "A1"
+      ],
+      "model": "lead:gpt-6-astra",
+      "scope": "isolated release candidate images/tests; production read-only verification under prod skill",
+      "status": "NOT_RUN",
+      "gate": "G9+G11",
+      "additional_approval": "separate owner release/deploy GO; no dependency on N1/C1"
+    },
+    {
+      "id": "Q1",
+      "depends_on": [
+        "N1",
+        "C1",
+        "D1-X",
+        "V1",
+        "S2"
+      ],
+      "model": "independent gpt-6-astra reviewer + independent deepseek-flash verifier",
+      "scope": "acceptance evidence only; no author self-review or holdout tuning",
+      "status": "NOT_RUN",
+      "gate": "G4+G5+G6+G7+G8+G9"
+    },
+    {
+      "id": "L1",
+      "depends_on": [
+        "Q1"
+      ],
+      "model": "lead runner; tested agent deepseek-flash",
+      "scope": "new immutable paid run dirs only after freeze/budget GO",
+      "status": "NOT_RUN",
+      "gate": "G10",
+      "additional_approval": "exact cohort/model/ceiling/concurrency and stop rules from owner"
+    },
+    {
+      "id": "Z1",
+      "depends_on": [
+        "L1"
+      ],
+      "model": "lead + independent reviewer + owner",
+      "scope": "final evidence, limitations and release recommendation",
+      "status": "NOT_RUN",
+      "gate": "all applicable accepted gates",
+      "additional_approval": "PR/main merge/release/deployment all separate GO"
+    }
+  ]
+}

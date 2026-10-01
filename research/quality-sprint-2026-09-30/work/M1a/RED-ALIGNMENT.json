@@ -1,0 +1,116 @@
+[
+  {
+    "label": "repeated-fake-one-restored",
+    "candidates": 2,
+    "measurable": 2,
+    "value_ok": 1,
+    "form_ok": 2,
+    "joint_ok": 1,
+    "unresolved": 0,
+    "statuses": {
+      "matched": 1,
+      "value_wrong": 0,
+      "form_wrong": 0,
+      "residual": 1,
+      "ambiguous": 0,
+      "provenance_unavailable": 0,
+      "alignment_unresolved": 0,
+      "form_unmeasured": 0
+    }
+  },
+  {
+    "label": "insertion-around-token",
+    "candidates": 1,
+    "measurable": 1,
+    "value_ok": 0,
+    "form_ok": 1,
+    "joint_ok": 0,
+    "unresolved": 0,
+    "statuses": {
+      "matched": 0,
+      "value_wrong": 1,
+      "form_wrong": 0,
+      "residual": 0,
+      "ambiguous": 0,
+      "provenance_unavailable": 0,
+      "alignment_unresolved": 0,
+      "form_unmeasured": 0
+    }
+  },
+  {
+    "label": "deletion-around-token",
+    "candidates": 1,
+    "measurable": 0,
+    "value_ok": 0,
+    "form_ok": 0,
+    "joint_ok": 0,
+    "unresolved": 1,
+    "statuses": {
+      "matched": 0,
+      "value_wrong": 0,
+      "form_wrong": 0,
+      "residual": 0,
+      "ambiguous": 0,
+      "provenance_unavailable": 0,
+      "alignment_unresolved": 1,
+      "form_unmeasured": 0
+    }
+  },
+  {
+    "label": "shared-surrounding-literals",
+    "candidates": 1,
+    "measurable": 1,
+    "value_ok": 1,
+    "form_ok": 1,
+    "joint_ok": 1,
+    "unresolved": 0,
+    "statuses": {
+      "matched": 1,
+      "value_wrong": 0,
+      "form_wrong": 0,
+      "residual": 0,
+      "ambiguous": 0,
+      "provenance_unavailable": 0,
+      "alignment_unresolved": 0,
+      "form_unmeasured": 0
+    }
+  },
+  {
+    "label": "wrong-real-elsewhere",
+    "candidates": 1,
+    "measurable": 1,
+    "value_ok": 0,
+    "form_ok": 1,
+    "joint_ok": 0,
+    "unresolved": 0,
+    "statuses": {
+      "matched": 0,
+      "value_wrong": 1,
+      "form_wrong": 0,
+      "residual": 0,
+      "ambiguous": 0,
+      "provenance_unavailable": 0,
+      "alignment_unresolved": 0,
+      "form_unmeasured": 0
+    }
+  },
+  {
+    "label": "two-fakes-collapse-to-one-real",
+    "candidates": 2,
+    "measurable": 0,
+    "value_ok": 0,
+    "form_ok": 0,
+    "joint_ok": 0,
+    "unresolved": 2,
+    "statuses": {
+      "matched": 0,
+      "value_wrong": 0,
+      "form_wrong": 0,
+      "residual": 0,
+      "ambiguous": 0,
+      "provenance_unavailable": 0,
+      "alignment_unresolved": 2,
+      "form_unmeasured": 0
+    }
+  }
+]
