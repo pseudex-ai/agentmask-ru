@@ -2986,7 +2986,11 @@ UTILITY_DIGIT_COUNTS: dict[str, frozenset[int]] = {
     "EMPLOYEE_TAB_NUMBER": frozenset(range(6, 11)),   # «6–10 цифр (наблюдение)»
     "STUDENT_ID_NUMBER": frozenset(range(5, 11)),     # sample «21-0345» + «цифры»
     "UTILITY_ACCOUNT": frozenset(range(6, 13)),       # «обычно 6–12 цифр»
-    "ACCESS_PASS_NUMBER": frozenset((6, 7, 8, 9, 10, 11, 12, 14)),
+    # 4–12 digits and the 14-hex UID. FIVE became FOUR on 03.10.2026 — the
+    # registry states no floor and the corpus's remaining three misses were
+    # four-digit passes; the year is refused by the WORD («год»/«г.») in
+    # `_UT_PASS_DIGITS`, not by a length floor.
+    "ACCESS_PASS_NUMBER": frozenset((4, 5, 6, 7, 8, 9, 10, 11, 12, 14)),
     "CDP_CUSTOMER_ID": frozenset(range(9, 21)),       # the sample's own floor
 }
 
@@ -3073,16 +3077,23 @@ _UT_SCHOOL = r"(?<!\d)\d{14}(?!\d)"
 _UT_STUDENT = r"(?<!\d)(?:\d{2}[ \t\-/]?\d{4}|\d{5,10})(?!\d)"
 
 # ACCESS_PASS_NUMBER — «цифры печатного пропуска или RFID UID в hex (8 или 14
-# hex)». Two readings, bounded by the record's own note: 5–12 digits (the reference
-# sample «0034561» is 7 and the registry states NO floor — the corpus draws 5–10,
-# and 5 of the 12 misses of this type were a five-digit pass behind an undamaged
-# «пропуск») and the 8/14-hex UID.
+# hex)». Two readings, bounded by the record's own note: 4–12 digits (the reference
+# sample «0034561» is 7 and the registry states NO floor at all) and the 8/14-hex
+# UID.
 #
-# FOUR IS DELIBERATELY NOT CLAIMED, and the counterexample is older than this
-# change: `test_pii_v6`'s negative «пропуск на 2024 год» is a year, and the leased
-# gap between a cue and a value may hold the preposition. A four-digit floor typed
-# it as a pass; five cannot be a year.
-_UT_PASS_DIGITS = r"(?<!\d)\d{5,12}(?!\d)"
+# THE FLOOR IS FOUR (03.10.2026), AND THE YEAR DENY MOVES INTO THE SHAPE.
+# «пропуск 8178», «пропуск 7177», «пропуск 0763» were the type's ENTIRE remaining
+# message-level leak (3 cases × 2 gold occurrences), and every one of them is a
+# four-digit printed pass — the registry states no floor, so four is the record's
+# own bound and not a widening past it. The old floor of five was the guard for ONE
+# negative, «пропуск на 2024 год»: a year. Refusing the year by LENGTH was the
+# wrong instrument (it also refused a four-digit pass) and it was the only thing
+# holding that negative up, so the guard is now the deny itself: a digit run is not
+# claimed when «год»/«г.» follows it. THE DENY IS NARROWER THAN A 19xx/20xx CHECK —
+# a pass whose digits happen to be a year-like value but stand alone («пропуск
+# 1985») is still a pass, and the corpus draws its four-digit passes (8178, 7177,
+# 0763) outside the year range for the same reason: only the WORD proves a year.
+_UT_PASS_DIGITS = r"(?<!\d)\d{4,12}(?!\d)(?!\s*г(?:од|\.))"
 _UT_PASS_HEX = (r"(?<![0-9A-Fa-f])(?:[0-9A-Fa-f]{14}|[0-9A-Fa-f]{8})"
                 r"(?![0-9A-Fa-f])")
 
@@ -3109,15 +3120,44 @@ _UT_CONTRACT = (
     r"(?![0-9A-Za-zА-Яа-яЁё])")
 
 # PNR — `ГРАММАТИКА?`: «5–6 алфавитно-цифровых (GDS); локаторы "Сирены" могут
-# использовать кириллицу; пример Amadeus "2ZYVAL"». The length is the registry's;
-# the requirement of BOTH a letter and a digit is this family's conservative
-# reading of «алфавитно-цифровых» and the over-mask guard — «бронь отеля» is five
-# Cyrillic letters and must not become a booking locator. TYPES.md records that an
-# all-letter or all-digit locator is reached by the field key, not by the cue.
+# использовать кириллицу; пример Amadeus "2ZYVAL"». The length is the registry's.
+#
+# TWO READINGS, AND THE SECOND IS THE ONE MEASURED-IN LEAK (03.10.2026). The
+# alphanumeric reading requires BOTH a letter and a digit: that is this family's
+# conservative reading of «алфавитно-цифровых» and the over-mask guard — «бронь
+# отеля» is five Cyrillic letters and must not become a booking locator. The corpus
+# then wrote «pnr VGBBS» and «pnr ZXLGUT» — GDS locators that are ALL LETTERS — and
+# 4 gold occurrences (2 cases × seed + message) went to the model in the clear.
+#
+# THE ALL-LETTER READING IS NARROWER THAN THE ALPHANUMERIC ONE IN EVERY DIRECTION
+# THAT MATTERS, and that is why it is safe where a looser reading is not:
+#
+#   * LATIN CAPITALS ONLY, `(?-i:[A-Z]{5,6})`. «бронь отеля», «PNR не найден» and
+#     «номер брони уточните» carry no all-caps Latin token, so the three negatives
+#     `test_pii_v6` holds are untouched; a Cyrillic locator («локаторы "Сирены"
+#     могут использовать кириллицу») keeps the field-key path it always had.
+#   * AND IT IS REACHED ONLY THROUGH THE LATIN CUE. The leased entry that carries
+#     this alternative is `CTX_TYPES`'s SECOND PNR entry, cued
+#     `PNR|record locator|booking reference|booking code` — never «бронь». So
+#     «бронь HOTEL» (a Russian cue followed by an English word) cannot become a
+#     locator, while the register the corpus actually writes («pnr VGBBS») does.
+#
+# THE CAPS READING REFUSES A HANDLE IT WOULD ONLY PREFIX, and that is a measured
+# necessity rather than a taste: `UTILITY_TOKEN_PATTERNS` is a leftmost-first,
+# NON-OVERLAPPING scan and `_UT_PNR` stands before `_UT_LOGIN`, so `UIBVKK_E98` (a
+# LOGIN substitute the agent upper-cased) matched six caps and then stopped —
+# `_UT_LOGIN` never saw the handle and the substitute could not be resolved back.
+# `test_pii_v6`'s two LOGIN rows are what that looks like. The trailing guard
+# therefore refuses a token that continues as a handle (`_`/`.`/`-`/`/` followed by
+# another handle character) while a locator followed by sentence punctuation
+# («pnr VGBBS.») still ends the token normally.
+_UT_PNR_ALNUM = (r"(?=[0-9А-ЯЁа-яёA-Za-z]{0,5}[А-ЯЁа-яёA-Za-z])"
+                 r"(?=[А-ЯЁа-яёA-Za-z]*\d)"
+                 r"[0-9А-ЯЁа-яёA-Za-z]{5,6}")
+_UT_PNR_CAPS = r"(?-i:[A-Z]{5,6})(?![._\-/][0-9A-Za-zА-Яа-яЁё._\-/])"
 _UT_PNR = (r"(?<![0-9A-Za-zА-Яа-яЁё])"
-           r"(?=[0-9А-ЯЁа-яёA-Za-z]{0,5}[А-ЯЁа-яёA-Za-z])"
-           r"(?=[А-ЯЁа-яёA-Za-z]*\d)"
-           r"[0-9А-ЯЁа-яёA-Za-z]{5,6}(?![0-9A-Za-zА-Яа-яЁё])")
+           r"(?:" + _UT_PNR_ALNUM + r"|" + _UT_PNR_CAPS + r")"
+           r"(?![0-9A-Za-zА-Яа-яЁё])")
 
 # E_TICKET_NUMBER — `ГРАММАТИКА?`: the AIR form only («авиа — 13 цифр: 3 + 10»).
 # The rail form is «не установлена», so nothing is claimed for it.

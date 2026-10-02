@@ -2014,8 +2014,15 @@ CTX_TYPES: tuple[tuple[str, str, str], ...] = (
     # digits — so naming them is the label change only, and the vault keeps one
     # identity key for both (`ru_pii_v6.engine_label` maps either id back to
     # `VEHICLE_DOC`, which is the label `identity_signature` puts in the key).
+    # «серия» JOINS THE CUE LIST (03.10.2026). The registry's own two-letter series
+    # is what ordinary Russian writes after «серия» — «серия 13 ОГ 695459» — and the
+    # cue list above did not carry the word, so that spelling was missed while
+    # «ПТС 13 ОГ 695459» was read. The SHAPE is unchanged and is the whole guard:
+    # two digits + two LETTERS + six digits. «серия 1234 номер 567890» (the
+    # `test_pii_v6` passport negative) has no letter group and stays open, and the
+    # digit-only СТС shape cannot reach the same word.
     ("PTS_NUMBER", r"\bПТС\b|паспорт транспортного средства|паспорт ТС|"
-                   r"\bPTS\b",
+                   r"\bPTS\b|серия",
      r"\d{2}[ .-]?[А-ЯЁA-Z]{2}[ .-]?\d{6}"),
     # STS_NUMBER: the same document family, digit-only. The v5 entry above allows
     # only WHITESPACE between the groups, so «СТС 77-12-345678» fell through to the
@@ -2117,6 +2124,23 @@ CTX_TYPES: tuple[tuple[str, str, str], ...] = (
     # other reading here, but a two-letter stem inside a longer word is not it.
     ("EXEC_DOC_NO", r"исполнительн\w* лист|исполнительн\w* документ|"
                     r"исп\. лист|серия|(?<!\w)ИЛ(?!\w)",
+     r"[А-ЯЁA-Z]{2}\s?№?\s?\d{9}"),
+    # EXEC_DOC_NO, THE «исполнительный № …» SPELLING (03.10.2026). The entry above
+    # needs the word «лист»/«документ» after «исполнительный», and the writ is
+    # exactly as often written «исполнительный № ХО 332743690» with no noun between
+    # — measured on the pristine engine as a miss. The SHAPE IS THE SAME ONE (two
+    # capitals and nine digits, the registry's grammar verbatim); only the cue is
+    # added, so nothing new becomes claimable.
+    #
+    # THE BARE «исполнительный № 332743690» — nine digits with NO series letters —
+    # IS DELIBERATELY NOT CLAIMED. Catching it needs a bare `\d{9}` in the value
+    # shape, which would enter `LEGAL_TOKEN_PATTERNS` and make every nine-digit run
+    # in the customer's traffic a restore candidate — the permissive bare regex this
+    # change is forbidden to add, and the exact class `test_collisions` exists to
+    # bound. It also cannot move the sweep: EXEC_DOC_NO's deficit there is 28 seed
+    # records whose clean form is not in any scanned text (`scored` 43 of `gt` 71),
+    # not a miss — the engine masks 43/43 of what the frame carries.
+    ("EXEC_DOC_NO", r"исполнительн\w*\s*(?:лист\w*|документ\w*)?\s*№",
      r"[А-ЯЁA-Z]{2}\s?№?\s?\d{9}"),
     # CADASTRAL_NUMBER: Приказ П/0183 п. 3. The three separators are MANDATORY —
     # the registry's grammar writes colons and the record is `bare_typed=False`,
@@ -2428,11 +2452,23 @@ CTX_TYPES: tuple[tuple[str, str, str], ...] = (
      r"|[0-9A-Fa-f]{32})(?![0-9A-Fa-fАВЕСКМНОРТУХ])"),
     # APP_DEVICE_ID: a UUID (IFV) or the numeric appmetrica form. The bare
     # «device id» is deliberately not a cue — see the omission note above.
+    #
+    # THE UUID BODY ACCEPTS THE GLYPH TWINS (03.10.2026), and it is a DRIFT FIX
+    # rather than a widening: the lookarounds on both sides have always listed the
+    # Cyrillic hex twins (`[0-9A-Fa-fАВЕСКМНОРТУХ]`, the module's `_TC_HEX_B`), while
+    # the body between them listed Latin hex only — so the record's own
+    # `glyph`-folded spelling («device id E944АD90-…», a Cyrillic А where the Latin
+    # A stood) was refused by the leased shape and accepted by the module shape
+    # (`ru_pii_v6._TC_UUID`) that mints and restores it. Measured on the pristine
+    # engine as a miss; the twins are the same three-joint hex alphabet
+    # `VIN_GLYPH_FOLD` defines, and nothing wider.
     ("APP_DEVICE_ID", r"appmetrica[_-]?device[_-]?id|идентификатор устройства",
-     r"(?:(?<![0-9A-Fa-fАВЕСКМНОРТУХ])"
-     r"(?:[0-9A-Fa-f]{8}(?:[ \t.\-/:№]{0,2}[0-9A-Fa-f]{4}){3}"
-     r"[ \t.\-/:№]{0,2}[0-9A-Fa-f]{12}|[0-9A-Fa-f]{32})"
-     r"(?![0-9A-Fa-fАВЕСКМНОРТУХ])"
+     r"(?:(?<![0-9A-Fa-fАВЕСКМНОРТУХавескмнортух])"
+     r"(?:[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{8}"
+     r"(?:[ \t.\-/:№]{0,2}[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{4}){3}"
+     r"[ \t.\-/:№]{0,2}[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{12}"
+     r"|[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{32})"
+     r"(?![0-9A-Fa-fАВЕСКМНОРТУХавескмнортух])"
      r"|(?<!\d)\d{1,6}(?:[ \t\-/:№]{0,2}\d{1,6}){0,5}(?!\d))"),
     # APP_DEVICE_ID, THE BARE ENGLISH CUE (G7 follow-up, 02.10.2026 — NOT one of
     # the brief's six). The omission above is recorded as a measured over-mask
@@ -2448,9 +2484,11 @@ CTX_TYPES: tuple[tuple[str, str, str], ...] = (
     # MOBILE_AD_ID's form, and the family resolves that by asking the vault for
     # every reading the spelling permits, never by guessing here.
     ("APP_DEVICE_ID", r"\bdevice id\b|\bdevice[_-]?id\b",
-     r"(?:(?<![0-9A-Fa-fАВЕСКМНОРТУХ])"
-     r"[0-9A-Fa-f]{8}(?:[ \t.\-/:№]{0,2}[0-9A-Fa-f]{4}){3}"
-     r"[ \t.\-/:№]{0,2}[0-9A-Fa-f]{12}(?![0-9A-Fa-fАВЕСКМНОРТУХ])"
+     r"(?:(?<![0-9A-Fa-fАВЕСКМНОРТУХавескмнортух])"
+     r"[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{8}"
+     r"(?:[ \t.\-/:№]{0,2}[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{4}){3}"
+     r"[ \t.\-/:№]{0,2}[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{12}"
+     r"(?![0-9A-Fa-fАВЕСКМНОРТУХавескмнортух])"
      r"|(?<!\d)\d{15,18}(?!\d))"),
     # METRICA_CLIENT_ID: the issuer's 18-digit sample. The `_ym_uid` cookie NAME
     # is a cue of its own — it appears in a payload as a key and the value beside
@@ -2597,16 +2635,19 @@ CTX_TYPES: tuple[tuple[str, str, str], ...] = (
     ("STUDENT_ID_NUMBER", r"студенческий билет|студбилет|номер студенческого",
      r"(?<!\d)(?:\d{2}[ \t\-/]?\d{4}|\d{5,10})(?!\d)"),
     # ACCESS_PASS_NUMBER: the printed pass's digits and the RFID UID in hex (8 or
-    # 14, the registry's own note). THE DIGIT FLOOR IS FIVE, NOT SIX (03.10.2026):
-    # six was the reference sample's («0034561») own length and the registry states
-    # no floor at all («цифры печатного пропуска»), while the corpus draws 5–10 —
-    # 5 of the 12 misses of this type were a five-digit pass behind an undamaged
-    # «пропуск». FOUR IS DELIBERATELY NOT CLAIMED, and `test_pii_v6` already held
-    # the counterexample: «пропуск на 2024 год» is a year, and the leased gap may
-    # hold the preposition. The ceiling stays 12 — the registry's own «цифры» with
-    # the sample's spread, never an unbounded `\d+`.
+    # 14, the registry's own note). THE DIGIT FLOOR IS FOUR (03.10.2026): six was
+    # the reference sample's («0034561») own length, five was the previous floor,
+    # and the registry states no floor at all («цифры печатного пропуска»). The
+    # type's entire remaining message-level leak was three FOUR-digit printed passes
+    # behind an undamaged «пропуск» — 8178, 7177, 0763 — and a four-digit pass is
+    # the record's own reading, not a widening past it. THE YEAR IS THE NEW DENY:
+    # «пропуск на 2024 год» is the one negative the old five-digit floor held up,
+    # and the leased gap may hold the preposition, so a run followed by «год»/«г.»
+    # is refused INSIDE the shape. That is narrower than a 19xx/20xx range check —
+    # «пропуск 1985» is still a pass. The ceiling stays 12 — the registry's own
+    # «цифры» with the sample's spread, never an unbounded `\d+`.
     ("ACCESS_PASS_NUMBER", r"пропуск|номер пропуска|карта доступа|бейдж",
-     r"(?:(?<!\d)\d{5,12}(?!\d)"
+     r"(?:(?<!\d)\d{4,12}(?!\d)(?!\s*г(?:од|\.))"
      r"|(?<![0-9A-Fa-f])(?:[0-9A-Fa-f]{14}|[0-9A-Fa-f]{8})(?![0-9A-Fa-f]))"),
     # EMPLOYEE_TAB_NUMBER: the employer's digit run (6–10, leading zeros are the
     # norm) plus the 1С ЗУП grouping «0000-00412». The grouped form needs five
@@ -2634,13 +2675,29 @@ CTX_TYPES: tuple[tuple[str, str, str], ...] = (
     # PNR — `ГРАММАТИКА?`: five or six alphanumerics per GDS, and the registry
     # notes «Сирена» locators may be Cyrillic. BOTH a letter and a digit are
     # required: «бронь отеля» is five Cyrillic letters and must not become a
-    # booking locator. An all-letter or all-digit locator is reached by the field
-    # key, not by the cue (TYPES.md).
+    # booking locator. An all-digit locator is reached by the field key, not by the
+    # cue (TYPES.md).
     ("PNR", r"\bPNR\b|номер брони|код бронирования|номер бронирования|бронь",
      r"(?<![0-9A-Za-zА-Яа-яЁё])"
      r"(?=[0-9А-ЯЁа-яёA-Za-z]{0,5}[А-ЯЁа-яёA-Za-z])"
      r"(?=[А-ЯЁа-яёA-Za-z]*\d)"
      r"[0-9А-ЯЁа-яёA-Za-z]{5,6}(?![0-9A-Za-zА-Яа-яЁё])"),
+    # PNR, THE ALL-LETTER LOCATOR (03.10.2026 — 4 gold occurrences, 2 cases).
+    # «pnr VGBBS» and «pnr ZXLGUT» are GDS locators that carry no digit at all, and
+    # the entry above refused both: the corpus wrote them, the value reached the
+    # model, and they were the type's whole remaining leak.
+    #
+    # THE CUE IS THE SECOND HALF OF THE GUARD. It is deliberately the LATIN set
+    # only — never «бронь», «номер брони» or «код бронирования» — so the one
+    # over-mask shape a Russian cue could reach, «бронь HOTEL», is unreachable
+    # while the register the corpus writes is covered. The value is Latin CAPITALS
+    # 5–6 (`(?-i:[A-Z]{5,6})` inside the family's `(?i:…)`): «бронь отеля» and
+    # «PNR не найден» carry no all-caps Latin token, so the three negatives
+    # `test_pii_v6` holds are untouched. A Cyrillic locator keeps the field-key
+    # path it always had.
+    ("PNR", r"\bPNR\b|record\s*locator|booking\s*reference|booking\s*code",
+     r"(?<![0-9A-Za-zА-Яа-яЁё])(?-i:[A-Z]{5,6})"
+     r"(?![._\-/][0-9A-Za-zА-Яа-яЁё._\-/])(?![0-9A-Za-zА-Яа-яЁё])"),
     # E_TICKET_NUMBER — `ГРАММАТИКА?`: the AIR form only («3 + 10» digits). The
     # rail numbering is «не установлена», so nothing is claimed for it.
     ("E_TICKET_NUMBER", r"электронный билет|номер билета|e-ticket|"

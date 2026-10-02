@@ -665,8 +665,11 @@ def test_shapes_widened_on_measured_bounds(detector: Detector) -> None:
     WITH THE NEGATIVE THAT BOUNDS IT.
 
       * ACCESS_PASS_NUMBER: the registry states no floor («цифры печатного
-        пропуска», sample «0034561» = 7) and the corpus draws 5–10. The floor is
-        FIVE, not four: «пропуск на 2024 год» is a year.
+        пропуска», sample «0034561» = 7) and the corpus draws 4–10. The floor is
+        FOUR (03.10.2026 — it was five): the three remaining misses of this type
+        were four-digit printed passes. The YEAR is refused by the WORD, not by a
+        length floor — «пропуск на 2024 год» carries «год» and stays open, while
+        «пропуск 1985» (a pass whose digits merely look like a year) is read.
       * CREDIT_SUBJECT_CODE: «4–15 знаков: цифры + буквы ОДНОГО алфавита» admits a
         code drawn as CAPITALS only, which is 5 of the 7 misses. Lowercase prose is
         not a code — and the whole shape is compiled `(?i:…)`, so the capitals are
@@ -678,10 +681,14 @@ def test_shapes_widened_on_measured_bounds(detector: Detector) -> None:
     problems: list[str] = []
     if not _found(detector, "пропуск 73226", "ACCESS_PASS_NUMBER", "73226"):
         problems.append("the five-digit pass is not read")
+    if not _found(detector, "пропуск 8178", "ACCESS_PASS_NUMBER", "8178"):
+        problems.append("the four-digit printed pass is not read")
     if _found_any(detector, "пропуск на 2024 год"):
         problems.append("a four-digit year behind «пропуск» is typed as a pass")
-    if _found_any(detector, "пропуск 8178"):
-        problems.append("the four-digit floor was lowered again")
+    if _found_any(detector, "пропуск на 2024 г."):
+        problems.append("a four-digit year written «2024 г.» is a pass again")
+    if not _found(detector, "пропуск 1985", "ACCESS_PASS_NUMBER", "1985"):
+        problems.append("a year-LOOKING four-digit pass is denied with the year")
     if not _found(detector, "код субъекта АСПЗГ", "CREDIT_SUBJECT_CODE", "АСПЗГ"):
         problems.append("an all-capital subject code is not read")
     if _found_any(detector, "код субъекта указан в договоре"):
@@ -695,6 +702,118 @@ def test_shapes_widened_on_measured_bounds(detector: Detector) -> None:
         problems.append("a cue with no value masks a word")
     check("the three measured widens hold and their negatives hold", not problems,
           "; ".join(problems) if problems else "3 positives + 4 negatives")
+
+
+# =================== the v6 yellow zone (P2, 03.10.2026) ====================
+#
+# SIX REGISTRY TYPES READ BELOW 100% honest on `bench/agentpii5/detect_sweep.py`,
+# and this is the RED-then-GREEN witness for the part of that deficit a recognizer
+# can close. THE DEFICIT HAS TWO KINDS AND THE SWEEP'S PER-TYPE TABLE CANNOT TELL
+# THEM APART, which is why every row of GATE.json reports `scored` beside `gt`:
+#
+#   * A REAL LEAK — the value is in the frame's text and comes back unmasked.
+#     PNR (all-letter locators) and ACCESS_PASS_NUMBER (four-digit passes) were the
+#     only two, 4 + 6 gold occurrences. FIXED here; the number rises.
+#   * A FRAME GAP — the gold item is a SEED record (`where.kind == "seed"`) whose
+#     clean value is absent from every scanned text because the corpus stored a
+#     mixed-script/squeezed rendering of it on the user turn. `scored` sits below
+#     `gt` and `honest == scored`: the engine masks EVERY occurrence the frame
+#     carries. PTS_NUMBER (47/71), EXEC_DOC_NO (43/71), GIS_ZHKH_ELS (37/69) and
+#     APP_DEVICE_ID (52/68) are that, and no recognizer can move them — the
+#     comparison that would have to change is the sweep's own `norm()`, which this
+#     change may not touch. Their real-world misses are still closed below (a PTS
+#     series behind «серия», «исполнительный №», a glyph-folded APP UUID), because
+#     a leak outside the corpus is a leak.
+#
+# THE NEGATIVES ARE THE POINT OF EVERY ROW, and each is the one the shape could
+# plausibly have bought: a year, a Russian word, an ordinary business number.
+YELLOW_POSITIVES: list[tuple[str, str, str]] = [
+    # PNR — an all-letter GDS locator behind the LATIN cue (4 gold occurrences).
+    ("PNR", "pnr VGBBS", "VGBBS"),
+    ("PNR", "pnr ZXLGUT", "ZXLGUT"),
+    # the alphanumeric reading is untouched by the new alternative
+    ("PNR", "PNR LYG9T", "LYG9T"),
+    ("PNR", "код бронирования 2ZYVAL", "2ZYVAL"),
+    # PTS_NUMBER — the series behind «серия» with no «ПТС» anywhere.
+    ("PTS_NUMBER", "серия 13 ОГ 695459", "13 ОГ 695459"),
+    ("PTS_NUMBER", "серия 13ОГ695459", "13ОГ695459"),
+    ("PTS_NUMBER", "ПТС 77 УК 123456", "77 УК 123456"),
+    # EXEC_DOC_NO — «исполнительный № …» with no «лист»/«документ».
+    ("EXEC_DOC_NO", "исполнительный № ХО 332743690", "ХО 332743690"),
+    ("EXEC_DOC_NO", "исполнительный лист ХО 332743690", "ХО 332743690"),
+    # APP_DEVICE_ID — the glyph-folded UUID (a Cyrillic А where the Latin A stood).
+    ("APP_DEVICE_ID", "device id E944АD90-169E-F7D2-87E3-CDCF8D0EB95E",
+     "E944АD90-169E-F7D2-87E3-CDCF8D0EB95E"),
+    ("APP_DEVICE_ID", "device id A225FE22F95E2C311E3371C809DF18ED",
+     "A225FE22F95E2C311E3371C809DF18ED"),
+    # GIS_ZHKH_ELS — the mixed-script series (already tolerant; pinned here so the
+    # yellow zone's own witness carries its one already-green row).
+    ("GIS_ZHKH_ELS", "елс 20ЯM566083", "20ЯM566083"),
+    ("GIS_ZHKH_ELS", "ЕЛС 20ЯМ566083", "20ЯМ566083"),
+    # ACCESS_PASS_NUMBER — the four-digit printed pass.
+    ("ACCESS_PASS_NUMBER", "пропуск 8178", "8178"),
+    ("ACCESS_PASS_NUMBER", "номер пропуска 0763", "0763"),
+    ("ACCESS_PASS_NUMBER", "карта доступа 5504", "5504"),
+    ("ACCESS_PASS_NUMBER", "пропуск 0034561", "0034561"),
+]
+
+YELLOW_NEGATIVES: list[tuple[str, str]] = [
+    # PNR: a Russian word after a Russian cue, and a plain «no value» sentence.
+    ("PNR", "PNR не найден"),
+    ("PNR", "номер брони уточните"),
+    ("PNR", "бронь отеля"),
+    # the reason the all-letter alternative lives behind the LATIN cue only
+    ("PNR", "бронь HOTEL"),
+    # ACCESS: the year, in both notations the deny names.
+    ("ACCESS_PASS_NUMBER", "пропуск на 2024 год"),
+    ("ACCESS_PASS_NUMBER", "пропуск на 2024 г."),
+    ("ACCESS_PASS_NUMBER", "карта доступа не работает"),
+    # PTS: the passport's series — four digits, no letter group.
+    ("PTS_NUMBER", "серия 1234 номер 567890"),
+    ("PTS_NUMBER", "ПТС не найден"),
+    # EXEC: the cue with no document number at all.
+    ("EXEC_DOC_NO", "исполнительный лист не найден"),
+]
+
+
+def test_yellow_zone_is_closed_without_over_masking(detector: Detector) -> None:
+    """THE YELLOW ZONE, POSITIVE AND NEGATIVE IN ONE RUN: a rule proved only on
+    what it must find is a rule nobody knows the rest of."""
+    problems: list[str] = []
+    for type_id, text, value in YELLOW_POSITIVES:
+        if not _found(detector, text, type_id, value):
+            problems.append(f"{type_id}: {text!r} -> {_types_found(detector, text)}")
+    for type_id, text in YELLOW_NEGATIVES:
+        spans = detector.detect(text)
+        if any(span.entity_type == type_id for span in spans):
+            problems.append(f"{type_id}: OVER-MASK on {text!r} -> "
+                            f"{[(s.entity_type, s.value) for s in spans]}")
+    check("the yellow zone is closed and its negatives are untouched",
+          not problems, "; ".join(problems) if problems
+          else f"{len(YELLOW_POSITIVES)} positives + {len(YELLOW_NEGATIVES)} negatives")
+
+
+def test_yellow_zone_round_trips(detector: Detector) -> None:
+    """A RECOGNIZER WITHOUT A RESTORER HANDS THE TOOL A FAKE. Every new reading is
+    driven mask → unmask on the real pipeline, and the vault's own token scan must
+    find the substitute it minted (the PNR all-letter and four-digit pass readings
+    are new TOKEN shapes, so this is the row that would catch a shape the
+    recognizer knows and the restorer does not)."""
+    problems: list[str] = []
+    for type_id, text, value in YELLOW_POSITIVES:
+        vault = _vault()
+        spans = detector.detect(text)
+        masked = mask_text(text, vault, spans)
+        if value in masked:
+            problems.append(f"{type_id}: the real value is still in {masked!r}")
+            continue
+        restored = unmask_text(masked, vault)
+        if value not in restored:
+            problems.append(f"{type_id}: {masked!r} -> {restored!r} "
+                            f"(expected {value!r})")
+    check("every yellow-zone reading is masked and restored", not problems,
+          "; ".join(problems) if problems
+          else f"{len(YELLOW_POSITIVES)} round trips")
 
 
 def main() -> int:
@@ -719,6 +838,8 @@ def main() -> int:
     test_leased_cue_sources_all_parse()
     test_gis_series_is_script_tolerant_and_squeezed(detector)
     test_shapes_widened_on_measured_bounds(detector)
+    test_yellow_zone_is_closed_without_over_masking(detector)
+    test_yellow_zone_round_trips(detector)
     print()
     if _FAILURES:
         print(f"{len(_FAILURES)} FAILED: " + "; ".join(_FAILURES))
