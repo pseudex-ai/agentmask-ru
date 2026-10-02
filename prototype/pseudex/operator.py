@@ -339,6 +339,17 @@ def build_router(audit, license_client, assets, detector_version: str,
         # numbers, and the printed report carried that claim to an auditor.
         since = time.time() - days * 86400
         since_day = time.strftime("%Y-%m-%d", time.localtime(since))
+        # THE OVER-MASKING GUARD, BESIDE THE MASK COUNTS. `by_type` above is read
+        # from the audit journal over the requested window; this one is counted
+        # in the detector, because a DENIED span writes no row at all (see
+        # `metrics.TypeCounter`). The two therefore do NOT share a denominator,
+        # and the response says so: `suppressed_since` is when this worker first
+        # denied a span, so the interface can print «в этом процессе с …» instead
+        # of implying the numbers cover the same period.
+        #
+        # COUNTS ONLY, like every other figure here: no token, no preview, no
+        # value crosses this endpoint, and a type name is a closed vocabulary.
+        suppressed = metrics_format.suppressed_snapshot()
         return JSONResponse({
             "org_id": org_id,
             "days": await anyio.to_thread.run_sync(audit.daily_series, org_id, days, agent_id),
@@ -346,6 +357,9 @@ def build_router(audit, license_client, assets, detector_version: str,
             "by_agent": await anyio.to_thread.run_sync(audit.by_agent, org_id, since_day),
             "requests_total": await anyio.to_thread.run_sync(
                 audit.request_totals, org_id, since_day, agent_id),
+            "suppressed_by_type": suppressed["by_type"],
+            "suppressed_total": suppressed["total"],
+            "suppressed_since": suppressed["since"],
         })
 
     @router.get("/stats.csv")
@@ -406,6 +420,12 @@ def build_router(audit, license_client, assets, detector_version: str,
             audit.counts, org_id, _period_start("today"), "")
         series = await anyio.to_thread.run_sync(audit.daily_series, org_id, 1, "")
         volume = sqlite_setup.volume_state(os.environ.get("PSEUDEX_DB_DIR", "."))
+        # The over-masking guard on the same scrape as the mask counts. It is a
+        # COUNTER, not a gauge: it only rises for the life of the process, which
+        # is exactly what Prometheus's `rate()`/`increase()` are defined over.
+        # A label is safe here for the reason entity types are: the vocabulary is
+        # closed (10 v5 + the v6 registry + CVC/OTP), never a customer value.
+        suppressed = metrics_format.suppressed_snapshot()
 
         out = [
             # THE LADDER AS FOUR SERIES, NOT ONE NUMBER. An enum encoded as
@@ -455,6 +475,27 @@ def build_router(audit, license_client, assets, detector_version: str,
             metrics_format.series(
                 "pseudex_values_today", {k: int(v) for k, v in today.items()},
                 "Personal values protected today, by type", "type"),
+            # THE OTHER HALF OF THE TYPE PICTURE, and the reason it is a separate
+            # metric rather than a subtraction: `pseudex_values_today` counts spans
+            # that WERE masked; this counts near-masks the deny layer deliberately
+            # LEFT ALONE (an order number that looks like a phone, a version string
+            # that looks like an IP). One rising while the other falls is the
+            # over-masking guard moving, and no single series shows that.
+            #
+            # Process-lifetime, this worker: a scrape of N workers sees the share
+            # of the worker Prometheus happened to reach, the same property
+            # `pseudex_requests_today` has and the same reason the interface prints
+            # «в этом процессе». The `since` gauge carries the window with it, so a
+            # dashboard never reads a small count as a quiet business day.
+            metrics_format.series(
+                "pseudex_suppressed_total", suppressed["by_type"],
+                "Near-masks the deny layer kept OUT of masking, by type — values "
+                "the context evidence said were never PII, not PII left "
+                "unprotected", "type", kind="counter"),
+            metrics_format.render(
+                "pseudex_suppressed_since_seconds", suppressed["since"],
+                "Unix time of this worker's first suppressed span; absent until "
+                "the guard has fired at least once"),
             # FOUR STATES, NOT A BOOLEAN, for the same reason the licence
             # ladder is four series: `== ENCRYPTED` collapsed «a correctly
             # configured volume nobody has written to yet» (EMPTY) and «half the

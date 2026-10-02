@@ -15,6 +15,7 @@ from pseudex.detect import NameSpan, Span, detect_pii
 from pseudex.names import (gazetteer_names, keep_location, keep_person,
                            trim_document_words, trim_person_span)
 from pseudex.normalize import normalize
+from pseudex import metrics as runtime_metrics
 from pseudex.profiling import stage
 from pseudex.quasi import detect_quasi
 from pseudex.ru_pii import detect_plates, detect_structured, detect_vehicle_ids
@@ -352,15 +353,33 @@ class Detector:
             # order number was masked as a phone. Offsets are 1:1 by invariant,
             # so the same spans index into either text.
             with stage("detect.resolve"):
+                candidates = _drop_address_inside_multipart_name(spans, text)
+                kept = suppress(text, candidates)
+                # THE OVER-MASKING GUARD IS COUNTED HERE, and this is the ONLY
+                # point where it can be. A denied span mints no token and writes
+                # no audit row, so `/stats` cannot derive it from the journal the
+                # way `by_type` is derived — `context.py` owns the decision, the
+                # detector owns the tally, and `metrics.TypeCounter` is where the
+                # two meet. The UI renders it beside the masked counts as
+                # «suppressed».
+                #
+                # POSITION-KEYED, NOT IDENTITY-KEYED, because `suppress` RETYPES
+                # a personal date DATE -> DOB and hands back a fresh `Span`: a
+                # retype is still a mask, and an identity diff would report it as
+                # a denial. A span is denied exactly when no kept span covers its
+                # offsets.
+                #
                 # AFTER `suppress`, deliberately: if the wider span is denied by
                 # context the checksum sub-run stays, so the value is masked
                 # either way. Dropping it earlier could leave the text with
                 # nothing at all — a leak bought for a notation.
+                kept_positions = {(s.start, s.end) for s in kept}
+                denied = [s.entity_type for s in candidates
+                          if (s.start, s.end) not in kept_positions]
+                if denied:
+                    runtime_metrics.SUPPRESSED.add_many(denied)
                 resolved = _resolve(
-                    _boundary_beats_checksum(
-                        suppress(text,
-                                 _drop_address_inside_multipart_name(spans, text)),
-                        text) + kv_spans,
+                    _boundary_beats_checksum(kept, text) + kv_spans,
                     ASSETS.get().priority, text, keyed=kv_spans)
             # A NAME LEAVES WITH THE CASES ITS SENTENCE ALLOWS (`NameSpan`): the
             # vault reads the phrase alone, and «на имя марину» alone is a man.

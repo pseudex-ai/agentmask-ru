@@ -823,24 +823,112 @@ function PeriodReport({ org, data, days, onClose }) {
     </div>`;
 }
 
+/* One per-type table — the masked counts, or the suppressed near-masks. Both
+ * are COUNTS of a closed type vocabulary, so neither can carry a token or a
+ * value even by accident.
+ *
+ * Inline styles rather than a class: the only per-type table in `app.css` is
+ * `.report-table`, which is the LIGHT sheet meant for paper (white background,
+ * #bbb rules) and would be unreadable on this dark screen. The stylesheet beside
+ * this file is vendored and not rebuilt for a UI change, and inventing classes
+ * it does not contain would be a class that renders nothing. */
+const TYPE_TH = 'font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;'
+  + 'color:var(--dim-2);font-weight:600;text-align:left;padding:7px 9px;'
+  + 'border-bottom:1px solid var(--line-2);white-space:nowrap';
+const TYPE_TD = 'font-size:12.5px;padding:7px 9px;border-bottom:1px solid var(--line-3)';
+const TYPE_TD_NAME = TYPE_TD + ';font-family:var(--mono);color:var(--text-3);letter-spacing:.06em;'
+  + 'overflow:hidden;text-overflow:ellipsis';
+const TYPE_TD_NUM = TYPE_TD + ';font-family:var(--mono);color:var(--text-2);text-align:right;'
+  + 'white-space:nowrap';
+
+function TypeTable({ heading, subtitle, rows, fill, empty }) {
+  const total = rows.reduce((sum, [, count]) => sum + count, 0);
+  const peak = Math.max(1, ...rows.map(([, count]) => count));
+  return html`
+    <div class="cell" style="min-width:0">
+      <div class="label mb">${heading}</div>
+      <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+        <thead>
+          <tr>
+            <th style=${TYPE_TH}>ТИП</th>
+            <th style=${TYPE_TH + ';text-align:right;width:92px'}>ЗНАЧЕНИЙ</th>
+            <th style=${TYPE_TH + ';width:78px'}>ДОЛЯ</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(([name, count]) => html`
+            <tr key=${name}>
+              <td style=${TYPE_TD_NAME} title=${name}>${name}</td>
+              <td style=${TYPE_TD_NUM}>${num(count)}</td>
+              <td style=${TYPE_TD}>
+                <div style=${`height:6px;width:${Math.round((count / peak) * 100)}%;background:${fill}`}></div>
+              </td>
+            </tr>`)}
+          ${!rows.length && html`
+            <tr><td colspan="3" style=${TYPE_TD + ';color:var(--dim-3)'}>${empty}</td></tr>`}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td style=${TYPE_TD_NAME + ';color:var(--text-2)'}>ВСЕГО</td>
+            <td style=${TYPE_TD_NUM + ';color:var(--text)'}>${num(total)}</td>
+            <td style=${TYPE_TD}></td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="hint">${subtitle}</div>
+    </div>`;
+}
+
+/* The stats screen polls. WHY POLL AT ALL: this is the screen an operator leaves
+ * open while an agent run is in flight, and a number that only moves on a manual
+ * reload answers the question minutes late. 5 s is short enough to watch a run
+ * and long enough that the read is a rounding error beside the traffic itself —
+ * and it is a COUNT query, never a scan of values.
+ *
+ * The interval is torn down by the effect's cleanup when the screen closes (the
+ * tab unmounts it) and restarted when the period or the org changes, so exactly
+ * one poller runs at a time; two would double every read and race each other. */
+const STATS_REFRESH_MS = 5000;
+
 function Stats({ org }) {
   const [data, setData] = useState(null);
   const [days, setDays] = useState(14);
   const [report, setReport] = useState(false);
   const [error, setError] = useState('');
+  const [updatedAt, setUpdatedAt] = useState(null);
+  // Guards the poll against its own last answer: `days` can change while a fetch
+  // for the old window is still in flight, and without this the slower reply
+  // lands last and renders the period the operator already left.
+  const seq = useRef(0);
+
+  const load = useCallback(async () => {
+    const mine = ++seq.current;
+    try {
+      const body = await engineGet('/stats', { org_id: org, days });
+      if (mine !== seq.current) return;
+      setData(body);
+      setUpdatedAt(Date.now() / 1000);
+      setError('');
+    } catch (problem) {
+      if (mine !== seq.current) return;
+      setError('движок не отвечает');
+    }
+  }, [org, days]);
 
   useEffect(() => {
-    let live = true;
-    engineGet('/stats', { org_id: org, days })
-      .then((body) => { if (live) { setData(body); setError(''); } })
-      .catch(() => { if (live) setError('движок не отвечает'); });
-    return () => { live = false; };
-  }, [org, days]);
+    load();
+    const timer = setInterval(load, STATS_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [load]);
 
   const series = data?.days || [];
   const peak = Math.max(1, ...series.map((day) => day.requests));
-  const types = Object.entries(data?.by_type || {}).sort((a, b) => b[1] - a[1]);
-  const topType = Math.max(1, ...types.map(([, count]) => count));
+  const masked = Object.entries(data?.by_type || {}).sort((a, b) => b[1] - a[1]);
+  const suppressed = Object.entries(data?.suppressed_by_type || {}).sort((a, b) => b[1] - a[1]);
+  const maskedTotal = masked.reduce((sum, [, count]) => sum + count, 0);
+  const suppressedTotal = data?.suppressed_total
+    ?? suppressed.reduce((sum, [, count]) => sum + count, 0);
+  const suppressedSince = data?.suppressed_since;
 
   return html`
     <div class="page">
@@ -877,7 +965,51 @@ function Stats({ org }) {
 
       ${error && html`<div class="foot-note" style="color:var(--pink);margin-bottom:12px">${error}</div>`}
 
-      <div class="cell" style="border:1px solid var(--line-2);padding:22px 24px 26px">
+      <!-- THE HEADER CARRIES BOTH DENOMINATORS AND THE TWO HALVES OF THE TYPE
+           PICTURE: requests and protected values belong to the audit window
+           below; the suppressed total belongs to THIS engine process, and its
+           own «с …» says so. Reading them as one period would be the lie. -->
+      <div class="cell" style="border:1px solid var(--line-2);padding:22px 24px"
+           title="Обращения и защищённые значения — за выбранный период. Оставленное открытым — счётчик этого процесса движка.">
+        <div class="label" style="margin-bottom:14px">
+          ЗА ПЕРИОД · АВТООБНОВЛЕНИЕ КАЖДЫЕ ${STATS_REFRESH_MS / 1000} С
+        </div>
+        <div style="display:flex;gap:40px;flex-wrap:wrap;align-items:flex-end">
+          <div>
+            <div class="label">ОБРАЩЕНИЙ</div>
+            <div class="stat">${num(data?.requests_total)}</div>
+          </div>
+          <div>
+            <div class="label">ЗАЩИЩЕНО ЗНАЧЕНИЙ</div>
+            <div class="stat green">${num(maskedTotal)}</div>
+          </div>
+          <div>
+            <div class="label">ОСТАВЛЕНО ОТКРЫТЫМ УМЫШЛЕННО</div>
+            <div class="stat" style="color:var(--accent)">${num(suppressedTotal)}</div>
+            <div class="stat-cap">
+              ${suppressedSince
+                ? `в этом процессе с ${clock(suppressedSince)}`
+                : 'в этом процессе: ещё не срабатывало'}
+            </div>
+          </div>
+          <div style="margin-left:auto;text-align:right">
+            <div class="label">ОБНОВЛЕНО</div>
+            <div class="stat" style="font-size:20px">${updatedAt ? clock(updatedAt) : '—'}</div>
+            <div class="stat-cap">${error ? 'движок не отвечает' : 'свежие счётчики без перезагрузки'}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid cols-fit-md attach">
+        <${TypeTable} heading="ЗАМАСКИРОВАНО ПО ТИПАМ"
+          subtitle=${`Защищённые значения за последние ${days} дней, по убыванию. Счётчики журнала аудита: v5, v6 и временные секреты (CVC/OTP) — одной таблицей, как их называет движок.`}
+          rows=${masked} fill="var(--accent)" empty="За период данных нет." />
+        <${TypeTable} heading="НЕ ЗАМАСКИРОВАНО · ЗАЩИТА ОТ ИЗБЫТОЧНОСТИ"
+          subtitle=${'Срабатывания deny-слоя: near-mask, который контекст признал НЕ персональными данными — номер заказа, версия, реквизит организации. Считается в этом процессе движка с момента запуска, поэтому окно у него своё и период сверху к нему не применяется.'}
+          rows=${suppressed} fill="var(--green)" empty="Защита от избыточности ещё не срабатывала." />
+      </div>
+
+      <div class="cell" style="border:1px solid var(--line-2);padding:22px 24px 26px;margin-top:18px">
         <div class="label mb">ЗАПРОСЫ ПО ДНЯМ</div>
         <div class="bars">
           ${series.map((day, index) => html`
@@ -889,17 +1021,7 @@ function Stats({ org }) {
         </div>
       </div>
 
-      <div class="grid cols-fit-md attach">
-        <div class="cell" style="padding:22px 24px">
-          <div class="label mb">ПО ТИПАМ СУЩНОСТЕЙ</div>
-          ${types.map(([name, count]) => html`
-            <div class="tbar">
-              <div class="n">${name}</div>
-              <div class="track"><div class="fill" style=${`width:${Math.round((count / topType) * 100)}%`}></div></div>
-              <div class="c">${num(count)}</div>
-            </div>`)}
-          ${!types.length && html`<div class="foot-note">Пока пусто.</div>`}
-        </div>
+      <div class="grid cols-fit-md" style="margin-top:18px">
         <div class="cell">
           <div class="label mb">ПО АГЕНТАМ</div>
           ${(data?.by_agent || []).map((row) => html`
