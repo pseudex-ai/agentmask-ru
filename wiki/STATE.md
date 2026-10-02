@@ -623,6 +623,30 @@ any claim.
 **Price:** needle generation and survival now treat 15 v6 alphanumeric identifiers as script-bearing, so a v6 run can produce derived-form needles — and therefore survival findings and form misses — that a v5 run cannot. That is the accepted v6 semantics, not a v5 regression, and it must be read that way in every before/after count. `DIGIT_PIECE_TYPES` 5 to 45 and `SQUEEZED_TYPES` 1 to 22 widen by the same rule. The sets are pinned by CARDINALITY, not by membership: a registry edit that swaps one member for another without changing the count is not caught by this pin, and a per-member pin is the next instrument if that turns out to matter.
 **Related:** `prototype/bench/agentpii5/pii_types.py` · `prototype/bench/agentpii5/contracts.py` · `prototype/bench/agentpii5/observe.py` · `prototype/bench/agentpii5/test_pii_types.py` · `docs/tz-agentpii6-registry.md` · D-073 · D-079
 
+### D-081 · 2026-10-02 · The substitution identity is a STABLE CORE + MUTABLE PARTS, per PII type
+**Status:** design adopted (owner-confirmed); implementation = identity phase 2 in `vault.canonicalize`. Not yet shipped — the free metric `bench/identity_invariant.py` is RED on the four gaps it names.
+
+**Context:** the reverse-tokenization promise is «one identity = one substitute, for ever» — the model must meet the SAME fake for the same person/place across turns, or its memory fills with strangers. A live demo exposed that the promise breaks on four ordinary changes: (a) a name written with and without the patronymic mints three fakes; (b) an address dictated aloud («дом тридцать восемь») and the same address typed as digits («дом 38») mint two fakes; (c) a changed apartment («кв 7» → «кв 42») mints a new full address fake; (d) a changed entrance does the same. The owner's stated principle: «человек поменял квартиру или подъезд — это не должно создавать новую подмену; на один фейк улицы прибавляется дом, подъезд, квартира, а фейк тот же». The same applies to a phone `+7` vs `8` (already collapsed) and to a name that gains a patronymic (the agent asked, the user answered — the model must not see a new person).
+
+**Decision:** the substitution has a **structure**, and the vault keys it by the **stable core** only. Per type the identity is the minimal set of parts that names one person/place/document; everything else is a **mutable part** rendered ON TOP of the same core fake.
+
+| type | identity (stable core) | mutable parts (details) |
+|---|---|---|
+| LOC (address) | street + house | flat, entrance, floor, building (`place_parts`) |
+| NAME | surname + given name | patronymic, initials |
+| PHONE | the 10–11 digits | notation (`+7`/`8`/separators) |
+| PASSPORT / SNILS / INN / CARD | series + number (digits) | separators/grouping |
+
+Concretely `Лермонтова 38 кв 7` → `Сиреневая 26, кв 81` and `Лермонтова 38 кв 42` → **`Сиреневая 26`**, кв 179: the street+house fake is one, the flat is a separate part that changes. The implementation is the existing `place_parts` + `morph_names.to_nominative` machinery taken to its conclusion: `address_key` must drop the flat/entrance/floor (identity = street+house) and fold dictated cardinals to digits via `spoken.canonical_numeral`; the NAME key must read surname+given (patronymic/initials are not in the key).
+
+**Legal note:** 152-ФЗ is technology-neutral — it regulates the DATA, not the granularity of the substitute (klerk.ru RG-Soft breakdown «5 схем под 152-ФЗ»). As long as the REAL flat/entrance/patronymic is substituted, privacy holds regardless of how the fake identity is structured. The one real risk is NOT legal but a **collision**: two different people in one house must NOT collapse to one fake — therefore the mutable parts are PRESERVED as separate fake parts, never dropped.
+
+**Alternative rejected:** (1) the flat identity today — every surface change mints a new fake, which is exactly the observed instability; (2) dropping the flat/entrance from the substitute entirely — removes the distinction between two people in one house and risks a wrong delivery, a safety defect, not a privacy one.
+
+**Price:** the address identity becomes compositional — the vault mints the core and renders the parts, and `detokenize` must recompose the REAL parts back so the customer's tool still receives the full real address the customer wrote. NAME keyed by surname+given means `Иванов Пётр` and `Иванов Пётр Сергеевич` are one fake, while `Иванов Пётр` and `Иванов Николай` stay two — the given name is in the key, the patronymic is not. A `differ` negative control is part of the metric so «one fake» is never achieved by over-collapsing.
+
+**Related:** `prototype/pseudex/vault.py` (canonicalize, `morph_places.address_key`, `morph_names.to_nominative`) · `prototype/pseudex/morph_places.py` (`split_roles`, `place_parts`) · `prototype/bench/identity_invariant.py` (the free metric) · D-070
+
 **D-ID renumbering (V1 merge).** `D-068`/`D-069`/`D-070` were spent twice — once
 on this branch and once by the v6 branch (2026-09-26…28). Both records and both
 bodies stay; the v6 records moved to unused ids and the v5 ids are unchanged:

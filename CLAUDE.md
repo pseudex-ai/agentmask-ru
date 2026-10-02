@@ -788,7 +788,7 @@ normalized text index straight back into the original.
 The span types every recognizer emits (`Span`, `NameSpan`, `PartSpan`) and the
 first recognizer: libphonenumber ∪ regex phone/email.
 - **API:** `Span`, `NameSpan`, `PartSpan`, `detect_pii`
-- **Uses:** — · **Used by:** address, context, credentials, detect_all, envelope, names, quasi, redact, ru_pii, spoken, structured
+- **Uses:** — · **Used by:** address, context, credentials, cvc, detect_all, envelope, names, quasi, redact, ru_pii, ru_pii_v6, spoken, structured
 - **Tests:** test_loop · via detect_all
 - **Docs:** `docs/how-it-works.md`
 
@@ -797,18 +797,52 @@ Russian structured identifiers, checksum-gated: СНИЛС (mod 101), ИНН (we
 vectors), card (Luhn), ОГРН/ОГРНИП, passport (cue-gated), VIN, licence plates.
 The validators are the algorithm and stay in the binary; the cue words are leased.
 - **API:** `validate_snils`, `validate_inn`, `validate_luhn`, `validate_ogrn`, `vin_check_digit_valid`, `detect_vehicle_ids`, `detect_structured`, `detect_plates`
-- **Uses:** assets, detect, fuzzy · **Used by:** detect_all, spoken, vault
+- **Uses:** assets, detect, fuzzy, ru_pii_v6 (lazy) · **Used by:** detect_all, ru_pii_v6, spoken, vault
 - **Tests:** test_class_g_leaks, test_product, make_dataset · via detect_all → test_coverage_152fz, test_hard_cases, test_overmasking
 - **Docs:** `research/dd2-notes-C-disambiguation.md`, `research/ru-pii-dataset-and-detectors.md` · rules: INVARIANTS.md#structured-ids
+
+#### `pseudex/ru_pii_v6.py` — 3 834 lines · `live`
+The v6 registry families the engine supports NATIVELY (N1): the eleven
+checksum-carrying types (§checksum), the eight identity documents (§identity),
+the six legal/court records (§legal), the ten finance/insurance/medical records
+(§finance) and the eight telecom/device records (§telecom). The arithmetic lives
+HERE, not in `pseudex/ru_pii.py`, so the two can disagree. Two rules decide every line:
+COV-CHECKSUM-INHERIT (a valid source mints a valid fake, a faulty source mints a
+faulty one — never re-minted until the checksum fails) and SAFE RANGES PROVEN
+PER TYPE. `engine_label` is the registry-id ↔ engine-label bridge (G7): detection
+emits the registry id and the vault speaks the engine label. A bare positive is
+anchored on a closed SOURCE list (IBAN country registry, LOAN_UID) or a Luhn
+check digit AND a number word (IMEI); a cue or a field key always outranks a
+bare shape (`bare_typed=False`).
+- **API:** `engine_label`, `luhn_check_digit`, `validate_luhn`, `validate_imei`, `validate_oms_enp`, `validate_iccid`, `validate_ogrnip`, `validate_epts_number`, `uin_check_digit`, `validate_uin`, `vin_check_char`, `validate_vin`, `iban_check_digits`, `validate_iban`, `validate_loan_uid`, `cbr515_account_key`, `validate_account`, `validate_bank_account_shape`, `gs1_check_digit`, `validate_loyalty_card_number`, `validate`, `detect_checksum_anchored`, `is_business_account`, `mint_imei`, `mint_iccid`, `mint_oms_enp`, `mint_ogrnip`, `mint_epts_number`, `mint_uin`, `mint_loyalty`, `mint_vin`, `mint_iban`, `mint_loan_uid`, `mint_bank_account`, `mint`, `render_like_atomic`, `identity_signature`, `identity_label_of_shape`, `identity_signatures`, `mint_identity`, `legal_signature`, `legal_signatures`, `legal_label_of_shape`, `legal_label_for_source`, `mint_legal`, `finance_signature`, `finance_signatures`, `finance_label_of_shape`, `finance_label_for_source`, `mint_finance`, `telecom_own_layout`, `telecom_shape`, `telecom_signature`, `telecom_signatures`, `telecom_label_of_shape`, `v6_uuid_squeezed`, `mint_telecom`, `utility_signature`, `utility_signatures`, `utility_label_of_shape`, `utility_label_for_source`, `mint_utility`, `detect_cued_raw`, `detect_telecom`
+- **Uses:** agent_form (lazy), assets (lazy), detect, fuzzy (lazy), ru_pii (lazy) · **Used by:** notation, redact, ru_pii, vault
+- **Tests:** test_pii_v6, test_v6_gaps · via ru_pii, redact, vault → test_product, test_hard_cases, test_coverage_152fz
+- **Docs:** `docs/tz-agentpii6.md`, `docs/tz-agentpii6-registry.md` · rules: INVARIANTS.md#structured-ids
 
 #### `pseudex/structured.py` — 219 lines · `live`
 Layer 1: JSON / form key-value, where the KEY types the WHOLE value with no shape
 check (`KEY_TYPE`), or only licenses a shape (`CTX_TYPES`). A KV-typed span skips
 `suppress`.
-- **API:** `detect_structured_kv`, `key_edge`
-- **Uses:** assets, detect, morph_places · **Used by:** detect_all, redact
+- **API:** `key_type`, `key_edge`, `detect_structured_kv`
+- **Uses:** assets, cvc, detect, morph_places · **Used by:** cvc, detect_all, redact
 - **Tests:** none direct · via detect_all → test_hard_cases, test_persona_defects, test_product
 - **Docs:** `research/dd4-B-structured.md` · rules: INVARIANTS.md#structured-kv
+
+#### `pseudex/cvc.py` — 362 lines · `live`
+Temporary secrets with NO internal evidence — the card verification code
+(`CARD_VERIFICATION_CODE`, declared 3 or 4 digits by alias) and the one-time
+issuer code (`ISSUER_OTP`, length never declared). The class is typed ONLY by
+external evidence: the authoritative field name (`key_class` reads
+`structured.key_type`) or a bounded prose cue from the leased `CTX_TYPES` — never
+by entropy. Format-preserving substitutes (width = source width, never a leading
+zero, so an unquoted JSON number keeps parsing); deliberately NOT in
+`vault._token_re`, so restoration is a point query under the SAME class context,
+and an uncontexted substitute is left as a residual (`O-SECRET-8`), never handed
+to the tool.
+- **API:** `field_lengths`, `is_digit_run`, `leaf_shape_ok`, `key_class`, `mint`, `detect_spans`, `restore_spans`, `licensed_ranges`, `drop_uncontexted`, `restore_number_leaf`
+- **Uses:** assets, detect, structured (lazy) · **Used by:** redact, structured, vault
+- **Tests:** test_cvc_otp · via redact, structured, vault → test_product, test_hard_cases
+- **Docs:** `research/quality-sprint-2026-09-30/work/C0/SPEC.md` · rules: INVARIANTS.md#structured-kv
 
 #### `pseudex/credentials.py` — 123 lines · `live`
 API keys, tokens, private keys — anchored to PUBLISHED prefixes, never to entropy.
@@ -890,7 +924,7 @@ end, place-reference vs address. Runs BEFORE overlap resolution.
 One-edit matching shared by names and addresses: Damerau distance and the
 deletion-neighbourhood index (Mor-Fraenkel / SymSpell), complete by construction.
 - **API:** `within_one_edit`, `within_one_typo`, `deletion_keys`, `DeletionIndex`, `build_index`, `lookup`, `recover_one_edit`, `Edit`, `edit_from`, `apply_edit`
-- **Uses:** — · **Used by:** address, context, morph_names, names, quasi, ru_pii, spoken, vault
+- **Uses:** — · **Used by:** address, context, morph_names, names, quasi, ru_pii, ru_pii_v6, spoken, vault
 - **Tests:** `bench/blocking_recall.py` · via names/address → test_hard_cases, test_persona_defects
 - **Docs:** `docs/gar-street-vocabulary.md` (the fuzzy-street curve) · rules: INVARIANTS.md#names, INVARIANTS.md#spoken
 
@@ -914,7 +948,7 @@ pipeline above; `_PRIORITY` is the arbiter (checksum IDs 6 > phone/email 5 >
 ADDR 4 > NAME 3 > DATE/PASSPORT/LOC 2); `ADDR` exists only to outrank a NAME
 inside a street name and is remapped to `LOC` after resolution.
 - **API:** `Detector`
-- **Uses:** _morph_compat, address, assets, context, credentials, detect, morph_names, names, normalize, profiling, quasi, ru_pii, spoken, structured · **Used by:** envelope, proxy, service
+- **Uses:** _morph_compat, address, assets, context, credentials, detect, metrics, morph_names, names, normalize, profiling, quasi, ru_pii, spoken, structured · **Used by:** envelope, proxy, service
 - **Tests:** test_class_g_leaks, test_argument_form, test_collisions, test_coverage_152fz, test_credentials, test_hard_cases, test_names_morphology, test_overmasking, test_perf_masking, test_persona_defects, test_product, test_prose_fragments; every `eval_*.py`; every `bench/`
 - **Docs:** `docs/how-it-works.md`, `docs/spec.md`, `research/dd2-notes-D-architecture-eval.md` · rules: INVARIANTS.md#pipeline
 
@@ -947,7 +981,7 @@ case out. A NAME is cased as a whole class (`lower`/`upper`/`title`), never
 word by word — mirroring a lower-case particle onto the fake's patronymic
 produced a run the windows could not read back (Б24).
 - **API:** `cased_like`, `case_class`, `name_cased_like`, `main`
-- **Uses:** — · **Used by:** morph_places, notation, redact, spoken
+- **Uses:** — · **Used by:** morph_places, notation, redact, ru_pii_v6, spoken
 - **Tests:** none direct · via redact → test_argument_form
 - **Docs:** `research/2026-09-02-agent-form-benchmark.md` · rules: INVARIANTS.md#agent-form
 
@@ -968,7 +1002,7 @@ plate resolves by (letters + digits, both Latin readings folded). `redact`,
 renderers — `redact` imports this module, and `vault`/`translit` would make the
 ring.
 - **API:** `script_of`, `case_of`, `looks_dictated`, `notation_of`, `render_like`, `plate_content`, `plate_signature`, `plate_notation_of`, `plate_in_form_of`, `plate_laid_like`, `written_place`, `place_in_form_of`, `name_in_form_of`, `name_in_script`
-- **Uses:** agent_form, date_form, morph_places, redact (lazy), spoken, translit (lazy), vault (lazy) · **Used by:** redact, vault
+- **Uses:** agent_form, date_form, morph_places, redact (lazy), ru_pii_v6 (lazy), spoken, translit (lazy), vault (lazy) · **Used by:** redact, vault
 - **Tests:** test_notation_symmetry; via redact/vault → the hop-form suites
 - **Docs:** `research/hop-format-audit/SPIKE-А.md`, `research/hop-format-audit/DECISIONS-SPRINT.md` · rules: INVARIANTS.md#notation
 
@@ -983,7 +1017,7 @@ sender on both legs. Streaming detokenizer with one carry per
 (two arguments, the shape the benchmark's own gateway calls) and the leg-aware
 `surviving_substitutes` for substitutes that failed to resolve.
 - **API:** `mask_text`, `is_own_substitute`, `vault_value`, `tokenize_span`, `unmask_text`, `unmask_stream_chunk`, `unmask_arguments`, `residual_tokens`, `surviving_substitutes`, `StreamDetokenizer`
-- **Uses:** address, agent_form, assets, detect, morph_names, morph_places, normalize, notation, profiling, spoken, structured, translit, vault · **Used by:** envelope, notation, proxy, service
+- **Uses:** address, agent_form, assets, cvc, detect, morph_names, morph_places, normalize, notation, profiling, ru_pii_v6, spoken, structured, translit, vault · **Used by:** envelope, notation, proxy, service
 - **Tests:** test_class_g_leaks, test_argument_form, test_collisions, test_derived_forms, test_digit_truncation, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_phone_hop_form, test_error_echo_privacy, test_product, test_prose_fragments, bench_masking, profile_latency; `bench/agentpii{2,3,4}`, `bench/agentrun/roundtrip.py`
 - **Docs:** `docs/how-it-works.md`, `docs/known-issues.md` (§0, §1, Б8, Б11, Б12) · rules: INVARIANTS.md#swap, INVARIANTS.md#streaming
 
@@ -1001,7 +1035,7 @@ never `canon[2:12]`), refuses two owners of one number, and
 `digit_fragment_is_ours` names a substitute one digit from what the agent wrote
 without ever resolving it.
 - **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `name_key`, `fold_key`, `place_key`, `token_re`, `create_tables`, `create_indexes`, `Vault` (+ `VAULT_MIGRATIONS`)
-- **Uses:** assets, credentials, date_form, fuzzy, morph_names, morph_places, names, normalize, notation, profiling, ru_pii, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, notation, proxy, redact, service, schema (lazy)
+- **Uses:** assets, credentials, cvc, date_form, fuzzy, morph_names, morph_places, names, normalize, notation, profiling, ru_pii, ru_pii_v6, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, notation, proxy, redact, service, schema (lazy)
 - **Tests:** test_class_g_leaks, vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_digit_truncation, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
 - **Docs:** `docs/tz-vault-encryption.md`, `docs/tz-name-gender-canonical.md`, `docs/how-it-works.md`, `research/2026-09-03-checksum-valid-substitutes.md` · rules: INVARIANTS.md#vault, INVARIANTS.md#collisions, INVARIANTS.md#conversation-scope
 
@@ -1044,7 +1078,7 @@ vocabulary, cue words, priority table, look-alike folds, key→type map, fake
 pools. Compiles every regex ONCE at load; raises `BundleNotLeased` when nothing
 is loaded — no bundle means NO detection, not less.
 - **API:** `BundleNotLeased`, `NameAssets`, `AddressAssets`, `SpokenAssets`, `QuasiAssets`, `ContextAssets`, `StructuredAssets`, `RuPiiAssets`, `TranslitAssets`, `FakeAssets`, `CompositeType, DetectionAssets`, `Assets`
-- **Uses:** address, bundle, morph, morph_places, names, vault (lazy) · **Used by:** address, context, detect_all, license, morph_names, morph_places, names, normalize, proxy, quasi, redact, ru_pii, service, spoken, structured, translit, vault
+- **Uses:** address, bundle, morph, morph_places, names, vault (lazy) · **Used by:** address, context, cvc, detect_all, license, morph_names, morph_places, names, normalize, proxy, quasi, redact, ru_pii, ru_pii_v6, service, spoken, structured, translit, vault
 - **Tests:** test_canary, test_derived_forms, test_fingerprint, test_hard_cases, test_product, test_prose_fragments, test_tuning_lease_security, test_unload_scrub, test_watermark, testkit
 - **Docs:** `docs/tz-license-packaging.md`, `docs/tz-tuning-in-lease.md` · rules: INVARIANTS.md#lease
 
@@ -1145,8 +1179,8 @@ Multi-tenant API keys for the proxy shape: key → upstream URL + key.
 
 #### `pseudex/metrics.py` — 113 lines · `live`
 Prometheus text format written by hand — no client library in the image.
-- **API:** `escape`, `render`, `series`, `Counter`
-- **Uses:** — · **Used by:** operator; `licensing/server.py`
+- **API:** `escape`, `render`, `series`, `Counter`, `TypeCounter`, `suppressed_snapshot`
+- **Uses:** — · **Used by:** detect_all, operator; `licensing/server.py`
 - **Tests:** none direct · via operator → test_localui
 - **Docs:** `docs/operations.md`
 
@@ -1362,6 +1396,12 @@ Run from `prototype/`; each loads the dev bundle itself.
 | `test_watermark.py` | every leased bundle carries the customer's watermark |
 | `test_metering_anomaly.py` | the fleet-wide anomaly report surfaces a silently root-patched counter (WS-6/M2) |
 | `test_published_claims.py` | numbers PRINTED to the customer (landing, EULA) equal the numbers the code works by — and the replaced literals are ABSENT |
+| `test_addr_passport_tail.py` | address HEAD/TAIL + passport cue/tail (the PII-Bench coverage gap): a region name at the head, a trailing city and a passport cue past 16 chars were found but their span leaked the tail to the model; the tail and the restorer are extended TOGETHER so the span covers the part WHOLE and the round-trip converges (vectors 6–8) |
+| `test_address_head.py` | the address HEAD inside the span — a city/region/district prefix, a street without «улица» but with a house, and the indirect form («варшавке 24к3»); the head is absorbed ONLY when a street+house is already in the span, a bare toponym stays open, and «Иван Петров» before the street stays a NAME |
+| `test_cvc_otp.py` | C1 temporary secrets — CARD_VERIFICATION_CODE and ISSUER_OTP: the nine RED properties, hard negatives in the same run, declared alias lengths, format-preserving mint, restore on text/args/stream, the tiny-domain collision refusal (O-SECRET-8), the NOT_MEASURED gap, and three must-fail mutants |
+| `test_pii_v6.py` | N1 — the v6 registry families the engine supports natively (checksum, identity, legal, finance, telecom): RECOGNIZE / MINT / RESTORE per type, with format-preserving substitutes that INHERIT the source's checksum validity (COV-CHECKSUM-INHERIT) |
+| `test_r1_seed20_f4.py` | R1 — seed20 (D1-N F1) + street-adjacency veto (D1-N F4) on the leased NAME path: twenty lower-case diminutives as seed entries, a street word vetoes the lower-case NAME branch; runs the real detector and prints the two fixed denominators |
+| `test_v6_gaps.py` | G7 follow-up — the two v6 detection gaps (type-label alignment and six real 0%-coverage gaps), each positive with four controls (own register, negative, no fuzzy numerals, typed over bare) |
 
 Not in `prototype/`: `licensing/test_*.py` (§2), `storefront/test_*.py` (§6),
 `e2e/` gates (§5).
@@ -1656,6 +1696,7 @@ by `bench/agentpii5/report.py`'s v6 path, `run_provenance`).
 | `bench/build_name_dicts.py` | — | extracted the name dictionaries into `licensing/data/` (one-off) |
 | `bench/run_all.py`, `bench/summarize_run.py` | — | the whole battery in one run; headline numbers of one run into one document |
 | `bench/public_row.py` | — | produces OUR own row in the public benchmark the way anybody else's is made: starts a real sidecar and runs the PUBLIC harness against it over HTTP, so nothing of the engine reaches the benchmark but its endpoint answers. Also prints the corpus-name overlap our leased gazetteers already hold, which the benchmark itself cannot see |
+| `bench/identity_invariant.py` | — | the identity invariant per PII type: one person/address/phone written in several forms (case/order/dictation, flat/entrance, patronymic, +7 vs 8) collapses to ONE substitute; no model, no network |
 
 ---
 

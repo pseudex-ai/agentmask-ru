@@ -789,6 +789,20 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   `8 999…` / `89991234567`. Canonical identity is not a universal output
   notation: PHONE restoration renders the real digits in the current sender's
   supported form on both legs. Pins: `vault_test`, `test_phone_hop_form.py`.
+- **The identity is a STABLE CORE + MUTABLE PARTS, keyed on the core only** (D-081).
+  One identity must mint ONE substitute across every surface change: a name with
+  and without the patronymic (`Иванов Пётр` / `Иванов Пётр Сергеевич`) is one
+  person; an address dictated (`дом тридцать восемь`) and typed (`дом 38`) is
+  one place; a changed flat or entrance (`кв 7` → `кв 42`, `подъезд 1` → `3`)
+  keeps the SAME street+house fake and only the mutable part changes. The stable
+  core per type: LOC = street + house (flat/entrance/floor/building are
+  `place_parts`); NAME = surname + given (patronymic/initials are not in the
+  key); PHONE = the digits (notation is presentation). The mutable parts are
+  PRESERVED as separate fake parts, never dropped — dropping them collapses two
+  different people in one house into one fake (a collision). A `differ` negative
+  control (`Иванов Пётр` vs `Иванов Николай`) keeps «one fake» from being
+  achieved by over-collapsing. Measured by `bench/identity_invariant.py`.
+  UNPINNED — the pin test lands with the identity phase 2 fix.
 - **Substitutes are format-preserving and checksum-VALID from impossible ranges.** A fake
   СНИЛС / ИНН / card deliberately passes its own checksum (so a checksum-checking
   agent still calls the tool) but is minted from ranges that cannot belong to a
@@ -1417,6 +1431,7 @@ named next to it.
   entrance; noun genitive; genitive plural door; two-word city.
 - Spoken: no fuzzy on numerals.
 - Swap: both-axes measurement; pool floor; hyphen-glued substitutes.
+- Vault: identity stable-core/mutable-parts (D-081).
 - Agent form: the agent's generic word.
 - Local UI: header not cookie; sign-in token from entrypoint.
 - Process: root logger.
