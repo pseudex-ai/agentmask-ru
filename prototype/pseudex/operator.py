@@ -64,6 +64,171 @@ _SELFCHECK_TEXT = (
     "перезвоните на +7 916 214-88-03."
 )
 
+# THE IDENTITY-INVARIANT PROBE (D-081), MIRRORED HERE FOR THE INTERFACE.
+#
+# WHAT IT ANSWERS. One identity written several ways — «4512 345678» and
+# «4512345678», «Иванов Пётр Сергеевич» and «Иванов П. С.», «улица Лермонтова
+# дом 38 квартира 7» and «ул. Лермонтова 38 кв 42» — must mint ONE substitute.
+# The interface's statistics screen prints that per type, so an operator can see
+# a canonicalisation regression on the same page as the counters it moves.
+#
+# WHY THE FORMS ARE COPIED AND NOT IMPORTED. `pseudex/` may never import from
+# `bench/` — bench does not ship (Dockerfile.nuitka's COPY set), so an import
+# would be an ImportError in the release image, on the one screen an operator
+# opens when something is wrong. The metric
+# (`bench/identity_invariant.py`) is the source of truth and compares this exact
+# list on every run: it prints `UI-зеркало … agrees` or `DRIFT` and names the
+# group that moved, so a mirror cannot diverge quietly.
+#
+# THE FORMS ARE FULLY SYNTHETIC — invented numbers, a fictional person, a street
+# nobody lives on — so they carry no personal data and are safe to keep in RAM
+# and in the shipped binary. Only COUNTS leave /stats; no form, no canonical and
+# no token is ever returned.
+#
+# (entity_type, expect, (form, ...)) — `collapse` = all forms must mint ONE fake;
+# `differ` = all forms must mint DIFFERENT fakes (the negative control).
+IDENTITY_PROBE = (
+    ("NAME", "collapse", ("Иванов Пётр", "Иванову Петру", "Иванова Петра",
+                          "Пётр Иванов")),
+    ("NAME", "differ", ("Иванов Пётр", "Иванов Николай")),
+    ("NAME", "collapse", ("Иванов Пётр Сергеевич", "Иванов Пётр",
+                          "Иванов П. С.")),
+    ("LOC", "collapse", ("улица Лермонтова, дом 38, квартира 7",
+                         "ул. Лермонтова 38 кв 7",
+                         "улица лермонтова дом 38 квартира 7")),
+    ("LOC", "collapse", ("улица лермонтова дом тридцать восемь квартира семь",
+                         "улица Лермонтова дом 38 квартира 7")),
+    ("LOC", "collapse", ("улица Лермонтова дом 38 квартира 7",
+                         "улица Лермонтова дом 38 квартира 42")),
+    ("LOC", "collapse", ("улица Лермонтова дом 38 подъезд 1 квартира 7",
+                         "улица Лермонтова дом 38 подъезд 3 квартира 7")),
+    ("PHONE", "collapse", ("+7 916 402-11-87", "8 916 402-11-87",
+                           "89164021187")),
+    ("EMAIL", "collapse", ("Ivanov@Example.RU", " ivanov@example.ru ")),
+    ("EMAIL", "differ", ("ivanov@example.ru", "petrov@example.ru")),
+    ("PASSPORT", "collapse", ("4512 345678", "4512345678")),
+    ("PASSPORT", "differ", ("4512 345678", "4512 345679")),
+    ("SNILS", "collapse", ("123-456-789 01", "12345678901")),
+    ("SNILS", "differ", ("123-456-789 01", "123-456-789 02")),
+    ("INN", "collapse", ("7712345678", "77 12345678")),
+    ("INN", "differ", ("7712345678", "7712345679")),
+    ("CARD", "collapse", ("4276 1234 5678 9012", "4276123456789012")),
+    ("CARD", "differ", ("4276 1234 5678 9012", "4276 1234 5678 9013")),
+    ("OGRN", "collapse", ("1027700132195", "1 0277 00132195")),
+    ("OGRN", "differ", ("1027700132195", "1027700132196")),
+    ("OGRNIP", "collapse", ("304500000012345", "3045000000 12345")),
+    ("OGRNIP", "differ", ("304500000012345", "304500000012346")),
+    # DATE is a NON-ITEM date (`item_type=False`): its substitute mirrors the
+    # customer's notation by design, so the three writings are three rows — the
+    # control asserts that shape rather than the invariant. The identity-bearing
+    # date is DOB, and the same three forms collapse there.
+    ("DATE", "differ", ("21.01.1979", "21/01/1979", "1979-01-21")),
+    ("DOB", "collapse", ("21.01.1979", "21/01/1979", "1979-01-21")),
+    ("DOB", "differ", ("21.01.1979", "22.01.1979")),
+    ("OMS_ENP", "collapse", ("1234567890123456", "1234 5678 9012 3456")),
+    ("OMS_ENP", "differ", ("1234567890123456", "1234567890123457")),
+    ("IBAN", "collapse", ("RU0204452560040702810412345678901",
+                          "ru02 0445 2560 0407 0281 0412 3456 78901")),
+    ("IBAN", "differ", ("RU0204452560040702810412345678901",
+                        "RU0204452560040702810412345678902")),
+    ("VIN", "collapse", ("XTA210990Y2765499", "xta 210990 y2765499")),
+    ("VIN", "differ", ("XTA210990Y2765499", "XTA210990Y2765498")),
+    ("PTS_NUMBER", "collapse", ("78 УВ 123456", "78УВ123456", "78 YB 123456")),
+    ("PTS_NUMBER", "differ", ("78 УВ 123456", "78 УВ 123457")),
+)
+
+# Computed once per process: the invariant is a property of this build's
+# canonicalisation, not of any traffic, so a 5-second poll must not re-run it.
+# `None` means "not computed yet"; the dict is replaced atomically under the
+# GIL, and two workers racing to compute it compute the same value.
+_IDENTITY_RESULT: dict[str, object] | None = None
+
+
+def _identity_of(entity_type: str, value: str) -> str:
+    """The identity key of ONE real writing — no vault, nothing minted.
+
+    `canonicalize` is the row key, and on a fresh vault equal row key means
+    equal substitute. NAME is the one exception the metric documents: D-081
+    renders one substitute at the named granularity, so «Иванов Пётр Сергеевич»
+    and «Иванов П. С.» canonicalise to different STRINGS that are the same
+    person. The fold is surname + given-name initial, exactly what
+    `bench/identity_invariant.py::fake_identity` applies to substitutes; the
+    metric's UI-mirror check compares the two group lists, and both
+    implementations are probed against each other on every metric run.
+    """
+    from pseudex import morph_names, ru_pii_v6
+    from pseudex.vault import canonicalize
+    canonical = canonicalize(entity_type, value)
+    if ru_pii_v6.engine_label(entity_type) != "NAME":
+        return canonical
+    words = canonical.split()
+    shape = morph_names.name_shape(canonical)
+    if len(shape) != len(words):
+        return canonical
+    surname = [w for w, kind in zip(words, shape) if kind == "surn"]
+    given = [w for w, kind in zip(words, shape) if kind in ("name", "init")]
+    if surname and given:
+        return f"{surname[0].casefold()}|{given[0].strip('.').casefold()[:1]}"
+    return canonical
+
+
+def identity_stability() -> dict[str, object]:
+    """Per-type identity stability for the statistics screen — COUNTS ONLY.
+
+    Never a form, a canonical or a token: this crosses /stats, which the
+    interface polls, and a value there would be personal data on an operator
+    screen. The type vocabulary is the closed set the screen already prints.
+
+    A failure (an unleased bundle, a store that will not open) is reported as
+    `available: False` with a short reason rather than raised: /stats must keep
+    answering while the licence is degraded, and a statistical screen that goes
+    dark exactly when the container is in trouble is the wrong instrument.
+    """
+    global _IDENTITY_RESULT
+    if _IDENTITY_RESULT is not None:
+        return _IDENTITY_RESULT
+    result: dict[str, object] = {
+        "available": False, "error": "", "scope": "row key (canonicalize)",
+        "by_type": {}, "collapse_groups": 0, "collapse_stable": 0,
+        "differ_groups": 0, "differ_ok": 0, "types_with_groups": 0,
+        "types_stable": 0, "rate": 0.0,
+    }
+    try:
+        by_type: dict[str, dict[str, int]] = {}
+        for entity_type, expect, forms in IDENTITY_PROBE:
+            keys = {_identity_of(entity_type, form) for form in forms}
+            row = by_type.setdefault(entity_type, {
+                "collapse_groups": 0, "collapse_stable": 0,
+                "differ_groups": 0, "differ_ok": 0})
+            if expect == "collapse":
+                row["collapse_groups"] += 1
+                row["collapse_stable"] += 1 if len(keys) == 1 else 0
+            else:
+                row["differ_groups"] += 1
+                row["differ_ok"] += 1 if len(keys) == len(forms) else 0
+        groups = sum(r["collapse_groups"] for r in by_type.values())
+        stable = sum(r["collapse_stable"] for r in by_type.values())
+        result.update({
+            "available": True,
+            "by_type": by_type,
+            "collapse_groups": groups,
+            "collapse_stable": stable,
+            "differ_groups": sum(r["differ_groups"] for r in by_type.values()),
+            "differ_ok": sum(r["differ_ok"] for r in by_type.values()),
+            "types_with_groups": sum(1 for r in by_type.values()
+                                     if r["collapse_groups"]),
+            "types_stable": sum(1 for r in by_type.values()
+                                if r["collapse_groups"]
+                                and r["collapse_stable"] == r["collapse_groups"]),
+            "rate": stable / groups if groups else 0.0,
+        })
+    except Exception as exc:  # noqa: BLE001 — /stats must answer regardless
+        result["error"] = f"{type(exc).__name__}: {exc}"
+        return result
+    _IDENTITY_RESULT = result
+    return result
+
+
 
 def _clock_ticks() -> int:
     try:
@@ -350,6 +515,15 @@ def build_router(audit, license_client, assets, detector_version: str,
         # COUNTS ONLY, like every other figure here: no token, no preview, no
         # value crosses this endpoint, and a type name is a closed vocabulary.
         suppressed = metrics_format.suppressed_snapshot()
+        # THE IDENTITY READOUT, BESIDE THE COUNTS IT QUALIFIES. `by_type` says
+        # how many values were protected; this says whether the SAME identity
+        # written two ways was protected ONCE. A regression here is invisible in
+        # the counts (they grow either way) and visible at a glance here. It is
+        # the build's own canonicalisation, so it is computed once and cached;
+        # the offload keeps the first poll off the event loop (canonicalisation
+        # runs morphology, and this endpoint also serves /health's neighbours).
+        # COUNTS ONLY — see `identity_stability`.
+        identity = await anyio.to_thread.run_sync(identity_stability)
         return JSONResponse({
             "org_id": org_id,
             "days": await anyio.to_thread.run_sync(audit.daily_series, org_id, days, agent_id),
@@ -360,6 +534,7 @@ def build_router(audit, license_client, assets, detector_version: str,
             "suppressed_by_type": suppressed["by_type"],
             "suppressed_total": suppressed["total"],
             "suppressed_since": suppressed["since"],
+            "identity": identity,
         })
 
     @router.get("/stats.csv")

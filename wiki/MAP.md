@@ -108,7 +108,7 @@ anchored on a closed SOURCE list (IBAN country registry, LOAN_UID) or a Luhn
 check digit AND a number word (IMEI); a cue or a field key always outranks a
 bare shape (`bare_typed=False`).
 - **API:** `engine_label`, `luhn_check_digit`, `validate_luhn`, `validate_imei`, `validate_oms_enp`, `validate_iccid`, `validate_ogrnip`, `validate_epts_number`, `uin_check_digit`, `validate_uin`, `vin_check_char`, `validate_vin`, `iban_check_digits`, `validate_iban`, `validate_loan_uid`, `cbr515_account_key`, `validate_account`, `validate_bank_account_shape`, `gs1_check_digit`, `validate_loyalty_card_number`, `validate`, `detect_checksum_anchored`, `is_business_account`, `mint_imei`, `mint_iccid`, `mint_oms_enp`, `mint_ogrnip`, `mint_epts_number`, `mint_uin`, `mint_loyalty`, `mint_vin`, `mint_iban`, `mint_loan_uid`, `mint_bank_account`, `mint`, `render_like_atomic`, `identity_signature`, `identity_label_of_shape`, `identity_signatures`, `mint_identity`, `legal_signature`, `legal_signatures`, `legal_label_of_shape`, `legal_label_for_source`, `mint_legal`, `finance_signature`, `finance_signatures`, `finance_label_of_shape`, `finance_label_for_source`, `mint_finance`, `telecom_own_layout`, `telecom_shape`, `telecom_signature`, `telecom_signatures`, `telecom_label_of_shape`, `v6_uuid_squeezed`, `mint_telecom`, `utility_signature`, `utility_signatures`, `utility_label_of_shape`, `utility_label_for_source`, `mint_utility`, `detect_cued_raw`, `detect_telecom`
-- **Uses:** agent_form (lazy), assets (lazy), detect, fuzzy (lazy), ru_pii (lazy) · **Used by:** notation, redact, ru_pii, vault
+- **Uses:** agent_form (lazy), assets (lazy), detect, fuzzy (lazy), ru_pii (lazy) · **Used by:** notation, operator, redact, ru_pii, vault
 - **Tests:** test_pii_v6, test_v6_gaps · via ru_pii, redact, vault → test_product, test_hard_cases, test_coverage_152fz
 - **Docs:** `docs/tz-agentpii6.md`, `docs/tz-agentpii6-registry.md` · rules: INVARIANTS.md#structured-ids
 
@@ -176,7 +176,7 @@ Russian personal-name morphology: gender, case, nominative, inflection, the
 round-trip guard. `to_nominative` is called from two sides (real value in
 `canonicalize`, fake value in `name_key`) and only one may carry a guard.
 - **API:** `name_shape`, `has_given_name`, `detect_gender`, `detect_case`, `full_patronymic`, `governing_cases`, `read_person`, `to_nominative_governed`, `to_nominative`, `lone_nominative_gender`, `inflect_person`, `cases_spelled_as`, `looks_like_person`, `given_name_gender`, `feminine_surname`, `survives_round_trip`
-- **Uses:** assets, fuzzy, morph · **Used by:** detect_all, redact, vault
+- **Uses:** assets, fuzzy, morph · **Used by:** detect_all, operator, redact, vault
 - **Tests:** test_derived_forms, test_names_morphology, test_product
 - **Docs:** `research/2026-08-16-russian-name-morphology.md`, `docs/tz-name-gender-canonical.md`, `research/2026-09-17-prose-case-homography.md` · rules: INVARIANTS.md#name-morphology
 
@@ -328,7 +328,7 @@ never `canon[2:12]`), refuses two owners of one number, and
 `digit_fragment_is_ours` names a substitute one digit from what the agent wrote
 without ever resolving it.
 - **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `name_key`, `fold_key`, `place_key`, `token_re`, `create_tables`, `create_indexes`, `Vault` (+ `VAULT_MIGRATIONS`)
-- **Uses:** assets, credentials, cvc, date_form, fuzzy, morph_names, morph_places, names, normalize, notation, profiling, ru_pii, ru_pii_v6, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, notation, proxy, redact, service, schema (lazy)
+- **Uses:** assets, credentials, cvc, date_form, fuzzy, morph_names, morph_places, names, normalize, notation, profiling, ru_pii, ru_pii_v6, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, notation, operator, proxy, redact, service, schema (lazy)
 - **Tests:** test_class_g_leaks, vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_digit_truncation, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
 - **Docs:** `docs/tz-vault-encryption.md`, `docs/tz-name-gender-canonical.md`, `docs/how-it-works.md`, `research/2026-09-03-checksum-valid-substitutes.md` · rules: INVARIANTS.md#vault, INVARIANTS.md#collisions, INVARIANTS.md#conversation-scope
 
@@ -447,8 +447,8 @@ surfaces under the ADMIN token: `/status`, `/events`, `/stats`, `/stats.csv`,
 `release_verdict` is the `engine.release` block of `/status` and `/subscription`:
 the server's verdict on this version (D-055) with unix dates and the one
 upgrade command, `None` fields when the server said nothing.
-- **API:** `processes`, `memory`, `release_verdict`, `build_router`
-- **Uses:** audit, metrics, preflight, profiling, schema, sqlite_setup · **Used by:** proxy, service
+- **API:** `processes`, `memory`, `release_verdict`, `build_router`, `identity_stability`
+- **Uses:** audit, metrics, morph_names, preflight, profiling, ru_pii_v6, schema, sqlite_setup, vault · **Used by:** proxy, service
 - **Tests:** none direct · via service → test_localui, test_perf_masking (401 on token drift), test_detok_security
 - **Docs:** `docs/tz-local-ui.md` · rules: INVARIANTS.md#surfaces, INVARIANTS.md#audit
 

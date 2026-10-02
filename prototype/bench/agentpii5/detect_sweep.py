@@ -45,6 +45,18 @@ each one a measurement that was lying or absent before:
         ONE token (the vault is per-case via `for_conversation`), plus a
         mask-the-same-thing-twice idempotence check.
 
+(d) IDENTITY, a per-type axis and the FOURTH thing the corpus cannot measure.
+    `consistency` (c) only sees a type whose gold identity appears twice IN THE
+    CORPUS; a type the corpus writes once, or writes in one notation only, never
+    reaches it at all. The `identity` axis is a SYNTHETIC probe instead: the
+    GROUPS of `bench/identity_invariant.py` (one identity written in several
+    forms, per type) are run through the vault the same way the sweep runs a
+    case — `for_conversation`, one fresh vault per group — and per type it
+    reports the metric's own question: how many collapse groups minted ONE fake.
+    The groups and the comparison are IMPORTED, never copied, so the sweep and
+    the metric that exits non-zero on a broken collapse cannot drift apart.
+    Purely additive: no existing axis, denominator or line changes.
+
 Run (from prototype/):
     .venv/bin/python bench/agentpii5/detect_sweep.py [corpus.v5.json ...]
     .venv/bin/python bench/agentpii5/detect_sweep.py --out-dir <dir>   # sweep.out + GATE.json
@@ -297,7 +309,7 @@ def _score(gtype, gval, preds, accepted):
 
 
 def sweep(corpus, detector, label, vault, form_match, tokenize_span, accepted,
-          limit=None):
+          limit=None, identity=None):
     cases = corpus if limit is None else corpus[:limit]
     # per type
     gt = defaultdict(int)
@@ -605,6 +617,22 @@ def sweep(corpus, detector, label, vault, form_match, tokenize_span, accepted,
     print(f"CONSISTENCY MASK-TWICE (same span tokenized twice -> one token): "
           f"{m2_pass}/{m2_total} = {m2_pass/m2_total if m2_total else 0:.1%}")
 
+    # (d) IDENTITY — additive, printed last so no line above it moves.
+    if identity is not None:
+        _print_identity(identity)
+
+    # The identity column on the per-type rows, for the same types: the corpus
+    # may not label every type the metric probes, so this fills in what it has
+    # and leaves the rest to the standalone table above.
+    per_type = {}
+    for t in sorted(gt):
+        row = {"gt": gt[t], "scored": scored[t], "unscored": unscored[t],
+               "exact": exact_hits[t], "typed": typed_hits[t],
+               "honest": honest_hits[t], "full": full_hits[t]}
+        if identity is not None and t in identity["by_type"]:
+            row["identity"] = identity["by_type"][t]
+        per_type[t] = row
+
     return {
         "cases": len(cases),
         "gold_all": tot_gt,
@@ -647,11 +675,10 @@ def sweep(corpus, detector, label, vault, form_match, tokenize_span, accepted,
             "single_occurrence_groups": consistency_single[0],
             "mask2_pass": m2_pass, "mask2_total": m2_total,
             "mask2_rate": m2_pass / m2_total if m2_total else 0.0},
-        "per_type": {t: {"gt": gt[t], "scored": scored[t], "unscored": unscored[t],
-                         "exact": exact_hits[t],
-                         "typed": typed_hits[t], "honest": honest_hits[t],
-                         "full": full_hits[t]}
-                     for t in sorted(gt)},
+        # (d) additive: the identity axis, its own per-type table and the column
+        # on the rows above. `None` only when the caller did not build a probe.
+        "identity": identity,
+        "per_type": per_type,
     }
 
 
@@ -668,6 +695,79 @@ def _reset_counters():
     for c in (consistency_total, consistency_pass, consistency_single,
               consistency_mask2_total, consistency_mask2_pass):
         c[0] = 0
+
+
+def identity_probe():
+    """(d) The per-type identity axis — FREE, no model, no network.
+
+    THE GROUPS AND THE ONE-FAKE COMPARISON ARE IMPORTED FROM THE METRIC
+    (`bench/identity_invariant.py::stability`), never copied: the metric is the
+    instrument that exits non-zero when a collapse group mints more than one
+    fake, and a sweep that restated its groups would be a second answer to the
+    same question, free to drift.
+
+    THE SCOPE IS THE SWEEP'S OWN. Every corpus case is masked through
+    `vault.for_conversation(...)`; the probe runs the same way (one fresh vault
+    per group, one conversation view), so a type that is stable at customer
+    scope and unstable inside a dialogue is visible HERE rather than in a bug
+    report. `identity_invariant.py` prints the same per-type table in both
+    scopes and cross-checks them.
+
+    Returns counts only: `by_type[type]` carries `collapse_groups`,
+    `collapse_stable`, `differ_groups`, `differ_ok` (and the group titles). No
+    PII value, canonical or token leaves this function, so it is safe in the
+    report and in the UI payload.
+    """
+    from bench.identity_invariant import stability
+    per_type = stability("conversation")
+    return {
+        "scope": "conversation",
+        "note": "synthetic probe: bench/identity_invariant.py GROUPS through "
+                "Vault.for_conversation, one fresh vault per group; "
+                "stability = collapse groups with ONE fake / all collapse groups",
+        "by_type": {t: dict(row) for t, row in per_type.items()},
+        "collapse_groups": sum(r["collapse_groups"] for r in per_type.values()),
+        "collapse_stable": sum(r["collapse_stable"] for r in per_type.values()),
+        "differ_groups": sum(r["differ_groups"] for r in per_type.values()),
+        "differ_ok": sum(r["differ_ok"] for r in per_type.values()),
+        "types_with_groups": sum(1 for r in per_type.values()
+                                 if r["collapse_groups"]),
+        "types_stable": sum(1 for r in per_type.values()
+                            if r["collapse_groups"]
+                            and r["collapse_stable"] == r["collapse_groups"]),
+    }
+
+
+def _print_identity(identity):
+    """(d) IDENTITY, printed as its own per-type table.
+
+    ITS OWN TABLE, NOT A COLUMN ON THE RECALL TABLE. The recall table's rows are
+    the corpus's types; these rows are the metric's types, whether the corpus
+    carries one or not, and a type the corpus never labels has no recall row to
+    hang a column on. Keeping it separate is also what makes the additive claim
+    checkable: not one character of the existing table moves.
+    """
+    print("\n--- (d) IDENTITY (synthetic probe, FREE: metric GROUPS through "
+          "for_conversation, one fresh vault per group) ---")
+    print("stability = collapse groups that minted ONE fake / all collapse "
+          "groups for the type; `differ` = negative controls (each form must "
+          "mint its own fake). A type with no collapse group is «-»: DATE is a "
+          "non-item date whose notation is presentation by design "
+          "(bench/identity_invariant.py).")
+    print(f"{'TYPE':<24}{'collapse':>9}{'stable':>8}{'stability':>11}"
+          f"{'differ':>8}{'ok':>5}")
+    for t in sorted(identity["by_type"]):
+        row = identity["by_type"][t]
+        groups = row["collapse_groups"]
+        rate = f"{row['collapse_stable'] / groups:.1%}" if groups else "-"
+        print(f"{t:<24}{groups:>9}{row['collapse_stable']:>8}{rate:>11}"
+              f"{row['differ_groups']:>8}{row['differ_ok']:>5}")
+    print(f"IDENTITY STABILITY (all types): {identity['collapse_stable']}/"
+          f"{identity['collapse_groups']} collapse groups mint one fake = "
+          f"{(identity['collapse_stable'] / identity['collapse_groups']
+              if identity['collapse_groups'] else 0):.1%}   "
+          f"types stable {identity['types_stable']}/{identity['types_with_groups']}"
+          f";  differ controls {identity['differ_ok']}/{identity['differ_groups']}")
 
 
 class _Tee:
@@ -751,14 +851,20 @@ def main(argv=None):
     detector = Detector()
     vault = Vault(":memory:", "agentpii5-detect-sweep")
     paths = args.paths or DEFAULT_PATHS
+    # (d) computed ONCE — it is a property of the engine's canonicalisation, not
+    # of a corpus, and running it per corpus would spend the vault work twice
+    # for one answer (and print the same table twice).
+    identity = identity_probe()
 
     revision_before = _revision()
     report = {"tool": "prototype/bench/agentpii5/detect_sweep.py",
               "mode": "honest+complete: (a) exact/typed/honest recall, "
-                      "(b) generated hops + fallback, (c) form + consistency",
+                      "(b) generated hops + fallback, (c) form + consistency, "
+                      "(d) identity = free per-type probe",
               "git_head": revision_before["git_head"],
               "git_branch": revision_before["git_branch"],
               "revision_before": revision_before,
+              "identity": identity,
               "corpora": {}}
 
     out_file = None
@@ -787,7 +893,7 @@ def main(argv=None):
         corpus = load_frame(path)
         _reset_counters()
         result = sweep(corpus, detector, path.name, vault, form_match,
-                       tokenize_span, accepted, limit=args.limit)
+                       tokenize_span, accepted, limit=args.limit, identity=identity)
         result["path"] = str(path)
         key = "v6" if "v6" in str(path) else "v5"
         report["corpora"][key] = result
@@ -824,6 +930,19 @@ def main(argv=None):
                                    else "FAIL",
                 "G7_over_scored": "PASS" if r["scored"]["honest_over_scored_rate"] >= 0.99
                                   else "FAIL",
+                # (d) additive: the identity axis over the metric's groups. No
+                # threshold of its own — the metric is the gate that exits
+                # non-zero on a broken collapse; this is the same number beside
+                # the recall it is supposed to qualify.
+                "identity_scope": identity["scope"],
+                "identity_collapse_stable": identity["collapse_stable"],
+                "identity_collapse_groups": identity["collapse_groups"],
+                "identity_rate": (identity["collapse_stable"] / identity["collapse_groups"]
+                                  if identity["collapse_groups"] else 0.0),
+                "identity_types_stable": identity["types_stable"],
+                "identity_types_with_groups": identity["types_with_groups"],
+                "identity_differ_ok": identity["differ_ok"],
+                "identity_differ_groups": identity["differ_groups"],
             }
         report["gate"] = gate
         for key, g in gate.items():
@@ -840,6 +959,12 @@ def main(argv=None):
             emit(f"  form                 {g['form']:.1%}")
             emit(f"  consistency          {g['consistency']:.1%}   "
                  f"mask-twice {g['consistency_mask2']:.1%}")
+            emit(f"  identity (probe, {g['identity_scope']})   "
+                 f"{g['identity_rate']:.1%}  "
+                 f"({g['identity_collapse_stable']}/{g['identity_collapse_groups']} "
+                 f"collapse groups mint one fake; types stable "
+                 f"{g['identity_types_stable']}/{g['identity_types_with_groups']}; "
+                 f"differ {g['identity_differ_ok']}/{g['identity_differ_groups']})")
         report["caveats"] = [
             "The corpus frame carries no generated assistant/tool/answer text: "
             "base.messages is system+user only, `hops` is item ids and JSON "
@@ -857,6 +982,14 @@ def main(argv=None):
             "labels are reported separately, never as failures.",
             "`consistency` covers (identity, canonical value) groups with >=2 "
             "found occurrences in one case; single occurrences cannot disagree.",
+            "`identity` (d) is NOT a corpus number: it is `bench/"
+            "identity_invariant.py`'s GROUPS run through the vault in the "
+            "sweep's own scope (for_conversation, one fresh vault per group). A "
+            "type the corpus writes once or in one notation never reaches "
+            "`consistency`, so this is the only axis that speaks for it. "
+            "`differ` controls are counted apart from `stability`; DATE has no "
+            "collapse group because the registry declares it a non-item date "
+            "(see the metric's docstring).",
             ("engine digest STABLE during the run: the numbers describe one "
              "revision (see revision_before)." if report["engine_stable_during_run"]
              else "ENGINE MOVED DURING THE RUN (digest changed): these numbers "

@@ -879,6 +879,86 @@ function TypeTable({ heading, subtitle, rows, fill, empty }) {
     </div>`;
 }
 
+/* THE IDENTITY READOUT (D-081) — «одна сущность = одна подмена», per type.
+ *
+ * WHY IT BELONGS ON THIS SCREEN, BESIDE THE COUNTS. «Защищено значений» grows
+ * whether one identity was masked once or five times, so the exact failure this
+ * product treats as unacceptable — the model meeting one person as two — is
+ * invisible in every number on the page. This table is the counter-evidence:
+ * the engine writes one identity in several forms (separators, case, a
+ * patronymic, dictation) and reports how many of those form-groups minted ONE
+ * substitute.
+ *
+ * WHAT IT IS NOT. Not traffic: it is a synthetic probe of this build's own
+ * canonicalisation, the same GROUPS the free metric `bench/identity_invariant.py`
+ * runs and fails on. Nothing here comes from the customer's data, and nothing
+ * here is a value: the payload carries a type name from a closed vocabulary and
+ * counts, so this table cannot leak even by accident.
+ *
+ * The engine computes it once and caches it (see `operator.identity_stability`),
+ * so the 5-second poll costs a JSON field rather than a re-run. `available:
+ * false` means the probe could not run at all (an unleased or degraded engine) —
+ * rendered as «недоступно», never as «0/0, всё хорошо». */
+function IdentityTable({ identity }) {
+  const byType = Object.entries(identity?.by_type || {}).map(([type, row]) => ({
+    type,
+    groups: row.collapse_groups || 0,
+    stable: row.collapse_stable || 0,
+    differ: row.differ_groups || 0,
+    differOk: row.differ_ok || 0,
+  }));
+  // WORST FIRST: the screen exists to show the type that broke, not the one
+  // that is fine, and a stable 100% row shouldn't push it below the fold.
+  byType.sort((a, b) => {
+    const ra = a.groups ? a.stable / a.groups : 2;
+    const rb = b.groups ? b.stable / b.groups : 2;
+    return ra - rb || a.type.localeCompare(b.type);
+  });
+  const rateOf = (row) => (row.groups ? row.stable / row.groups : null);
+  const tone = (row) => (rateOf(row) === null ? 'var(--dim-3)'
+    : rateOf(row) === 1 ? 'var(--green)' : 'var(--pink)');
+  return html`
+    <div class="cell" style="min-width:0">
+      <div class="label mb">ИДЕНТИЧНОСТЬ · ОДНА ПОДМЕНА НА СУЩНОСТЬ</div>
+      <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+        <thead>
+          <tr>
+            <th style=${TYPE_TH}>ТИП</th>
+            <th style=${TYPE_TH + ';text-align:right;width:110px'}>СТАБИЛЬНО</th>
+            <th style=${TYPE_TH + ';width:78px'}>ДОЛЯ</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${byType.map((row) => html`
+            <tr key=${row.type}>
+              <td style=${TYPE_TD_NAME} title=${row.differ
+                  ? `негативных контролей: ${row.differOk}/${row.differ}`
+                  : row.type}>${row.type}</td>
+              <td style=${TYPE_TD_NUM + ';color:' + tone(row)}>
+                ${row.groups ? `${row.stable}/${row.groups}` : '—'}</td>
+              <td style=${TYPE_TD}>
+                ${rateOf(row) === null
+                  ? html`<span class="hint" style="margin:0">не элемент</span>`
+                  : html`<div style=${`height:6px;width:${Math.round(rateOf(row) * 100)}%;background:${tone(row)}`}></div>`}
+              </td>
+            </tr>`)}
+          ${!byType.length && html`
+            <tr><td colspan="3" style=${TYPE_TD + ';color:var(--dim-3)'}>
+              ${identity && identity.available === false
+                ? 'недоступно: движок не ответил на пробу идентичности'
+                : 'движок не ответил.'}</td></tr>`}
+        </tbody>
+      </table>
+      <div class="hint">
+        Синтетическая проба канонизации этого сборки (та же, что в бесплатной
+        метрике «bench/identity_invariant.py»): сколько групп форм одной
+        сущности дали ОДНУ подмену. «—» — у типа нет collapse-групп (DATE —
+        неэлементная дата: её запись сохраняется как написана). В таблице
+        только типы и счётчики, значений и токенов в ней нет.
+      </div>
+    </div>`;
+}
+
 /* The stats screen polls. WHY POLL AT ALL: this is the screen an operator leaves
  * open while an agent run is in flight, and a number that only moves on a manual
  * reload answers the question minutes late. 5 s is short enough to watch a run
@@ -929,6 +1009,20 @@ function Stats({ org }) {
   const suppressedTotal = data?.suppressed_total
     ?? suppressed.reduce((sum, [, count]) => sum + count, 0);
   const suppressedSince = data?.suppressed_since;
+
+  // THE IDENTITY READOUT, from the engine's cached probe (counts only).
+  const identity = data?.identity;
+  const identityAvailable = identity?.available === true;
+  const identityValue = identityAvailable
+    ? `${num(identity.collapse_stable)}/${num(identity.collapse_groups)}`
+    : '—';
+  const identityTone = !identityAvailable ? 'var(--dim-3)'
+    : identity.collapse_stable === identity.collapse_groups ? 'var(--green)'
+      : 'var(--pink)';
+  const identityCaption = !identityAvailable ? 'проба недоступна'
+    : (identity.collapse_stable === identity.collapse_groups
+        ? `типов стабильно ${identity.types_stable}/${identity.types_with_groups} · проба сборки, не трафик`
+        : `ВНИМАНИЕ: типов стабильно ${identity.types_stable}/${identity.types_with_groups}`);
 
   return html`
     <div class="page">
@@ -992,6 +1086,17 @@ function Stats({ org }) {
                 : 'в этом процессе: ещё не срабатывало'}
             </div>
           </div>
+          <!-- THE THIRD COUNTER, AND THE ONE THAT CANNOT BE READ OFF THE OTHER
+               TWO: «защищено значений» is identical whether an identity was
+               protected once or five times. The number is a synthetic probe of
+               THIS build, so it has no period and no org — the caption says so
+               rather than letting it sit beside the windowed figures as though
+               it shared their denominator. -->
+          <div>
+            <div class="label">ИДЕНТИЧНОСТЬ: ОДНА ПОДМЕНА</div>
+            <div class="stat" style=${`color:${identityTone}`}>${identityValue}</div>
+            <div class="stat-cap">${identityCaption}</div>
+          </div>
           <div style="margin-left:auto;text-align:right">
             <div class="label">ОБНОВЛЕНО</div>
             <div class="stat" style="font-size:20px">${updatedAt ? clock(updatedAt) : '—'}</div>
@@ -1007,6 +1112,7 @@ function Stats({ org }) {
         <${TypeTable} heading="НЕ ЗАМАСКИРОВАНО · ЗАЩИТА ОТ ИЗБЫТОЧНОСТИ"
           subtitle=${'Срабатывания deny-слоя: near-mask, который контекст признал НЕ персональными данными — номер заказа, версия, реквизит организации. Считается в этом процессе движка с момента запуска, поэтому окно у него своё и период сверху к нему не применяется.'}
           rows=${suppressed} fill="var(--green)" empty="Защита от избыточности ещё не срабатывала." />
+        <${IdentityTable} identity=${identity} />
       </div>
 
       <div class="cell" style="border:1px solid var(--line-2);padding:22px 24px 26px;margin-top:18px">
