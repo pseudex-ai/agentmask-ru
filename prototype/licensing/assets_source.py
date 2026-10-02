@@ -216,7 +216,27 @@ STREET_GAZ: tuple[str, ...] = (
 # person. Kept apart from `FAKE_CITIES` on purpose: that pool is the substitute
 # mint and may change for substitution reasons; this list names what the detector
 # may read as a place.
-SETTLEMENT_GAZ: tuple[str, ...] = ("одоев", "венёв", "белёв")
+SETTLEMENT_GAZ: tuple[str, ...] = (
+    "одоев", "венёв", "белёв",
+    # АББРЕВИАТУРЫ ГОРОДОВ, КОТОРЫМИ ЧАТ ПИШЕТ ГОЛОВУ АДРЕСА. «екб,
+    # луначарского 156», «мск, тверская 5»: город сокращён до трёх букв, и ни
+    # морфология (`Geox` у «екб» нет), ни реестр ГАР его не знают — поэтому
+    # голова спана начиналась с улицы, а город уходил к модели ОТКРЫТЫМ
+    # ТЕКСТОМ, внутри спана, который колонка полноты уже считала найденным.
+    # Измерено на PII-Bench: 2 из 176 ADDRESS (значения 171 и 176 несли «екб» и
+    # «омск»).
+    #
+    # ЭТО ТОТ ЖЕ СПИСОК И ТО ЖЕ ПРАВИЛО, ЧТО «ОДОЕВ». Слово, которого
+    # морфология не знает как место, признаётся поселением ТОЛЬКО когда рядом
+    # стоит адресная структура (улица с домом), и никогда само по себе: голая
+    # «екб» даёт SUPPORT-кандидата, который ни с чем не сливается и
+    # отбрасывается, — тот же инвариант «голый топоним не ПД», что и у
+    # настоящих городов. Список нарочно короткий, без двусмысленных
+    # сокращений вроде «сч» (счёт) или «бр» (бронь): каждое лишнее слово
+    # пришлось бы чинить в чужом трафике.
+    "екб", "ект", "спб", "мск", "нск", "крд", "рнд", "кзн", "влг", "прм",
+    "тмн", "ирк", "хбр", "тлт",
+)
 
 # A candidate is CORE (can stand alone) or SUPPORT (only counts when merged with
 # a core). City/settlement/apt/index are SUPPORT so lone cities stay unmasked.
@@ -353,7 +373,15 @@ _ST = (
 # inside an IGNORECASE pattern, so "пер" in "перезвоните" can't grab a lowercase
 # tail and "площадью 5 кв" can't pass as a street.
 _NAME = r"(?-i:[А-ЯЁ])[а-яё]+(?:[\s-](?-i:[А-ЯЁ])[а-яё]+){0,2}"
-_CAP = r"(?:\d+[-\s]?[а-яё]{0,2}\s+)?" + _NAME
+# A NUMBERED NAME IS PART OF THE STREET'S NAME, and two written forms were
+# missing from every arm that carries `_CAP`. «улица 20-летия Октября» (a
+# number and a hyphenated «-летия») and «улица 10 лет Октября» (a number, a
+# spelled unit and the name) are ordinary Russian street names; both matched
+# only their type word, so the NAME stayed outside the span and went to the
+# model in the clear while the polnota column counted the address as found.
+# Measured on PII-Bench: 2 of the 176 ADDRESS golds (values 143 and 161).
+_CAP = (r"(?:\d+[-\s]?[а-яё]{0,2}\s+|\d{1,4}-лети\w*\s+|\d{1,4}\s+(?:лет|года|год)\s+)?"
+        + _NAME)
 # A TOOL RESULT ARRIVES AS JSON, AND JSON PUTS A QUOTE WHERE PROSE PUTS A SPACE.
 # The left-context set held whitespace, comma, semicolon, paren, № and #, so
 # «"addr": "г. Пермь, ул. Добролюбова, д. 154б"» lost its «г. » and
@@ -829,7 +857,15 @@ ADDRESS_PATTERNS: dict[str, str] = {
         r"(?:(?<=^)|(?<=[\s,;(]))"
         r"(?P<num>\d+[-\s]?[яейои]?\s+)?"
         r"(?P<words>[А-ЯЁ][а-яё]+(?:[\s-][А-ЯЁ][а-яё]+){0,2})"
-        r"\s+(\d{1,3}[А-ЯЁа-яё]?(?:/\d+)?)(?![0-9A-Za-zА-Яа-яёЁ])"
+        # THE DIRECTORY FORM PUTS A COMMA BEFORE THE HOUSE, and it matched
+        # nowhere: «Владимир, Большая Московская, 14» is how every CRM writes
+        # an address, the pattern demanded whitespace, and the whole street
+        # name went to the model in the clear. The comma is admitted by the
+        # engine only for a MULTI-WORD name — see the gate in
+        # `_regex_candidates`: a single capitalised word, a comma and a number
+        # is a person in a list («Смирнов, 14»).
+        r"(?P<hsep>\s+|,\s*)"
+        r"(\d{1,3}[А-ЯЁа-яё]?(?:/\d+)?)(?![0-9A-Za-zА-Яа-яёЁ])"
     ),
     # MARKER-LESS STREET WRITTEN IN LOWER CASE — «вы находитесь на ленина 14?».
     # The pattern above cannot see it: it spells the name `[А-ЯЁ][а-яё]+`, and

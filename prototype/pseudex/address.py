@@ -30,7 +30,7 @@ from pseudex import _morph_compat  # noqa: F401  (aliases pymorphy2->pymorphy3 b
 
 from pseudex.assets import ASSETS, AddressAssets
 from pseudex.detect import Span
-from pseudex.fuzzy import build_index, deletion_keys, lookup, within_one_typo
+from pseudex.fuzzy import build_index, deletion_keys, lookup, recover_one_edit, within_one_typo
 from pseudex.names import _typo_of_an_ordinary_word as _names_typo_of_ordinary
 from pseudex.names import is_known_name, is_surname_shaped
 from pseudex import morph_places, spoken
@@ -661,7 +661,13 @@ def _bare_street_candidates(text: str, address: AddressAssets
             # An intent word with a SPOKEN number reaches the stem too: «курьера
             # на шумайлого восемь» — the register is speech, the ending is what
             # speech damages, and nobody dictates a quantity to a courier.
+            # A DECLINED STREET WHOSE REGISTER FORM IS ANOTHER WORD. «варшавке
+            # 24к3»: the dative of «Варшавка», which ГАР does not hold — but it
+            # holds «Варшава», and the STEM of the nominative is the same six
+            # letters. Judged through `to_nominative`, never a per-case list,
+            # and only where an intent word already stands.
             if not ((intent and _fuzzy_names_a_street(name, address))
+                    or (intent and _declined_reaches_register(name, address))
                     or (intent and not number[0].isdigit() and _fuzzy_stem_names_a_street(name, address))
                     or (door and (_fuzzy_names_a_street(name, address)
                                   or _fuzzy_stem_names_a_street(name, address)
@@ -702,7 +708,15 @@ def _bare_street_candidates(text: str, address: AddressAssets
             not fuzzy
             and _names_a_settlement(name, address)
             and _bare_names_a_street(name, address)
-            and _in_the_nominative(name)
+            # A DECLINED FORM OF A REGISTER WORD COUNTS TOO, and this is the
+            # half the nominative test was missing. «екатеринбург, куйбышева
+            # 22»: «Куйбышева» IS in ГАР as written, and it is the GENITIVE of
+            # «Куйбышев» — the case a street named after a person always stands
+            # in. The nominative floor exists for the INDECLINABLE city
+            # («доставка в Сочи 3 дня»), and that one stays refused because
+            # «сочи» inflects to itself — `_declined_register_form` answers
+            # False for it.
+            and (_in_the_nominative(name) or _declined_register_form(name))
             and _intent_before(text, match.start(), address)
             and morph_places.looks_like_street(text[match.start():match.end()]))
         if _names_a_settlement(name, address) and not fuzzy \
@@ -764,7 +778,13 @@ def _bare_street_candidates(text: str, address: AddressAssets
         # четвёртый из четырёх промахов M2. Улица, которую ГАР хранит в
         # именительном и которую читатель читает улицей, — ровно тот случай, где
         # именительный и есть форма имени, а не признак вещи.
+        # …AND A PROPER NAME THE REGISTER KNOWS IS NOT A «THING». «мельникайте
+        # 12»: morphology has no noun reading for the word at all — every parse
+        # is a verb — so `_never_oblique` declared it a thing, while ГАР names
+        # exactly that form as a street. The floor was written for «время»,
+        # «школа», «вышка», which DO carry a noun reading and stay refused.
         if not preposition and not fuzzy and not registered_settlement_street \
+                and not _register_only_as_proper(name, address) \
                 and _never_oblique(name):
             continue
         # A GENITIVE-PLURAL NOUN THE REGISTER NAMES, WITH THE DOOR AFTER THE
@@ -933,10 +953,37 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
         after = text[m.end():m.end() + 12].lstrip()
         if any(after.lower().startswith(month) for month in address.month_after):
             continue
-        if _names_a_settlement(m.group("words"), address):
+        words = m.group("words")
+        # A COMMA BEFORE THE HOUSE IS THE DIRECTORY FORM, and it matched
+        # nowhere: «Владимир, Большая Московская, 14» is how every CRM writes
+        # an address, the asset pattern demanded whitespace, and the whole
+        # street name went to the model in the clear. Admitted only for a
+        # MULTI-WORD name: one capitalised word, a comma and a number is a
+        # person in a list («Смирнов, 14»), not a street.
+        if "," in m.group("hsep") and len(words.split()) < 2:
             continue
-        if _is_street_name(m.group("words"), address) or m.group("num") or has_ctx:
-            out.append((m.start(), m.end(), True))   # core (street + house number)
+        # A BARE TOPONYM IS NOT PII — unless the register also names it as a
+        # street AND a real address structure stands around it («Арбат 25»,
+        # «Тверская 25»). The veto keeps «в Москве 25 градусов» and «доставка
+        # по Казани 3 дня» exactly as refused as before.
+        if (_names_a_settlement(words, address)
+                and not _settlement_is_a_street(words, text, m, address)):
+            continue
+        # A LEADING NUMBER IS PART OF THE NAME ONLY FOR A NUMBERED STREET. The
+        # pattern accepts one so «8 Марта 12» stays whole, and THAT is what let
+        # «… телефон 8 926 555 77 88 Космонавтов 4» match from the tail of the
+        # PHONE: the span began at «88», overlapped the phone, lost the
+        # priority contest (PHONE 5 > ADDR 4) and took the real street down
+        # with it — the corpus value «Космонавтов 4» had NO span at all. The
+        # number is kept only where the word after it is the month or the
+        # spelled unit of a numbered name.
+        start = m.start()
+        if m.group("num") is not None and words.split():
+            first = words.split()[0].lower()
+            if first not in address.month_after and first not in ("лет", "года", "год"):
+                start = m.start("words")
+        if _is_street_name(words, address) or m.group("num") or has_ctx:
+            out.append((start, m.end(), True))   # core (street + house number)
     for m in address.street_lower_nohouse.finditer(text):
         # AN INTENT WORD, NOT A PREPOSITION. Every other lower-case arm accepts
         # `prep_before` as its context, and here that is far too little: «на
@@ -1951,6 +1998,281 @@ def _absorb_leading_settlement(start: int, stop: int, text: str,
     return token_start
 
 
+# --- the HEAD of an address (city / region / district / street-name head) ----
+
+_HEAD_TRAILING_WORD_RE = re.compile(r"([А-Яа-яЁё][А-Яа-яЁё-]*\.?)([\s,]*)$")
+_HEAD_FIRST_WORD_RE = re.compile(r"([А-Яа-яЁё][А-Яа-яЁё-]*\.?)")
+# How far left the head may reach, and how many words. Four is the longest real
+# head measured here («подмосковье, люберцы», «Санкт-Петербург, Васильевский
+# остров»), and the window is generous because chat wraps addresses in prose.
+_HEAD_WINDOW = 60
+_HEAD_MAX_WORDS = 4
+# Регион пишут и сокращённо, и полностью, и сокращение кончается точкой («г.»,
+# «обл.», «респ.») — поэтому оно судится отдельно от «слово с точкой = конец
+# предложения». That distinction is what stops the walk at «…в Тюмени. Мельникайте
+# 12» instead of swallowing «Тюмени.».
+_HEAD_REGION_FORMS = frozenset({
+    "г", "гор", "город", "обл", "область", "край", "район", "р-н",
+    "респ", "республика", "пос", "посёлок", "поселок", "пгт", "снт",
+    "днп", "гп", "сп", "ао",
+})
+
+
+def _has_a_house(fragment: str) -> bool:
+    """A street AND a house number the role reader can see.
+
+    This is the gate that keeps the «голый топоним не ПД» invariant: the head
+    absorption runs only when a FULL address already stands downstream, so a
+    bare city — with or without residence intent — is never extended.
+    """
+    roles = morph_places.split_roles(fragment)
+    return bool(roles.get("house")) and bool(roles.get("street"))
+
+
+def _declined_register_form(word: str) -> bool:
+    """The word is a DECLINED form of what the register stores.
+
+    «Куйбышева» for «Куйбышев»: the genitive a street named after a person
+    always stands in. An indeclinable word («сочи», «тбилиси») inflects to
+    itself and answers False, which is what keeps «доставка в Сочи 3 дня»
+    refused. The nominative is asked of the leased morphology, never derived
+    from a per-case list of endings.
+    """
+    return morph_places.to_nominative(word).lower() != word.lower()
+
+
+def _register_only_as_proper(word: str, address: AddressAssets) -> bool:
+    """The register names this EXACT form and morphology has no noun or
+    adjective reading for it at all.
+
+    «мельникайте», «шумайлого»-class words: morphology's PRINCIPAL reading is
+    a part of speech that cannot name a street, so `_never_oblique` — which asks
+    for a genitive reading — refused a street ГАР names as written. «время»,
+    «школа», «вышка» and the oblique «квартире» are read first as ordinary
+    nouns and are untouched by this.
+    """
+    if not _register_vouches(word, address):
+        return False
+    parses = MORPH.parse(word)
+    if not parses:
+        return False
+    # MORPHOLOGY'S PRINCIPAL READING IS NOT A NOUN OR AN ADJECTIVE. The test is
+    # on the TOP-SCORING readings only — the same discipline as
+    # `_bare_street_morphology`, and for the same reason: `parse[0]` among
+    # equals is arbitrary. «мельникайте» is read first as an imperative (its
+    # noun reading is a 0.00-score locative); «квартире» and «секунду» are
+    # read first as ordinary nouns, and «время», «школа», «вышка», «путин»
+    # with them. Without this, `_never_oblique` stopped refusing «квартире 34»
+    # and the over-masking floor lost two phrases on the first build.
+    best = max(parse.score for parse in parses)
+    # POS ONLY in the comparison: «Surn», «Name» and «Patr» are NOUN grammemes,
+    # not parts of speech, and pymorphy raises (not returns False) when they are
+    # compared to `tag.POS`.
+    return not any(
+        parse.score >= best and parse.tag.POS in ("NOUN", "ADJF")
+        for parse in parses)
+
+
+def _declined_reaches_register(word: str, address: AddressAssets) -> bool:
+    """A street written in an oblique case whose register form is ANOTHER word.
+
+    «варшавке 24к3»: ГАР has no «варшавка», but «варшавка» is ONE EDIT from
+    «варшава» — the colloquial name of the street and the city the register
+    stores. Judged through `to_nominative`, never through a per-case list of
+    endings, and on the WHOLE word rather than its stem, because the stem test
+    cannot separate it from ordinary nouns: «квартира» and «секунда» are one
+    stem-edit from register words too, and «в квартире 34» is not an address.
+    Two more signals keep it narrow, and both were measured on the over-masking
+    corpus: the register must NOT already hold the nominative itself (that word
+    is an address on its own terms, not a declined form), and the register word
+    actually reached must be a PLACE — «варшава» carries `Geox`, the
+    ordinary-noun neighbours do not.
+    """
+    nominative = morph_places.to_nominative(word)
+    low = nominative.lower()
+    if low == word.lower() or len(low) < _MIN_FUZZY_NAME:
+        return False
+    if _register_vouches(low, address):
+        return False
+    matched = recover_one_edit(low, _street_index(ASSETS.version or ""))
+    return matched is not None and _is_toponym(matched)
+
+
+def _settlement_is_a_street(phrase: str, text: str, match: object,
+                            address: AddressAssets) -> bool:
+    """A word whose only morphological reading is a PLACE, which the register
+    names as a street too, standing in a real address structure.
+
+    «Арбат 25», «Тверская 25»: pymorphy reads «Арбат» as `Geox` alone, so the
+    settlement veto refused the whole address and the house number stayed in
+    the clear. The register is the second signal and the address structure the
+    third: a bare toponym still produces nothing. Same three-signal discipline
+    `registered_settlement_street` already applies to the lowercase arm.
+    """
+    words = [word for word in _WORD_SPLIT_RE.split(phrase) if word]
+    if not words:
+        return False
+    last = words[-1]
+    if _is_street_type(last, address):
+        return False
+    if not _bare_names_a_street(last, address):
+        return False
+    if not (_in_the_nominative(last) or _declined_register_form(last)):
+        return False
+    if not _intent_before(text, match.start(), address):
+        return False
+    return morph_places.looks_like_street(text[match.start():match.end()])
+
+
+def _head_word_class(word: str, right: str, address: AddressAssets) -> str | None:
+    """How this word can stand in the HEAD of an address.
+
+    Three answers, and the third one is what makes the risky half safe:
+
+      * `"safe"` — a city, a region, a district, or a half of a street's own
+        name the register or the morphology vouches for;
+      * `"person"` — a GIVEN NAME IN THE GENITIVE with no surname reading, in
+        front of a register word: «Карла» in «Карла Маркса», «Розы» in «Розы
+        Люксембург»;
+      * `None` — everything else, and the walk stops.
+
+    A `"person"` word is NOT admitted on its own. `_absorb_leading_head` pulls
+    it in only when a `"safe"` word is admitted FURTHER LEFT in the same run, so
+    a person-shaped name needs an actual PLACE to head the address. That is the
+    second signal the corpus asked for: «омск, карла маркса 102» has a city and
+    keeps «карла»; «адрес николая заболоцкого 81 кв 51» has none, and
+    test_collisions.py pins that «николая» stays the customer's own word.
+
+    Signals, in order, none of which generalises to prose:
+      * a toponym, `Geox` or the leased settlement list — «Владимир»,
+        «подмосковье», «екб» (the city abbreviations ride in `settlement_gaz`);
+      * a region form, «г.», «обл.», «район»;
+      * a word the ГАР register names EXACTLY, which morphology does not read as
+        a person — «остров», «средний»;
+      * with such a word to the right: a plain relative adjective
+        («Васильевский остров») or the given-name shape above. A POSSESSIVE
+        adjective is a person («Петров»), and a SURNAME is a person too, which
+        is what keeps «Иван Петров улица Ленина 5» a name.
+
+    A word written with a trailing dot is a sentence end unless it is one of
+    the region abbreviations.
+    """
+    low = word.lower()
+    bare = low[:-1] if low.endswith(".") else low
+    if bare in _HEAD_REGION_FORMS:
+        return "safe"
+    if low.endswith("."):
+        return None
+    if bare in address.month_after or bare in ("года", "год", "лет",
+                                               "ул", "пер", "пр", "д"):
+        return None
+    if _is_street_type(word, address):
+        return None
+    if _is_toponym(word):
+        return "safe"
+    parses = MORPH.parse(word)
+    person = bool(parses) and any(
+        {"Surn", "Name", "Patr"} & set(parse.tag.grammemes) for parse in parses)
+    if _register_vouches(word, address) and not person:
+        return "safe"
+    if not right:
+        return None
+    right_low = right.lower().rstrip(".")
+    # A STREET TYPE IS NOT A NAME CONTINUATION — «Петров улица Ленина 5».
+    if not (not _is_street_type(right, address)
+            and (_is_toponym(right) or _register_vouches(right, address)
+                 or right_low in _HEAD_REGION_FORMS)):
+        return None
+    if not parses:
+        return None
+    if person:
+        # A GIVEN NAME IN THE GENITIVE, no surname reading. Russian names a
+        # street after a person in the genitive («Карла», «Фридриха», «Розы»);
+        # a given name in the NOMINATIVE in front of a surname is a person
+        # («Иван Петров»), so the case is the whole difference and it is asked
+        # of morphology, not of a list.
+        if (not any("Surn" in parse.tag for parse in parses)
+                and any("Name" in parse.tag and parse.tag.case == "gent"
+                        for parse in parses)):
+            return "person"
+        return None
+    # «ВАСИЛЬЕВСКИЙ ОСТРОВ»: a plain relative adjective of a district. The
+    # possessive one («Петров») is a person and never reaches this line.
+    if any("ADJF" in parse.tag and "Poss" not in parse.tag
+           and "Apro" not in parse.tag for parse in parses):
+        return "safe"
+    return None
+
+
+def _absorb_leading_head(start: int, stop: int, text: str,
+                         address: AddressAssets) -> int:
+    """Притянуть ГОЛОВУ адреса — город, регион, район, первое слово названия.
+
+    «омск, карла маркса 102, кв 15» маскировало «маркса 102, кв 15» и оставляло
+    город И первое слово названия улицы открытым текстом внутри адреса,
+    который колонка полноты уже считала найденным. То же у «подмосковье,
+    люберцы пр-т гагарина 15», «Владимир, Большая Московская, 14»,
+    «Санкт-Петербург, Васильевский остров, Средний проспект, 56», «екб,
+    луначарского 156» — пять разных голов, один и тот же промах.
+
+    ЗОВЁТСЯ ПОСЛЕДНЕЙ, после обеих обрезок: `_trim_lead` снимает слово-человека
+    перед адресом («битюков улица сабурова 53»), и «карла» — такое же слово по
+    морфологии, поэтому поглощение обязано стоять ЗА ней, а не перед.
+
+    ЧЕТЫРЕ УСЛОВИЯ, и ни одно не обобщается на прозу:
+      * в спане УЖЕ есть улица и дом (`_has_a_house`) — голый топоним остаётся
+        незамаскированным, это и есть инвариант «голый топоним не ПД»;
+      * голова отделена только пробелами и запятыми, не концом предложения;
+      * каждое слово головы судится `_head_word_class`, и голова КОММИТИТСЯ
+        только МЕСТОМ (топонимом или формой региона) — словарь сам по себе
+        головы не делает, поэтому «на связи Ломоносова 14» и «адрес же простой
+        Екатеринбург» не тянут в адрес обычное слово предложения;
+      * голова не длиннее четырёх слов и шестидесяти символов.
+
+    Города в списке сокращений («екб», «спб», «мск») лежат в арендованном
+    `settlement_gaz` — авторские данные едут бандлом, а не в бинарнике.
+    """
+    if not _has_a_house(text[start:stop]):
+        return start
+    first = _HEAD_FIRST_WORD_RE.match(text[start:stop])
+    right = first.group(1) if first else ""
+    # `scan` walks; `pos` is what has been ADMITTED. They differ only while a
+    # person-shaped word is pending, which is exactly the state that makes the
+    # second signal («a place further left») decide.
+    scan = pos = start
+    for _ in range(_HEAD_MAX_WORDS + 2):
+        if scan <= 0 or start - scan > _HEAD_WINDOW:
+            break
+        found = _HEAD_TRAILING_WORD_RE.search(text[:scan])
+        if found is None:
+            break
+        word, gap = found.group(1), found.group(2)
+        if not gap:
+            break
+        kind = _head_word_class(word, right, address)
+        if kind is None:
+            break
+        right = word
+        scan = found.start()
+        if kind == "person":
+            # Not admitted yet: a person-shaped name needs a PLACE further left
+            # in the same run, and `pos` deliberately does not move.
+            continue
+        # A HEAD IS COMMITTED BY A PLACE, NOT BY A VOCABULARY WORD. «связи»,
+        # «простой» and «ясный» are all in the register or read as adjectives,
+        # and alone they would drag an ordinary word of the sentence into the
+        # address («на связи Ломоносова 14», «адрес же простой Екатеринбург»).
+        # A place — a toponym or a region form — is what makes the run an
+        # address head; the words to its RIGHT are admitted with it, and words
+        # to its LEFT only extend a run that a place has already committed.
+        if (_is_toponym(word)
+                or word.lower().rstrip(".") in _HEAD_REGION_FORMS):
+            pos = found.start()
+        elif pos != start:
+            pos = found.start()
+    return pos
+
+
 _GLUED_PARTICLE = re.compile(r"-?(?:то|та|же|ка|ж)$")
 
 
@@ -2081,7 +2403,14 @@ def _trim_lead(start: int, stop: int, text: str, address: AddressAssets) -> int:
             # so the substitute was minted without a city (seven of the
             # forty-seven values the corpus still leaked). A person's name is
             # never followed by «проспект <name>»; a town is.
-            if (_is_toponym(word) and _TYPE_WORD_FIRST.match(rest)):
+            # AND WHEN A FULL ADDRESS FOLLOWS, not only a type word. «Владимир,
+            # Большая Московская, 14»: «Владимир» is a toponym AND a person
+            # name, the rest is a complete address, and the person rule cut the
+            # city off — the model saw a fake street and a real city beside it.
+            # `_has_a_house` is what keeps the bare place reference intact:
+            # «Офис в Екатеринбурге» has no house and never reaches this.
+            if (_is_toponym(word)
+                    and (_TYPE_WORD_FIRST.match(rest) or _has_a_house(rest))):
                 return start
             if (_names_a_person(word)
                     and not _NAME_THEN_TYPE.match(rest)
@@ -2230,6 +2559,11 @@ def detect_address(text: str) -> list[Span]:
         start = _absorb_leading_settlement(start, stop, text, address)
         start = _trim_lead(start, stop, text, address)
         stop = _trim_tail(start, stop, text, address)
+        start, stop = _strip(start, stop, text)
+        # THE CITY / REGION / DISTRICT HEAD OF A FOUND ADDRESS. Runs LAST, after
+        # both trims, so neither `_trim_lead`'s person rule nor `_trim_tail`
+        # can undo the absorption it just decided.
+        start = _absorb_leading_head(start, stop, text, address)
         start, stop = _strip(start, stop, text)
         value = text[start:stop]
         if not value or address.neg.search(value):
