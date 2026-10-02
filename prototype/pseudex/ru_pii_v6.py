@@ -818,13 +818,13 @@ def render_like_atomic(value: str, surface: str, for_tool: bool = False) -> str:
 #
 # Two consequences are deliberate and recorded rather than hidden:
 #
-#   * CIVIL_ACT_CERT shares BIRTH_CERT. Its grammar is literally «как BIRTH_CERT»
-#     (same series + six-digit number), and `ru_pii._BIRTH_CERT_RE` — the v5 bare
-#     recognizer, outside this family's write scope — types that shape BIRTH_CERT
-#     at PRIORITY 7 while a new label would default to 1 and LOSE to it. A v6
-#     label split therefore needs the Lead's priority entry (handoff in
-#     DELTA.json); until then sharing the label is the only outcome that protects
-#     the value under the right family instead of under a v5 name chosen by luck.
+#   * CIVIL_ACT_CERT CARRIES ITS OWN LABEL SINCE 03.10.2026 (see `IDENTITY_LABEL`):
+#     its grammar is literally «как BIRTH_CERT», so the SHARED recognizer still
+#     types both spellings, while the span now names the registry record the
+#     benchmark's `typed` axis reads. The two records keep one GRAMMAR and two KEY
+#     SPACES — the same rule that keeps a ПТС and a СТС from answering for each
+#     other — and `identity_signatures` is the restore half that learns the second
+#     reading, because no shape can tell a birth certificate from a marriage one.
 #   * MILITARY_ID takes its own label, so the `№` form — the registry's own
 #     sample «АК № 1234567» — types correctly. The registry's separator-free
 #     variants («АК1234567») are ALSO a v5 plate shape (type 1А trailers) at
@@ -839,10 +839,26 @@ def render_like_atomic(value: str, surface: str, for_tool: bool = False) -> str:
 # Registry type id -> engine label. The label is what detection, the vault row,
 # the audit trail and `_PRIORITY` speak; the type id is what the benchmark and
 # the registry speak.
+# THE LABEL SPLIT OF 03.10.2026: `CIVIL_ACT_CERT` NOW CARRIES ITS OWN ID. The
+# registry gives the record its own grammar card (`pii_types_a.A-03`), its own cues
+# and its own six-digit sample («I-АГ № 672731»), and the benchmark's `typed` axis
+# reads the registry id — so sharing BIRTH_CERT's label scored 34 of 34 civil-act
+# gold spans as typed-misses with 76% coverage. The two records' GRAMMAR is the
+# same («как BIRTH_CERT»), which is why the shared recognizer still types both; what
+# is no longer shared is the NAME the span carries.
+#
+# THE KEY SPACE SPLITS WITH THE LABEL, AND THAT IS THE SAFE DIRECTION: two documents
+# of different kinds that happen to be written the same way must not answer for each
+# other (`identity_signature` states the rule). No row exists under the old spelling
+# — the label never existed on a span before this change — so nothing has to keep
+# resolving through it, unlike the ПТС/СТС pair where `VEHICLE_DOC` rows already
+# exist. The RESTORER is the half that must learn the second reading: the shape
+# alone cannot tell a birth certificate from a civil act, so `identity_signatures`
+# proposes BOTH labels and each is asked as its own indexed point query.
 IDENTITY_LABEL: dict[str, str] = {
     "INTL_PASSPORT": "INTL_PASSPORT",
     "BIRTH_CERT": "BIRTH_CERT",
-    "CIVIL_ACT_CERT": "BIRTH_CERT",
+    "CIVIL_ACT_CERT": "CIVIL_ACT_CERT",
     "RESIDENCE_PERMIT": "RESIDENCE_PERMIT",
     "MILITARY_ID": "MILITARY_ID",
     "DRIVER_LICENSE": "DRIVER_LICENSE",
@@ -948,24 +964,67 @@ def identity_signature(value: str, label: str) -> str:
 
 
 def identity_label_of_shape(value: str) -> str:
-    """Which identity LABEL this spelling could be, for the signature lookup.
+    """The FIRST label this spelling could be, for callers that need one name.
 
-    Only the letter-bearing labels need a shape test (the digit-only ones are
-    indexed by their digits, so they need no second reading). A wrong guess costs
-    one indexed point query and returns nothing — the value must still be a row
-    the vault minted, which is the same guarantee every other candidate has."""
+    `identity_signatures` is what the restore seam uses (it can carry more than one
+    reading); this convenience is for tests and for the single-guess callers, and
+    it answers "" when nothing identity-shaped matches."""
+    answers = identity_signatures(value)
+    return answers[0][1] if answers else ""
+
+
+# THE THREE SHAPES THE RESTORER READS, compiled once from the same grammar
+# `identity_label_of_shape` always used. They live at module level because
+# `identity_signatures` asks each of them for EVERY candidate, and re-compiling a
+# pattern per candidate on the restore leg is work the engine does not need.
+_IDENTITY_ROMAN_SHAPE = re.compile(
+    r"(?i:[IVXІХ]{1,4}[ \t.,\-/]{0,3}[А-ЯЁ]{2}"
+    r"[ \t.,\-/]{0,3}№?[ \t.,\-/]{0,3}\d{6})")
+_IDENTITY_VEHICLE_SHAPE = re.compile(
+    r"(?i:\d{2}[ \t.,\-/]{0,2}[А-ЯЁA-Z]{2}[ \t.,\-/]{0,2}\d{6})")
+_IDENTITY_MILITARY_SHAPE = re.compile(
+    r"(?i:[А-ЯЁA-Z]{2}[ \t.,\-/]{0,2}№?[ \t.,\-/]{0,2}\d{7})")
+
+
+def identity_signatures(value: str) -> list[tuple[str, str]]:
+    """Every (signature, label) this spelling could be — the restorer's question.
+
+    MORE THAN ONE ANSWER IS POSSIBLE, AND FOR THE CERTIFICATE FAMILY IT IS
+    UNAVOIDABLE: BIRTH_CERT and CIVIL_ACT_CERT have the SAME grammar («как
+    BIRTH_CERT» in the registry's own words) and the same six-digit number, so the
+    SHAPE cannot tell a birth certificate from a marriage certificate. Naming one
+    label would lose whichever row the guess did not name and hand the customer's
+    tool a FAKE — the failure `legal_signatures` and `finance_signatures` already
+    answer the same way: every reading whose shape `fullmatch`es the spelling is
+    proposed, each is asked as its own indexed point query, and a hit is kept only
+    when the vault's recorded label is the label the signature was proposed under.
+    A wrong reading costs one query and can never restore another type's value.
+
+    THE ORDER IS THE SINGLE-GUESS ANSWER and it is unchanged: the certificate
+    reading first (it was BIRTH_CERT before the split), then ПТС/СТС, then the
+    military id. Only a letter-bearing spelling is read at all — the digit-only
+    documents are indexed by their digits and need no second reading."""
     surface = value.strip()
-    if _IDENTITY_ROMAN_HEAD.match(surface) and re.fullmatch(
-            r"(?i:[IVXІХ]{1,4}[ \t.,\-/]{0,3}[А-ЯЁ]{2}"
-            r"[ \t.,\-/]{0,3}№?[ \t.,\-/]{0,3}\d{6})", surface):
-        return "BIRTH_CERT"
-    if re.fullmatch(r"(?i:\d{2}[ \t.,\-/]{0,2}[А-ЯЁA-Z]{2}[ \t.,\-/]{0,2}\d{6})",
-                    surface):
-        return "VEHICLE_DOC"
-    if re.fullmatch(r"(?i:[А-ЯЁA-Z]{2}[ \t.,\-/]{0,2}№?[ \t.,\-/]{0,2}\d{7})",
-                    surface):
-        return "MILITARY_ID"
-    return ""
+    if not surface:
+        return []
+    answers: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def propose(label: str) -> None:
+        signature = identity_signature(surface, label)
+        if signature and signature not in seen:
+            seen.add(signature)
+            answers.append((signature, label))
+
+    if _IDENTITY_ROMAN_HEAD.match(surface) and _IDENTITY_ROMAN_SHAPE.fullmatch(
+            surface):
+        propose("BIRTH_CERT")
+        propose("CIVIL_ACT_CERT")
+    if _IDENTITY_VEHICLE_SHAPE.fullmatch(surface):
+        propose("VEHICLE_DOC")
+    if _IDENTITY_MILITARY_SHAPE.fullmatch(surface):
+        propose("MILITARY_ID")
+    return answers
 
 
 def _letters_like(sample: str) -> str:
@@ -1042,6 +1101,7 @@ def mint_identity(label: str, original: str) -> str:
         sample = {
             "INTL_PASSPORT": "75 1234567",
             "BIRTH_CERT": "IV-МЮ № 123456",
+            "CIVIL_ACT_CERT": "I-АГ № 672731",
             "RESIDENCE_PERMIT": "82 1234567",
             "MILITARY_ID": "АК № 1234567",
             "DRIVER_LICENSE": "99 12 345678",
@@ -1696,10 +1756,25 @@ def _free_number(lo: int, hi: int) -> str:
 # The shape enforces all three facts, and the single-alphabet clause is enforced
 # rather than assumed — a code that mixes Cyrillic and Latin is not a code the
 # rule describes, and folding it into one key would merge two subjects.
+#
+# THE ALL-LETTER READING IS ADMITTED (03.10.2026) AND IT IS UPPERCASE ONLY. The
+# card's words are «4–15 знаков: цифры + буквы ОДНОГО алфавита» and a code drawn
+# as letters alone satisfies every fact the card states; 5 of the 7 misses of this
+# type were exactly that behind an undamaged «код субъекта». The FIRST two
+# alternatives still demand a digit AND a letter (an ordinary lowercase code with
+# both is unchanged); the two added ones take capitals only, because «код субъекта
+# указан в договоре» is prose and its «указан» must not become a credit-history
+# code. One alphabet, still: the Latin class excludes Cyrillic and the reverse.
 _FIN_CODE = (r"(?:(?=[A-Za-z0-9]{4,15}(?![A-Za-z0-9]))(?=[A-Za-z]*\d)"
              r"(?=\d*[A-Za-z])[A-Za-z0-9]{4,15}"
              r"|(?=[А-Яа-яЁё0-9]{4,15}(?![А-Яа-яЁё0-9]))(?=[А-Яа-яЁё]*\d)"
-             r"(?=\d*[А-Яа-яЁё])[А-Яа-яЁё0-9]{4,15})")
+             r"(?=\d*[А-Яа-яЁё])[А-Яа-яЁё0-9]{4,15}"
+             # `(?-i:…)` SCOPES THE CAPITAL-ONLY READINGS, and it is load-bearing:
+             # the shape is compiled `(?i:…)` (here and in the lease), so capitals
+             # written plainly match lowercase as well — which typed «будет»,
+             # «двух» and «телефон» as credit-history codes in ordinary prose.
+             r"|(?-i:(?=[A-Z0-9]{4,15}(?![A-Za-z0-9]))(?=\d*[A-Z])[A-Z0-9]{4,15})"
+             r"|(?-i:(?=[А-ЯЁ0-9]{4,15}(?![А-Яа-яЁё0-9]))(?=\d*[А-ЯЁ])[А-ЯЁ0-9]{4,15}))")
 
 # OSAGO_POLICY: three capitals (Cyrillic «ХХХ»/«ТТТ» or the Latin «XXX» a form
 # prints) and a ten-digit number, with the registry's own optional «№» and the
@@ -1973,13 +2048,20 @@ TELECOM_LABEL: dict[str, str] = {
 }
 
 TELECOM_TYPES: tuple[str, ...] = tuple(TELECOM_LABEL)
-TELECOM_LABELS: frozenset[str] = frozenset(TELECOM_LABEL.values()) | frozenset(
+# THE FAMILY'S OWN SET. `TELECOM_LABELS` — the name `ru_pii.detect_structured`
+# asks its supersede question through — is REBOUND at the bottom of this module to
+# every family the raw cue pass answers for (see the raw cue pass's own section);
+# every consumer that means "the telecom family" reads THIS name.
+TELECOM_FAMILY_LABELS: frozenset[str] = frozenset(TELECOM_LABEL.values()) | frozenset(
     # THE SPAN'S SPELLING OF THE ADDRESS. `_IPV4_RE` (the v5 bare recognizer)
     # still emits `IP`, the v6 cue path emits `IP_ADDRESS`, and every consumer of
-    # this set — `redact`'s notation branch, `ru_pii`'s supersede filter, the
-    # vault's own family branch — must answer for BOTH or one of the two readings
-    # of one address would silently lose its renderer.
+    # this set — `redact`'s notation branch, the vault's own family branch — must
+    # answer for BOTH or one of the two readings of one address would silently
+    # lose its renderer.
     ("IP_ADDRESS",))
+# The name is bound to the FAMILY here only so this module's own earlier readers
+# keep working; the rebinding at the bottom of the file is the one `ru_pii` sees.
+TELECOM_LABELS: frozenset[str] = TELECOM_FAMILY_LABELS
 
 # ENGINE LABEL -> REGISTRY TYPE ID. The vault stores and hands back the ENGINE
 # label (`IP` for IP_ADDRESS), so `mint_telecom` must accept it and the restorer
@@ -2635,23 +2717,16 @@ def _mint_like(label: str, surface: str) -> str:
 # than restating a single cue word, so the two paths cannot drift. It is therefore
 # inert without a bundle — `BundleNotLeased` is the engine's own answer, exactly
 # as it is for every other recognizer.
-def detect_telecom(raw_text: str) -> list[Span]:
-    """The family's cue path, on the RAW text (see the note above)."""
-    try:
-        from pseudex.assets import ASSETS
-        if not ASSETS.is_loaded:
-            return []
-        patterns = ASSETS.get().ru_pii.ctx_patterns
-    except Exception:                                                # noqa: BLE001
-        return []
-    spans: list[Span] = []
-    for entity_type, pattern in patterns:
-        if entity_type not in TELECOM_LABELS:
-            continue
-        for match in pattern.finditer(raw_text):
-            value = match.group(1)
-            spans.append(Span(match.start(1), match.end(1), entity_type, value))
-    return spans
+# THE ENTRY POINT ITSELF LIVES AT THE BOTTOM OF THIS MODULE (`detect_cued_raw`,
+# bound to the name `detect_telecom` because that is what `ru_pii` resolves at call
+# time). It was widened on 03.10.2026 from this family to EVERY family whose values
+# carry letters — a certificate's roman series, a claim number's «В-», a УИД's hex —
+# because the fold above corrupts all of them the same way. What the bottom also
+# carries is the reading WITHOUT the widened gap and the damaged-cue test
+# (`_leased_cue_detect`): the fallback taken when a leased pattern's own source
+# does not parse (`_raw_ctx_for`). A SECOND DEFINITION OF `detect_telecom` DOES NOT
+# STAND HERE — one name, one home, and the earlier version of this function was
+# this family's alone.
 
 
 # Every shape `mint_telecom` can be shown in. `unmask_text` finds candidates by
@@ -2936,8 +3011,8 @@ _UT_SQUEEZE_SEP = r"[ \t\-/]?"
 # LETTERS: that is what keeps the normalized spelling of a Cyrillic look-alike
 # series («60ВВ…» → «6088…») from matching here, so the folded value can never be
 # read on the normalized path and the raw path below is the only reading of it.
-_UT_GIS = (r"(?<!\d)\d{2}(?:[А-ЯЁа-яё]{2}|[A-Za-z]{2})\d{6}"
-           r"(?:-\d{2}(?:-\d{4})?)?(?!\d)")
+_UT_GIS = (r"(?<!\d)\d{2}[A-Za-zА-ЯЁа-яё]{2}\d{6}"
+           r"(?:-?\d{2})?(?:-?\d{4})?(?!\d)")
 
 # UTILITY_ACCOUNT — «нет федеральной; обычно 6–12 цифр, иногда буквы/дефисы».
 # Two readings, and the SECOND is the one that gives this label a cue of its own:
@@ -2998,10 +3073,16 @@ _UT_SCHOOL = r"(?<!\d)\d{14}(?!\d)"
 _UT_STUDENT = r"(?<!\d)(?:\d{2}[ \t\-/]?\d{4}|\d{5,10})(?!\d)"
 
 # ACCESS_PASS_NUMBER — «цифры печатного пропуска или RFID UID в hex (8 или 14
-# hex)». Two readings, bounded by the record's own note: 6–12 digits (the sample
-# «0034561»; a four-digit pass is deliberately not claimed — a year after «пропуск
-# на …» is commoner than a four-digit badge) and the 8/14-hex UID.
-_UT_PASS_DIGITS = r"(?<!\d)\d{6,12}(?!\d)"
+# hex)». Two readings, bounded by the record's own note: 5–12 digits (the reference
+# sample «0034561» is 7 and the registry states NO floor — the corpus draws 5–10,
+# and 5 of the 12 misses of this type were a five-digit pass behind an undamaged
+# «пропуск») and the 8/14-hex UID.
+#
+# FOUR IS DELIBERATELY NOT CLAIMED, and the counterexample is older than this
+# change: `test_pii_v6`'s negative «пропуск на 2024 год» is a year, and the leased
+# gap between a cue and a value may hold the preposition. A four-digit floor typed
+# it as a pass; five cannot be a year.
+_UT_PASS_DIGITS = r"(?<!\d)\d{5,12}(?!\d)"
 _UT_PASS_HEX = (r"(?<![0-9A-Fa-f])(?:[0-9A-Fa-f]{14}|[0-9A-Fa-f]{8})"
                 r"(?![0-9A-Fa-f])")
 
@@ -3292,26 +3373,315 @@ UTILITY_TOKEN_RE = re.compile("|".join(
 
 # ------------------------------------------------------------ raw-text entry ---
 #
-# THE SAME QUESTION THE TELECOM FAMILY ASKED, AND FOR THE SAME REASON. A ЕЛС
-# series is Cyrillic and `normalize()` folds digit look-alikes inside any run
-# holding five or more real digits, so «60ВВ000593-01» arrives at the cue path as
-# «6088000593-01» — a string with no letters in the series slots, which no shape
-# of this family accepts (and must not: the value the customer wrote is the one
-# that has to come back). The family's cue path therefore runs on the RAW text,
-# exactly as the telecom one does, on the same invariant: `normalize()` is 1:1, so
-# offsets taken on the raw string index identically into every layer downstream.
+# THE SAME QUESTION THE TELECOM FAMILY ASKED, AND NOW EVERY FAMILY WHOSE VALUES
+# CARRY LETTERS ASKS IT. A ЕЛС series is Cyrillic and `normalize()` folds digit
+# look-alikes inside any run holding five or more real digits, so «60ВВ000593-01»
+# arrives at the cue path as «6088000593-01». The telecom and utility families
+# already read their cue table on the RAW text for exactly that reason; the same
+# fold corrupts four more families, each measured on the frozen corpus:
 #
-# The caller is `ru_pii.detect_structured(norm, raw)`, which asks ONE name for the
-# raw-text reading — `ru_pii_v6.detect_telecom`. That file is outside this
-# family's write scope, so the answer is APPENDED here rather than edited there:
-# the telecom function keeps its body untouched (see `_raw_telecom_detect`), and
-# the module binding the caller resolves is the two-family one below. One entry
-# point, one question, two families — and no second caller seam invented.
-_raw_telecom_detect = detect_telecom
+#   * a claim number's «В-924-378871/82» arrives as «8-924-378871/82» — the
+#     `В` is a digit look-alike glued to a separator, so it folds, and the model's
+#     round trip then hands the customer's tool a claim number they never wrote;
+#   * a certificate's «IXУВ928243» arrives as «IХУВ928243» — the Latin `X` inside
+#     a two-Cyrillic-letter run is folded by `_fold_latin_in_cyrillic`, so the span
+#     value is not the value in the text;
+#   * a УИД's hex `B` becomes `8`, so the span value fails `validate_loan_uid`
+#     against the customer's own document;
+#   * a ГИС ЖКХ series is mixed-script already and the folded spelling is what the
+#     normalized path sees.
+#
+# THE LEASED CUE TABLE IS STILL THE SOURCE OF TRUTH, AND IT IS STILL THE LEASE
+# THAT NAMES THE CUES. This pass does not copy a cue word into the engine: it
+# reads the SAME compiled `ctx_patterns` the normalized path reads, recovers the
+# (cue, shape) pair the builder compiled out of the pattern's own source, and
+# matches it against the RAW text. `ru_pii.py` is outside this change's write
+# scope, so — exactly as the `detect_telecom` rebinding already was — the raw
+# reading is delivered through the binding that file resolves at call time.
+#
+# TWO THINGS THE LEASED PATTERN CANNOT DO, AND BOTH ARE THE SLOPPY REGISTER'S:
+#
+#   1. A CUE ONE TYPO OLD IS STILL THE CUE. The corpus writes «прпоуск»,
+#      «исполгительный литс», «вид на жиельство», «лиицевой счёт» — the same
+#      one-edit damage `ru_pii._damaged_cue_before` already forgives for «паспрот»
+#      and «сннилс». The leased pattern is a regex and cannot spell one edit; so the
+#      SHAPE is matched alone and a cue-like word is looked for in front of it. The
+#      rule is this module's own `_damaged_cue_before` and NOT the v5 helper, for a
+#      measured reason its docstring carries (a one-word test lets «кад. номер»
+#      license any «номер»); what is shared rather than copied is the edit metric —
+#      `pseudex.fuzzy.within_one_typo` — and the words it is asked about come out of
+#      the LEASED cue source, never restated here.
+#   2. A CUE MAY STAND FURTHER THAN TWENTY CHARACTERS AWAY. The builder's gap is
+#      `\D{0,20}?` and «лицевой счёт прочитай файл и проверь <value>» is 24. The
+#      wider window below is this pass's own; the leased shape still gates, so a
+#      longer reach costs a candidate, never a claim.
+_RAW_CUE_GAP = 40
+
+# `re.compile(rf"(?i:{cues})\D{{0,20}}?({shape})\b")` — `pseudex/assets.py`'s
+# builder, and the ONLY place the two halves are joined. Recovering them here is
+# what lets the pass above re-ask the leased question with a wider gap and with a
+# shape-only alternative; a pin in `test_pii_v6` fails if a pattern stops parsing.
+_CTX_SOURCE_SPLIT = re.compile(r"^\(\?i:(.*)\)\\D\{0,\d+\}\?\((.*)\)\\b$", re.S)
+
+# The literal word runs a cue alternation names, lowercased. `\w*`/`\b` and the
+# other regex escapes are dropped, so «свидетельств\w* о рождении» yields the
+# alternative («свидетельств», «рождении») — the words the damage test below
+# compares a damaged cue against, IN ORDER, so the phrase is the phrase.
+_CTX_WORD = re.compile(r"[а-яёА-ЯЁa-zA-Z]{3,}")
+_CTX_ESCAPE = re.compile(r"\\[A-Za-z]|\\[^A-Za-z]")
+_CTX_DOUBLE = re.compile(r"([а-яё])\1+")
 
 
-def detect_utility_raw(raw_text: str) -> list[Span]:
-    """This family's cue path, on the RAW text (see the note above)."""
+def _ctx_cue_and_shape(pattern: "re.Pattern[str]") -> tuple[str, str]:
+    """The (cue, shape) source pair a leased cue pattern was built from."""
+    match = _CTX_SOURCE_SPLIT.match(pattern.pattern)
+    if match is None:
+        return "", ""
+    return match.group(1), match.group(2)
+
+
+def _cue_alternatives(cue_source: str) -> tuple[
+        tuple[tuple[str, ...], tuple[str, ...]], ...]:
+    """The word sequences a LEASED cue alternation names, one per `|` branch.
+
+    Read from the lease at run time, never restated in this module: a cue word is
+    tuned data and travels in the bundle (`licensing/assets_source.py`). The
+    extraction is deliberately dumb — split on `|`, strip the regex escapes, take
+    the letter runs of three or more — because its only job is to give the damage
+    test below a PHRASE to be one typo away from.
+
+    THE `№` IS CARRIED BECAUSE IT IS PART OF THE CUE, and dropping it was measured
+    over-masking: the «договор … займ» branch extracts to the words («договор»,
+    «займ») while the «договор … №» branch extracts to («договор»,) ALONE — the
+    wildcard and the optional spacing vanish in extraction and the `№` with them —
+    so the word-only reading accepted any «договор», and `test_hard_cases`'s own
+    negative «договор 9455 480555 оплачен» came back as a credit contract. The
+    literal is required to be present beside the words; a branch without one is
+    unchanged."""
+    alternatives: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+    for branch in cue_source.split("|"):
+        plain = _CTX_ESCAPE.sub(" ", branch)
+        words = tuple(_CTX_DOUBLE.sub(r"\1", word.lower())
+                      for word in _CTX_WORD.findall(plain))
+        literals = tuple(char for char in plain if char == "№")
+        if words:
+            alternatives.append((words, literals))
+    return tuple(alternatives)
+
+
+def _word_is_the_stem(word: str, stem: str) -> bool:
+    """`word` is `stem` written one typo (or one stretch) away.
+
+    THREE READINGS, BECAUSE A STEM IS A PREFIX AND THE DAMAGE IS NOT ALIGNED WITH
+    IT. The stem comes out of a leased `медкарт` plus a wildcard suffix (so the real
+    cue word is «медкарта»), and «медарта» — the corpus's dropped `к` — is one edit
+    from the FULL word while being four from the stem. So the whole word, the
+    stem-length prefix and the prefix one short are each asked; the last is what
+    catches a letter dropped INSIDE the stem's own span.
+
+    A THREE-LETTER STEM TOLERATES A SWAP, NOT ANOTHER LETTER, AND THE LINE IS AT
+    THREE. «ОМС»/«ДМС» and «ПТС»/«ПАС» are one substitution apart and they are
+    DIFFERENT document types: without this clause the damaged pass typed «полис ОМС
+    …» as a DMS policy and «паспорт 45 09 123456» as an СТС — two real over-masks on
+    the first run, and both came from a THREE-letter stem. A three-letter
+    abbreviation is where a substitution stops being damage and becomes another
+    abbreviation; from four letters on the full one-edit reading stands, which is
+    what «дело» → «деоо», «счёт» → «сёт», «gaid» → «gid», «есиа» → «еста» and
+    «iccid» → «icid» need. The three-letter case still tolerates an adjacent
+    TRANSPOSITION («дело» → «деол» is a keyboard slip); `within_one_typo` is the
+    rule that decides it and the equal-length / two-difference guard only excludes
+    its other arms.
+
+    BOTH THE WORD AND ITS STRETCHED-LETTER FOLD ARE TRIED, and the fold is why:
+    «лиицевой» → «лицевой» is a stretch `_CTX_DOUBLE` removes, while «каастровый»
+    → «кастровый» is a SUBSTITUTED letter that the same fold would destroy — the
+    cadastral cue's own corpus damage — so the collapse may not be applied to the
+    word BEFORE the comparison, only offered as a second reading of it."""
+    from pseudex.fuzzy import within_one_typo  # one home for the edit metric
+    for variant in (word, _CTX_DOUBLE.sub(r"\1", word)):
+        if variant.startswith(stem):
+            return True
+        if len(variant) < 3 or len(stem) < 3:
+            continue
+        if len(stem) < 4:
+            if len(variant) != len(stem) or variant == stem:
+                continue
+            if (within_one_typo(variant, stem)
+                    and sum(1 for left, right in zip(variant, stem)
+                            if left != right) == 2):
+                return True
+            continue
+        for candidate in (variant, variant[:len(stem)],
+                          variant[:max(1, len(stem) - 1)]):
+            if candidate and within_one_typo(candidate, stem):
+                return True
+    return False
+
+
+def _damaged_cue_before(text: str, start: int,
+                        alternatives: tuple[tuple[tuple[str, ...],
+                                                   tuple[str, ...]], ...],
+                        window: int = 40) -> bool:
+    """A WHOLE cue phrase, one typo old, IMMEDIATELY in front of `start`.
+
+    WHY NOT `ru_pii._damaged_cue_before`, WHICH ALREADY EXISTS: that helper reads
+    only the LAST Cyrillic word before the value, which is right for its own
+    single-word cues («паспрот», «сннилс») and WRONG for this table — the cadastral
+    cue is «кад. номер», so a test keyed on its last word would let ANY «номер»
+    license a cadastral number, and that is exactly what it did: the bare
+    fifteen-digit corpus IMEI behind «вот номер …» was typed CADASTRAL_NUMBER on the
+    first run of this pass. So the WHOLE phrase is compared, in order, aligned to
+    the words nearest the value, and every word of the branch must be one typo (or
+    one stretch) away. The edit metric itself is not duplicated: `within_one_typo`
+    is the repository's one home for it, and the stretched-letter collapse is the
+    same rule `_damaged_cue_before` applies.
+
+    A DAMAGED CUE IS THE WORD GLUED TO THE VALUE, so nothing numeric may stand
+    between its last word and the value. That clause is the v5 helper's `\\W{0,12}$`
+    read the way `\\w` actually behaves — `\\W` does not match a digit — and it is
+    load-bearing here, where the window is wide enough to reach the NEXT value: on
+    the same first run «номер убытка У-437-942136/95 imsi 250147795746458» typed the
+    IMSI as a second insurance claim, because «убыт\\w*\\s*№» extracts to the stem
+    «убыт» alone and a stem is all the damage test can see."""
+    tail = text[max(0, start - window):start].lower()
+    if not tail:
+        return False
+    words = [(match.start(), match.end(), match.group())
+             for match in re.finditer(r"[а-яёa-z]{3,}", tail)]
+    if not words:
+        return False
+    for stems, literals in alternatives:
+        if not all(literal in tail for literal in literals):
+            continue
+        length = len(stems)
+        if length > len(words):
+            continue
+        # THE CUE'S WORDS MUST BE CONSECUTIVE AND NEAR THE VALUE — not necessarily
+        # the last words before it, because the leased branches abbreviate a PHRASE:
+        # «кадастр…» is one word while the printed cue is «кадастровый номер», and an
+        # end-anchored alignment read the governing noun as the cue and found
+        # nothing. So the offset is tried from the END backwards (the strongest
+        # reading first) and at most TWO words may follow the cue — AND EACH OF THEM
+        # MUST BE PART OF THE SAME RECORD'S OWN CUE VOCABULARY, which is the clause
+        # that keeps this from becoming a free pass: the first version accepted
+        # «это клиент телефон 89035728046» as a CDP customer id (the phone was
+        # masked under the wrong label and minted as an id), because «телефон» was
+        # simply "a word after the cue". «номер» is in the cadastral record's own
+        # vocabulary; «телефон» is in nobody's.
+        vocabulary = tuple(stem for branch, _literals in alternatives
+                           for stem in branch)
+        for offset in range(len(words) - length, -1, -1):
+            if offset and re.search(r"\d", "".join(
+                    word for _s, _e, word in words[:offset])):
+                continue
+            if not all(_word_is_the_stem(words[offset + index][2], stems[index])
+                       for index in range(length)):
+                continue
+            after = words[offset + length:]
+            if len(after) > 2:
+                continue
+            if not all(any(_word_is_the_stem(word, stem) for stem in vocabulary)
+                       for _start, _end, word in after):
+                continue
+            last_end = after[-1][1] if after else words[offset + length - 1][1]
+            if re.search(r"\d", tail[last_end:]):
+                continue
+            return True
+    return False
+
+
+_RAW_CTX: dict[str, tuple["re.Pattern[str]", "re.Pattern[str]",
+                          tuple[tuple[tuple[str, ...], tuple[str, ...]], ...]]] = {}
+
+
+def _raw_ctx_for(pattern: "re.Pattern[str]") -> tuple[
+        "re.Pattern[str]", "re.Pattern[str]",
+        tuple[tuple[tuple[str, ...], tuple[str, ...]], ...]] | None:
+    """(wide cue+shape, shape-only, cue word sequences) for one leased pattern.
+
+    The cache is keyed by the pattern SOURCE, not by the entity type: a label may
+    hold several cue entries on purpose (UTILITY_ACCOUNT splits the shared cues
+    from its own «ЖКХ»), and each entry is its own reading."""
+    source = pattern.pattern
+    cached = _RAW_CTX.get(source)
+    if cached is not None:
+        return cached
+    cues, shape = _ctx_cue_and_shape(pattern)
+    if not cues or not shape:
+        return None
+    try:
+        wide = re.compile(rf"(?i:{cues})\D{{0,{_RAW_CUE_GAP}}}?({shape})\b")
+        alone = re.compile(rf"(?i:{shape})\b")
+    except re.error:                                                  # noqa: PERF203
+        return None
+    built = (wide, alone, _cue_alternatives(cues))
+    _RAW_CTX[source] = built
+    return built
+
+
+# EVERY FAMILY THIS PASS ANSWERS FOR. The three non-family ids are the
+# letter-bearing checksum records (a УИД's hex, an IBAN's country letters, a VIN's
+# alphabet): each is a value `normalize()` can fold inside, and each has a leased
+# cue entry already.
+RAW_CUED_LABELS: frozenset[str] = frozenset(
+    TELECOM_FAMILY_LABELS | UTILITY_LABELS | IDENTITY_LABELS | LEGAL_LABELS
+    | FINANCE_LABELS | frozenset(V6_TYPES))
+
+# THE SEAM `ru_pii.detect_structured` ASKS THROUGH, WIDENED HERE.
+#
+# That function computes `raw_cued = v6.TELECOM_LABELS | v6.UTILITY_LABELS` and
+# drops every NORMALIZED span of a label in that set that sits inside a raw one.
+# The name is read at CALL time, `ru_pii.py` is outside this change's write scope,
+# and the question the caller is really asking is «which labels does the raw pass
+# answer for» — so the answer is widened here rather than edited there, exactly as
+# the `detect_telecom` binding below is. THE TELECOM FAMILY'S OWN SET IS
+# `TELECOM_FAMILY_LABELS`, and every consumer inside the engine reads that one.
+TELECOM_LABELS = RAW_CUED_LABELS
+
+
+# A CUE TYPES A COORDINATED LIST, AND THE LIST MARKER IS THE SECOND CUE.
+#
+# The corpus writes two mentions of ONE type as «<cue> <value> и ещё <value>», and
+# the second value was the single largest remaining class of message-level miss
+# (22 of 40): the cue anchors the shape ONCE and the continuation carries no word of
+# its own. This is not a new kind of evidence — `ru_pii` already states the same rule
+# for the v5 card path («A CUE CAN TYPE SEVERAL CARDS … the cue is the evidence, so
+# no checksum is asked for here»).
+#
+# WHY IT IS SAFE TO READ A CONTINUATION, AND WHERE THE GUARD IS: the continuation
+# must match THE SAME LEASED SHAPE, not a digit run. A connector alone therefore
+# claims nothing; it extends a span the cue already licensed to the next value of
+# the shape the record itself declares — a 19-digit ICCID, a 20-digit account, a
+# 33-hex УИД. The marker set is the «another one» set («и ещё», «а также», «ещё»)
+# and NOT a bare «,» or «и»: «л/с 12345678, 50000 руб.» is an account followed by an
+# amount, and a comma would type the amount.
+_CUE_LIST_CONNECTOR = re.compile(r"\s*(?:и\s+ещё|а\s+также|ещё)\s+", re.I)
+_CUE_LIST_MAX = 3
+
+
+def _extend_cue_list(raw_text: str, alone: "re.Pattern[str]", cursor: int,
+                     entity_type: str, out: list[tuple[int, int, str]]) -> None:
+    """The coordinated list a cue opens: «<value> и ещё <value>» (see the constant).
+
+    Bounded by `_CUE_LIST_MAX` so a paragraph of numbers cannot chain, and every
+    continuation must satisfy THE SAME LEASED SHAPE the anchor did — a connector
+    alone claims nothing."""
+    for _ in range(_CUE_LIST_MAX):
+        connector = _CUE_LIST_CONNECTOR.match(raw_text, cursor)
+        if connector is None:
+            return
+        following = alone.match(raw_text, connector.end())
+        if following is None:
+            return
+        out.append((following.start(), following.end(), entity_type))
+        cursor = following.end()
+
+
+def _leased_cue_detect(raw_text: str, labels: frozenset[str]) -> list[Span]:
+    """The leased cue table read on `raw_text`, with the builder's own gap.
+
+    The reading every family had before this section; kept because it is the
+    FALLBACK when a pattern's source does not parse (see `_raw_ctx_for`)."""
     try:
         from pseudex.assets import ASSETS
         if not ASSETS.is_loaded:
@@ -3321,7 +3691,7 @@ def detect_utility_raw(raw_text: str) -> list[Span]:
         return []
     spans: list[Span] = []
     for entity_type, pattern in patterns:
-        if entity_type not in UTILITY_LABELS:
+        if entity_type not in labels:
             continue
         for match in pattern.finditer(raw_text):
             spans.append(Span(match.start(1), match.end(1), entity_type,
@@ -3329,16 +3699,96 @@ def detect_utility_raw(raw_text: str) -> list[Span]:
     return spans
 
 
+def detect_cued_raw(raw_text: str) -> list[Span]:
+    """The cue path of every raw-read family, ON THE RAW TEXT.
+
+    ONE PASS, THREE READINGS OF THE SAME LEASED ENTRY, because the sloppy register
+    needs all three and each is bounded by the record's own shape:
+
+      * the leased cue+shape with a wider gap (an intact cue, further away);
+      * the leased SHAPE alone with a damaged-cue test in front of it;
+      * and the leased pattern VERBATIM as the fallback when the entry's source
+        does not parse — so a builder change can cost the two widenings, never the
+        reading itself.
+
+    The value handed up is `raw_text[start:end]` BY CONSTRUCTION (the span is
+    built from the raw match), which is the whole point: the vault keys and the
+    round trip carry the customer's own characters, not the folded ones."""
+    try:
+        from pseudex.assets import ASSETS
+        if not ASSETS.is_loaded:
+            return []
+        patterns = ASSETS.get().ru_pii.ctx_patterns
+    except Exception:                                                # noqa: BLE001
+        return []
+    intact: list[tuple[int, int, str]] = []
+    damaged: list[tuple[int, int, str]] = []
+    for entity_type, pattern in patterns:
+        if entity_type not in RAW_CUED_LABELS:
+            continue
+        built = _raw_ctx_for(pattern)
+        if built is None:
+            for match in pattern.finditer(raw_text):
+                intact.append((match.start(1), match.end(1), entity_type))
+            continue
+        wide, alone, alternatives = built
+        cued: list[tuple[int, int]] = []
+        for match in wide.finditer(raw_text):
+            intact.append((match.start(1), match.end(1), entity_type))
+            cued.append((match.start(1), match.end(1)))
+            _extend_cue_list(raw_text, alone, match.end(1), entity_type, intact)
+        if alternatives:
+            for match in alone.finditer(raw_text):
+                # A SHAPE THE INTACT CUE ALREADY READ IS NOT ASKED ABOUT AGAIN:
+                # the damage test is two orders of magnitude dearer than the scan
+                # that feeds it (a 40-character window, its words, and an edit
+                # distance per word), and a value the wide pass already typed needs
+                # no second opinion — the dedup below would drop it anyway.
+                if any(start <= match.start() and match.end() <= end
+                       for start, end in cued):
+                    continue
+                if _damaged_cue_before(raw_text, match.start(), alternatives):
+                    damaged.append((match.start(), match.end(), entity_type))
+                    # A DAMAGED CUE LISTS TOO: «ноомер убытка В-487…/52 и ещё
+                    # В-269…/17» is one cue spelling typed twice, and the anchor's
+                    # own reading is what decides whether the list continues.
+                    _extend_cue_list(raw_text, alone, match.end(), entity_type,
+                                     damaged)
+    # THE INTACT CUE IS READ BEFORE THE DAMAGED ONE, and for the whole table rather
+    # than entry by entry. Two cue entries can both reach one spelling — «imsi» is
+    # the corpus's IMSI cue and is one substitution from «imei», four letters each —
+    # and `_resolve` breaks an exact tie by the order the spans were appended. In
+    # TABLE order the loser would be whichever family stands later in `CTX_TYPES`;
+    # in this order the EXACT cue always wins and the damaged reading only stands
+    # where nothing intact claimed the value.
+    # A DAMAGED READING NEVER DISPLACES AN INTACT ONE OVER THE SAME CHARACTERS.
+    # The damage rule is one edit on a word, and a short abbreviation is one edit
+    # from another abbreviation — «ОМС» from «ДМС» — so a damaged DMS reading stood
+    # on a value the intact ОМС cue had already typed, and DMS's higher rank handed
+    # the customer's ОМС policy to a tool as a DMS one. The intact cue is the
+    # stronger evidence, so a damaged candidate that OVERLAPS one is dropped.
+    if intact:
+        damaged = [candidate for candidate in damaged
+                   if not any(candidate[0] < hit[1] and hit[0] < candidate[1]
+                              for hit in intact)]
+    spans: list[Span] = []
+    seen: set[tuple[int, int, str]] = set()
+    for start, end, entity_type in intact + damaged:
+        key = (start, end, entity_type)
+        if key in seen:
+            continue
+        seen.add(key)
+        spans.append(Span(start, end, entity_type, raw_text[start:end]))
+    return spans
+
+
 def detect_telecom(raw_text: str) -> list[Span]:      # noqa: F811
-    """The raw-text cue path of the TELECOM and UTILITY families.
+    """The raw-text cue path of EVERY family the pass answers for.
 
     REBOUND, NOT REWRITTEN, and the reason is a boundary rather than a taste: the
-    caller (`ru_pii.detect_structured`) is outside this family's write scope, and
-    the telecom family's own body is preserved above it as `_raw_telecom_detect`.
-    A value whose identity is LETTERS — a UUID's hex, a ЕЛС's Cyrillic series —
-    must not be read through a fold meant for digits, and both families have such
-    values; asking the SAME leased cue table for both is what keeps the two from
-    drifting apart."""
-    spans = _raw_telecom_detect(raw_text)
-    spans.extend(detect_utility_raw(raw_text))
-    return spans
+    caller (`ru_pii.detect_structured`) is outside this family's write scope. A
+    value whose identity is LETTERS — a UUID's hex, a certificate's roman series, a
+    claim number's «В-», a ЕЛС's Cyrillic series — must not be read through a fold
+    meant for digits, and `RAW_CUED_LABELS` is the set of families that have such
+    values. The name is kept because it is the one the caller resolves."""
+    return detect_cued_raw(raw_text)

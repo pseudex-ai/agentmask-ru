@@ -412,7 +412,8 @@ def _token_for_text(span: Span, vault: Vault) -> str:
                             # the v6 identity documents: a certificate's roman
                             # series, a ПТС's letters and every document's
                             # separators are the customer's, on both legs.
-                            "INTL_PASSPORT", "BIRTH_CERT", "MILITARY_ID",
+                            "INTL_PASSPORT", "BIRTH_CERT", "CIVIL_ACT_CERT",
+                            "MILITARY_ID",
                             "DRIVER_LICENSE", "RESIDENCE_PERMIT", "VEHICLE_DOC",
                             "PTS_NUMBER", "STS_NUMBER",
                             # the v6 legal family: a case number's separators and
@@ -428,7 +429,7 @@ def _token_for_text(span: Span, vault: Vault) -> str:
                             # address's group count are the writer's on both legs
                             # — the content (the hex digits, the octets) is the
                             # vault's.
-                            *ru_pii_v6.TELECOM_LABELS,
+                            *ru_pii_v6.TELECOM_FAMILY_LABELS,
                             # the v6 utility/account/education/travel family,
                             # same rule: a ЕЛС's series, a login's handle and
                             # every document's separators are the writer's on
@@ -449,7 +450,7 @@ def _token_for_text(span: Span, vault: Vault) -> str:
         # token, i.e. a FAKE the restorer cannot see (measured: 1 in 60 mints;
         # found by this family's witness, and it is a cross-family defect of the
         # seam rather than of one type).
-        if (span.entity_type in ru_pii_v6.TELECOM_LABELS
+        if (span.entity_type in ru_pii_v6.TELECOM_FAMILY_LABELS
                 and ru_pii_v6.telecom_own_layout(span.entity_type, span.value)):
             return token
         return _atomic_in_form_of(span.value, token, span.entity_type)
@@ -1516,20 +1517,24 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False,
     # AN IDENTITY DOCUMENT RESOLVES BY ITS CONTENT TOO — its letters included.
     # «АК № 1234567» shown by the mint comes back as «АК1234567» or «АК 1234567»,
     # and the exact token is then no token at all: the FAKE reaches the customer's
-    # tool with a 200 and an empty residual. The shape names which label the
-    # candidate could be (`identity_label_of_shape`), and the label is part of the
+    # tool with a 200 and an empty residual. The shape names WHICH LABELS the
+    # candidate could be (`identity_signatures`), and the label is part of the
     # signature because «82 1234567» is one document as a ВНЖ and another as a
     # passport. A wrong guess costs one indexed point query, exactly as the plate
     # block above does. Mirrors `vault._digit_signatures`.
+    #
+    # MORE THAN ONE READING IS NORMAL, and it is not an accident of the shape: the
+    # registry gives BIRTH_CERT and CIVIL_ACT_CERT the SAME grammar («как
+    # BIRTH_CERT»), so no spelling can tell a birth certificate from a marriage
+    # one. Naming ONE label would lose whichever row the guess did not name — the
+    # failure `legal_signatures` already answers the same way: ask every reading as
+    # its own indexed point query and keep a hit only when the vault's recorded
+    # label is the label the signature was proposed under.
     identities: dict[str, tuple[str, str]] = {}
     identity_asked: dict[str, tuple[str, str]] = {}
     for value in candidates:
-        label = ru_pii_v6.identity_label_of_shape(value)
-        if not label:
-            continue
-        signature = ru_pii_v6.identity_signature(value, label)
-        if signature:
-            identity_asked[signature] = (value, label)
+        for signature, label in ru_pii_v6.identity_signatures(value):
+            identity_asked.setdefault(signature, (value, label))
     if identity_asked:
         for signature, hit in vault.resolve_digit_signatures_typed(
                 set(identity_asked), for_tool).items():
@@ -1686,7 +1691,8 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False,
                           "IBAN", "LOAN_UID", "VIN",
                           # the v6 identity documents, same rule: a certificate's
                           # series, a ПТС's letters and the document's grouping.
-                          "INTL_PASSPORT", "BIRTH_CERT", "MILITARY_ID",
+                          "INTL_PASSPORT", "BIRTH_CERT", "CIVIL_ACT_CERT",
+                          "MILITARY_ID",
                           "DRIVER_LICENSE", "RESIDENCE_PERMIT", "VEHICLE_DOC",
                           # the v6 legal family, same rule: the content is the
                           # vault's, the separators, letter case and script are
@@ -1701,7 +1707,7 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False,
                           # the hex digits and the group count are the vault's content
                           # on the way back, and the notation belongs to the agent that
                           # wrote the substitute.
-                          *ru_pii_v6.TELECOM_LABELS,
+                          *ru_pii_v6.TELECOM_FAMILY_LABELS,
                           # the v6 utility/account/education/travel family, same
                           # rule: a ЕЛС's series letters, a login's handle and the
                           # separators of a diploma or a pass are the vault's
@@ -1943,8 +1949,8 @@ def _numeric_in_form_of(written: str, value: str, kind: str,
     """
     if kind == "PHONE":
         return _phone_in_form_of(written, value)
-    if kind in {"INTL_PASSPORT", "BIRTH_CERT", "MILITARY_ID", "DRIVER_LICENSE",
-                "RESIDENCE_PERMIT", "VEHICLE_DOC"}:
+    if kind in {"INTL_PASSPORT", "BIRTH_CERT", "CIVIL_ACT_CERT", "MILITARY_ID",
+                "DRIVER_LICENSE", "RESIDENCE_PERMIT", "VEHICLE_DOC"}:
         # THE v6 IDENTITY DOCUMENTS: letters AND digits, and the notation is the
         # separators and the letter case of whoever wrote the mention — the
         # customer on the IN leg, the agent on the OUT leg. One function for both
@@ -1983,7 +1989,7 @@ def _numeric_in_form_of(written: str, value: str, kind: str,
         if not any(not char.isalnum() for char in written):
             return value
         return ru_pii_v6.render_like_atomic(value, written)
-    if kind in ru_pii_v6.TELECOM_LABELS:
+    if kind in ru_pii_v6.TELECOM_FAMILY_LABELS:
         # THE v6 TELECOM/DEVICE FAMILY: letters AS WELL AS digits, so the same
         # function the identity and finance families use. A MAC's colons, a
         # UUID's hyphens and an IPv6 address's group count are the writer's

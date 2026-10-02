@@ -657,13 +657,16 @@ IDENTITY_CASED: list[tuple[str, str, str, str]] = [
     ("BIRTH_CERT", "BIRTH_CERT", "СОР II-АГ №123456", "II-АГ №123456"),
     ("BIRTH_CERT", "BIRTH_CERT", '{"birth_cert_number": "IV-МЮ № 123456"}',
      "IV-МЮ № 123456"),
-    ("CIVIL_ACT_CERT", "BIRTH_CERT", "свидетельство о браке I-АГ № 672731",
+    # CIVIL_ACT_CERT CARRIES ITS OWN REGISTRY ID SINCE 03.10.2026: the same
+    # grammar as BIRTH_CERT, a different record — the label the benchmark's
+    # `typed` axis reads, and the reason the four rows below expect it.
+    ("CIVIL_ACT_CERT", "CIVIL_ACT_CERT", "свидетельство о браке I-АГ № 672731",
      "I-АГ № 672731"),
-    ("CIVIL_ACT_CERT", "BIRTH_CERT", "о расторжении брака II-БЮ № 123456",
+    ("CIVIL_ACT_CERT", "CIVIL_ACT_CERT", "о расторжении брака II-БЮ № 123456",
      "II-БЮ № 123456"),
-    ("CIVIL_ACT_CERT", "BIRTH_CERT", "свидетельство о смерти IV-ХХ № 123456",
+    ("CIVIL_ACT_CERT", "CIVIL_ACT_CERT", "свидетельство о смерти IV-ХХ № 123456",
      "IV-ХХ № 123456"),
-    ("CIVIL_ACT_CERT", "BIRTH_CERT",
+    ("CIVIL_ACT_CERT", "CIVIL_ACT_CERT",
      '{"marriage_certificate": "I-АГ № 672731"}', "I-АГ № 672731"),
     ("RESIDENCE_PERMIT", "RESIDENCE_PERMIT", "вид на жительство 82 1234567",
      "82 1234567"),
@@ -761,7 +764,7 @@ def test_identity_typed_invalid_no_gate() -> None:
         ("СТС 00 00 000000", "STS_NUMBER"),
         ("ВНЖ 82 0000000", "RESIDENCE_PERMIT"),
         ("военный билет ХХ № 0000000", "MILITARY_ID"),
-        ("свидетельство о браке I-АА № 000000", "BIRTH_CERT"),
+        ("свидетельство о браке I-АА № 000000", "CIVIL_ACT_CERT"),
         ("ПТС 00 ХХ 000000", "PTS_NUMBER"),
     ]
     problems = [text for text, label in negatives
@@ -1061,14 +1064,15 @@ def test_identity_labels_follow_the_registry() -> None:
     """THE LABEL IS THE ENGINE'S NAME FOR A TYPE, and five of the eight already had
     one (`engine_labels`). Two label facts are asserted rather than assumed: ПТС
     and СТС are the SAME engine label VEHICLE_DOC (the registry says so, and the
-    mint tells them apart by the source's own letters), and CIVIL_ACT_CERT shares
-    BIRTH_CERT until the Lead's priority entry can split them (DELTA.json carries
-    the handoff)."""
+    mint tells them apart by the source's own letters), and CIVIL_ACT_CERT is its
+    OWN label since 03.10.2026 — with its own entry in the leased cue table, its
+    own PRIORITY line (already 7) and its own key space, so the four civil-act
+    spellings type as the registry record instead of as a birth certificate."""
     problems: list[str] = []
     expected = {
         "INTL_PASSPORT": "INTL_PASSPORT",
         "BIRTH_CERT": "BIRTH_CERT",
-        "CIVIL_ACT_CERT": "BIRTH_CERT",
+        "CIVIL_ACT_CERT": "CIVIL_ACT_CERT",
         "RESIDENCE_PERMIT": "RESIDENCE_PERMIT",
         "MILITARY_ID": "MILITARY_ID",
         "DRIVER_LICENSE": "DRIVER_LICENSE",
@@ -1081,6 +1085,8 @@ def test_identity_labels_follow_the_registry() -> None:
                             f"expected {label!r}")
     if set(v6.LABEL_IDENTITY_TYPES["VEHICLE_DOC"]) != {"PTS_NUMBER", "STS_NUMBER"}:
         problems.append("VEHICLE_DOC does not cover exactly ПТС and СТС")
+    if set(v6.LABEL_IDENTITY_TYPES["CIVIL_ACT_CERT"]) != {"CIVIL_ACT_CERT"}:
+        problems.append("CIVIL_ACT_CERT does not stand alone in its key space")
     check("the engine label of each identity type is the registry's",
           not problems, "; ".join(problems) if problems else "8 types")
 
@@ -2525,7 +2531,7 @@ def test_telecom_typed_invalid_no_gate(detector: Detector) -> None:
     reject an implausible value and the cue is the evidence, so an all-zero MAC or
     a 250-prefixed zero IMSI behind its own cue is still the customer's value."""
     problems = [text for _label, text, _value in TELECOM_TYPED_INVALID
-                if not any(span.entity_type in v6.TELECOM_LABELS
+                if not any(span.entity_type in v6.TELECOM_FAMILY_LABELS
                            for span in detector.detect(text))]
     check("an implausible telecom value behind its cue is still protected",
           not problems, "; ".join(problems) if problems
@@ -2542,7 +2548,7 @@ def test_telecom_bare_is_not_typed(detector: Detector) -> None:
     the check is the measured one: it asserts the v5 anchors STILL fire, so a
     change that quietly disabled them would be red here."""
     problems = [value for value, _label in TELECOM_BARE_NEW
-                if any(span.entity_type in v6.TELECOM_LABELS
+                if any(span.entity_type in v6.TELECOM_FAMILY_LABELS
                        for span in detector.detect(f"значение {value} конец"))]
     for value, label in TELECOM_BARE_V5_ANCHORED:
         if not _found(detector, f"значение {value} конец", label, value):
@@ -2829,7 +2835,7 @@ def test_telecom_no_overmask(detector: Detector) -> None:
     Russian words and its shapes are digit runs, so the two together are where an
     over-mask would live."""
     problems = [text for text in TELECOM_NEGATIVES
-                if any(span.entity_type in v6.TELECOM_LABELS
+                if any(span.entity_type in v6.TELECOM_FAMILY_LABELS
                        for span in detector.detect(text))]
     check("a telecom cue with no value masks nothing", not problems,
           "; ".join(problems) if problems else f"{len(TELECOM_NEGATIVES)} texts")
@@ -3941,9 +3947,21 @@ V6_ADDED_PRIORITY: dict[str, int] = {
     # digit run that libphonenumber reads as a PHONE, and at a tie `_resolve`
     # keeps the span appended first. A missing entry here is a label regression,
     # not a cosmetic one — STS_NUMBER is a ten-digit 2-2-6 run.
-    "BANK_ACCOUNT": 7, "OGRNIP": 7, "OMS_ENP": 7, "EPTS_NUMBER": 7,
+    "BANK_ACCOUNT": 7, "OMS_ENP": 7, "EPTS_NUMBER": 7,
     "LOYALTY_CARD_NUMBER": 7, "PTS_NUMBER": 7, "STS_NUMBER": 7,
     "IP_ADDRESS": 6,
+    # OGRNIP IS 8 SINCE 03.10.2026, ONE ABOVE THE v5 BARE «OGRN» IT SHARES ITS
+    # CHARACTERS WITH. The bare fifteen-digit recognizer (`ru_pii._OGRNIP_RE`) still
+    # emits the old label at 7; the raw cue pass re-appends the cued span, and at an
+    # exact tie the append order then handed «ОГРНИП 231948757491188» back to the
+    # bare reading. The CUE outranks the shape that merely also matches.
+    "OGRNIP": 8,
+    # THE OVER-MASK GUARDS OF THE SAME DAY, measured rather than guessed:
+    # INSURANCE_CLAIM_NUMBER 6 outranks PHONE, whose reading of the folded «В-…»
+    # prefix won four claims; ESIA_OID 6 outranks PHONE for the reason IP_ADDRESS
+    # already states; CIVIL_ACT_CERT 7 is the certificate tier its bare sibling
+    # holds.
+    "INSURANCE_CLAIM_NUMBER": 6, "ESIA_OID": 6, "CIVIL_ACT_CERT": 7,
 }
 
 
@@ -3971,6 +3989,13 @@ def test_priority_table_composition() -> None:
         problems.append("MILITARY_ID does not outrank PLATE")
     if table.get("LOGIN", 0) <= table.get("NAME", 0):
         problems.append("LOGIN does not outrank NAME")
+    # THE RAW CUE PASS RE-APPENDS EVERY CUED SPAN, so an exact tie is no longer
+    # settled in the cue's favour by append order alone. The three pairs whose v5
+    # or bare reading shares the characters are stated as an ORDER here.
+    for higher, lower in (("OGRNIP", "OGRN"), ("INSURANCE_CLAIM_NUMBER", "PHONE"),
+                          ("ESIA_OID", "PHONE"), ("CIVIL_ACT_CERT", "BIRTH_CERT")):
+        if table.get(higher, 0) < table.get(lower, 0):
+            problems.append(f"{higher} does not outrank {lower}")
     check("the priority table keeps the v5 core and carries the v6 entries",
           not problems, "; ".join(problems) if problems
           else f"{len(V5_CORE_PRIORITY)} v5 + {len(V6_ADDED_PRIORITY)} v6 entries")
@@ -4012,27 +4037,74 @@ def test_priority_v6_arbitration(detector: Detector) -> None:
 
 
 def test_civil_act_cert_shares_the_certificate_rank(detector: Detector) -> None:
-    """CIVIL_ACT_CERT'S PRIORITY LINE IS ADDED; ITS LABEL SPLIT IS NOT.
+    """THE LABEL SPLIT HAS LANDED (03.10.2026), AND THIS PIN NOTICED.
 
-    The record shares the engine label BIRTH_CERT, so the certificate shape is
-    typed at rank 7 and nothing loses; the entry is what makes the split safe the
-    day it lands. The split itself needs the identity mint dispatch (`vault.py`)
-    and the identity signature reading (`redact.py`) — family bodies outside this
-    integration's scope — so what is asserted here is the RANK and the fact that a
-    civil-act witness is still typed by the shared identity label. WHEN THE SPLIT
-    LANDS, update this pin: it is the one that notices."""
+    The record has its own registry id, its own entry in the leased cue table and
+    its own PRIORITY line at BIRTH_CERT's rank — and a civil-act witness now types
+    as CIVIL_ACT_CERT while a birth witness still types as BIRTH_CERT. The rank
+    being EQUAL is what makes the split safe: `ru_pii._BIRTH_CERT_RE` (the v5 bare
+    recognizer) types the same characters BIRTH_CERT at 7, and the tie is broken by
+    the order the cue path was built in. The pin also holds the RESTORE half: the
+    two records share one grammar, so `identity_signatures` must propose both
+    readings or a civil-act substitute would restore to nothing."""
     table = ASSETS.get().priority
     problems: list[str] = []
     if table.get("CIVIL_ACT_CERT") != table.get("BIRTH_CERT"):
         problems.append(f"CIVIL_ACT_CERT={table.get('CIVIL_ACT_CERT')!r} does not "
                         f"carry BIRTH_CERT's rank {table.get('BIRTH_CERT')!r}")
-    if not _found(detector, "свидетельство о браке I-АГ № 672731",
-                  "BIRTH_CERT", "I-АГ № 672731"):
-        problems.append("a civil-act certificate is no longer typed by the shared "
-                        "identity label")
-    check("CIVIL_ACT_CERT carries its own priority line, the label split deferred",
+    for text, label in (("свидетельство о браке I-АГ № 672731", "CIVIL_ACT_CERT"),
+                        ("свидетельство о рождении I-АГ № 672731", "BIRTH_CERT")):
+        if not _found(detector, text, label, "I-АГ № 672731"):
+            problems.append(f"{text!r} is not typed {label} -> "
+                            f"{_types_found(detector, text)}")
+    readings = {label for _, label in v6.identity_signatures("I-АГ № 672731")}
+    if readings != {"BIRTH_CERT", "CIVIL_ACT_CERT"}:
+        problems.append(f"the restorer reads {sorted(readings)} for the shared "
+                        f"certificate shape")
+    check("CIVIL_ACT_CERT carries its own id at the certificate rank",
           not problems, "; ".join(problems) if problems
-          else "rank 7 beside BIRTH_CERT, shared label still types")
+          else "rank 7 beside BIRTH_CERT, both readings restored")
+
+
+def test_raw_cue_pass_is_the_supersede_seam() -> None:
+    """`TELECOM_LABELS` IS THE SET `ru_pii` ASKS ITS SUPERSEDE QUESTION THROUGH,
+    AND SINCE 03.10.2026 IT NAMES EVERY FAMILY THE RAW PASS ANSWERS FOR.
+
+    `ru_pii.detect_structured` computes `raw_cued = v6.TELECOM_LABELS |
+    v6.UTILITY_LABELS` at CALL time and drops every NORMALIZED span of a label in
+    that set that sits inside a raw one. The raw pass was widened from the telecom
+    family to every family whose values carry LETTERS a fold can corrupt (a claim
+    number's «В», a certificate's Latin «X», a УИД's hex «B»), and `ru_pii.py` is
+    outside this change's write scope — so the ANSWER is widened here, exactly as
+    the `detect_telecom` binding already was. What must not happen is the two names
+    drifting apart: the FAMILY set is `TELECOM_FAMILY_LABELS` and every consumer
+    inside the engine reads that one, while `TELECOM_LABELS` is the raw pass's set.
+
+    THE SEAM IS ASSERTED BY ITS EFFECT, not only by the set arithmetic: a value
+    whose normalized reading differs from its raw one must come out of
+    `Detector.detect` carrying the RAW characters."""
+    detector = Detector()
+    problems: list[str] = []
+    if v6.TELECOM_LABELS != v6.RAW_CUED_LABELS:
+        problems.append("TELECOM_LABELS is not the raw pass's label set")
+    if not v6.TELECOM_FAMILY_LABELS < v6.TELECOM_LABELS:
+        problems.append("the telecom family is not a proper subset of the raw set")
+    expected = (v6.TELECOM_FAMILY_LABELS | v6.UTILITY_LABELS | v6.IDENTITY_LABELS
+                | v6.LEGAL_LABELS | v6.FINANCE_LABELS | set(v6.V6_TYPES))
+    missing = sorted(expected - v6.RAW_CUED_LABELS)
+    if missing:
+        problems.append(f"the raw pass does not answer for {missing}")
+    for text, type_id, value in (
+            ("номер убытка В-924-378871/82", "INSURANCE_CLAIM_NUMBER",
+             "В-924-378871/82"),
+            ("ЕЛС 60ВВ000593-01", "GIS_ZHKH_ELS", "60ВВ000593-01")):
+        hit = [span for span in detector.detect(text) if span.value == value]
+        if not hit:
+            problems.append(f"{type_id}: the raw reading did not win over the "
+                            f"folded one -> {_types_found(detector, text)}")
+    check("the raw cue pass is the supersede seam", not problems,
+          "; ".join(problems) if problems
+          else f"{len(v6.RAW_CUED_LABELS)} raw labels, 2 raw readings win")
 
 
 def test_structured_kv_raw_seam() -> None:
@@ -4176,6 +4248,7 @@ def main() -> int:
     test_priority_table_composition()
     test_priority_v6_arbitration(detector)
     test_civil_act_cert_shares_the_certificate_rank(detector)
+    test_raw_cue_pass_is_the_supersede_seam()
     test_structured_kv_raw_seam()
     print()
     if _FAILURES:

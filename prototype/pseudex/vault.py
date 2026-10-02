@@ -614,12 +614,15 @@ _FINANCE_CANONICAL_IS_A_KEY = _FINANCE_ATOMIC_LABELS
 # The identity-document labels whose token carries LETTERS as part of its
 # identity, and the labels whose canonical is a KEY rather than a value. Both
 # lists exist so that one rule has one home: `redact` and `vault` must agree
-# about which spelling of a document is the same document.
+# about which spelling of a document is the same document. CIVIL_ACT_CERT joined
+# both on 03.10.2026, in the same change that gave it its own registry id: its
+# token is letters AND digits (a roman series, two capitals, six digits) and its
+# canonical is the typed key `identity_signature` builds.
 _IDENTITY_ATOMIC_LABELS = frozenset(
-    ("INTL_PASSPORT", "BIRTH_CERT", "MILITARY_ID", "DRIVER_LICENSE",
-     "RESIDENCE_PERMIT", "VEHICLE_DOC"))
+    ("INTL_PASSPORT", "BIRTH_CERT", "CIVIL_ACT_CERT", "MILITARY_ID",
+     "DRIVER_LICENSE", "RESIDENCE_PERMIT", "VEHICLE_DOC"))
 _IDENTITY_CANONICAL_IS_A_KEY = frozenset(
-    ("BIRTH_CERT", "MILITARY_ID", "VEHICLE_DOC"))
+    ("BIRTH_CERT", "CIVIL_ACT_CERT", "MILITARY_ID", "VEHICLE_DOC"))
 
 # THE v6 LEGAL FAMILY, the same two questions asked of it. Five of the six labels
 # carry LETTERS as part of their identity — a case number, a УИД's court code and
@@ -644,7 +647,7 @@ _LEGAL_CANONICAL_IS_A_KEY = _LEGAL_ATOMIC_LABELS
 # letter-bearing token and the digit path for the other, exactly as it does for
 # an identity document.
 _TELECOM_ATOMIC_LABELS = frozenset(
-    ru_pii_v6.TELECOM_LABELS - {"IMSI", "ESIA_OID", "METRICA_CLIENT_ID",
+    ru_pii_v6.TELECOM_FAMILY_LABELS - {"IMSI", "ESIA_OID", "METRICA_CLIENT_ID",
                                 "SUBSCRIBER_ACCOUNT"})
 
 # THE v6 UTILITY / ACCOUNT / EDUCATION / TRAVEL FAMILY, the same two questions
@@ -2200,7 +2203,7 @@ def _render_token(entity_type: str, gender: str | None = None,
                 + "".join(secrets.choice(letters) for _ in range(2)) + _rand_digits(3))
     # THE v5 `IP` AND `MAC` RENDERERS THAT USED TO STAND HERE ARE GONE, AND THEY
     # ARE GONE BECAUSE THEY CANNOT RUN: both labels are in
-    # `ru_pii_v6.TELECOM_LABELS`, so the family's own branch above answers for
+    # `ru_pii_v6.TELECOM_FAMILY_LABELS`, so the family's own branch above answers for
     # every one of them. A renderer that is unreachable is a claim about
     # behaviour no test can hold, and the v6 family's renderer is the strict
     # superset of both — it keeps the RFC 2544 reservation for IPv4 and the
@@ -2208,10 +2211,13 @@ def _render_token(entity_type: str, gender: str | None = None,
     # reservation argument is carried in `mint_telecom`; the MAC one (a random
     # hex draw may or may not set the locally-administered bit) is recorded in
     # TYPES.md as a KNOWN RELAXATION rather than hidden here.
-    if entity_type == "BIRTH_CERT":
+    if entity_type in ("BIRTH_CERT", "CIVIL_ACT_CERT"):
         # The v6 renderer. The roman series KEEPS ITS LENGTH («IV-МЮ № 123456»
         # minted «V-РИ №083887» — one character shorter, and a shape the
         # customer's own form may refuse) and the separators are the customer's.
+        # BOTH certificate records share the renderer because the registry gives
+        # them ONE grammar («как BIRTH_CERT»); only the span's label and the
+        # signature key space are split (03.10.2026).
         return ru_pii_v6.mint_identity(entity_type, original)
     if entity_type == "MILITARY_ID":
         return ru_pii_v6.mint_identity(entity_type, original)
@@ -2238,7 +2244,7 @@ def _render_token(entity_type: str, gender: str | None = None,
         # `ГРАММАТИКА?` and one carries `pd_context: OD-22`; both are recorded in
         # `ru_pii_v6` rather than papered over here.
         return ru_pii_v6.mint_finance(entity_type, original)
-    if entity_type in ru_pii_v6.TELECOM_LABELS:
+    if entity_type in ru_pii_v6.TELECOM_FAMILY_LABELS:
         # THE v6 TELECOM/DEVICE FAMILY. There is no checksum to inherit (the
         # registry gives every one of the eight `generated_checksum == ""`), so
         # the substitute preserves FORMAT and nothing else: the source's

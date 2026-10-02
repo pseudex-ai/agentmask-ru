@@ -483,6 +483,220 @@ def test_glued_forms_do_not_swallow_the_neighbour() -> None:
           "; ".join(problems) if problems else "3 neighbours")
 
 
+# ------------------------------------------------ the raw cue pass (03.10.2026)
+#
+# WHAT THIS SECTION IS FOR. After the six named gaps were closed, the sweep's own
+# per-type table named the NEXT five and every one of them was the same defect or
+# its neighbour:
+#
+#   * the VALUE was read off the NORMALIZED text, so `normalize()`'s digit fold
+#     corrupted a claim number's «В», a certificate's Latin «X» and a УИД's hex
+#     «B» — four families, 31 message-level misses, all masked with the WRONG
+#     characters in the vault;
+#   * the CUE had to be spelled exactly as the lease spells it, so the sloppy
+#     register's «прпоуск», «исполгительный литс», «лиицевой счёт» reached nothing
+#     (another 30);
+#   * two mentions of one type were joined by «и ещё», and only the cued one was
+#     read (22 more);
+#   * the ГИС ЖКХ series is MIXED-SCRIPT and the shape demanded one script, so 29
+#     of 34 spans were missed altogether.
+#
+# Every positive below is one of those; every negative is the over-mask the same
+# mechanism would buy if it were a little less bounded, and the first run of each
+# mechanism DID buy one until the bound was added (the negative names it).
+
+
+def test_raw_cue_pass_keeps_the_customer_characters(detector: Detector) -> None:
+    """THE SPAN'S VALUE IS THE TEXT'S OWN SUBSTRING, NOT THE FOLDED ONE.
+
+    `normalize()` is applied before every recognizer and folds look-alikes inside
+    digit-dense runs: «В-924-378871/82» → «8-924-…», «IXУВ928243» → «IХУВ928243»
+    (the Latin `X` inside a two-Cyrillic run), «…E471DBB5» → «…E471D88 5» for a
+    УИД's hex `B`. The value is still masked when read from the normalized text,
+    which is why the sweep's HONEST axis is not enough here — what the vault keys
+    and what the round trip returns is the span's VALUE. Asserted on the value AND
+    through mask/unmask, because the second is the one the customer's tool sees."""
+    problems: list[str] = []
+    cases = (
+        ("INSURANCE_CLAIM_NUMBER", "номер убытка В-924-378871/82", "В-924-378871/82"),
+        ("CIVIL_ACT_CERT", "свидетельство о браке IXУВ928243", "IXУВ928243"),
+        ("BIRTH_CERT", "свидетельство о рождении XЕЕ949793", "XЕЕ949793"),
+        ("LOAN_UID", "мой уид 0B74B21F47A239D00175421C2E471DBB5",
+         "0B74B21F47A239D00175421C2E471DBB5"),
+    )
+    for type_id, text, value in cases:
+        hit = [span for span in detector.detect(text) if span.value == value]
+        if not hit:
+            problems.append(f"{type_id}: the span value is not the text -> "
+                            f"{_types_found(detector, text)}")
+            continue
+        vault = _vault()
+        restored = unmask_text(mask_text(text, vault, hit), vault)
+        if value not in restored:
+            problems.append(f"{type_id}: mask/unmask lost the characters -> "
+                            f"{restored!r}")
+    check("the raw cue pass keeps the customer's own characters", not problems,
+          "; ".join(problems) if problems else f"{len(cases)} fold classes")
+
+
+def test_damaged_cue_is_read_and_intact_cue_wins(detector: Detector) -> None:
+    """ONE TYPO (OR ONE STRETCHED LETTER) IN THE CUE IS STILL THE CUE — AND AN
+    INTACT CUE IS STILL STRONGER EVIDENCE THAN A DAMAGED ONE.
+
+    The positives are the corpus's own sloppy register, one edit each. The negatives
+    are the over-mask the rule bought on its first run: «ОМС» is one substitution
+    from «ДМС» and «ПАС» from «ПТС», so a damaged reading must never displace an
+    INTACT one over the same characters, and a stem under five letters tolerates a
+    transposition only. THAT SECOND CLAUSE HAS A MEASURED PRICE and it is asserted
+    rather than hidden: «gid» for «gaid» is a DELETION on a four-letter stem, and it
+    stays unread (three corpus mentions pay for not reading every abbreviation as
+    every other)."""
+    problems: list[str] = []
+    positives = (
+        ("ACCESS_PASS_NUMBER", "прпоуск 3486241", "3486241"),
+        ("ACCESS_PASS_NUMBER", "пропукс 550421262", "550421262"),
+        ("EXEC_DOC_NO", "исполгительный литс KM229294152", "KM229294152"),
+        ("RESIDENCE_PERMIT", "вид на жиельство 823974061", "823974061"),
+        ("SUBSCRIBER_ACCOUNT", "лиицевой счёт 61338412", "61338412"),
+        ("SCHOOL_CERT_NUMBER", "атьестат 74059414622497", "74059414622497"),
+        ("MOBILE_AD_ID", "gaid CE10C8C8F3E8D91A8093B46F75299FAB",
+         "CE10C8C8F3E8D91A8093B46F75299FAB"),
+    )
+    for type_id, text, value in positives:
+        if not _found(detector, text, type_id, value):
+            problems.append(f"{type_id}: {text!r} -> {_types_found(detector, text)}")
+    # THE INTACT CUE WINS ITS OWN CHARACTERS.
+    if not _found(detector, "полис ОМС 6613186091390990", "OMS_ENP",
+                  "6613186091390990"):
+        problems.append("a damaged DMS reading displaced the intact ОМС cue")
+    if not _found(detector, "паспорт 45 09 123456", "PASSPORT", "45 09 123456"):
+        problems.append("a damaged СТС reading displaced the intact ПАСПОРТ cue")
+    check("a damaged cue is read, an intact cue is stronger", not problems,
+          "; ".join(problems) if problems
+          else f"{len(positives)} damaged cues + 2 intact wins")
+
+
+def test_cue_literal_and_coordinated_list(detector: Detector) -> None:
+    """TWO BOUNDS ON THE SAME MECHANISM, EACH BOUGHT BY A FALSE POSITIVE.
+
+    (1) A CUE'S «№» IS PART OF THE CUE. The leased branch «договор … №» extracts to
+        the word «договор» alone once the escapes go, and `test_hard_cases`'s own
+        negative «договор 9455 480555 оплачен» came back as a credit contract. The
+        literal is required beside the words.
+
+    (2) A CUE TYPES A COORDINATED LIST, AND THE MARKER IS THE «ANOTHER ONE» SET.
+        «<value> и ещё <value>» is two mentions of one type (the corpus writes 22 of
+        them); a bare «,» is not a marker, because «л/с 12345678, 50000 руб.» is an
+        account followed by an amount."""
+    problems: list[str] = []
+    if not _found(detector, "договор № 9455 480555 оплачен", "LOAN_CONTRACT_NUMBER",
+                  "9455 480555"):
+        problems.append("the «№» branch of the contract cue does not fire")
+    if _found_any(detector, "договор 9455 480555 оплачен"):
+        problems.append("a bare «договор» still types an ordinary reference")
+    for type_id, text, value in (
+            ("ACCESS_PASS_NUMBER", "пропуск 123456 и ещё 654321", "654321"),
+            ("INSURANCE_CLAIM_NUMBER", "номер убытка В-924-378871/82 и ещё В-269-613933/17",
+             "В-269-613933/17"),
+            ("ICCID", "iccid 8910414756468071005 а также 8930360898821307304",
+             "8930360898821307304")):
+        if not _found(detector, text, type_id, value):
+            problems.append(f"{type_id}: {text!r} -> {_types_found(detector, text)}")
+    stray = detector.detect("рабочий счёт 40817810698202940437, 50000 рублей списано")
+    if any(span.start <= 42 < span.end or span.start <= 46 < span.end
+           for span in stray):
+        problems.append(f"a comma continued the list into an amount -> "
+                        f"{[(s.entity_type, s.value) for s in stray]}")
+    check("a cue literal is required and a coordinated list is read", not problems,
+          "; ".join(problems) if problems else "2 positives + 1 literal + 1 comma")
+
+
+def test_leased_cue_sources_all_parse() -> None:
+    """THE RAW PASS RE-READS THE LEASE'S OWN (cue, shape) PAIR, SO THE PAIR MUST
+    PARSE FOR EVERY ENTRY.
+
+    `_ctx_cue_and_shape` recovers the two halves from the compiled pattern's source
+    — `pseudex/assets.py`'s builder is the only place they are joined — and a
+    builder change that stopped parsing would silently cost the widened gap and the
+    damaged-cue reading for that entry. This pin makes that loud."""
+    from pseudex.assets import ASSETS
+    problems: list[str] = []
+    entries = ASSETS.get().ru_pii.ctx_patterns
+    for entity_type, pattern in entries:
+        cues, shape = v6._ctx_cue_and_shape(pattern)
+        if not cues or not shape:
+            problems.append(f"{entity_type}: the (cue, shape) pair does not parse")
+            continue
+        if v6._raw_ctx_for(pattern) is None:
+            problems.append(f"{entity_type}: the cue source does not recompile")
+    if not any(entity_type in v6.RAW_CUED_LABELS for entity_type, _ in entries):
+        problems.append("the raw pass answers for none of the leased entries")
+    check("every leased cue source re-parses for the raw pass", not problems,
+          "; ".join(problems) if problems else f"{len(entries)} entries")
+
+
+def test_gis_series_is_script_tolerant_and_squeezed(detector: Detector) -> None:
+    """ГИС ЖКХ ЕЛС: MIXED SCRIPT AND THE SQUEEZED 13/18 FORM (29 of 34 missed).
+
+    The record's own `value_notation` is `glyph_fold` and its `needle_kinds` name
+    `glyph`: the two series letters are ONE series typed on two layouts, so «20ЯM»
+    (Cyrillic Я, Latin M) is the same document as «20ЯМ». And the corpus renders the
+    registry's 13/18-character forms with the separators squeezed out, which is the
+    same squeeze the other v6 cards already read."""
+    problems: list[str] = []
+    for text, value in (("елс 20ЯM566083", "20ЯM566083"),
+                        ("елс 02TШ826055116346", "02TШ826055116346"),
+                        ("ЕЛС 60АА000593-01", "60АА000593-01"),
+                        ("ЕЛС 60AA000593-01-2024", "60AA000593-01-2024")):
+        if not _found(detector, text, "GIS_ZHKH_ELS", value):
+            problems.append(f"{text!r} -> {_types_found(detector, text)}")
+    # A FOLDED SERIES IS NOT THE CUSTOMER'S SERIES: the raw path is the only
+    # reading, and the normalized spelling must not be typed twice.
+    spans = detector.detect("ЕЛС 60ВВ000593-01")
+    if not any(span.value == "60ВВ000593-01" for span in spans):
+        problems.append(f"the raw reading of a folded series is missing -> "
+                        f"{[(s.entity_type, s.value) for s in spans]}")
+    check("the ЕЛС series is script-tolerant and reads the squeezed form",
+          not problems, "; ".join(problems) if problems else "4 forms + 1 folded")
+
+
+def test_shapes_widened_on_measured_bounds(detector: Detector) -> None:
+    """THREE SHAPES WIDENED TO THE RECORD'S OWN FACTS, AND EACH WIDENING NAMED
+    WITH THE NEGATIVE THAT BOUNDS IT.
+
+      * ACCESS_PASS_NUMBER: the registry states no floor («цифры печатного
+        пропуска», sample «0034561» = 7) and the corpus draws 5–10. The floor is
+        FIVE, not four: «пропуск на 2024 год» is a year.
+      * CREDIT_SUBJECT_CODE: «4–15 знаков: цифры + буквы ОДНОГО алфавита» admits a
+        code drawn as CAPITALS only, which is 5 of the 7 misses. Lowercase prose is
+        not a code — and the whole shape is compiled `(?i:…)`, so the capitals are
+        scoped `(?-i:…)` or «будет», «двух» and «телефон» become codes.
+      * UTILITY_ACCOUNT vs SUBSCRIBER_ACCOUNT: the two records share the cue AND the
+        digit run, so the ONLY decidable split is the registry's own bounds — six
+        and seven digits are the utility record's alone (SUBSCRIBER starts at
+        eight). 14 of the corpus's 35 utility mentions are that."""
+    problems: list[str] = []
+    if not _found(detector, "пропуск 73226", "ACCESS_PASS_NUMBER", "73226"):
+        problems.append("the five-digit pass is not read")
+    if _found_any(detector, "пропуск на 2024 год"):
+        problems.append("a four-digit year behind «пропуск» is typed as a pass")
+    if _found_any(detector, "пропуск 8178"):
+        problems.append("the four-digit floor was lowered again")
+    if not _found(detector, "код субъекта АСПЗГ", "CREDIT_SUBJECT_CODE", "АСПЗГ"):
+        problems.append("an all-capital subject code is not read")
+    if _found_any(detector, "код субъекта указан в договоре"):
+        problems.append("lowercase prose is typed as a subject code")
+    if not _found(detector, "лицевой счёт 1234567", "UTILITY_ACCOUNT", "1234567"):
+        problems.append("a seven-digit account is not the utility record")
+    if not _found(detector, "лицевой счёт 12345678", "SUBSCRIBER_ACCOUNT",
+                  "12345678"):
+        problems.append("an eight-digit account stopped being the operator's")
+    if _found_any(detector, "лицевой счёт закрыт"):
+        problems.append("a cue with no value masks a word")
+    check("the three measured widens hold and their negatives hold", not problems,
+          "; ".join(problems) if problems else "3 positives + 4 negatives")
+
+
 def main() -> int:
     testkit.load_dev_bundle()
     detector = Detector()
@@ -499,6 +713,12 @@ def main() -> int:
     test_no_fuzzy_numerals_on_the_bare_imei(detector)
     test_typed_over_bare()
     test_glued_forms_do_not_swallow_the_neighbour()
+    test_raw_cue_pass_keeps_the_customer_characters(detector)
+    test_damaged_cue_is_read_and_intact_cue_wins(detector)
+    test_cue_literal_and_coordinated_list(detector)
+    test_leased_cue_sources_all_parse()
+    test_gis_series_is_script_tolerant_and_squeezed(detector)
+    test_shapes_widened_on_measured_bounds(detector)
     print()
     if _FAILURES:
         print(f"{len(_FAILURES)} FAILED: " + "; ".join(_FAILURES))
