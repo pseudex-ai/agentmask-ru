@@ -16,7 +16,8 @@ from pseudex.assets import ASSETS
 from pseudex.normalize import normalize
 from pseudex.profiling import stage
 from pseudex.vault import (LOC_TOKEN_PATTERN, REDACTION_MARKER, token_re, Vault, name_key,
-                           place_key, _date_canonical, canonicalize, fold_key)
+                           place_key, _date_canonical, canonicalize, fold_key,
+                           zero_grouped)
 
 # A number-like run (digits + phone separators), >=7 digits — a candidate for
 # digit-core detokenization when the model reformatted a numeric token.
@@ -923,8 +924,46 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True,
     `target` — the leaf's schema-declared notation (класс Ж), or "" when the
     schema declares none; never guessed.
     """
-    return _unmask(text, _call_view(_call_texts(text), vault), _literals_of(vault),
-                   inflect, for_tool, target=target)
+    literals = _literals_of(vault)
+    restored = _unmask(text, _call_view(_call_texts(text), vault), literals,
+                       inflect, for_tool, target=target)
+    if not for_tool:
+        joined = _join_addresses_in_json_value(restored, text, vault, literals)
+        if joined is not None:
+            return joined
+    return restored
+
+
+# РОЛЬ ЧИТАЕТСЯ ИЗ ИМЕНИ ПОЛЯ И НА КОНТЕНТ-ПЛЕЧЕ (W1). Плечо аргумента собирает
+# адрес, разложенный по полям схемы (`_join_addresses_deep`), а прозаическое плечо
+# знает только текст: ключ `"build"` для него — просто слово, и голая «44» без
+# подсказки рядом владельца не находит. Поэтому ответ, который ЦЕЛИКОМ является
+# JSON-объектом схемы, разбирается тем же соединением. Узко: только объект
+# целиком, только когда в нём есть адресная роль и хотя бы один её лист остался
+# НЕразрешённым (`restored == original` — ровно то условие, по которому соединение
+# и переписывает лист). Всё остальное уходит прежней дорогой, без пересборки JSON.
+def _join_addresses_in_json_value(restored: str, original: str, vault: Vault,
+                                  literals: _Literals) -> str | None:
+    stripped = original.strip()
+    if not (stripped.startswith("{") and stripped.endswith("}")):
+        return None
+    try:
+        restored_obj = json.loads(restored)
+        original_obj = json.loads(original)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(restored_obj, dict) or not isinstance(original_obj, dict):
+        return None
+    roles = {key: morph_places.role_of_field(str(key)) for key in original_obj}
+    if not any(roles.values()):
+        return None
+    if not any(roles.get(key) and restored_obj.get(key) == value
+               for key, value in original_obj.items() if isinstance(value, str)):
+        return None
+    joined = _join_addresses_deep(restored_obj, original_obj, vault, literals)
+    if joined == restored_obj:
+        return None
+    return json.dumps(joined, ensure_ascii=False)
 
 
 def _address_clauses(text: str) -> list[tuple[int, int]]:
@@ -1275,6 +1314,25 @@ _PLATE_SHAPE = re.compile(
 # is asked, so a phone or a card number is never parsed as one.
 _DATE_SHAPE = re.compile(r"^\s*\d{1,4}[.\-/ ]\d{1,2}[.\-/ ]\d{2,4}\s*$|^\s*\d{1,2}\s+[а-яёА-ЯЁ]+(?:\s+\d{4})?")
 
+# THE TWO SURFACES A SEPARATOR OR A GLUED LABEL TAKES AWAY FROM `token_re` (W5/W6).
+#
+# `ru_pii_v6.TOKEN_PATTERNS` matches a VIN as `\b[0-9A-HJ-NPR-Z]{17}\b`; a four-group
+# rewriting (`0ARK V4GV 0U3F 5832 7`) has no `\b` at either end of the 17 characters,
+# and a label glued to the value (`номеркузова0ARK…`) removes the left one. The
+# separators a regrouping inserts are notation, exactly as they are for every other
+# identifier — `canonicalize` squeezes and uppercases a VIN — so the surface is
+# squeezed here and asked of the vault as the token it claims to be.
+#
+# `IDENTITY_TOKEN_PATTERNS` anchors the ПТС/СТС shape with
+# `(?<![0-9A-Za-zА-ЯЁа-яё])`, which a glued cue word defeats (the character left
+# behind is Cyrillic). The copy below drops exactly that class from the lookbehind
+# and keeps everything else — the two letters, the six digits, the trailing guard.
+_VIN_SURFACE = re.compile(
+    r"(?i)(?<![0-9A-Za-z])[0-9A-HJ-NPR-Z](?:[ \t\-]?[0-9A-HJ-NPR-Z]){16}(?![0-9A-Za-z])")
+_VEHICLE_DOC_SURFACE = re.compile(
+    r"(?<![0-9A-Za-z])\d{2}[ \t.,\-/]{0,2}[А-ЯЁA-Z]{2}[ \t.,\-/]{0,2}\d{6}"
+    r"(?![0-9A-Za-zА-ЯЁа-яё])")
+
 
 def _date_readings(value: str) -> list[str]:
     match = _DATE_ANY.match(value.strip())
@@ -1441,6 +1499,35 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False,
         if (match.start(), match.end()) not in seen_spans:
             matches.append(match)
             seen_spans.add((match.start(), match.end()))
+    # A VEHICLE IDENTIFIER WITH A SEPARATOR INSIDE, OR WITH ITS LABEL GLUED TO IT
+    # (W5/W6). Two shapes the rest of this scan structurally cannot see:
+    #
+    #   * a VIN — `ru_pii_v6.TOKEN_PATTERNS` matches it as `\b[0-9A-HJ-NPR-Z]{17}\b`,
+    #     so a model that regroups it as fours (`0ARK V4GV 0U3F 5832 7`, check A40)
+    #     or that receives the label glued to it (`номеркузова0ARK…`, A43) leaves
+    #     no `\b` at the run's edge and no candidate at all — the FAKE reaches the
+    #     customer's tool with a 200. The surface is squeezed to its 17 characters
+    #     and asked of the vault as an exact token, which is the identity
+    #     `canonicalize` already keys a VIN by (`re.sub(r"\s+","",value).upper()`).
+    #   * a ПТС/СТС — `IDENTITY_TOKEN_PATTERNS` anchors it with
+    #     `(?<![0-9A-Za-zА-ЯЁа-яё])`, and a glued cue word leaves exactly a
+    #     Cyrillic letter there («ПТС59ЛО037992», A44), so the shape never fires.
+    #     The relaxed copy drops only that one class of the lookbehind; the
+    #     resolution is still the identity signature, so a spelling the vault does
+    #     not hold costs one indexed point query and can never restore a value.
+    #
+    # BOTH ARE MISS-COST-ONLY: nothing is spliced unless the vault answers.
+    for match in _VIN_SURFACE.finditer(text):
+        squeezed = re.sub(r"[ \t\-]", "", match.group())
+        if (match.start(), match.end()) in seen_spans or not squeezed:
+            continue
+        matches.append(_Whole(match.start(), match.end(), squeezed))
+        seen_spans.add((match.start(), match.end()))
+    for match in _VEHICLE_DOC_SURFACE.finditer(text):
+        if (match.start(), match.end()) in seen_spans:
+            continue
+        matches.append(_Whole(match.start(), match.end(), match.group()))
+        seen_spans.add((match.start(), match.end()))
     spoken_dates: set[str] = set()
     # A DATE SAID IN WORDS is a token too, since a spoken date of birth is
     # replaced by a spoken substitute; `TOKEN_RE` knows the digit shapes only,
@@ -1784,6 +1871,20 @@ def _restore_reformatted_spans(text: str, vault: Vault,
         hit = resolved.get(digits)
         if hit is None and 10 <= len(digits) <= 11:
             hit = resolved.get(digits[-10:])
+        if hit is None:
+            # ВЕДУЩИЙ НОЛЬ, СНЯТЫЙ У ГРУППЫ (W7). Третий вопрос после цифровой
+            # подписи и позиционного куска, и он задан только там, где первые
+            # два молчат. Прогон, укороченный снятием нуля у группы, не лежит
+            # внутри цифр подмены ни на одном смещении, поэтому `_digit_rows` его
+            # не видит, а цифровая подпись не равна цифрам подмены. Разделители
+            # записи при этом уцелели — таблица снимает ноль, но не пробелы, —
+            # и скелет записи (`vault.zero_grouped`) отвечает, каким написанием
+            # прогон был. `resolve_zero_grouped_typed` требует ЕДИНСТВЕННОГО
+            # кандидата и отказывает, как только скелет носят две подмены, так
+            # что цена ложного ответа не покупается ничем: промах — один запрос.
+            key = zero_grouped(surface)
+            grouped = vault.resolve_zero_grouped_typed({key}, for_tool) if "|" in key else {}
+            hit = grouped.get(key)
         # A MALFORMED COUNTRY-CODE SIGN is not a phone form we may splice under.
         # «+8…» and «++…» came back with the REAL digits laid under the agent's
         # broken sign («+89162148803», «++79162148803») — a hybrid a dialer
@@ -2310,7 +2411,17 @@ def _place_windows(text: str, start: int, end: int) -> list[tuple[int, int]]:
     house = _HOUSE_TAIL.match(text, end)
     if house is not None:
         ends.append(house.end())
-    for stop in list(ends):
+    # ХВОСТЫ ЦЕПЛЯЮТСЯ ДРУГ ЗА ДРУГА, И СПИСОК РАСТЁТ ПО ХОДУ. Здесь стоял
+    # `for stop in list(ends)`: снимок списка на входе, поэтому конец, найденный
+    # ВНУТРИ прохода, больше не рассматривался. Для цифровых хвостов это не
+    # видно (дом и его цепочка добавляются сразу), а продиктованное «дом
+    # пятьдесят семь» добавляется в проходе — и следующая за ним квартира уже не
+    # искалась, окно обрывалось на доме (D7/W2). Индекс растёт по списку, а не по
+    # снимку, поэтому цепочка собирается целиком.
+    index = 0
+    while index < len(ends):
+        stop = ends[index]
+        index += 1
         candidates.add((start, stop))
         # ПОДЪЕЗД — ТАКОЙ ЖЕ ХВОСТ, КАК КВАРТИРА, и стоит перед ней. Пока
         # подмена его не несла, окно о нём и не спрашивало; теперь несёт, и без
@@ -2343,6 +2454,17 @@ def _place_windows(text: str, start: int, end: int) -> list[tuple[int, int]]:
         if before is not None:
             candidates.add((start, before.end()))
             ends.append(before.end())
+        # …И ТОТ ЖЕ ХВОСТ, ПРОДИКТОВАННЫЙ ВСЛУХ (W2). Таблица выше ищет
+        # `\d{1,4}`, поэтому на подмене, ОТЧЕКАНИННОЙ СЛОВАМИ («дом двадцать
+        # шесть, квартира сто тридцать три»), окно обрывалось на улице: дом и
+        # квартира оставались подменой, а инструмент получал смесь настоящей
+        # улицы с фейковыми частями при 200. Числительное читает `spoken` —
+        # тот же читатель, которым `signature_parts` складывает цифры подмены,
+        # поэтому окно и ключ не могут разойтись в том, что здесь написано.
+        for dictated in _dictated_tails(text, stop):
+            if dictated not in ends:
+                candidates.add((start, dictated))
+                ends.append(dictated)
     head = _CITY_HEAD.search(text[:start])
     if head is not None and head.end() == start:
         for stop in ends:
@@ -2395,6 +2517,54 @@ _BUILDING_TAIL = re.compile(r",?\s*(?:корп\w*|кор|стр|строен\w*|
 # order number that happens to follow the address.
 _HOUSE_TAIL = re.compile(r",?\s*(?:(?:д|дом|вл|влад|владение)\.?\s*)?\d{1,4}"
                          r"(?:/\d{1,3})?[а-яё]?(?![\w])")
+
+
+# ПРОДИКТОВАННЫЙ ЧИСЛОВОЙ ХВОСТ — маркер, за которым стоит ЧИСЛИТЕЛЬНОЕ, а не
+# цифры (W2). `_HOUSE_TAIL`/`_FLAT_TAIL`/… требуют `\d{1,4}`, поэтому подмена,
+# отчеканенная словами, теряла дом и квартиру: окно обрывалось на улице, дом
+# оставался ФЕЙКОМ, а инструменту уезжала смесь настоящей улицы с фейковыми
+# частями. Число здесь читает `spoken.numeral_runs` — тот же читатель, которым
+# `signature_parts` складывает цифры подмены для ключа, — поэтому окно и ключ не
+# могут разойтись в том, что написано; вторая читалка числительных разошлась бы
+# с первой ровно на тех формах (склейки, опечатки из арендуемой таблицы), ради
+# которых та написана.
+_MARKER_TAILS = (
+    # ДЛИННАЯ АЛЬТЕРНАТИВА ПЕРВОЙ: «дом» обязан съесть себя целиком, иначе
+    # альтернатива «д» съедает одну букву, за маркером остаётся «ом», и это
+    # слово читается как чужое — числительное за ним уже не начинается.
+    re.compile(r",?\s*(?:владение|влад|дом|д|вл)\.?\s*"),
+    re.compile(r",?\s*(?:строение|строен\w*|корпус\w*|корп\w*|литер\w*|стр|кор)\.?\s*"),
+    re.compile(r",?\s*(?:под[ъь]езд\w*|под)\.?\s*"),
+    re.compile(r",?\s*(?:квартир\w*|кв|офис\w*|оф)\.?\s*"),
+)
+_DICTATED_WORD = re.compile(r"[А-Яа-яЁё]+")
+
+
+def _dictated_tails(text: str, position: int) -> list[int]:
+    """Концы всех «маркер + продиктованное число», начинающихся в `position`.
+
+    Возвращает СПИСОК: за одной позицией может стоять и дом, и квартира — обе
+    формы нужны окну как отдельные рамки, как и у цифровых хвостов. Число
+    читается `spoken.numeral_runs` (максимальный прогон числительных, склейки и
+    вставки-заполнители включительно) — вторая читалка здесь разошлась бы с
+    `signature_parts` ровно на тех формах, ради которых та написана."""
+    out: list[int] = []
+    for marker in _MARKER_TAILS:
+        match = marker.match(text, position)
+        if match is None:
+            continue
+        rest = match.end()
+        word = _DICTATED_WORD.match(text, rest)
+        if word is None:
+            continue
+        for run_start, run_stop, _words in spoken.numeral_runs(text[rest:rest + 160]):
+            # Прогон обязан начинаться ПЕРВЫМ же словом: иначе между маркером
+            # и числительным стоит чужое слово, и это не число этого маркера.
+            if run_start != 0:
+                break
+            out.append(rest + run_stop)
+            break
+    return out
 # Two words as well: the settlement is real now, and «Нижний Новгород, » is one.
 _CITY_HEAD = re.compile(r"(?-i:[А-ЯЁ])[а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?,\s*$")
 _CITY_LEAD = re.compile(r"(?-i:[А-ЯЁ])[а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?,\s*")
@@ -2504,7 +2674,29 @@ def _name_windows(text: str) -> list[tuple[int, int, str]]:
                 windows.append((start, end, text[start:end]))
     for m in _INITIALS_PAIR.finditer(text):
         windows.append((m.start(), m.end(), m.group()))
+    # ИНИЦИАЛЫ БЕЗ ТОЧЕК — ТА ЖЕ ФОРМА, ЧТО «В. Л.», И ДРУГОГО ОКНА У НЕЁ НЕТ
+    # (W4). `_NAME_WORD` требует строчных после заглавной, поэтому «Бирюков ТВ»
+    # предлагалось окном из одного слова: фамилия разрешалась, а «ТВ» — подмена
+    # — оставалась в тексте рядом с настоящей фамилией («Иванов ТВ»). Окно
+    # покрывает пару целиком, в обоих порядках; отвечает `_derived_owner`, тем
+    # же разворотом, что и для точек, — конвенция модели, а не второй ключ.
+    for m in _SQUEEZED_PAIR.finditer(text):
+        windows.append((m.start(), m.end(), m.group()))
     return windows
+
+
+# ПАРА «ФАМИЛИЯ + СКЛЕЕННЫЕ ИНИЦИАЛЫ» (или наоборот). Две заглавные подряд —
+# это инициалы без точек ровно так же, как «В. Л.» с ними; строчная после
+# заглавной в паре обязана быть фамилией, иначе окно не предлагается.
+# `_NAME_WORD` такие инициалы не видит вовсе (он ищет `[А-ЯЁ][а-яё-]+`), и это
+# причина, по которой пара оставалась наполовину фейком.
+_SQUEEZED_PAIR = re.compile(
+    r"(?<![А-ЯЁа-яё])(?:[А-ЯЁ][а-яё-]+[ \t][А-ЯЁ]{2}|[А-ЯЁ]{2}[ \t][А-ЯЁ][а-яё-]+)"
+    r"(?![А-ЯЁа-яё])")
+# Тот же рисунок, разобранный на части, чтобы взять фамилию и инициалы по ролям.
+_SQUEEZED_PAIR_PARTS = re.compile(
+    r"(?:(?P<surn1>[А-ЯЁ][а-яё-]+)(?P<gap1>[ \t])(?P<ini1>[А-ЯЁ]{2})"
+    r"|(?P<ini2>[А-ЯЁ]{2})(?P<gap2>[ \t])(?P<surn2>[А-ЯЁ][а-яё-]+))")
 
 
 # TWO LETTERS, NOT FIVE. The floor of five (the same `names._LOWER_DICT_MIN`
@@ -2528,6 +2720,12 @@ _LOWER_WORD = re.compile(r"(?<![А-ЯЁа-яё-])[а-яё]{2,}(?![А-ЯЁа-яё
 # с таким именем оставляла его фейком («ким ян»). В прогоне из двух-трёх слов
 # короткое слово ничем не рискует — ключ строится по ВСЕМУ окну.
 _LOWER_RUN = re.compile(r"(?<![А-ЯЁа-яё-])[а-яё]{2,}(?:[ -][а-яё]{2,}){1,2}(?![А-ЯЁа-яё-])")
+# НЕОГРАНИЧЕННЫЙ СТРОЧНЫЙ ПРОГОН — для контент-плеча (W3): `_LOWER_RUN` кончается
+# на третьем слове и не перекрывает находки, поэтому настоящая тройка имени в
+# «клиент тихонов богдан викторович» в окна не попадала вовсе. Скользящие окна
+# по этому прогону дают её и всё равно требуют ключа, который построен по ВСЕМУ
+# окну, — цена промаха один индексный запрос.
+_LOWER_SEQ = re.compile(r"(?<![А-ЯЁа-яё-])[а-яё]{2,}(?:[ -][а-яё]{2,})*(?![А-ЯЁа-яё-])")
 # Обе половины дефисного склеивания, в любом регистре — заглавную пару
 # `_name_windows` уже разбирает, строчную не разбирал никто.
 _HYPHEN_PAIR = re.compile(r"(?<![А-ЯЁа-яё-])([А-ЯЁа-яё][а-яё]+)-([А-ЯЁа-яё][а-яё]+)(?![А-ЯЁа-яё-])")
@@ -2588,6 +2786,58 @@ def _tool_windows(text: str) -> list[tuple[int, int, str]]:
     return windows
 
 
+def _lower_run_windows(text: str) -> list[tuple[int, int, str]]:
+    """Подокна СТРОЧНОГО ПРОГОНА — «карпов юрий геннадьевич» целиком и его пары.
+
+    ОДНА ЧИТАЛКА НА КОНТЕНТ-ПЛЕЧО (W3). На плече аргумента окно уже стояло
+    (`_tool_windows`), контент-плечо его не предлагало, и модель, свернувшая
+    регистр подмены (обычное дело в чате), отдавала клиенту ФЕЙКОВОЕ имя, тогда
+    как тот же самый текст в аргументе разрешался (`A15` против `A14`, `D5`).
+
+    ПРОГОН ЗДЕСЬ НЕОГРАНИЧЕН, И ЭТО НЕ УКРАШЕНИЕ. `_LOWER_RUN` — три слова, и
+    `finditer` не перекрывает находки: в «клиент тихонов богдан викторович»
+    первое совпадение съедает «клиент тихонов богдан», второе начинается с
+    «викторович», и настоящей тройки имени среди окон НЕТ вовсе — окно в два
+    слова разрешало фамилию и имя, а отчество оставалось подменой
+    («иванов пётр викторович»). Поэтому по длинному строчному прогону берутся
+    СКОЛЬЗЯЩИЕ окна размера 3 и 2: имя в предложении стоит где угодно.
+
+    Одиночное строчное слово по-прежнему не предлагается: его в обычной прозе
+    слишком много («вера», «надежда»), а прогон из двух-трёх слов специфичен, и
+    решает всё равно волт — ключ строится по ВСЕМУ окну, и промах стоит одного
+    индексного запроса, который ничего не находит."""
+    windows: list[tuple[int, int, str]] = []
+    for run in _LOWER_SEQ.finditer(text):
+        words = [(m.start(), m.end()) for m in re.finditer(r"[а-яё]{2,}", run.group())]
+        for i in range(len(words)):
+            for size in (3, 2):
+                if i + size > len(words):
+                    continue
+                start = run.start() + words[i][0]
+                end = run.start() + words[i + size - 1][1]
+                windows.append((start, end, text[start:end]))
+    return windows
+
+
+def _dictated_place_key(surface: str) -> str:
+    """`place_key`, но с продиктованными числительными, прочитанными в цифры (W2).
+
+    КЛЮЧ ПОДМЕНЫ ВСЕГДА ЦИФРОВОЙ, А ПИСЬМО БЫВАЕТ СЛОВАМИ. Подмена, отчеканенная
+    на продиктованном адресе, зеркалит форму отправителя и показывается модели
+    СЛОВАМИ («дом двадцать шесть»), тогда как строка волта и её `name_key` несут
+    цифры. Обратный путь, который модель переписала в цифры, находил ключ
+    (`A16`/`D6`), а тот же адрес, СКОПИРОВАННЫЙ дословно, — нет: `place_key`
+    словесной формы состоял из числительных и с цифровым ключом не сходился, так
+    что улица разрешалась, а дом и квартира оставались ФЕЙКОМ (D7/W2). Вторая
+    подпись — это ровно то, чем `address_key` уже сворачивает диктовку
+    (`_fold_spoken_cardinals`), и она ДОБАВЛЯЕТСЯ к обычной, а не заменяет её:
+    ключ строки волта не двигается, а словесное написание приходит к нему.
+    """
+    tokens = re.findall(r"[А-Яа-яЁё]+|\d+", surface)
+    return morph_places.match_signature(
+        " ".join(morph_places._fold_cardinals(tokens)))
+
+
 def _restore_inflected_candidates(text: str, vault: Vault, inflect: bool,
                                   for_tool: bool) -> list[_ResolvedSpan]:
     """NAME tokens the model put into another case no longer match their minted
@@ -2605,6 +2855,14 @@ def _restore_inflected_candidates(text: str, vault: Vault, inflect: bool,
     windows = _name_windows(text)
     if for_tool:
         windows.extend(_tool_windows(text))
+    else:
+        # СТРОЧНЫЙ ПРОГОН — И В ПРОЗЕ (W3). Плечо аргумента предлагало его с
+        # самого начала, контент-плечо — нет, поэтому одна и та же строка
+        # разрешалась в инструменте и оставалась подменой в ответе клиенту
+        # (`A15` против `A14`). Одиночное строчное слово по-прежнему НЕ
+        # предлагается: его в обычной прозе слишком много, а прогон из двух-трёх
+        # слов специфичен, и решает всё равно волт (см. `_lower_run_windows`).
+        windows.extend(_lower_run_windows(text))
     # Each window carries BOTH signatures, because a single capitalised word can
     # be either kind and the two normalisers disagree: `Еловцке` is a settlement,
     # and asking the PERSON normaliser about it returns it unchanged, so the row
@@ -2656,7 +2914,7 @@ def _restore_inflected_candidates(text: str, vault: Vault, inflect: bool,
         for start, end in _place_windows(text, match.start(), match.end()):
             surface = text[start:end]
             try:
-                keys[(start, end)] = [place_key(surface)]
+                keys[(start, end)] = [place_key(surface), _dictated_place_key(surface)]
             except Exception:  # noqa: BLE001
                 continue
             windows.append((start, end, surface))
@@ -2768,7 +3026,37 @@ def _stem_of(word: str) -> str:
 
 
 def _is_derived_surface(surface: str) -> bool:
-    return bool(_LATIN_WORD.search(surface) or _INITIALS_PAIR.fullmatch(surface.strip()))
+    return bool(_LATIN_WORD.search(surface)
+                or _INITIALS_PAIR.fullmatch(surface.strip())
+                or _SQUEEZED_PAIR_PARTS.fullmatch(surface.strip()))
+
+
+def _initials_owner(surface: str, vault: Vault) -> str | None:
+    """Настоящая семья по ОДНИМ инициалам подмены — общий разворот для точечной
+    и для склеенной формы (W4).
+
+    `vault.residual_of` отвечает, чьи это инициалы: минт индексирует склеенную
+    форму среди частей подмены (`translit.squeezed_initials`), и вопрос задаётся
+    её же ключом. Дальше настоящее имя берётся из волта, и инициалы — от него,
+    а не от подмены: иначе в тексте осталась бы половина фейка."""
+    token = vault.residual_of(surface.strip())
+    if token is None:
+        return None
+    value, entity_type = vault.reveal(token)
+    if not value or entity_type != "NAME":
+        return None
+    shape = morph_names.name_shape(value)
+    words = value.split()
+    if len(shape) != len(words):
+        return None
+    given = next((w for w, k in zip(words, shape) if k == "name"), "")
+    patronymic = next((w for w, k in zip(words, shape) if k == "patr"), "")
+    if not given or not patronymic:
+        return None
+    # ВЕРХНИЙ РЕГИСТР, КАК У ПАРЫ С ТОЧКАМИ И БЫЛО: инициал — это буква имени, а
+    # не его регистр в записи волта, и `test_derived_forms` держит «А.И.» для
+    # настоящего человека, записанного строчными.
+    return f"{given[0].upper()}.{patronymic[0].upper()}."
 
 
 def _derived_owner(surface: str, vault: Vault) -> str | None:
@@ -2780,11 +3068,16 @@ def _derived_owner(surface: str, vault: Vault) -> str | None:
     real person's, in the same punctuation. The table is found by which one
     reproduces the surface from the fake — a spelling we cannot reproduce is
     not ours to restore.
+
+    И СКЛЕЕННАЯ ПАРА «ФАМИЛИЯ + ИНИЦИАЛЫ» (W4). «Бирюков ТВ» — та же
+    аббревиатура, что «Бирюков Т.В.», только без точек. Разворот отдаёт
+    НАСТОЯЩУЮ фамилию рядом с настоящими инициалами в том же порядке и в том
+    же регистре: в тексте не должно остаться ни подменной фамилии, ни подменных
+    инициалов — «Иванов ТВ» было именно половинчатым ответом.
     """
-    initials = _INITIALS_PAIR.fullmatch(surface.strip())
-    if initials is not None:
-        key = (initials.group(1) + initials.group(2)).lower()
-        token = vault.residual_of(key)
+    pair = _SQUEEZED_PAIR_PARTS.fullmatch(surface.strip())
+    if pair is not None:
+        token = vault.residual_of(surface.strip())
         if token is None:
             return None
         value, entity_type = vault.reveal(token)
@@ -2792,14 +3085,38 @@ def _derived_owner(surface: str, vault: Vault) -> str | None:
             return None
         shape = morph_names.name_shape(value)
         words = value.split()
-        if len(shape) != len(words):
+        fake_shape = morph_names.name_shape(token)
+        fake_words = token.split()
+        if len(shape) != len(words) or len(fake_shape) != len(fake_words):
             return None
         given = next((w for w, k in zip(words, shape) if k == "name"), "")
         patronymic = next((w for w, k in zip(words, shape) if k == "patr"), "")
-        if not given or not patronymic:
+        surname = next((w for w, k in zip(words, shape) if k == "surn"), "")
+        fake_given = next((w for w, k in zip(fake_words, fake_shape) if k == "name"), "")
+        fake_patr = next((w for w, k in zip(fake_words, fake_shape) if k == "patr"), "")
+        if not given or not patronymic or not surname or not fake_given or not fake_patr:
+            return None
+        # ПАРА ОБЯЗАНА БЫТЬ ЕГО СОБСТВЕННЫМИ ИНИЦИАЛАМИ. Одного `residual_of`
+        # здесь мало: он смотрит слова длиннее двух букв, а пара инициалов — ровно
+        # две, поэтому «Уваров ЩЩ» находило владельца по фамилии и ЛЮБАЯ пара
+        # заглавных разворачивалась в настоящие инициалы. Гейт — тот же, что у
+        # точечной формы: буквы пары равны инициалам ПОДМЕНЫ.
+        written = pair.group("ini1") or pair.group("ini2")
+        if written.casefold() != (fake_given[0] + fake_patr[0]).casefold():
+            return None
+        surname = translit.match_case(pair.group("surn1") or pair.group("surn2"),
+                                      surname)
+        squeezed = translit.match_case(written, f"{given[0]}{patronymic[0]}")
+        if pair.group("surn1"):
+            return f"{surname}{pair.group('gap1')}{squeezed}"
+        return f"{squeezed}{pair.group('gap2')}{surname}"
+    initials = _INITIALS_PAIR.fullmatch(surface.strip())
+    if initials is not None:
+        rendered = _initials_owner(initials.group(1) + initials.group(2), vault)
+        if rendered is None:
             return None
         gap = " " if re.search(r"\.\s[А-ЯЁ]", surface) else ""
-        return f"{given[0].upper()}.{gap}{patronymic[0].upper()}."
+        return rendered.replace(".", f".{gap}", 1)
     words = surface.split()
     token = vault.residual_of(" ".join(words))
     if token is None:

@@ -1442,6 +1442,32 @@ def _normalizing_hole(token_digits: str, digits: str) -> bool:
             and _same_number(token_digits, digits))
 
 
+# РАЗДЕЛИТЕЛЬ ГРУПП — НЕ ЦИФРА. Один читатель на обе стороны сравнения, иначе
+# два написания одного правила разошлись бы на пробеле против дефиса.
+_NON_DIGIT_RUN = re.compile(r"[^\d]+")
+
+
+def zero_grouped(value: str) -> str:
+    """Цифры ЗАПИСИ группами, у каждой группы снят ведущий ноль.
+
+    «196-067-599 21» → «196|67|599|21». Скелет записи, а не число: он говорит,
+    ЧЕМ написание было, когда в нём стояли нули, которые сняли.
+
+    ЗАЧЕМ ОТДЕЛЬНЫЙ КЛЮЧ. «Число решает, не позиция» — инвариант класса Д,
+    уже записанный для ИНН (`_same_number`). Но `_same_number` сравнивает
+    цифровой ПРОГОН целиком, а таблица/JSON снимает ведущий ноль у КАЖДОЙ
+    группы: СНИЛС «312-653-012 25» становится «312-653-12 25», карта
+    «0090 7741 7649 0093» — «90 7741 7649 93». Прогон при этом не является
+    подстрокой цифр подмены вовсе (`instr` его не находит, `_digit_rows`
+    молчит), и в инструмент уезжает ФЕЙК (A27/A29/A32). Разделители в записи
+    остаются, поэтому скелет восстанавливает ровно то, что потерялось: где
+    стояли нули. Два написания — один скелет; голый прогон без разделителей
+    даёт ОДНУ группу, и правило сводится к уже записанному `_same_number`."""
+    groups = [group for group in _NON_DIGIT_RUN.split(value) if group]
+    return "|".join(group.lstrip("0") or "0" for group in groups)
+
+
+
 def _one_edit_neighbours(digits: str) -> set[str]:
     """Все строки той же длины, отличающиеся от этой РОВНО в одной позиции —
     вопрос «не наша ли это подмена, переписанная на одну цифру» (Д-4), заданный
@@ -6419,6 +6445,64 @@ class Vault:
         tails: dict[str, tuple[str, str]] = self._lookup_typed("digits10", signatures, for_tool)
         exact: dict[str, tuple[str, str]] = self._lookup_typed("digits", signatures, for_tool)
         return {**tails, **exact}
+
+    def resolve_zero_grouped_typed(self, keys: set[str],
+                                   for_tool: bool = False) -> dict[str, tuple[str, str]]:
+        """Волт по СКЕЛЕТУ ЗАПИСИ из `zero_grouped` — третий ответ на «эти цифры
+        наши», рядом с цифровой подписью и позиционным куском.
+
+        ЧТО ЗДЕСЬ ЛОВИТСЯ. Ведущий ноль, снятый у группы: таблица или JSON
+        хранит идентификатор числом, и СНИЛС «312-653-012 25» приезжает
+        «312-653-12 25», карта «0090 7741 7649 0093» — «90 7741 7649 93».
+        Прогон после этого не лежит внутри цифр подмены ни на одном смещении
+        (`instr` не находит, `_digit_rows` не отдаёт строку), сигнатура не равна
+        цифрам подмены, и ФЕЙК уезжает в инструмент с 200 и пустым остатком.
+        Разделители в записи при этом сохраняются — теряется только то, ГДЕ
+        стоял ноль, — поэтому скелет возвращает эту информацию, и сравнение
+        «число, а не позиция» (класс Д) становится проверяемым и здесь.
+
+        ТОЛЬКО СОКРАЩЕНИЕ, КАК У `_normalizing_hole`: запись, где нулей не
+        снимали, сюда не попадает вовсе — у неё прогон той же длины, и её
+        находит обычная цифровая подпись. Так новая дорога не расширяет
+        множество совпадений там, где старая уже отвечала.
+
+        ЕДИНСТВЕННЫЙ КАНДИДАТ ИЛИ ОТКАЗ. `(тип, значение)` — тождество строки;
+        две разные подмены с одним скелетом означают, что вопрос задан не о том,
+        и ответа нет. Цена промаха — один запрос по `replace(digits,'0','')`,
+        который не ложится на индекс: он уже платится `_digit_rows` для куска и
+        вызывается ТОЛЬКО после того, как сигнатура не ответила."""
+        keys = {key for key in keys if key and "|" in key}
+        if not keys:
+            return {}
+        found: dict[str, tuple[str, str]] = {}
+        with self._lock:
+            for key in keys:
+                needle = key.replace("|", "").replace("0", "")
+                if not needle:
+                    continue
+                rows = self._conn.execute(
+                    "SELECT token, entity_type, canonical, original, digits "
+                    "FROM tokens WHERE customer=? AND digits IS NOT NULL "
+                    "AND replace(digits,'0','')=?",
+                    (self._customer, needle),
+                ).fetchall()
+                answers: set[tuple[str, str]] = set()
+                for token, row_type, canonical, original, token_digits in rows:
+                    # ТОЛЬКО СОКРАЩЕНИЕ: написание без снятых нулей отвечает
+                    # цифровой подписью, а не этим запросом.
+                    if len(needle) >= len(token_digits or ""):
+                        continue
+                    if zero_grouped(token or "") != key:
+                        continue
+                    value = _pick_value(row_type, canonical or "", original or "",
+                                        for_tool)
+                    real = "".join(ch for ch in value if ch.isdigit())
+                    if not real or len(real) != len(token_digits):
+                        continue
+                    answers.add((row_type, value))
+                if len(answers) == 1:
+                    found[key] = next(iter(answers))
+        return found
 
     def resolve_name_keys_typed(self, keys: set[str], for_tool: bool = False,
                                 ) -> dict[str, tuple[str, str]]:

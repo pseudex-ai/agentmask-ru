@@ -1740,6 +1740,26 @@ FIELD_ROLES: tuple[tuple[str, str], ...] = (
     # `city`, Yandex `locality`); without a role here a bare fake city in it
     # was never asked about and reached the tool as «Сортавала».
     ("city", "city"), ("locality", "city"), ("town", "city"), ("settlement", "city"),
+    # THE NAMES THE SAME PART GOES BY IN THE SCHEMAS PEOPLE ACTUALLY WRITE (W1).
+    # `_join_one_address` rewrites only the leaves whose role it can READ FROM
+    # THE FIELD NAME, so a part spelled in a name this table does not carry is
+    # never rewritten — it stays the FAKE while its neighbours are restored, and
+    # the tool receives half a real address under a 200. Measured: `build` and
+    # `corpus` (`{"street","build","corpus","entrance","floor","flat"}`) stayed
+    # fake in both legs. The list stays NARROW and word-for-word: every entry is
+    # a spelling of an address part — a transliteration of the Russian word, an
+    # abbreviation the delivery schemas use, or the CDEK/DaData spelling — and
+    # not an English word that merely CAN mean one. `block`, `case`, `room` and
+    # `home` are DELIBERATELY absent for that reason: in a legal or hotel schema
+    # they name a case number, a corridor and a hotel room, and typing them as
+    # an address part is how a customer's own number becomes a house.
+    ("build", "house"), ("dom", "house"), ("sbuild", "house"), ("nbuild", "house"),
+    ("housenumber", "house"), ("house_number", "house"),
+    ("kv", "flat"), ("kvartira", "flat"), ("nflat", "flat"),
+    ("corpus", "building"), ("korpus", "building"),
+    ("podezd", "entrance"), ("etazh", "floor"),
+    ("ulica", "street"), ("ulitsa", "street"), ("sstreet", "street"),
+    ("streetname", "street"), ("street_name", "street"),
 )
 # СОСТАВНОЕ ИМЯ РОЛИ: «street_type» / «streetType» — ДВА СЛОВА, А НЕ ОДНО, и по
 # одному слову его не узнать. `FIELD_ROLES` держит одиночные слова, поэтому
