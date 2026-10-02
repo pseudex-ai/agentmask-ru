@@ -343,6 +343,21 @@ def _register_vouches(word: str, address: AddressAssets) -> bool:
     return low in address.street_names or low in address.street_gaz
 
 
+def _in_the_nominative(word: str) -> bool:
+    """The word is written in the NOMINATIVE — the form the register stores.
+
+    ГАР keeps «Маросейка», «Плющиха», «Клубная» in the nominative, and speech
+    says a bare street that way too. A word the veto must keep refusing stands in
+    the oblique case after its preposition — «погода в Сочи», «доставка в Сочи 3
+    дня» — and that is the shape `_names_a_settlement` was written against.
+    Indeclinable words («сочи») have no nominative form of their own, and their
+    principal reading is locative: excluding them from the relaxation keeps the
+    veto, which is the safe direction.
+    """
+    parses = MORPH.parse(word)
+    return bool(parses) and parses[0].tag.case == "nomn"
+
+
 def _street_shape(word: str) -> bool:
     """A Russian street name is a NOMINATIVE ADJECTIVE or an OBLIQUE NOUN.
 
@@ -660,7 +675,38 @@ def _bare_street_candidates(text: str, address: AddressAssets
         # A mistyped word is unknown to morphology, and morphology GUESSES a
         # settlement reading for it («луогвая»); the register just said the
         # word is one typo from a street, and a guess does not outrank that.
-        if _names_a_settlement(name, address) and not fuzzy:
+        # РЕЕСТР ГАР СИЛЬНЕЕ МОРФОЛОГИЧЕСКОЙ ДОГАДКИ О ПОСЕЛЕНИИ. Вето ниже
+        # право и нужно: город с числом — это температура, цена или количество.
+        # Но оно выбросило и настоящие улицы, которых морфология не отличает от
+        # города: «маросейка 123», «плющиха дом двенадцать» — ГАР называет эти
+        # слова улицами (в реестре они есть как написано), а `_is_toponym` по
+        # одному Geox-чтению объявляет их населённым пунктом. Вето не
+        # спрашивало реестр, и четыре адреса — это все четыре чистых промаха
+        # v5 по LOC — уходили к модели открытым текстом.
+        #
+        # ТРИ УСЛОВИЯ, И ВСЕ ТРИ НУЖНЫ. Слово обязано быть в арендованном
+        # реестре улиц (`_bare_names_a_street`, буквально, а не по нормальной
+        # форме — «казани», «сочи» так не проходят), в предложении обязано
+        # стоять слово-намерение (`_intent_before`: «доставка по Казани 3 дня»
+        # намерение имеет, но реестра у «казани» нет и вето стоит), и спан
+        # обязан читаться улицей общим читателем (`looks_like_street`).
+        # Вето сохраняет полную силу для «погода в Сочи 25 градусов», «курс в
+        # Сочи 25 рублей» и «строителей пять пришло»: у первых двух нет
+        # намерения, у третьего нет реестра.
+        #
+        # …И СЛОВО НАПИСАНО В ИМЕНИТЕЛЬНОМ — форма, которую хранит реестр.
+        # Косвенная при предлоге («доставка в Сочи 3 дня»: «сочи» — locative)
+        # остаётся во власти вето, иначе реестр, где есть улица Сочи, вернул бы
+        # в язык ровно ту конструкцию, ради которой вето написано.
+        registered_settlement_street = (
+            not fuzzy
+            and _names_a_settlement(name, address)
+            and _bare_names_a_street(name, address)
+            and _in_the_nominative(name)
+            and _intent_before(text, match.start(), address)
+            and morph_places.looks_like_street(text[match.start():match.end()]))
+        if _names_a_settlement(name, address) and not fuzzy \
+                and not registered_settlement_street:
             continue
         # ПЛЮРАЛЬ ПРОПУСКАЕТСЯ ТОЛЬКО С АДРЕСНЫМ ПРОДОЛЖЕНИЕМ ПОСЛЕ НОМЕРА.
         # «улица Коммунаров», «Металлистов», «Строителей», «Космонавтов»,
@@ -710,7 +756,16 @@ def _bare_street_candidates(text: str, address: AddressAssets
         # A mistyped word's case is morphology's GUESS, so the oblique floor is
         # not asked of it — the register's neighbour and the intent word are
         # the evidence, and the preposition may stand two words back.
-        if not preposition and not fuzzy and _never_oblique(name):
+        #
+        # И НЕ СПРАШИВАЕТСЯ У СЛОВА, ЧЬЁ ВЕТО О ПОСЕЛЕНИИ УЖЕ СНЯТО ПО РЕЕСТРУ.
+        # «маросейка сто пятьдесят пять квартира сто семьдесят один» стоит без
+        # предлога, морфология даёт ей только именительный, и `_never_oblique`
+        # («у имени нет родительного, значит это вещь, а не улица») выбрасывала
+        # четвёртый из четырёх промахов M2. Улица, которую ГАР хранит в
+        # именительном и которую читатель читает улицей, — ровно тот случай, где
+        # именительный и есть форма имени, а не признак вещи.
+        if not preposition and not fuzzy and not registered_settlement_street \
+                and _never_oblique(name):
             continue
         # A GENITIVE-PLURAL NOUN THE REGISTER NAMES, WITH THE DOOR AFTER THE
         # NUMBER, is a street behind a DIGIT too: «челюскинцев 159 квартира
@@ -790,6 +845,51 @@ def _log_shadow_diff(text: str, natasha: list[tuple[int, int, bool]],
         )
 
 
+_GAP_AND_WORD_RE = re.compile(r"([\s,.;]{0,3})([А-Яа-яЁё][А-Яа-яЁё-]*)")
+
+
+def _given_name_after_a_bare_street(text: str, end: int, name: str) -> bool:
+    """Имя человека сразу за голой улицей без дома означает, что это был ЧЕЛОВЕК.
+
+    «здравствуйте оформите доставку на миллера валерия телефон …» маскировало
+    «миллера» улицей: подсказка доставки лицензировала слово, реестр ГАР знает
+    «Миллера», фамилия в родительном прошла морфологический гейт — а ADDR (4)
+    старше NAME (3), поэтому ЦЕЛОЕ имя «миллера валерия» уезжало в инструмент
+    как место. 25 таких случаев в v5, три вида фразы, — крупнейший измеренный
+    дефект точности у этого плеча.
+
+    Читатель это уже знал: `morph_places.looks_like_street('миллера валерия')`
+    отвечает «нет» для всех 25 и «да» для настоящих бездомовых улиц, ради
+    которых ветка написана («сивкова сто девять» — число дома словами и есть
+    улица). Поэтому вето спрашивается, только когда верно И ТО, И ДРУГОЕ: пара
+    не читается улицей И второе слово — известное имя. Кандидат, за которым
+    ничего не стоит («адрес репина», «на бибиревская»), не трогается вовсе.
+    """
+    match = _GAP_AND_WORD_RE.match(text[end:])
+    if match is None:
+        return False
+    gap, other = match.group(1), match.group(2)
+    # ТОЧКА — ЭТО СОКРАЩЕНИЕ ИЛИ КОНЕЦ ПРЕДЛОЖЕНИЯ, и «адрес репина. Иван
+    # приедет» не должен потерять адрес из-за имени, открывающего следующее
+    # предложение: то же правило, что уже применяет `_merge`.
+    if _ends_sentence(gap, other):
+        return False
+    if morph_places.looks_like_street(f"{name} {other}"):
+        return False
+    return is_known_name(other)
+
+
+# ЧАСТЬ АДРЕСА, НАЗВАННАЯ ЧИСЛОМ ПЕРЕД МАРКЕРОМ: «, 3 подъезд», «, 2 под»,
+# «, 3-й этаж». Слева обязателен РАЗДЕЛИТЕЛЬ — см. `_regex_candidates`.
+# «под[ъь]езд» с мягким знаком и «этаж» здесь потому, что чат пишет и то и
+# другое, а живой корпус — «Победы 81 подьезд 3». «под» без уточнения допущен
+# как сокращение, но только после разделителя: «, 2 под.» — адрес, «дом 2 под
+# ключ» — нет.
+_NUMBER_BEFORE_PART = re.compile(
+    r"(?i)(?<=[,.;])(\s*\d{1,3}(?:\s*-\s*(?:ый|ий|ой|ая|ое|ья|й|я|е))?\s*,?\s*"
+    r"(?:под[ъь]езд\w*|под|этаж\w*)\b)")
+
+
 def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int, bool]]:
     out: list[tuple[int, int, bool]] = []
     for rx in (address.street_first, address.street_last, address.street_lower_first,
@@ -798,6 +898,22 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
                address.house, address.mkr, address.rural):
         for m in rx.finditer(text):
             out.append((m.start(), m.end(), True))   # core
+    # ЧИСЛО ПЕРЕД МАРКЕРОМ — вторая основная форма диспетчерской речи, и её не
+    # знает ни один арендованный шаблон: `apt` строит часть как «маркер, затем
+    # число» («подъезд 3»), а `spoken_apt` допускает слева только ПОРЯДКОВОЕ
+    # слово («второй подъезд»). Цифра слева — «…, кв. 87, 3 подъезд», «…, 67,
+    # 3 этаж», «…, кв. 23, 2 под» — не находилась вовсе, поэтому спан кончался
+    # на квартире, а подъезд уезжал к модели ОТКРЫТЫМ ТЕКСТОМ внутри адреса,
+    # который колонка полноты уже считала найденным. Это 11 из 176 значений
+    # ADDRESS на PII-Bench.
+    #
+    # РАЗДЕЛИТЕЛЬ ОБЯЗАТЕЛЕН, и это не оформление. Без него «Победы 81 подьезд
+    # 3» даёт кандидата «81 подьезд»: дом 81 уезжает в роль подъезда, домом
+    # становится 3, а спан обрывается на «подьезд» — то есть правка теряет
+    # ровно тот хвост, ради которого написана. Разделитель и есть то, что
+    # отличает «названную часть» от номера дома перед словом.
+    for m in _NUMBER_BEFORE_PART.finditer(text):
+        out.append((m.start(1), m.end(1), False))    # support
     for rx in (address.apt, address.spoken_apt, address.settlement,
                address.index, address.district):
         for m in rx.finditer(text):
@@ -926,6 +1042,12 @@ def _regex_candidates(text: str, address: AddressAssets) -> list[tuple[int, int,
         # предлог вплотную. НЕ `_intent_before`: его нечёткая половина прощает
         # одну опечатку в ЛЮБОМ слове и отвечает «да» на «поставь будильник».
         if not _bare_street_anchor(text, m.start(), address):
+            continue
+        # ЧЕЛОВЕК ЗА ПОДСКАЗКОЙ — НЕ УЛИЦА БЕЗ ДОМА. См.
+        # `_given_name_after_a_bare_street`: «доставку на миллера валерия»
+        # отдавало всё имя целиком в LOC, и 25 таких случаев — крупнейший
+        # измеренный дефект точности LOC.
+        if _given_name_after_a_bare_street(text, m.end(), name):
             continue
         out.append((m.start(), m.end(), True))   # core (street without a house)
     for m in address.numbered_st.finditer(text):  # lowercase names ("1905 года 12")
@@ -1765,6 +1887,70 @@ def _names_a_person(word: str) -> bool:
                for parse in parses)
 
 
+def _absorb_leading_settlement(start: int, stop: int, text: str,
+                               address: AddressAssets) -> int:
+    """Притянуть СТРОЧНОЕ слово поселения, стоящее вплотную перед улицей.
+
+    «… новый адрес чернь улица пушкина дом 3 квартира 103» маскировало улицу и
+    оставляло «чернь» — населённый пункт, в котором человек живёт, — открытым
+    текстом, внутри спана, который колонка полноты уже считала найденным.
+    `_city_first_word` возвращает эту границу, но её никто не потреблял: город
+    присоединялся только через `_is_toponym`, а морфология «чернь» городом не
+    считает (Geox-чтения у неё нет, это обычное существительное).
+
+    СУДЬЯ ЗДЕСЬ — ЧИТАТЕЛЬ, А НЕ СПИСОК. `morph_places.split_roles` кладёт
+    известный ему город в роль `city`, а незнакомое слово, стоящее перед улицей,
+    вмораживает в `street`; ответы этих двух случаев и есть то, что нужно
+    различить: «чернь переулок зацепская» даёт `street=«чернь переулок
+    зацепская»` без `city`, «омск переулок барышникова» — `city=«омск»`.
+
+    ПОЧЕМУ КАЖДАЯ ПРОВЕРКА. Слово обязано быть строчным (заглавное поселение
+    уже разбирают `_city_first_word` и `_toponym_neighbours`); от трёх букв,
+    чтобы «на», «по» и «в» не стали городом; существительным в ИМЕНИТЕЛЬНОМ
+    единственного — ровно так выглядит незнакомый морфологии топоним, и это же
+    отсекает прилагательные («новый»), глаголы и служебные слова, а также
+    ярлыки вроде «проживания» (родительный); НЕ топонимом — город, который
+    морфология знает, обязан остаться отдельным спаном; не именем человека и не
+    словом-подсказкой (подсказка — контекст, а не содержание). И читатель
+    обязан вморозить это слово именно в улицу.
+    """
+    head = _NEIGHBOUR_LEFT.search(text[:start])
+    if head is None:
+        return start
+    word = head.group(1)
+    if not word[:1].islower():
+        return start
+    low = word.lower()
+    if len(low) < 3:
+        return start
+    if low in address.month_after or low in ("года", "год", "лет"):
+        return start
+    if address.addr_ctx.fullmatch(low) or _is_street_type(word, address):
+        return start
+    if _is_toponym(word) or _names_a_person(word):
+        return start
+    parses = MORPH.parse(word)
+    if not parses:
+        return start
+    # НЕЗНАКОМОЕ СЛОВО — ЭТО ДОГАДКА, А НЕ ПОСЕЛЕНИЕ. Опечатки подсказок и
+    # филлеров («адрнс», «адреес», «тепеерь», «правилньо») морфология не знает
+    # и достраивает им целую парадигму, включая существительное в именительном —
+    # по ней они проходили все проверки ниже и уезжали внутрь адреса. Слово,
+    # которого словарь не знает, свидетельством не является: то же правило, что
+    # у `_counts_next_word` для «этоо» и у `_is_numeral`.
+    if not parses[0].is_known:
+        return start
+    tag = parses[0].tag
+    if tag.POS != "NOUN" or tag.case != "nomn" or tag.number != "sing":
+        return start
+    token_start = head.start(1)
+    roles = morph_places.split_roles(text[token_start:stop])
+    street = roles.get("street", "")
+    if "city" in roles or not street.lower().startswith(low):
+        return start
+    return token_start
+
+
 _GLUED_PARTICLE = re.compile(r"-?(?:то|та|же|ка|ж)$")
 
 
@@ -1875,6 +2061,20 @@ def _trim_lead(start: int, stop: int, text: str, address: AddressAssets) -> int:
             # «кузнецова дом 43»); a name-then-type street puts another name
             # word first and its type second.
             rest = text[start + match.end():stop]
+            # РЕГИОН — НЕ ЧЕЛОВЕК ПЕРЕД АДРЕСОМ. «Московская обл, Одинцово,
+            # Парковая 7» резалось до «обл, …»: у «Московская» есть разбор-
+            # существительное, остаток — настоящий адрес, и правило «человек
+            # перед адресом» снимало НАЗВАНИЕ РЕГИОНА, оставляя одно «обл».
+            # В колонке полноты спан был найден, в колонке покрытия одиннадцать
+            # символов уходили к модели.
+            #
+            # Свидетельство уже арендовано и уже решает этот вопрос в соседней
+            # ветке: `district` — это «Московская обл», «Свердловская область»,
+            # «Краснодарский край». Спрашивается от НАЧАЛА спана, потому что
+            # регион стоит именно там, и НИЧЕГО не расширяет: он только
+            # отменяет обрезку, которую делало правило про человека.
+            if address.district.match(text[start:stop]):
+                return start
             # A SETTLEMENT BEFORE THE TYPE WORD IS THE ADDRESS'S OWN. «глазов
             # проспект маяковского 163» — Глазов is a surname too, and the
             # rule below cut the town off as a person in front of the address,
@@ -1902,7 +2102,9 @@ _STILL_ADDRESSY = re.compile(
     r"(?i)\b(?:ул|улиц\w*|пр-?т|проспект\w*|пер|переул\w*|наб|набережн\w*|"
     r"б-?р|бульвар\w*|ш|шоссе|проезд\w*|площад\w*|пл|аллея|линия|мкр|"
     r"микрорайон\w*|дом|д|корп\w*|стр|строен\w*|влад\w*|кв|квартир\w*|"
-    r"подъезд\w*|этаж\w*|посёлок|поселок|деревн\w*|город|г)\b")
+    # «под[ъь]езд» — одна буква, а разница измерена: «…, кв. 23, 2 под.»
+    # теряло « под» из спана, потому что голого сокращения в списке не было.
+    r"под[ъь]езд\w*|под|этаж\w*|посёлок|поселок|деревн\w*|город|г)\b")
 # Одиночная буква сразу после номера дома. «я» исключена по той же причине,
 # что и во всех остальных ветках: это местоимение почти везде.
 _LITERA_AFTER_NUMBER = re.compile(r"(?![яЯ])[а-яё](?![а-яё])")
@@ -2025,6 +2227,7 @@ def detect_address(text: str) -> list[Span]:
         if not core:
             continue
         start, stop = _strip(start, stop, text)
+        start = _absorb_leading_settlement(start, stop, text, address)
         start = _trim_lead(start, stop, text, address)
         stop = _trim_tail(start, stop, text, address)
         start, stop = _strip(start, stop, text)

@@ -608,6 +608,54 @@ def _cue_near(before: str, cues: tuple[str, ...]) -> bool:
     return False
 
 
+# THE STRETCH-ABSORBING COLLAPSE ABOVE EATS A CUE THAT IS MADE OF A DOUBLED
+# LETTER. `_cue_near` folds «паспоорт» back to «паспорт» by deleting the repeat —
+# and the initialism «инн» is nothing BUT a repeat, so it collapsed to «ин», no
+# cue started with that, and the INN branch below could never fire however the
+# customer spelled it. Measured on the pristine bytes: «инн <twelve dictated
+# digits, one misheard>» reached the model in the clear.
+#
+# The digit path has always read this token exactly (`_INN_CUE_RE` is `\bинн\b`),
+# so the spoken path reads the same token the same way: the word as written, not
+# its de-stretched residue. The fold stays for every cue that needs it — a
+# misspelt or held key still matches through `_cue_near`.
+def _cue_exact_near(before: str, cue: str) -> bool:
+    """A cue word in the last few words before the run, spelled as itself."""
+    return any(word == cue for word in _WORD_RE.findall(before.lower())[-4:])
+
+
+# THE CARD CUE IS THE DIGIT PATH'S, WORD FOR WORD. `ru_pii._CARD_CUE` types the
+# run behind «карта» with NO checksum — a mistyped card the customer named is
+# still their card — and the spoken path had no such branch at all: a card
+# dictated with one digit misheard failed Luhn and went out in the clear, while
+# the same card TYPED with one digit wrong was masked. The vocabulary and the
+# refusals are copied rather than re-invented: «картина», «картон» and
+# «картотека» share the first letters and are refused by the digit path, so they
+# are refused here; the stem «карточ-» is admitted because «карточка» is the
+# diminutive the digit path admits.
+_CARD_CUE_WORDS = frozenset((
+    "карт", "карта", "карты", "карте", "карту", "картой", "картою", "картам",
+    "картами", "картах", "card", "cards",
+))
+_CARD_CUE_STEM = "карточ"
+# A HYPHEN JOINED TO A LETTER IS A COMPOUND, NOT A SEPARATOR — the digit path's
+# cue is `\bкарт\b(?!-[а-яё])` for exactly this reason: «карт-бланш» contains the
+# word «карт» and is nobody's card. `_WORD_RE` splits at the hyphen, so the cue
+# reader tokenizes compounds whole.
+_CUE_WORD_RE = re.compile(r"[а-яё]+(?:-[а-яё]+)*")
+
+
+def _card_cue_near(before: str) -> bool:
+    """The card cue in the last few words before the run, the digit path's forms."""
+    for word in _CUE_WORD_RE.findall(before.lower())[-4:]:
+        if word in _CARD_CUE_WORDS or word.startswith(_CARD_CUE_STEM):
+            return True
+    for word in re.findall(r"[a-z]+", before.lower())[-4:]:
+        if word in _CARD_CUE_WORDS:
+            return True
+    return False
+
+
 def _classify(digits: str, before: str) -> str | None:
     """Which identifier this digit string is, decided by the SAME rules the
     digit path uses and in the order of how much each one proves.
@@ -627,7 +675,14 @@ def _classify(digits: str, before: str) -> str | None:
         return "PASSPORT"
     if length == 11 and _cue_near(before, ("снилс",)):
         return "SNILS"
-    if length == 12 and _cue_near(before, ("инн",)):
+    # «инн» IS READ AS THE TOKEN, not through the collapse — see `_cue_exact_near`.
+    # Ten digits as well as twelve, because the SPEAKER'S WORD is the evidence in
+    # both: the digit path demands the checksum too for a ten-digit ИНН, but the
+    # spoken path's own rule is the one written above for СНИЛС — behind the word
+    # the evidence is the word — and P05 protects a wrong personal number as the
+    # number that was said. The digit leg is left as it is: that is a cross-leg
+    # policy call, not this file's.
+    if length in (10, 12) and _cue_exact_near(before, "инн"):
         return "INN"
     # …BUT THE CUE THE CUSTOMER SAID OUTRANKS A CHECKSUM THAT HAPPENS TO
     # HOLD. «телефон восемь девятьсот пятьдесят сто шестьдесят двадцать
@@ -642,6 +697,12 @@ def _classify(digits: str, before: str) -> str | None:
     if length in (10, 12) and validate_inn(digits):
         return "INN"
     if 13 <= length <= 19 and validate_luhn(digits):
+        return "CARD"
+    # A CARD THE SPEAKER NAMED NEEDS NO CHECKSUM — the digit path's rule, and the
+    # branch the spoken path was missing. Placed AFTER a passing Luhn so a valid
+    # card keeps the checksum's own reading; it can only add the number the
+    # customer called a card and the arithmetic could not confirm.
+    if 13 <= length <= 19 and _card_cue_near(before):
         return "CARD"
     if length == 11 and digits[0] in "78" and digits[1] == "9":
         return "PHONE"

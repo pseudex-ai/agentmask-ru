@@ -764,6 +764,34 @@ def _surface_in(rendering: str, text: str) -> str | None:
     return None if at < 0 else text[at:at + len(rendering)]
 
 
+def _whole_word_occurrences(text: str, word: str) -> tuple[tuple[int, int], ...]:
+    """Every occurrence of `word` in `text` that stands as a WHOLE WORD.
+
+    THE PART OF A SUBSTITUTE IS ONLY EVIDENCE WHEN IT IS THE WHOLE PART. A
+    substitute's surname is a real Russian surname, so an external person can
+    carry it byte for byte — that is the collision this guard exists for — but a
+    surname found INSIDE a longer word is that other word's own letters
+    (`Лебедев` in `Лебедева`, `дом` in `домовой`) and redacting there would
+    rewrite a token nobody wrote. Both edges are therefore checked with
+    `_word_char`, the same body test `_bounded` uses for a word rendering, and the
+    search is case-folded because a tool re-cases what it echoes (`Лебедева` →
+    `ЛЕБЕДЕВА`), which an exact search would miss."""
+    if not word:
+        return ()
+    folded = text.casefold()
+    needle = word.casefold()
+    found: list[tuple[int, int]] = []
+    at = folded.find(needle)
+    while at >= 0:
+        end = at + len(needle)
+        before = folded[at - 1] if at > 0 else " "
+        after = folded[end] if end < len(folded) else " "
+        if not _word_char(before) and not _word_char(after):
+            found.append((at, end))
+        at = folded.find(needle, at + 1)
+    return tuple(found)
+
+
 def _echo_spans(text: str, value: _InjectedValue) -> tuple[tuple[int, int], ...]:
     """Where `text` carries this call's value, whole, truncated, or re-rendered.
 
@@ -1151,16 +1179,31 @@ def _reserve_echoes(text: str,
     return "".join(out), tuple(replacements), nonce
 
 
-def _splice_reserved(text: str, replacements: tuple[str, ...], nonce: int) -> str:
+def _splice_reserved(text: str, replacements: tuple[str, ...],
+                     nonce: int) -> tuple[str, tuple[tuple[int, int], ...]]:
     """Put the call-backed renderings where their markers survived.
 
     The marker is this pass's own (`_echo_marker`), chosen absent from the raw
     text, so a search cannot land on the payload's bytes. A marker a detected span
     swallowed is simply absent: that span is masked generically, which is
-    protected, so the fallback is a narrower projection and never a leak."""
+    protected, so the fallback is a narrower projection and never a leak.
+
+    WHAT THIS PASS WROTE IS EVIDENCE ABOUT THE TEXT IT WROTE IT INTO. A projection
+    is a PART of the substitute (`_project_echo` answers a cut with the word that
+    stands where the cut stood), so the privacy leg downstream would read our own
+    writing as a fresh value: `наумов` in the result is this leg's answer to the
+    real `Битюков`, and redacting it there is the same span answered twice. The
+    landing positions are returned for that guard, recorded as each marker is
+    consumed so nobody has to map offsets between two strings after the fact."""
+    spans: list[tuple[int, int]] = []
     for index, replacement in enumerate(replacements):
-        text = text.replace(_echo_marker(nonce, index), replacement, 1)
-    return text
+        marker = _echo_marker(nonce, index)
+        at = text.find(marker)
+        if at < 0:
+            continue
+        text = text[:at] + replacement + text[at + len(marker):]
+        spans.append((at, at + len(replacement)))
+    return text, tuple(spans)
 
 
 def _is_bare_settlement_echo(fragment: str, value: _InjectedValue) -> bool:
@@ -1200,7 +1243,8 @@ def _replace_echoes(text: str,
                     echoes: tuple[tuple[_InjectedValue, str | None], ...],
                     recorded: tuple[tuple[_InjectedValue, str | None], ...],
                     renderings: tuple[str, ...],
-                    covered: tuple[tuple[int, int], ...] = ()) -> str:
+                    covered: tuple[tuple[int, int], ...] = (),
+                    claimed: tuple[tuple[int, int], ...] = ()) -> str:
     """Replace echoes of values THIS call carried, after detection has run.
 
     Deliberately after: the substitute is a fresh value nobody has detected yet,
@@ -1216,6 +1260,37 @@ def _replace_echoes(text: str,
     the specific identity always wins over the conservative answer. Neither leg
     writes inside a rendering this dialogue already showed (`renderings`).
 
+    A PART OF A SUBSTITUTE IS A SUBSTITUTE THE TOOL MAY HAVE HANDED BACK — THE
+    FORWARD COLLISION. The surname standing in an external person's data can be
+    byte-identical to the surname this dialogue minted for somebody else: the
+    result carries a real person's surname, and the detector passes it through
+    because `is_own_substitute` reads it as OUR rendering coming back. The bound
+    leg cannot see it either — it matches `value.real`, and the tool wrote the
+    SUBSTITUTE's word, not the real's. The dialogue is then holding one byte
+    string that stands for two people and cannot tell them apart, and the owner's
+    policy for exactly that ambiguity is redaction, not passthrough: the part is
+    answered with the SAME identity-free stand-in the whole-value leg uses, in
+    every case, and never with a person. The parts below `_ECHO_FLOOR` are the
+    reason the whole-value leg cannot cover this (`Лебедева` is six characters
+    against an eight-character floor applied to the FULL name), so the part is
+    matched as a whole word of the substitute instead.
+
+    The guard is what keeps this from answering our own writing. A part is only
+    read as a foreign value when the FULL substitute it belongs to is absent from
+    the text, and when the occurrence overlaps neither the spans this pass chose
+    (`chosen`) nor the projections the reserve leg already wrote (`claimed` — see
+    `_splice_reserved`).
+
+    A PRESENCE TEST ON A CUT OF THE SUBSTITUTE CANNOT BE THE GUARD, and A2 is why.
+    The leaked surname stands in the result followed by the text's OWN separator,
+    so `Уварова / …` contains the substitute's first eight characters byte for byte
+    — `_literal_echo_spans` over the substitute reads that as a truncated echo of
+    OUR rendering and would refuse the very redaction the case needs. What tells
+    the two apart is not that the bytes occur but WHO wrote them: the reserve leg
+    of this pass knows where it put its answer (`claimed`), and the specific leg
+    knows where it chose to answer (`chosen`). A part is therefore skipped where a
+    claimed/chosen span stands, and only there.
+
     `DATE` is EXCLUDED from the neutral leg. A bare numeric date is not personal
     data on its own — a meeting, invoice or delivery date — and the detection
     scorer keeps it real (`context._date_is_personal` suppresses it unless a
@@ -1229,6 +1304,11 @@ def _replace_echoes(text: str,
 
     def _free(start: int, end: int) -> bool:
         if any(start < stop and begin < end for begin, stop in blocked):
+            return False
+        # What the reserve leg of THIS pass already wrote is not this leg's to
+        # rewrite: the projection of a substitute IS a part of it, and reading it
+        # as a foreign value would answer the same span twice.
+        if any(start < stop and begin < end for begin, stop in claimed):
             return False
         # Same guard as the reserve pass: a fragment inside a detected whole
         # address is not a cut to redact — the address was already substituted
@@ -1255,6 +1335,29 @@ def _replace_echoes(text: str,
                    and value.entity_type != "DATE"
                    and not _is_bare_settlement_echo(text[start:end], value)]
         for span in _choose_spans(neutral):
+            if not any(span[0] < claim[1] and claim[0] < span[1] for claim in chosen):
+                chosen.append(span)
+        parts: list[tuple[int, int, str]] = []
+        for value, _digits in recorded:
+            if value.entity_type != "NAME":
+                continue
+            substitute = value.substitute
+            if not substitute or text.casefold().find(substitute.casefold()) >= 0:
+                continue
+            for part in substitute.split():
+                # A ONE-CHARACTER PART IS AN INITIAL OR A CONJUNCTION: `и` is a
+                # word of ordinary Russian prose, and redacting it would rewrite
+                # the result's own grammar to answer a name nobody wrote.
+                if len(part) < 2:
+                    continue
+                for start, end in _whole_word_occurrences(text, part):
+                    if any(start < claim[1] and claim[0] < end for claim in chosen):
+                        continue
+                    if not _free(start, end):
+                        continue
+                    parts.append((start, end,
+                                  _neutral_redaction(value.entity_type, value.real)))
+        for span in _choose_spans(parts):
             if not any(span[0] < claim[1] and claim[0] < span[1] for claim in chosen):
                 chosen.append(span)
     return text if not chosen else _splice_chosen(text, chosen)
@@ -1512,9 +1615,10 @@ def _mask_content(content: object, provenance: _Provenance,
             reserved, replacements, nonce = _reserve_echoes(
                 text, echoes, renderings, covered)
             if replacements:
-                masked = _splice_reserved(
+                masked, claimed = _splice_reserved(
                     _mask_one(reserved, provenance.context, own), replacements, nonce)
-                return (_replace_echoes(masked, (), recorded, renderings, covered)
+                return (_replace_echoes(masked, (), recorded, renderings, covered,
+                                        claimed)
                         if recorded else masked)
         masked = _mask_one(text, provenance.context, own)
         return masked if not echoes and not recorded else _replace_echoes(

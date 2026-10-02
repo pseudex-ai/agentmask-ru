@@ -10,7 +10,8 @@ import re
 from typing import NamedTuple
 
 from pseudex.detect import NameSpan, PartSpan, Span
-from pseudex import agent_form, morph_names, morph_places, notation, spoken, structured, translit
+from pseudex import (agent_form, cvc, morph_names, morph_places, notation,
+                     ru_pii_v6, spoken, structured, translit)
 from pseudex.assets import ASSETS
 from pseudex.normalize import normalize
 from pseudex.profiling import stage
@@ -393,9 +394,54 @@ def _token_for_text(span: Span, vault: Vault) -> str:
             return part.upper()
         return part
     token = tokenize_span(span, vault)
-    if span.entity_type in {"PHONE", "SNILS", "INN", "CARD", "PASSPORT", "DOB", "DATE", "EMAIL", "PLATE"}:
+    if span.entity_type in {"PHONE", "SNILS", "INN", "CARD", "PASSPORT", "DOB", "DATE", "EMAIL", "PLATE",
+                            # the v6 checksum family: the substitute is shown in
+                            # the customer's own separators/case, the same mirror
+                            # the restore leg re-applies in the agent's.
+                            "IMEI", "ICCID", "EPTS", "UIN", "LOYALTY",
+                            "IBAN", "LOAN_UID", "VIN",
+                            # the v6 identity documents: a certificate's roman
+                            # series, a ПТС's letters and every document's
+                            # separators are the customer's, on both legs.
+                            "INTL_PASSPORT", "BIRTH_CERT", "MILITARY_ID",
+                            "DRIVER_LICENSE", "RESIDENCE_PERMIT", "VEHICLE_DOC",
+                            # the v6 legal family: a case number's separators and
+                            # its Cyrillic/Latin twins, a writ's blank series and
+                            # a cadastral number's colons are the sender's form.
+                            *ru_pii_v6.LEGAL_LABELS,
+                            # the v6 finance family: a policy's series letters,
+                            # a claim's «У-» prefix and every document's
+                            # separators are the sender's form on both legs.
+                            *ru_pii_v6.FINANCE_LABELS,
+                            # the v6 telecom/device family: a MAC's colons, a
+                            # UUID's hyphens and letter case, and an IPv6
+                            # address's group count are the writer's on both legs
+                            # — the content (the hex digits, the octets) is the
+                            # vault's.
+                            *ru_pii_v6.TELECOM_LABELS,
+                            # the v6 utility/account/education/travel family,
+                            # same rule: a ЕЛС's series, a login's handle and
+                            # every document's separators are the writer's on
+                            # both legs — the content is the vault's.
+                            *ru_pii_v6.UTILITY_LABELS}:
         # The vault reuses content, not the presentation of its first mention.
         # A tool result may write +7 after the user wrote 8 (or vice versa).
+        #
+        # A FAMILY THAT LAYS ITS OWN LAYOUT IS NOT MIRRORED A SECOND TIME. The
+        # vault already decided this at the mint: `telecom_own_layout` is True for
+        # an IPv4 address (a whole reserved address, not a run of the source's
+        # length) and for the IPv4-MAPPED IPv6 form, and the token was stored in
+        # the family's own notation. Mirroring it again into the source's
+        # separators is where the mapped form broke: source «::ffff:192.168.1.1»
+        # and fake «::ffff:198.18.8.71» carry the same twelve alphanumeric
+        # characters with their dots in different places, so the second mirror
+        # produced «::ffff:198.188.7.1» — a valid address shape that is NOT the
+        # token, i.e. a FAKE the restorer cannot see (measured: 1 in 60 mints;
+        # found by this family's witness, and it is a cross-family defect of the
+        # seam rather than of one type).
+        if (span.entity_type in ru_pii_v6.TELECOM_LABELS
+                and ru_pii_v6.telecom_own_layout(span.entity_type, span.value)):
+            return token
         return _atomic_in_form_of(span.value, token, span.entity_type)
     if span.entity_type == "LOC":
         # Same reason as NAME: a nominative phrase dropped into an oblique slot
@@ -951,6 +997,17 @@ def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
             (span.start, span.end, span.value) for span in resolved_spans]
         verbatim_spans = _restore_verbatim_spans(text, literals.forms, for_tool)
         token_spans = _restore_tokens_spans(text, vault, for_tool, target=target)
+        # THE TWO PASSES ABOVE RESOLVE A SUBSTITUTE BY ITS STRING, WITH NO
+        # EVIDENCE ABOUT WHAT IT STOOD FOR. That is sound for a long, distinctive
+        # substitute and NOT for the temporary-secret classes, whose card code has
+        # a domain of a thousand values: an unrelated three-digit number equal to
+        # a shown substitute would come back as the customer's real code, silently,
+        # in a tool call. Dropped only where the class is not named — every other
+        # type's span is returned untouched (`cvc.drop_uncontexted`).
+        verbatim_spans = cvc.drop_uncontexted(text, verbatim_spans, vault, for_tool,
+                                              field_key)
+        token_spans = cvc.drop_uncontexted(text, token_spans, vault, for_tool,
+                                           field_key)
         # A resolved composite address owns its entire range. Restoring a
         # copied house/flat first would prevent the overlapping street+house
         # projection from being applied, creating a real/fake hybrid.
@@ -981,6 +1038,17 @@ def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
         # A cue inside a JSON string carries the same role as one in prose.
         # Field-level numeric values remain governed by the schema path.
         passes.append(_restore_cued_numbers_spans(text, vault))
+        # THE TEMPORARY SECRETS (C1, O-SECRET). Their substitutes are NOT in
+        # `TOKEN_RE` on purpose: a bare `\b\d{3}\b` would make every three-digit
+        # number of every answer a restoration candidate, and the class's domain
+        # is 1000 values (`pseudex/cvc.py`, and the invariant it departs from
+        # `vault.py:2278`). The pass asks the SAME evidence the masking leg asked
+        # — the authoritative field name, or the bounded cue from the lease — so
+        # a substitute resolves only where the class is named, and a candidate
+        # that fails to resolve stays standing and is reported as a residual
+        # (`surviving_substitutes` reads it off `shown_forms`), never emitted as
+        # a fake.
+        passes.append(cvc.restore_spans(text, vault, for_tool, field_key))
         passes.append(inflected_spans)
         for spans in passes:
             for span in sorted(spans, key=lambda item: (item[0], -item[1])):
@@ -1215,6 +1283,24 @@ def _date_readings(value: str) -> list[str]:
     return []
 
 
+def _numeric_window(text: str, start: int, end: int) -> tuple[str, str]:
+    """The maximal numeric run around [start:end], and the text before it.
+
+    THE COUNTRY SIGN IS READ ON THE RUN, NOT ON THE PIECE. The verbatim seam
+    matches a form this dialogue SHOWED — which, for a customer who wrote a bare
+    ten digits, is a bare ten digits — so a «+3» the agent prepended to it stands
+    OUTSIDE the match. A guard reading only the match would see ten digits and no
+    sign at all, and the REAL digits went back under that invented prefix through
+    this seam while the reformatted seam refused the very same run («+3
+    9543836949» from a bare-ten substitute). `_NUM_RUN` is the window that seam
+    offers the same string to, so both judge it the same way.
+    """
+    for match in _NUM_RUN.finditer(text):
+        if match.start() <= start and end <= match.end():
+            return text[match.start():match.end()], text[:match.start()]
+    return text[start:end], text[:start]
+
+
 def _restore_verbatim_spans(text: str, shown_forms: list[tuple[str, str, str]],
                             for_tool: bool = False) -> list[tuple[int, int, str]]:
     """Every occurrence of a form this conversation was shown, as the
@@ -1245,7 +1331,18 @@ def _restore_verbatim_spans(text: str, shown_forms: list[tuple[str, str, str]],
             # A malformed country-code sign is not a form to restore under: the
             # shown «+79795553322» inside «++79795553322» would put the real
             # digits under the doubled sign (C02). Leave the agent's string.
-            if _malformed_phone_sign(shown, text[:start]):
+            # A PHONE IS JUDGED ON ITS WHOLE RUN, because what makes a sign
+            # malformed or invented is what stands BEFORE the last ten digits —
+            # and that may lie outside the match. `shown_form` says the run IS
+            # the form this dialogue showed, so its leading identity is the
+            # customer's own prefix mirrored at the mint, not the agent's
+            # invention.
+            if kind == "PHONE":
+                surface, before = _numeric_window(text, start, end)
+            else:
+                surface, before = written, text[:start]
+            if _malformed_phone_sign(surface, before, shown_form=(surface == shown),
+                                     phone=(kind == "PHONE")):
                 continue
             if start > 0 and text[start - 1].isalnum() and shown[0].isalnum():
                 continue
@@ -1284,6 +1381,55 @@ def _restore_verbatim_spans(text: str, shown_forms: list[tuple[str, str, str]],
 def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False,
                           target: str = "") -> list[tuple[int, int, str]]:
     matches: list[re.Match[str]] = list(token_re().finditer(text))
+    # THE v6 LEGAL FAMILY ASKS ITS OWN SHAPES TOO, AND IT HAS TO. `finditer` is
+    # NON-OVERLAPPING and leftmost-first: the masked FSSP proceeding «ИП №
+    # 4542450/74/44664-ИП» makes the identity MILITARY_ID shape (`[А-ЯЁ]{2} №?
+    # \d{7}`) match the CUE AND THE FIRST GROUP as one candidate starting at
+    # position 0, so the scan resumes after it and the real token is never seen —
+    # the FAKE reaches the customer's tool with a 200 and an empty residual. The
+    # dead candidate resolves to nothing and is skipped either way; adding the
+    # family's own matches costs one scan and makes its restore independent of
+    # whoever else matches nearby. Overlapping duplicates are dropped by span.
+    seen_spans = {(match.start(), match.end()) for match in matches}
+    for match in ru_pii_v6.LEGAL_TOKEN_RE.finditer(text):
+        if (match.start(), match.end()) not in seen_spans:
+            matches.append(match)
+            seen_spans.add((match.start(), match.end()))
+    # THE v6 FINANCE FAMILY ASKS ITS OWN SHAPES TOO, for the same reason the legal
+    # family does: `finditer` is non-overlapping and leftmost-first, so a finance
+    # token another shape matched AROUND — or a free-form run the bare-digit
+    # patterns claimed first — would never become a candidate, and a substitute
+    # that is not a candidate is a FAKE in the customer's tool with a 200. The
+    # family's own scan is one extra pass; a dead candidate costs one indexed
+    # point query and is never spliced (only a resolved candidate produces a
+    # replacement).
+    for match in ru_pii_v6.FINANCE_TOKEN_RE.finditer(text):
+        if (match.start(), match.end()) not in seen_spans:
+            matches.append(match)
+            seen_spans.add((match.start(), match.end()))
+    # THE v6 TELECOM/DEVICE FAMILY ASKS ITS OWN SHAPES TOO, for the same reason —
+    # and here it is not a nicety. An IPv6 token and a MAC are matched by
+    # `v5` shapes AROUND: `finditer` is non-overlapping and leftmost-first, so a
+    # bare digit run claims the middle of `28ac:2a9::9` and a v5 MAC regex claims
+    # a prefix of a hyphenated UUID, and the real token never becomes a candidate
+    # at all — the FAKE reaches the customer's tool with a 200 and an empty
+    # residual, which is the one failure this whole file is built to prevent.
+    for match in ru_pii_v6.TELECOM_TOKEN_RE.finditer(text):
+        if (match.start(), match.end()) not in seen_spans:
+            matches.append(match)
+            seen_spans.add((match.start(), match.end()))
+    # THE v6 UTILITY/ACCOUNT/EDUCATION/TRAVEL FAMILY ASKS ITS OWN SHAPES TOO, for
+    # the same reason — and here the reason is doubled. Its records are the LAST
+    # patterns in `vault._token_re` on purpose (they are cue/key-typed rather than
+    # format-anchored), and a bare 13-digit run is claimed by the ОГРН pattern
+    # before them while a Latin handle is claimed by nothing; a substitute that is
+    # not a candidate is a FAKE in the customer's tool with a 200 and an empty
+    # residual, which is the one failure this whole file is built to prevent. A
+    # dead candidate costs one indexed point query and is never spliced.
+    for match in ru_pii_v6.UTILITY_TOKEN_RE.finditer(text):
+        if (match.start(), match.end()) not in seen_spans:
+            matches.append(match)
+            seen_spans.add((match.start(), match.end()))
     spoken_dates: set[str] = set()
     # A DATE SAID IN WORDS is a token too, since a spoken date of birth is
     # replaced by a spoken substitute; `TOKEN_RE` knows the digit shapes only,
@@ -1357,6 +1503,123 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False,
                     values[alternate] = owner
                     types[alternate] = "DOB"
 
+    # AN IDENTITY DOCUMENT RESOLVES BY ITS CONTENT TOO — its letters included.
+    # «АК № 1234567» shown by the mint comes back as «АК1234567» or «АК 1234567»,
+    # and the exact token is then no token at all: the FAKE reaches the customer's
+    # tool with a 200 and an empty residual. The shape names which label the
+    # candidate could be (`identity_label_of_shape`), and the label is part of the
+    # signature because «82 1234567» is one document as a ВНЖ and another as a
+    # passport. A wrong guess costs one indexed point query, exactly as the plate
+    # block above does. Mirrors `vault._digit_signatures`.
+    identities: dict[str, tuple[str, str]] = {}
+    identity_asked: dict[str, tuple[str, str]] = {}
+    for value in candidates:
+        label = ru_pii_v6.identity_label_of_shape(value)
+        if not label:
+            continue
+        signature = ru_pii_v6.identity_signature(value, label)
+        if signature:
+            identity_asked[signature] = (value, label)
+    if identity_asked:
+        for signature, hit in vault.resolve_digit_signatures_typed(
+                set(identity_asked), for_tool).items():
+            written, label = identity_asked[signature]
+            if hit[0] == label:
+                identities[written] = (hit[1], label)
+
+    # THE v6 LEGAL FAMILY RESOLVES BY ITS CONTENT TOO, AND IT MAY HAVE MORE THAN
+    # ONE READING. A stripped «2-13/2015» and a stripped FSSP alternative-2 are
+    # both bare digit runs, so — unlike the identity documents — naming ONE label
+    # would lose whichever row the guess did not name. `legal_signatures` proposes
+    # every reading the spelling allows; each is asked as its own indexed point
+    # query, and a hit is kept only when the vault's recorded label is the label
+    # the signature was proposed under. A wrong reading costs one query and can
+    # never restore another type's value. Mirrors `vault._digit_signatures`.
+    legal_asked: dict[str, tuple[str, str]] = {}
+    for value in candidates:
+        for signature, label in ru_pii_v6.legal_signatures(value):
+            legal_asked.setdefault(signature, (value, label))
+    if legal_asked:
+        for signature, hit in vault.resolve_digit_signatures_typed(
+                set(legal_asked), for_tool).items():
+            written, label = legal_asked[signature]
+            if hit[0] == label:
+                identities[written] = (hit[1], label)
+
+    # THE v6 FINANCE FAMILY RESOLVES BY ITS CONTENT TOO, AND ITS SHAPES OVERLAP BY
+    # CONSTRUCTION. Eight of the ten records are free-form numbers, so one
+    # spelling («12345/2024») is a MEDCARD_NUMBER shape and, at another digit
+    # count, a PRESCRIPTION_NUMBER shape. `finance_signatures` proposes EVERY
+    # reading as its own indexed point query and a hit is kept only when the
+    # vault's recorded label is the label the signature was proposed under — so a
+    # wrong reading costs one query and can never restore another type's value.
+    # The digit-only members (`ELN_NUMBER`, a stripped medcard) are resolved by the
+    # digit-signature path below, exactly as a stripped cadastral is; mirrors
+    # `vault._digit_signatures`.
+    finance_asked: dict[str, tuple[str, str]] = {}
+    for value in candidates:
+        for signature, label in ru_pii_v6.finance_signatures(value):
+            finance_asked.setdefault(signature, (value, label))
+    if finance_asked:
+        for signature, hit in vault.resolve_digit_signatures_typed(
+                set(finance_asked), for_tool).items():
+            written, label = finance_asked[signature]
+            if hit[0] == label:
+                identities[written] = (hit[1], label)
+
+    # THE v6 TELECOM/DEVICE FAMILY RESOLVES BY ITS CONTENT TOO, AND IT HAS TO:
+    # its identity is hex LETTERS as well as digits, so a MAC with its separators
+    # re-arranged, a UUID the agent re-cased and an IPv6 address the agent
+    # re-compressed all stop being exact tokens. `telecom_signatures` proposes the
+    # readings of each candidate spelling and every reading is asked as its own
+    # indexed point query; a hit is kept only when the vault's recorded label is
+    # the label the signature was proposed under, so a wrong reading can never
+    # restore another type's value. Mirrors `vault._digit_signatures`.
+    telecom_asked: dict[str, tuple[str, tuple[tuple[str, str], ...]]] = {}
+    for value in candidates:
+        # NOTE THE NAME: `readings` above is the AGENT'S REWRITINGS of a token
+        # (separator/case variants of the same string), which is a different
+        # question from the READINGS of a spelling in this family's shape
+        # language. The two must not be confused, so this one is named apart.
+        telecom_readings = ru_pii_v6.telecom_signatures(value)
+        for label, signature in telecom_readings:
+            telecom_asked.setdefault(signature, (value, tuple(telecom_readings)))
+    if telecom_asked:
+        for signature, hit in vault.resolve_digit_signatures_typed(
+                set(telecom_asked), for_tool).items():
+            written, telecom_readings = telecom_asked[signature]
+            for label, _signature in telecom_readings:
+                if hit[0] == label:
+                    identities[written] = (hit[1], label)
+                    break
+
+    # THE v6 UTILITY/ACCOUNT/EDUCATION/TRAVEL FAMILY RESOLVES BY ITS CONTENT TOO,
+    # AND IT HAS TO, for the reason the four families above give: a ЕЛС's Cyrillic
+    # series, a login's letters and a CDP code are content, so a re-cased,
+    # re-grouped or separator-stripped substitute stops being an exact token. And
+    # its shapes overlap by construction — a six-to-twelve digit run is a
+    # UTILITY_ACCOUNT reading AND an ACCESS_PASS reading, and «145-ТД» is a
+    # contract AND a letter-bearing account — so EVERY reading is proposed, each
+    # asked as its own indexed point query, and a hit is kept only when the vault's
+    # recorded label is one of the labels the spelling was read under. `setdefault`
+    # would keep only the FIRST label of a shared signature (a thirteen-digit run
+    # on «1[0-4]» is both a diploma and an air ticket), so the map carries the whole
+    # reading list exactly as the telecom block above does. Mirrors
+    # `vault._digit_signatures`.
+    utility_asked: dict[str, tuple[str, tuple[tuple[str, str], ...]]] = {}
+    for value in candidates:
+        utility_readings = ru_pii_v6.utility_signatures(value)
+        for signature, _label in utility_readings:
+            utility_asked.setdefault(signature, (value, tuple(utility_readings)))
+    if utility_asked:
+        for signature, hit in vault.resolve_digit_signatures_typed(
+                set(utility_asked), for_tool).items():
+            written, utility_readings = utility_asked[signature]
+            for _signature, label in utility_readings:
+                if hit[0] == label:
+                    identities[written] = (hit[1], label)
+                    break
+
     def resolved(written: str) -> tuple[str, str | None] | None:
         if written in values:
             return values[written], types.get(written)
@@ -1367,6 +1630,8 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False,
             signature = notation.plate_signature(written)
             if signature in plates:
                 return plates[signature]
+        if written in identities:
+            return identities[written]
         return None
 
     spans: list[tuple[int, int, str]] = []
@@ -1374,10 +1639,23 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False,
         surface = match.group()
         # A malformed country-code sign is not a phone we may restore under: a
         # token matching from the SECOND plus of «++79795553322» put the real
-        # digits under the doubled sign (C02). Leave it untouched.
-        if _malformed_phone_sign(surface, text[:match.start()]):
-            continue
+        # digits under the doubled sign (C02), and an invented single-digit
+        # identity does the same under a sign a dialer accepts. Leave it
+        # untouched; `surviving_substitutes` names it.
+        # ON THE WHOLE RUN, LIKE EVERY OTHER SEAM: `TOKEN_RE` matches the bare
+        # TEN inside a run the agent prefixed («+3 9543836949» is a `\d{10}` for
+        # it), and judging that ten alone restored the real digits under the
+        # invented prefix through THIS seam.
+        window, before = _numeric_window(text, match.start(), match.end())
         hit = resolved(surface)
+        # ONLY A RUN THAT RESOLVED TO A PHONE can wear an invented country
+        # identity: `_invented_phone_prefix` is the one rule here that needs the
+        # vault's answer, and the restorer's own answer is asked for it — an
+        # eleven-digit СНИЛС the agent put a sign in front of is a form, not a
+        # country code, and it restores as before.
+        if _malformed_phone_sign(window, before,
+                                 phone=hit is not None and hit[1] == "PHONE"):
+            continue
         if hit is not None:
             value, kind = hit
             # A DATE COMES BACK IN THE AGENT'S NOTATION — «2 июня 1975» where
@@ -1391,7 +1669,35 @@ def _restore_tokens_spans(text: str, vault: Vault, for_tool: bool = False,
             canonical = _date_canonical(value) if kind in {"DOB", "DATE"} else ""
             if len(canonical) == 10 and _date_canonical(surface):
                 value = _atomic_in_form_of(surface, value, kind, for_tool=for_tool, target=target)
-            elif kind in {"PHONE", "SNILS", "INN", "CARD", "PASSPORT", "EMAIL", "PLATE"}:
+            elif kind in {"PHONE", "SNILS", "INN", "CARD", "PASSPORT", "EMAIL", "PLATE",
+                          # v6: the content is the vault's, the notation is the
+                          # agent's — separators, grouping and letter case.
+                          "IMEI", "ICCID", "EPTS", "UIN", "LOYALTY",
+                          "IBAN", "LOAN_UID", "VIN",
+                          # the v6 identity documents, same rule: a certificate's
+                          # series, a ПТС's letters and the document's grouping.
+                          "INTL_PASSPORT", "BIRTH_CERT", "MILITARY_ID",
+                          "DRIVER_LICENSE", "RESIDENCE_PERMIT", "VEHICLE_DOC",
+                          # the v6 legal family, same rule: the content is the
+                          # vault's, the separators, letter case and script are
+                          # the agent's.
+                          *ru_pii_v6.LEGAL_LABELS,
+                          # the v6 finance family, same rule for the same reason:
+                          # a policy's series letters and a claim's «У-» prefix are
+                          # the vault's content, the separators and the case are
+                          # whoever wrote the mention.
+                          *ru_pii_v6.FINANCE_LABELS,
+                          # the v6 telecom/device family, same rule: the octets,
+                          # the hex digits and the group count are the vault's content
+                          # on the way back, and the notation belongs to the agent that
+                          # wrote the substitute.
+                          *ru_pii_v6.TELECOM_LABELS,
+                          # the v6 utility/account/education/travel family, same
+                          # rule: a ЕЛС's series letters, a login's handle and the
+                          # separators of a diploma or a pass are the vault's
+                          # content on the way back, and the grouping and case
+                          # belong to whoever wrote the substitute.
+                          *ru_pii_v6.UTILITY_LABELS}:
                 value = _atomic_in_form_of(surface, value, kind, for_tool=for_tool, target=target)
             elif for_tool and kind == "NAME":
                 # THE EXACT TOKEN, RE-CASED OR NOT: the agent wrote the
@@ -1452,14 +1758,7 @@ def _restore_reformatted_spans(text: str, vault: Vault,
     # подмены, и целой сигнатуры у неё нет по построению.
     spans: list[tuple[int, int, str]] = []
     for match, digits in runs:
-        # A MALFORMED COUNTRY-CODE SIGN is not a phone form we may splice under.
-        # «+8…» and «++…» came back with the REAL digits laid under the agent's
-        # broken sign («+89162148803», «++79162148803») — a hybrid a dialer
-        # refuses (C02). Leave the run untouched; it is the agent's own string
-        # and the residual detector names it.
         surface = text[match.start():match.end()]
-        if _malformed_phone_sign(surface, text[:match.start()]):
-            continue
         # Full signature wins over the phone last-10 fallback. The fallback is
         # PHONE-shaped only: ten digits is the domestic tail, eleven is the
         # country-coded form, and a twelve-digit run is NEVER a phone — a phone
@@ -1469,8 +1768,35 @@ def _restore_reformatted_spans(text: str, vault: Vault,
         hit = resolved.get(digits)
         if hit is None and 10 <= len(digits) <= 11:
             hit = resolved.get(digits[-10:])
+        # A MALFORMED COUNTRY-CODE SIGN is not a phone form we may splice under.
+        # «+8…» and «++…» came back with the REAL digits laid under the agent's
+        # broken sign («+89162148803», «++79162148803») — a hybrid a dialer
+        # refuses (C02) — nor an INVENTED single-digit identity: the splice kept
+        # whatever stood before the last ten digits, so «+3 954 383-69-49» came
+        # back «+3 962 056-61-63», the customer's REAL digits under a country
+        # code nobody wrote, with an empty residual. Leave the run untouched; it
+        # is the agent's own string and the residual detector names it.
+        # AND ONLY WHAT RESOLVED TO A PHONE MAY WEAR AN INVENTED COUNTRY
+        # IDENTITY: an eleven-digit СНИЛС the agent put a sign in front of is a
+        # form, not a country code, and it restores as before.
+        if _malformed_phone_sign(surface, text[:match.start()],
+                                 phone=hit is not None and hit[0] == "PHONE"):
+            continue
         if hit is not None:
             kind, value = hit
+            # THE TEMPORARY SECRETS ARE NOT RESOLVED BY DIGIT SIGNATURE. The
+            # signature index is TYPE-FREE and this path answers ANY field whose
+            # whole content is a number — that is safe for a ten-digit INN and
+            # not for a class whose domain is a THOUSAND values: a business
+            # «quantity: 698» that happens to equal a card-code substitute would
+            # come back carrying the customer's real code, silently, with a 200
+            # (A7/O-SECRET-8). The class has its own pass, gated on the SAME
+            # evidence that minted the substitute (`cvc.restore_spans`), and a
+            # candidate that reaches no context stays standing and is named as a
+            # residual. This is a NARROWING of one path for two labels, not a
+            # change to how any other type resolves.
+            if kind in cvc.LABEL_SET:
+                continue
             value = _atomic_in_form_of(text[match.start():match.end()], value, kind,
                                        for_tool=for_tool, target=target)
             spans.append((match.start(), match.end(), value))
@@ -1607,7 +1933,90 @@ def _numeric_in_form_of(written: str, value: str, kind: str,
     """
     if kind == "PHONE":
         return _phone_in_form_of(written, value)
-    if kind in {"SNILS", "INN", "CARD", "PASSPORT"}:
+    if kind in {"INTL_PASSPORT", "BIRTH_CERT", "MILITARY_ID", "DRIVER_LICENSE",
+                "RESIDENCE_PERMIT", "VEHICLE_DOC"}:
+        # THE v6 IDENTITY DOCUMENTS: letters AND digits, and the notation is the
+        # separators and the letter case of whoever wrote the mention — the
+        # customer on the IN leg, the agent on the OUT leg. One function for both
+        # legs (`render_like_atomic`), because a second implementation is where
+        # the two would start to disagree (класс А).
+        #
+        # A SURFACE WITH NO SEPARATOR AT ALL CARRIES NO NOTATION TO MIRROR. The
+        # agent that wrote `4476444725` did not choose a grouping — it stripped
+        # ours — and the answer is the customer's own form, which is what the
+        # vault holds. Returning the digits we were handed would put a licence
+        # number the customer never wrote into the field, and `test_product`
+        # pins exactly that.
+        if not any(not char.isalnum() for char in written):
+            return value
+        # No local import here: the module already binds `ru_pii_v6` at the top,
+        # and a function-local import would make the name local to the WHOLE
+        # function — the legal branch below reads the same name.
+        return ru_pii_v6.render_like_atomic(value, written)
+    if kind in ru_pii_v6.LEGAL_LABELS:
+        # THE v6 LEGAL FAMILY: same rule, same function, for the same reason. A
+        # case number is letters AND digits with separators that are the sender's
+        # form; a cadastral number is digits with colons. `render_like_atomic`
+        # moves every alphanumeric character and keeps every separator, so the
+        # customer's «А31-2840/2013» and the agent's regrouped «А31/2840-2013»
+        # both carry their own notation while the content never moves.
+        if not any(not char.isalnum() for char in written):
+            return value
+        return ru_pii_v6.render_like_atomic(value, written)
+    if kind in ru_pii_v6.FINANCE_LABELS:
+        # THE v6 FINANCE FAMILY: the identical rule and the identical function.
+        # «001SB12345678», «У-671-475136/25», «45 0012345678» — every one of them
+        # is a run of letters and digits whose separators are the sender's form,
+        # and `render_like_atomic` moves the content while keeping the layout. A
+        # surface with no separator carries no notation to mirror and the vault's
+        # own value is the answer, exactly as the two branches above state.
+        if not any(not char.isalnum() for char in written):
+            return value
+        return ru_pii_v6.render_like_atomic(value, written)
+    if kind in ru_pii_v6.TELECOM_LABELS:
+        # THE v6 TELECOM/DEVICE FAMILY: letters AS WELL AS digits, so the same
+        # function the identity and finance families use. A MAC's colons, a
+        # UUID's hyphens and an IPv6 address's group count are the writer's
+        # notation, and `render_like_atomic` moves the content (the hex digits,
+        # the octets) while keeping the layout. A surface with no separator —
+        # `951651234` for an address, a glued UUID — carries no notation to
+        # mirror, and the vault's own value is the answer, which is exactly what
+        # the digit-signature path already guarantees for a numeric token.
+        if not any(not char.isalnum() for char in written):
+            return value
+        # AN ADDRESS THAT LAYS ITS OWN LAYOUT IS RETURNED AS IT IS (see
+        # `_token_for_text`, where the same rule stops the MASK leg from mirroring
+        # it a second time). An IPv4 fake is a whole reserved address and an
+        # IPv4-MAPPED IPv6 fake is prefix + reserved tail, so their dots are in
+        # the FAKE's places, not the source's: laying the real address into them
+        # produced «951.65.12.34» for «95.165.12.34» — a real value the customer
+        # never wrote, handed to the tool. An IPv6 fake is one hex character per
+        # slot (the exception inside the exception), so it IS mirrored.
+        if ru_pii_v6.telecom_own_layout(kind, written):
+            return value
+        return ru_pii_v6.render_like_atomic(value, written)
+    if kind in ru_pii_v6.UTILITY_LABELS:
+        # THE v6 UTILITY/ACCOUNT/EDUCATION/TRAVEL FAMILY: the same rule and the
+        # same function. «60АА000593-01», «107724 0001234», «145-ТД», «21-0345» —
+        # letters AND digits whose separators are the writer's form, on both legs.
+        #
+        # A SURFACE THAT CARRIES NEITHER A SEPARATOR NOR A LETTER HAS NO NOTATION
+        # TO MIRROR: `1077240001234` is the same number however it is grouped, and
+        # the vault's own value is the answer (the four branches above state the
+        # same rule). BUT A LETTER IS A NOTATION OF ITS OWN for this family — a
+        # ЕЛС, a login and a contract number vary by CASE where their separators are
+        # fixed by the registry — so an all-alphanumeric surface that carries
+        # letters IS mirrored, and the agent's case comes back. Without that half,
+        # an agent that upper-cased a login got the customer's lower-case value.
+        if not any(not char.isalnum() for char in written) and \
+                not any(char.isalpha() for char in written):
+            return value
+        return ru_pii_v6.render_like_atomic(value, written)
+    if kind in {"SNILS", "INN", "CARD", "PASSPORT",
+                # the v6 digit-only checksum types: `_same_shape` lays the real
+                # digits into the SEPARATORS the agent wrote, which is the whole
+                # notation question for them.
+                "IMEI", "ICCID", "EPTS", "UIN", "LOYALTY"}:
         model: str = normalize(written)
         digits: str = re.sub(r"\D", "", canonicalize(kind, normalize(value)))
         # СХЕМА ОБЪЯВИЛА НОТАЦИЮ ЛИСТА (DECISIONS-SPRINT.md §Класс Ж): «схема
@@ -1639,19 +2048,94 @@ def _numeric_glyphs_like(written: str, rendered: str) -> str:
                    for source, folded, target in zip(written, normalized, rendered, strict=True))
 
 
-def _malformed_phone_sign(surface: str, before: str) -> bool:
-    """Whether `surface` carries a broken country-code sign we must not splice.
+def _malformed_phone_sign(surface: str, before: str, shown_form: bool = False,
+                          phone: bool = False) -> bool:
+    """Whether `surface` carries a country-code sign we must not splice under.
 
-    «+8…» puts the domestic 8 under a plus; «++…» (a second plus standing right
-    before this run) doubles the sign. Both came back with the REAL digits laid
-    under the agent's malformed sign — «+89162148803», «++79162148803» — a number
-    a dialer refuses and the customer's validator rejects. They are the agent's
-    own malformed string, not a form the vault may rewrite.
+    THREE SPELLINGS OF ONE HARM. «+8…» puts the domestic 8 under a plus. «++…»
+    doubles the sign, and the second plus is not always adjacent to the digits:
+    «++ 916 214-88-03» came back with the REAL digits under the doubled sign
+    because the guard read only the character immediately before the run.
+    An INVENTED single-digit identity («+3», «+9», «+1», «+0», «+2») is the same
+    number-nobody-wrote: the splice keeps whatever stands before the last ten
+    digits — right for `+7`/`8`/bare, the only identities the product approves —
+    and laid the customer's REAL ten digits under a country code the agent made
+    up, with an empty residual («+3 954 383-69-49» → «+3 962 056-61-63»). All
+    three are the agent's own malformed string, not a form the vault may rewrite;
+    the refusal leaves it standing so `surviving_substitutes` names it.
+
+    `shown_form` says the surface is EXACTLY a form this dialogue showed the
+    model. Its leading identity is the customer's own prefix mirrored at the
+    mint (a customer whose number is `+1 …` is shown `+1 …`), so it is not the
+    agent's invention and the verbatim seam restores it. The doubled and `+8`
+    spellings are malformed whoever wrote them and are refused either way.
+
+    `phone` says the seam has ALREADY RESOLVED this run to one of our PHONE
+    rows, and only an invented leading identity needs that answer: the four
+    other identities this guard clears (`+7`, `8`, bare ten, a copied form) are
+    the ones the splice is right for, and eleven digits with a sign in front of
+    them is also how a СНИЛС is written. Without the answer the guard refuses
+    only a malformed sign — the same terms the restorer decided in.
     """
     stripped = surface.strip()
     if stripped.startswith("+8"):
         return True
-    return stripped.startswith("+") and before.endswith("+")
+    if _doubled_sign_before(stripped, before):
+        return True
+    return (phone and not shown_form
+            and _invented_phone_prefix(stripped, before))
+
+
+def _signs_before(before: str) -> int:
+    """How many `+` signs stand before a run, adjacent or spaces apart.
+
+    «++79162148803» leaves ONE plus in `before` — the run starts at the second —
+    while «++ 79162148803» leaves «++ ». Counting them is what tells a doubled
+    sign from a plus the sentence itself wrote («цена + 7 916…»).
+    """
+    tail = before.rstrip()
+    signs = 0
+    while tail.endswith("+"):
+        signs += 1
+        tail = tail[:-1].rstrip()
+    return signs
+
+
+def _doubled_sign_before(surface: str, before: str) -> bool:
+    """Two signs before one run, whether or not the run carries one of them."""
+    return _signs_before(before) + (1 if surface.startswith("+") else 0) >= 2
+
+
+# One country digit and the ten subscriber digits the splice keeps — the only
+# shape in which «what stands before the last ten» IS a country identity.
+_PHONE_COUNTRY_DIGITS = 11
+
+
+def _invented_phone_prefix(surface: str, before: str) -> bool:
+    """A country identity the agent invented — refused, never re-prefixed.
+
+    THE APPROVED SET IS `+7`, `8` AND BARE TEN, AND IT IS CLOSED. Anything else
+    standing before the last ten digits is the agent's own invention, and
+    splicing under it delivers a number nobody wrote: `+3 954 383-69-49` came
+    back `+3 962 056-61-63` with `residual == []` — the customer's REAL
+    subscriber digits under an invented country code, a fabricated E.164 number
+    reaching the tool as if it were the customer's.
+
+    `8` is refused by its own rule above (the domestic trunk under a plus) and
+    needs no entry here; `7` is the one leading identity the notation approves.
+    Rewriting `+3` back to `+7` is NOT the fix — the agent's explicitly written
+    form survives (REMAINING-DECISIONS:16) — so the run is left exactly as
+    written and the caller is told instead.
+
+    The sign is read from the surface, or, when the surface carries none, from
+    the text before it: «+ 3 …» is the same invention with a space in it, and
+    «++ 9 …» carries no sign of its own at all.
+    """
+    stripped = surface.strip()
+    digits = re.sub(r"\D", "", stripped)
+    if len(digits) != _PHONE_COUNTRY_DIGITS or digits[0] in ("7", "8"):
+        return False
+    return stripped.startswith("+") or bool(_signs_before(before))
 
 
 def _phone_in_form_of(written: str, real: str) -> str:
@@ -1830,6 +2314,19 @@ def _place_windows(text: str, start: int, end: int) -> list[tuple[int, int]]:
         if tail is not None:
             candidates.add((start, tail.end()))
             ends.append(tail.end())
+            stop = tail.end()
+        # …И ЧИСЛО ПЕРЕД МАРКЕРОМ — вторая основная форма того же хвоста.
+        # «…, кв. 67, 5 под.» корпус пишет до квартиры, а номер подъезда —
+        # ПОСЛЕ числа квартиры и ПЕРЕД словом: все три шага выше требуют
+        # маркер-перед-числом, поэтому окно обрывалось на «кв. 67», ключ терял
+        # подъезд, и разрешалось КОРОТКОЕ окно. Настоящее возвращалось в форму
+        # подмены, у которой роли `entrance` нет вовсе, — и в инструмент уезжал
+        # адрес с ФАЛЬШИВЫМ подъездом при настоящей улице (замерено на
+        # PII-Bench, значение 659).
+        before = _NUMBER_BEFORE_TAIL.match(text, stop)
+        if before is not None:
+            candidates.add((start, before.end()))
+            ends.append(before.end())
     head = _CITY_HEAD.search(text[:start])
     if head is not None and head.end() == start:
         for stop in ends:
@@ -1869,6 +2366,12 @@ def _place_windows(text: str, start: int, end: int) -> list[tuple[int, int]]:
 _FLAT_TAIL = re.compile(r",?\s*(?:кв|квартир\w*|офис\w*|оф)\.?\s*\d{1,4}")
 # Подъезд, как его пишет МОДЕЛЬ: «подъезд 2», «под. 2», «подъезда 2».
 _ENTRANCE_TAIL = re.compile(r",?\s*(?:под[ъь]езд\w*|под)\.?\s*\d{1,4}")
+# …И КАК ПИШЕТ КОРПУС: «…, кв. 67, 5 под.», «…, 12 этаж». Число СЛЕВА от
+# маркера — вторая основная форма диспетчерской речи, и подмена теперь
+# зеркалит её (`in_form_of`), поэтому окно восстановления обязано её знать.
+_NUMBER_BEFORE_TAIL = re.compile(
+    r",?\s*\d{1,3}\s*(?:\s*-\s*(?:ый|ий|ой|ая|ое|ья|й|я|е))?\s*"
+    r"(?:под[ъь]езд\w*|под|этаж\w*|эт)\.?")
 # Корпус/строение — такой же хвост, и стоит перед подъездом.
 _BUILDING_TAIL = re.compile(r",?\s*(?:корп\w*|кор|стр|строен\w*|литер\w*)\.?\s*\d{1,4}")
 # A house number as a MODEL writes it: bare, or behind «д.» / «дом» / «влад.».
@@ -2696,6 +3199,20 @@ def unmask_arguments(raw: str, vault: Vault,
                            target=notations.get(key, ""))
         if isinstance(node, list):
             return [walk(item, key) for item in node]
+        # A NUMBER IS A LEAF TOO, AND THE TEMPORARY-SECRET CLASS NEEDS IT.
+        # `{"cvc": 314}` is an unquoted numeric field — how a customer's own
+        # system serialises a short code — and this walker returned every
+        # non-string unchanged, so the substitute minted for such a field
+        # travelled to the tool as a FAKE with a 200 and an empty residual: the
+        # one failure this file exists to prevent. Resolved by FIELD NAME (the
+        # only evidence an isolated leaf has) and emitted as the SAME JSON type
+        # (P02); `cvc.restore_number_leaf` refuses a real value that a JSON
+        # number cannot carry (a leading zero), rather than substituting one
+        # real value for another. Guarded by `key_class` inside, so no other
+        # type's numeric leaf changes behaviour.
+        if isinstance(node, int):
+            restored = cvc.restore_number_leaf(key, node, call, for_tool=True)
+            return node if restored is None else restored
         if isinstance(node, dict):
             # Keys are the tool's own schema, not customer text — but a token
             # can only ever appear in a value, so rewriting keys would be a way
@@ -3168,6 +3685,70 @@ def _shown_surfaces(text: str, forms: list[tuple[str, str, str]]) -> set[str]:
     return found
 
 
+def _refused_sign_runs(text: str, vault: Vault) -> set[str]:
+    """The runs the restoring leg REFUSED under a broken or invented sign.
+
+    A REFUSAL NOBODY CAN SEE IS THE SILENCE THIS FUNCTION ENDS. The orphan the
+    ordinary residual sources cannot name is a phone wearing a country identity
+    the vault never wrote: «+3 9241051107» is not a token surface and not a
+    fragment of one — its identity is the LAST TEN digits — so the exact-token
+    question, `residual_of` and `digit_fragment_is_ours` all miss it, and the
+    answer goes out with `residual == []` while a fabricated E.164 number stands
+    where the customer's own value belongs (P12, M04: an unknown is not a
+    success).
+
+    THE QUESTION IS THE RESTORER'S OWN, ASKED AGAIN. The refusal is recognised
+    by the same guard that made it, with the same three answers the seam had in
+    hand — the run, the text before it, and whether the vault resolved it to a
+    PHONE — and the claim «this is ours» by the same signature question the
+    restorer asked. So a number of the customer's own is never named and a
+    substitute that resolved (and is therefore no longer standing) is not
+    reported by the caller.
+
+    THE SIGN IS PART OF THE RUN. «++ 9…» leaves the doubled sign outside the
+    `_NUM_RUN` match, and naming the bare ten would hide the very defect the
+    caller has to see; the return extends the run backwards over the signs, with
+    the leading whitespace trimmed so the reported string is findable in the
+    answer.
+    """
+    runs: list[tuple[int, int, int, str]] = []
+    for match in _NUM_RUN.finditer(text):
+        end = match.end()
+        raw = text[match.start():end]
+        # THE TWO SHAPES THAT COULD HAVE BEEN REFUSED, WITHOUT THE VAULT: a
+        # malformed sign, or an invented identity (which the seam refused only
+        # because it resolved this run to a phone). Anything else was not refused
+        # and is not asked about — the ordinary answer here is that nothing is.
+        if not (_malformed_phone_sign(raw, text[:match.start()])
+                or _invented_phone_prefix(raw, text[:match.start()])):
+            continue
+        digits = re.sub(r"\D", "", raw)
+        if not digits:
+            continue
+        start, probe = match.start(), match.start()
+        while probe > 0 and (text[probe - 1] == "+" or text[probe - 1].isspace()):
+            probe -= 1
+        if "+" in text[probe:start]:
+            while probe < start and text[probe].isspace():
+                probe += 1
+            start = probe
+        runs.append((match.start(), start, end, digits))
+    if not runs:
+        return set()
+    asked: set[str] = {digits for _at, _low, _high, digits in runs}
+    asked |= {digits[-10:] for digits in asked if len(digits) >= 10}
+    owners = vault.resolve_digit_signatures_typed(asked, True)
+    refused: set[str] = set()
+    for at, low, high, digits in runs:
+        hit = owners.get(digits) or owners.get(digits[-10:], ("", ""))
+        # ASKED WITH THE PHONE FLAG, BECAUSE THE SEAM HAD IT: a run that resolves
+        # to a СНИЛС was never refused for an invented identity, and naming it
+        # here would report a refusal that did not happen.
+        if _malformed_phone_sign(text[at:high], text[:at], phone=hit[0] == "PHONE"):
+            refused.add(text[low:high])
+    return refused
+
+
 def _extended_phone_runs(text: str, vault: Vault) -> set[str]:
     """A known PHONE signature plus one adjacent digit, without a real-value splice."""
     candidates: list[tuple[str, set[str]]] = []
@@ -3228,6 +3809,16 @@ def residual_tokens(text: str, vault: Vault) -> list[str]:
     shown_residual: set[str] = _shown_surfaces(text, forms)
     extended_phone: set[str] = _extended_phone_runs(text, vault)
     candidates = {match.group() for match in token_re().finditer(text)} | spoken_residual | shown_residual
+    # The v6 finance family's shapes too: a free-form token can begin after a cue
+    # word whose tail looks like a plate, and the non-overlapping scan of
+    # `token_re` then never sees it (see `_written_candidates`).
+    candidates |= {match.group()
+                   for match in ru_pii_v6.FINANCE_TOKEN_RE.finditer(text)}
+    # The v6 utility/account/education/travel family's shapes too, for the same
+    # reason: a login, a pass number or a CRM id is not a shape any earlier family
+    # claims, and a leftover substitute that is never a candidate is never named.
+    candidates |= {match.group()
+                   for match in ru_pii_v6.UTILITY_TOKEN_RE.finditer(text)}
     # A PHONE TOKEN IS WRITTEN THE CUSTOMER'S WAY (vault `_digits_in_customer_
     # form`), so `TOKEN_RE`'s «+79…» shape no longer names it; every digit run
     # is offered and the vault answers by signature.
@@ -3309,6 +3900,12 @@ def surviving_substitutes(written: str, restored: str, vault: Vault,
     alone in a schema field is exactly the shape that leaks; in prose those
     windows would put a paragraph of words in front of the vault, which is why
     the restoring leg bounds them the same way (`_tool_windows`).
+
+    THE ONE LEFTOVER THAT WEARS A SURFACE OF THE AGENT'S OWN MAKING is a
+    substitute under a refused country sign («+3 <our ten digits>»): it is ours
+    by its digits and has no minted surface, so the sources above cannot see it
+    and `_refused_sign_runs` names it — still «a substitute this run minted and
+    that is still standing», read by the question the restorer asked.
     """
     forms: list[tuple[str, str, str]] = vault.shown_forms()
     shown_residual: set[str] = {
@@ -3316,6 +3913,13 @@ def surviving_substitutes(written: str, restored: str, vault: Vault,
         if _still_standing(shown, restored)}
     extended_phone: set[str] = {
         surface for surface in _extended_phone_runs(written, vault)
+        if _still_standing(surface, restored)}
+    # A REFUSED COUNTRY SIGN IS A RESIDUAL TOO, AND NOTHING ELSE NAMES IT. A
+    # substitute the agent prefixed with an invented identity keeps OUR digits
+    # and wears a surface the vault has no row for, so every other source here
+    # answers «not ours» about it (see `_refused_sign_runs`).
+    refused_sign: set[str] = {
+        surface for surface in _refused_sign_runs(written, vault)
         if _still_standing(surface, restored)}
     asked = _written_candidates(written, for_tool).standing_in(restored)
     # THE REWRITTEN SURFACE THE VETO REFUSED IS A RESIDUAL TOO. It is not a
@@ -3337,10 +3941,10 @@ def surviving_substitutes(written: str, restored: str, vault: Vault,
     # (g08/single-005) — здесь она перестаёт быть молчаливой.
     leftovers = _address_numbers_left(written, restored, call)
     if not asked.any():
-        return _maximal(shown_residual | unresolved | extended_phone | leftovers)
+        return _maximal(shown_residual | unresolved | extended_phone | refused_sign | leftovers)
     known = call.detokenize_many(asked.named)
     residual = ({value for value in asked.named if value in known}
-                | shown_residual | unresolved | extended_phone)
+                | shown_residual | unresolved | extended_phone | refused_sign)
     residual |= {value for value in asked.named
                  if value not in known and call.residual_of(value) is not None}
     residual |= _pieces_of_ours(asked, residual, call)
@@ -3456,6 +4060,24 @@ def _written_candidates(text: str, for_tool: bool) -> _Candidates:
     """Every string the restoring leg offered the vault about this text, with
     the question it was offered to — see `_Candidates`."""
     general = {match.group() for match in token_re().finditer(text)}
+    # THE v6 FINANCE FAMILY'S OWN SCAN, AND IT IS NOT REDUNDANT. `token_re` is
+    # non-overlapping and leftmost-first, and the family's records are FREE-FORM
+    # numbers: on «полис ДМС 437BX87160487» the PLATE pattern matches «С 437BX871»
+    # — the last letter of the cue word and the head of the token — and the scan
+    # resumes AFTER it, so the whole substitute is never a candidate here and a
+    # leftover is reported as nothing. The restoring leg asks the same question
+    # separately (`_restore_tokens_spans`) for the same reason; this is that
+    # question on the reporting leg, so silence about a fake cannot survive.
+    general |= {match.group()
+                for match in ru_pii_v6.FINANCE_TOKEN_RE.finditer(text)}
+    # …AND THE SAME QUESTION FOR THE UTILITY/ACCOUNT FAMILY, whose records are the
+    # LAST patterns in `vault._token_re` because they are cue/key-typed rather than
+    # format-anchored: a thirteen-digit air-ticket token is claimed by the ОГРН
+    # pattern first and a Latin handle by nothing, so the reporting leg must ask
+    # the family's own alternation too or a leftover fake would be reported as
+    # silence. The restoring leg asks it separately for the same reason.
+    general |= {match.group()
+                for match in ru_pii_v6.UTILITY_TOKEN_RE.finditer(text)}
     if ASSETS.is_loaded:
         general |= {text[start:end] for start, end, words in spoken.numeral_runs(text)
                     if len(spoken.run_to_digits(words)) >= 10}

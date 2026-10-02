@@ -128,6 +128,14 @@ def render_like(value: str, surface: str, kind: str, target: str | None = None,
             return (agent_form.cased_like(local, model_local) + "@"
                     + agent_form.cased_like(domain, model_domain))
         return value
+    # АЛФАВИТНО-ЦИФРОВЫЕ ДОКУМЕНТЫ v6: у IBAN, УИД и VIN нотация — это
+    # РАЗДЕЛИТЕЛИ И РЕГИСТР, и обе стороны обмениваются ими зеркально: на IN
+    # подмена получает форму клиента, на OUT настоящее значение — форму агента.
+    # Содержимое не меняется никогда: `render_like_atomic` возвращает значение
+    # как есть, если число знаков не совпало.
+    if kind in ("IBAN", "LOAN_UID", "VIN"):
+        from pseudex import ru_pii_v6
+        return ru_pii_v6.render_like_atomic(value, surface, for_tool=for_tool)
     # ЦИФРОВЫЕ ДОКУМЕНТЫ — ЭТАЛОН, УЖЕ РАБОТАЮЩИЙ: их рендереры живут в
     # `redact` (там же, где их читает шов), и один из них (`_phone_in_form_of`)
     # отдаёт диктовку словами. Импорт отложенный: `redact` импортирует ЭТОТ

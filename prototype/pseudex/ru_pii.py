@@ -588,10 +588,47 @@ def _damaged_cue_before(text: str, start: int, cues: tuple[str, ...]) -> bool:
 
 
 _PASSPORT_CTX_RE = re.compile(
-    r"(?i:пас{1,2}п{1,2}орт\w*)\D{0,16}?(\d{2}[\s-]?\d{2}[\s-]?\d{6})\b")
+    r"(?i:(пас{1,2}п{1,2}орт\w*))\D{0,40}?(\d{2}[\s-]?\d{2}[\s-]?\d{6})\b")
+# СКОЛЬКО СИМВОЛОВ МЕЖДУ ПОДСКАЗКОЙ И ЧИСЛОМ БЫЛО РАЗРЕШЕНО РАНЬШЕ. Окно
+# подсказки выросло, чтобы находить слитные формы, о которых клиент пишет
+# «паспортные данные арендатора: 4607238914», — но выросло оно вместе с ценой,
+# и цена измерена: «паспортный стол закрыт, счёт 5301456789» стало паспортом,
+# то есть ЧУЖОЙ СЧЁТ уехал в инструмент подменой. Различает эти два случая не
+# расстояние, а слово, которым число ВВЕДЕНО.
+_PASSPORT_TIGHT_GAP = 16
+_LAST_WORD_BEFORE = re.compile(r"([а-яёa-z]+)[\s№:.\-]*$")
+
+
+def _denied_intro(text: str, at: int) -> bool:
+    """Слово ПРЯМО перед числом называет ЧУЖОЙ тип — значит, это не паспорт.
+
+    Тот же вопрос и тот же арендованный список, что задаёт `context.suppress`
+    своей ветке PASSPORT, только заданный РАНЬШЕ: несозданный спан нечего
+    снимать, и сторожу не приходится спасать его окном подсказки. «счёт»,
+    «заказ», «трек» перед десятком цифр — это их тип, а не паспортный.
+
+    Только для ШИРОКОГО окна. Узкое (`_PASSPORT_RE`, `_PASSPORT_SHAPE_RE`)
+    требует подсказку вплотную, и там поведение не меняется ни на байт.
+    """
+    match = _LAST_WORD_BEFORE.search(text[:at].lower())
+    if match is None:
+        return False
+    word = match.group(1)
+    return any(word.startswith(term) or within_one_typo(word, term)
+               for term in ASSETS.get().context.deny)
 # «серия 4607 номер 238914» — the two halves named separately, with words
 # between them, so neither the plain shape nor the cue pattern above can see it.
-# Both numbers are masked; the words are not, being nobody's data.
+#
+# ОДИН СПАН НА ВСЮ ФРАЗУ, А НЕ ДВА НА ЧИСЛА. Покрытие PII-Bench требует накрыть
+# и слова («серия», «номер»), а спан, включающий слово, чеканит подмену ФОРМЫ
+# ФРАЗЫ: `_digits_laid_like` кладёт цифры подмены в СЛОТЫ ИСХОДНОЙ строки, и
+# «серия 4607 номер 238914» становится «серия 0023 номер 237431». Раньше здесь
+# стояли ДВА спана именно поэтому: паспортная половина `vault._token_re` знала
+# только цифровую форму «00 23 237431», фразовая подмена не была кандидатом
+# вовсе, восстановитель возвращал её же — и в инструмент уезжал фейк.
+# Теперь `_token_re` знает обе формы (см. её паспортную ветку), и круг
+# закрывается: измерено 8 значений PASSPORT на PII-Bench, покрытие 83.3% ->
+# 90.0%, круг держится (test_addr_passport_tail, вектор 4).
 _PASSPORT_PARTS_RE = re.compile(
     r"(?i)сери\w*\s*:?\s*(\d{4})\D{1,12}?(\d{6})\b")
 _DATE_RE = re.compile(r"\b\d{2}[.\-/]\d{2}[.\-/]\d{4}\b")
@@ -634,8 +671,18 @@ def _reads_as_date(day: str, month: str, year: str) -> bool:
             and 1900 <= int(year) <= 2026)
 
 
-def detect_structured(text: str) -> list[Span]:
-    """Detect RU structured IDs, gated by checksum where one exists."""
+def detect_structured(text: str, raw: str = "") -> list[Span]:
+    """Detect RU structured IDs, gated by checksum where one exists.
+
+    `raw` is the UNNORMALIZED text, and exactly one recognizer needs it: the v6
+    telecom/device family, whose values are HEX. `normalize()` folds digit
+    look-alikes inside any run holding five or more real digits, and a UUID is
+    such a run — its `B` becomes `8` INSIDE the value, so the customer's real
+    `…AE5B…` could never come back from the string the model was shown. Every
+    other recognizer here reads `text` and is unaffected; the default keeps the
+    function usable when no raw text is at hand (the family then simply falls back
+    to the normalized reading, which is what it had before). `normalize()` is 1:1,
+    so the two strings share one coordinate system and the spans can be mixed."""
     ru_pii = ASSETS.get().ru_pii
     spans: list[Span] = []
     for match in _SNILS_RE.finditer(text):
@@ -688,11 +735,17 @@ def detect_structured(text: str) -> list[Span]:
         spans.append(Span(match.start(), match.end(), "PASSPORT", match.group()))
     # No-separator passport is ambiguous alone; trust it when "паспорт" precedes.
     for match in _PASSPORT_CTX_RE.finditer(text):
-        spans.append(Span(match.start(1), match.end(1), "PASSPORT", match.group(1)))
+        wide = match.start(2) - match.end(1) > _PASSPORT_TIGHT_GAP
+        if wide and _denied_intro(text, match.start(2)):
+            continue
+        spans.append(Span(match.start(2), match.end(2), "PASSPORT", match.group(2)))
     for match in _PASSPORT_PARTS_RE.finditer(text):
-        for group in (1, 2):
-            spans.append(Span(match.start(group), match.end(group),
-                              "PASSPORT", match.group(group)))
+        # ВСЯ ФРАЗА, А НЕ ДВА ЧИСЛА: иначе слова «серия»/«номер» уходят к
+        # модели открытым текстом внутри спана, который колонка полноты уже
+        # считает найденным. Круг закрыт правкой `_token_re` — см. комментарий
+        # у `_PASSPORT_PARTS_RE`.
+        spans.append(Span(match.start(), match.end(),
+                          "PASSPORT", match.group()))
     for match in _DATE_RE.finditer(text):
         spans.append(Span(match.start(), match.end(), "DATE", match.group()))
     for match in _ISO_DATE_RE.finditer(text):
@@ -700,9 +753,37 @@ def detect_structured(text: str) -> list[Span]:
     for match in _GLUED_DATE_RE.finditer(text):
         if _reads_as_date(*match.groups()):
             spans.append(Span(match.start(), match.end(), "DATE", match.group()))
+    # THE v6 TYPED PATH WINS OVER A BARE SHAPE. A cue or a field key names the
+    # type; a bare 15/16-digit run is an order number. The leased `CTX_TYPES`
+    # carries the cues of the eleven checksum-carrying v6 types, and the bare
+    # forms whose anchor is a CLOSED source list (an IBAN's country registry, a
+    # УИД's UUID+control) are added from `ru_pii_v6`. A bare span that merely
+    # sits INSIDE a typed one is a sub-reading of the same characters — the
+    # IMEI inside «IMEI …» is an IMEI, not the ОГРН its mod-13 accidentally
+    # satisfies — so it goes, exactly as `_resolve` lets a typed key beat a
+    # shape. `bare_typed=False` on every v6 record is why nothing else here
+    # stands without a cue.
+    from pseudex import ru_pii_v6  # local: ru_pii_v6 imports this module
+    v6 = ru_pii_v6
+
+    typed: list[Span] = []
     for entity_type, pattern in ru_pii.ctx_patterns:
         for match in pattern.finditer(text):
-            spans.append(Span(match.start(1), match.end(1), entity_type, match.group(1)))
+            value = match.group(1)
+            # A LEGAL ENTITY'S ACCOUNT IS NOT A DATA SUBJECT'S. The v6 negative
+            # families name correspondent, legal and treasury accounts; masking
+            # them broke the customer's own payment flow.
+            if entity_type == "ACCOUNT" and v6.is_business_account(value):
+                continue
+            typed.append(Span(match.start(1), match.end(1), entity_type, value))
+    typed.extend(v6.detect_checksum_anchored(text))
+    spans.extend(typed)
+    if typed:
+        typed_ids = {id(span) for span in typed}
+        spans = [span for span in spans
+                 if id(span) in typed_ids
+                 or not any(span.start >= other.start and span.end <= other.end
+                            for other in typed)]
     for match in _OGRNIP_RE.finditer(text):
         if validate_ogrn(match.group()):
             spans.append(Span(match.start(), match.end(), "OGRN", match.group()))
@@ -710,6 +791,44 @@ def detect_structured(text: str) -> list[Span]:
         spans.append(Span(match.start(), match.end(), "IP", match.group()))
     for match in _BIRTH_CERT_RE.finditer(text):
         spans.append(Span(match.start(), match.end(), "BIRTH_CERT", match.group()))
+    # THE v6 TELECOM/DEVICE FAMILY, ON THE RAW TEXT. A UUID is a run of digits,
+    # look-alike glyphs and separators holding more than five real digits, so
+    # `normalize()` folds its `B` to `8` INSIDE the value and the customer's real
+    # `…AE5B…` could never come back from the string the model was shown. The
+    # family's cue path therefore runs on the raw text, exactly as
+    # `detect_vehicle_ids` and `detect_plates` above do and for the same reason:
+    # a value whose identity is HEX must not be read through a fold meant for
+    # digits. The INVARIANT that makes it safe is `normalize()`'s — it is 1:1, so
+    # offsets from the raw text index identically into every layer below.
+    #
+    # AND IT SUPERSEDES THE NORMALIZED READING OF THE SAME CHARACTERS. The loop
+    # above already added a span from the `CTX_TYPES` pattern over the NORMALIZED
+    # text, whose `value` carries the fold; that span stands on the same
+    # characters as the raw one, so the arbiter would pick by `(priority, length)`
+    # alone and hand the model a corrupted value half the time. The two are one
+    # reading of one thing, so the raw one replaces it here — exactly as `typed`
+    # above displaces a bare sub-reading — and every other span is untouched.
+    #
+    # THE FILTER KEYS ON EVERY FAMILY THE RAW PATH ANSWERS FOR, NOT ONLY TELECOM.
+    # `detect_telecom` is the ONE entry point and it serves the UTILITY family
+    # too (a ЕЛС series, a login's `O`, an RFID UID's `B`, a mixed account's `О`),
+    # so keying the supersede rule on `TELECOM_LABELS` alone left the utility
+    # family's normalized (folded) span standing beside the raw one — the same
+    # corruption, one family over. Measured on the cue path before the widening:
+    # «customer id 6D92078A-…-AE5B-…» and «логин lO12345» came back FOLDED on a
+    # rewritten substitute. The set is derived from the two label frozensets, so a
+    # family the entry point learns to answer for cannot be forgotten here.
+    raw_cued = v6.TELECOM_LABELS | v6.UTILITY_LABELS
+    telecom_raw = ru_pii_v6.detect_telecom(raw or text)
+    if telecom_raw:
+        telecom_ids = {id(span) for span in telecom_raw}
+        spans = [span for span in spans
+                 if id(span) in telecom_ids
+                 or not (span.entity_type in raw_cued
+                         and any(span.start >= other.start
+                                 and span.end <= other.end
+                                 for other in telecom_raw))]
+        spans.extend(telecom_raw)
     return spans
 
 

@@ -20,6 +20,7 @@ import secrets
 import string
 
 from pseudex import credentials
+from pseudex import cvc
 from pseudex.assets import ASSETS
 from pseudex.normalize import normalize
 import threading
@@ -32,6 +33,7 @@ from pseudex.spoken import (email_from_words, numeral_runs,
                             plate_from_words, run_to_digits)
 from pseudex.profiling import stage
 from pseudex.ru_pii import validate_inn, validate_luhn, validate_ogrn, validate_snils
+from pseudex import ru_pii_v6
 from pseudex import schema
 from pseudex.sqlite_setup import (
     Connection,
@@ -192,6 +194,15 @@ def canonicalize(entity_type: str, value: str) -> str:
     """Normalize a value so equivalent forms collapse to one key.
 
 """
+    if entity_type in cvc.LABEL_SET:
+        # THE TEMPORARY SECRETS. Grouping is presentation for every digit-only
+        # identifier and these have none of their own — a card code and an issuer
+        # OTP are written as a run of digits — so the key is the digits. The
+        # ORIGINAL is what `detokenize` returns (every type except NAME), so the
+        # customer's tool receives exactly the string the customer wrote. An empty
+        # key is a collision generator (see the СНИЛС branch below), hence the
+        # fallback.
+        return _digits_of(value) or value
     if entity_type == "PHONE":
         digits = _digits_of(value)
         if len(digits) == 11 and digits[0] in "78":
@@ -199,7 +210,15 @@ def canonicalize(entity_type: str, value: str) -> str:
         elif len(digits) == 10:
             digits = "7" + digits
         return "+" + digits if digits else value
-    if entity_type in ("SNILS", "INN", "CARD", "PASSPORT"):
+    if entity_type in ("SNILS", "INN", "CARD", "PASSPORT",
+                       # The v6 checksum family's digit-only members. Grouping
+                       # is presentation: «324 77 000012345 5» and
+                       # «324770000123455» are one ОГРНИП, and a spaced IMEI is
+                       # the same device as a glued one. `detokenize` still
+                       # returns the ORIGINAL, so the tool keeps the customer's
+                       # spelling and only the row it finds changes.
+                       "OMS", "ACCOUNT", "OGRN", "IMEI", "ICCID", "UIN",
+                       "LOYALTY", "EPTS"):
         # AN EMPTY CANONICAL IS A COLLISION GENERATOR, and it became reachable
         # the moment the engine learned to hear an identifier DICTATED ALOUD.
         # «четыре два ноль девять…» has no digits, `re.sub` returned the empty
@@ -208,6 +227,75 @@ def canonicalize(entity_type: str, value: str) -> str:
         # failure this product treats as unacceptable. Measured, not imagined:
         # two distinct spoken СНИЛС came back as the same token.
         return _digits_of(value) or value
+    if entity_type in ("IBAN", "LOAN_UID", "VIN"):
+        # THE SAME VALUE WRITTEN DIFFERENTLY IS ONE IDENTITY. An IBAN is
+        # printed glued and in groups of four, a УИД with and without dashes and
+        # in either case, a VIN lower-case as often as upper — one row each, or
+        # the model meets the same account twice under two substitutes.
+        folded = re.sub(r"\s+", "", value)
+        if entity_type == "LOAN_UID":
+            return re.sub(r"-+", "", folded).lower()
+        return folded.upper()
+    if entity_type in ("BIRTH_CERT", "MILITARY_ID", "VEHICLE_DOC",
+                       "CIVIL_ACT_CERT"):
+        # THE v6 IDENTITY DOCUMENTS. The registry's `value_notation` names the
+        # key: "squeezed" for the certificate family (separators go, the
+        # ALPHABET stays — a genuine Cyrillic «МЮ» is not a Latin twin),
+        # "glyph_fold" for ПТС (its series is Cyrillic on paper and Latin off a
+        # keyboard, and both spellings are ONE document). `identity_signature`
+        # carries the type as part of the key, so the same nine characters cannot
+        # answer as two different documents.
+        #
+        # `VEHICLE_DOC` covers СТС and ПТС: for a digit-only СТС the signature is
+        # its digits, i.e. exactly the key it had before, and for a ПТС the
+        # letters stay in it. An empty canonical is a collision generator (see
+        # the СНИЛС branch above), so it falls back to the value.
+        return ru_pii_v6.identity_signature(
+            value, entity_type) or value.strip()
+    if entity_type == "RESIDENCE_PERMIT":
+        # Digits only, like every other digit-only document: «82 1234567» and
+        # «821234567» are one ВНЖ.
+        return _digits_of(value) or value
+    if entity_type in ru_pii_v6.LEGAL_LABELS:
+        # THE v6 LEGAL/COURT FAMILY. One rule, two readings, and the registry
+        # states which is which: "squeezed" drops the separators, "glyph_fold"
+        # drops them AND folds the Cyrillic/Latin twins — so «77ОС0000-…» typed
+        # on a Ukrainian layout and «77OS0000-…» are ONE case, exactly as the
+        # frozen FORM fixture pairs them. CADASTRAL_NUMBER is digits-only
+        # (`_NUMERIC_TYPES` below), so this branch handles the letter-bearing
+        # five; the key is TYPED, because a case number and a blank series are
+        # content, and the court-case pair carries the group so a generic field
+        # key cannot fork one case into two substitutes.
+        return ru_pii_v6.legal_signature(value, entity_type) or value.strip()
+    if entity_type == "ELN_NUMBER":
+        # THE v6 FINANCE FAMILY'S DIGIT-ONLY MEMBER. The registry gives the record
+        # `value_notation: digits` and a `digits` needle, so «9000 1234 5678» and
+        # «900012345678» are ONE sick leave — the same rule the ВНЖ above states.
+        return _digits_of(value) or value
+    if entity_type in ru_pii_v6.FINANCE_LABELS:
+        # THE v6 FINANCE FAMILY. Nine of the ten records carry letters as part of
+        # their identity («У-671-475136/25», «001SB12345678», «ХХХ 0123456789»)
+        # and a digit-only key would let two policies that share a digit run
+        # answer for each other; ELN_NUMBER is the digit-only one and is handled
+        # above. The registry's `glyph` needle is what says the twins fold, and
+        # the key carries the LABEL, because ten separate records assert ten
+        # separate documents. An empty key is a collision generator (see the
+        # СНИЛС branch), so it falls back to the value.
+        return ru_pii_v6.finance_signature(
+            value, entity_type) or value.strip()
+    if entity_type in ru_pii_v6.UTILITY_LABELS:
+        # THE v6 UTILITY / ACCOUNT / EDUCATION / TRAVEL FAMILY. Seven of the
+        # twelve records carry letters as part of their identity (a ЕЛС's Cyrillic
+        # series, a booking locator, a CDP code or UUID, an RFID UID, a login, a
+        # contract number) and their key is the TYPED content with the letters in
+        # it — two documents that share a digit run must not answer for each
+        # other. The five whose grammar admits no letter (a diploma, an attestat,
+        # an air ticket, a tab number, a student id) key on their DIGITS, exactly
+        # as every v5 identifier does, which is what keeps the engine's
+        # digit-signature index working for them. An empty key is a collision
+        # generator (see the СНИЛС branch), so it falls back to the value.
+        return ru_pii_v6.utility_signature(
+            value, entity_type) or value.strip()
     if entity_type == "DOB":
         # ONE DATE OF BIRTH IS ONE KEY, however it was said: «21.09.1980»,
         # «21 сентября 1980» and «двадцать первое сентября восьмидесятого
@@ -440,7 +528,131 @@ _TOKEN_MINT_ATTEMPTS = 200
 _NUMERIC_TYPES = (
     "PHONE", "CARD", "SNILS", "INN", "PASSPORT",
     "OMS", "ACCOUNT", "DRIVER_LICENSE", "VEHICLE_DOC", "INTL_PASSPORT", "OGRN",
+    # THE v6 CHECKSUM FAMILY'S DIGIT-ONLY MEMBERS. A model regroups them
+    # («5260 1815 9083 010» for an IMEI), the exact token then misses, and
+    # without a digit signature the FAKE reaches the tool. VIN, IBAN and
+    # LOAN_UID are deliberately NOT here: their identity is letters AND digits,
+    # and a digit-only signature would let two different values with the same
+    # digits answer for each other.
+    "IMEI", "ICCID", "EPTS", "UIN", "LOYALTY",
+    # THE v6 IDENTITY DOCUMENTS' DIGIT-ONLY MEMBER. A ВНЖ is two digits of series
+    # and seven of number, and a model regroups them like any other number.
+    # INTL_PASSPORT, DRIVER_LICENSE and VEHICLE_DOC are already above. BIRTH_CERT
+    # and MILITARY_ID are deliberately NOT here: their identity is letters AND
+    # digits (see `_digit_signatures`), and `_digits_laid_like` would strip the
+    # letters of their substitutes.
+    "RESIDENCE_PERMIT",
+    # THE v6 LEGAL FAMILY'S DIGIT-ONLY MEMBER. A cadastral number's identity IS
+    # its digits — the colons are presentation (`value_notation: squeezed`) — so a
+    # model that strips them («770100010011234») still resolves by digit
+    # signature instead of leaving the fake in the customer's tool. The five
+    # letter-bearing legal labels are NOT here: their identity includes the
+    # letters (see `_LEGAL_ATOMIC_LABELS`).
+    "CADASTRAL_NUMBER",
+    # THE v6 FINANCE FAMILY. Every one of the ten is here, not only the five the
+    # registry gives a `digits` needle (`ru_pii_v6.FINANCE_NUMERIC_LABELS`), and
+    # the widening is safe for a reason that is checked rather than hoped:
+    # `_digit_signatures` returns the TYPED content signature for a token that
+    # carries any letter, so a letter-bearing finance token NEVER reaches this
+    # tuple's digit index — only a token with no letter at all does, and two
+    # digit-only tokens with equal digits are equal values modulo the separators
+    # the canonical already squeezes. Without the widening a model that strips our
+    # separators («357-3778-515223» → «3573778515223») left the fake in the
+    # customer's tool, which is the failure this list exists to prevent.
+    *sorted(ru_pii_v6.FINANCE_LABELS),
+    # THE v6 TELECOM/DEVICE FAMILY. Five of the eight are DIGIT-ONLY — IMSI,
+    # ESIA_OID, METRICA_CLIENT_ID, SUBSCRIBER_ACCOUNT and APP_DEVICE_ID's numeric
+    # form — so a model that regroups one of them must still resolve by digit
+    # signature; the registry's own `digits` needle says so per record
+    # (`ru_pii_v6.TELECOM_NUMERIC_TYPES`). IP_ADDRESS is here for the same reason
+    # the v5 `IP` was ALREADY here implicitly — an address is four octets and a
+    # model that strips nothing still regroups nothing, but a model that writes
+    # `95.165.12.34` as `951651234` must not leave the fake in the tool — and
+    # because adding it is what lets an IPv6 token resolve on the digit index.
+    # MAC, MOBILE_AD_ID and APP_DEVICE_ID's UUID form are deliberately NOT here:
+    # their identity includes hex letters, and `_digit_signatures` returns the
+    # TYPED content signature for a token that carries any letter, so a
+    # letter-bearing token never reaches this tuple's digit index anyway.
+    *sorted(ru_pii_v6.TELECOM_NUMERIC_TYPES),
+    "IP",
+    # THE v6 UTILITY / ACCOUNT / EDUCATION / TRAVEL FAMILY. The five records whose
+    # grammar admits no letter are DIGIT-ONLY in this engine's own shapes
+    # (`ru_pii_v6.UTILITY_DIGIT_LABELS`), so a model that regroups a diploma or an
+    # attestat number must still resolve by digit signature; the three whose
+    # grammar admits a digit-only reading BESIDE its letter-bearing ones
+    # (UTILITY_ACCOUNT, CDP_CUSTOMER_ID, ACCESS_PASS_NUMBER) are here for the same
+    # reason the telecom family put IP_ADDRESS and APP_DEVICE_ID here: the
+    # widening is safe because `_digit_signatures` returns the TYPED content
+    # signature for a token that carries any letter, so a letter-bearing utility
+    # token NEVER reaches this tuple's digit index — only a token with no letter
+    # at all does. GIS_ZHKH_ELS, LOGIN, EMPLOYMENT_CONTRACT_NUMBER and PNR are
+    # deliberately absent: their shapes REQUIRE letters, so no token of theirs can
+    # be digit-only. The set is read from the family
+    # (`ru_pii_v6.UTILITY_NUMERIC_LABELS`), never restated here.
+    *sorted(ru_pii_v6.UTILITY_NUMERIC_LABELS),
 )
+
+# The finance labels whose token carries LETTERS as part of its identity, and the
+# labels whose canonical is a KEY rather than a value — the same two questions the
+# identity and legal families ask above, asked of this one. ELN_NUMBER is
+# deliberately absent from both: its identity is its digits and it is in
+# `_NUMERIC_TYPES`. The nine canonicals that ARE keys («DMS_POLICY\x1f001SB…») must
+# never be handed to a tool.
+_FINANCE_ATOMIC_LABELS = frozenset(
+    ru_pii_v6.FINANCE_LABELS - {"ELN_NUMBER"})
+_FINANCE_CANONICAL_IS_A_KEY = _FINANCE_ATOMIC_LABELS
+
+# The identity-document labels whose token carries LETTERS as part of its
+# identity, and the labels whose canonical is a KEY rather than a value. Both
+# lists exist so that one rule has one home: `redact` and `vault` must agree
+# about which spelling of a document is the same document.
+_IDENTITY_ATOMIC_LABELS = frozenset(
+    ("INTL_PASSPORT", "BIRTH_CERT", "MILITARY_ID", "DRIVER_LICENSE",
+     "RESIDENCE_PERMIT", "VEHICLE_DOC"))
+_IDENTITY_CANONICAL_IS_A_KEY = frozenset(
+    ("BIRTH_CERT", "MILITARY_ID", "VEHICLE_DOC"))
+
+# THE v6 LEGAL FAMILY, the same two questions asked of it. Five of the six labels
+# carry LETTERS as part of their identity — a case number, a УИД's court code and
+# a writ's blank series are content, not layout — so their tokens take the
+# TYPED content signature and their notation is mirrored whole
+# (`render_like_atomic`), exactly as the identity documents do. CADASTRAL_NUMBER
+# is deliberately absent from both: its identity is its digits, and it is in
+# `_NUMERIC_TYPES` instead. And the five canonicals ARE keys
+# («COURT_CASE\x1fЧТО-ТО»), so `_pick_value` must never hand one to a tool.
+_LEGAL_ATOMIC_LABELS = frozenset(ru_pii_v6.LEGAL_LABELS - {"CADASTRAL_NUMBER"})
+_LEGAL_CANONICAL_IS_A_KEY = _LEGAL_ATOMIC_LABELS
+
+# THE v6 TELECOM/DEVICE FAMILY, the same two questions asked of it. Its identity
+# is CONTENT — a MAC's colons, a UUID's hyphens and a Cyrillic hex twin are all
+# presentation (`telecom_signature` states the rule) — so a letter-bearing token
+# takes the typed content signature and its notation is mirrored whole
+# (`render_like_atomic`). The FOUR digit-only labels are deliberately absent:
+# their identity is their digits and they are in `_NUMERIC_TYPES` above, which is
+# where a regrouping model's answer comes from. IP_ADDRESS and APP_DEVICE_ID stay
+# in the set because both have a letter-bearing form (IPv6, a UUID) and a
+# digit-only one; `_digit_signatures` returns the content signature for the
+# letter-bearing token and the digit path for the other, exactly as it does for
+# an identity document.
+_TELECOM_ATOMIC_LABELS = frozenset(
+    ru_pii_v6.TELECOM_LABELS - {"IMSI", "ESIA_OID", "METRICA_CLIENT_ID",
+                                "SUBSCRIBER_ACCOUNT"})
+
+# THE v6 UTILITY / ACCOUNT / EDUCATION / TRAVEL FAMILY, the same two questions
+# asked of it — and both answers come from `ru_pii_v6` so the family and the vault
+# cannot disagree. `UTILITY_ATOMIC_LABELS` is the seven labels whose token carries
+# letters (a ЕЛС's series, a PNR's locator, a CDP code/UUID, an RFID UID, a login,
+# a contract number, a letter-bearing account), which take the TYPED content
+# signature and the mirrored notation; `UTILITY_CANONICAL_IS_A_KEY` is those same
+# seven, because their canonical is «LABEL\x1fsqueezed» — a vault key, never a
+# value. The five digit-only labels are absent from both: their identity is their
+# digits, their canonical is the plain digit string, and they are in
+# `_NUMERIC_TYPES` above, which is where a regrouping model's answer comes from.
+# UTILITY_ACCOUNT is in THIS set and in `_NUMERIC_TYPES` both, for the reason
+# IP_ADDRESS and APP_DEVICE_ID are: its grammar admits a letter-bearing form and a
+# digit-only one, and `_digit_signatures` picks the right index per token.
+_UTILITY_ATOMIC_LABELS = ru_pii_v6.UTILITY_ATOMIC_LABELS
+_UTILITY_CANONICAL_IS_A_KEY = ru_pii_v6.UTILITY_CANONICAL_IS_A_KEY
 
 
 # ЧТО ВОЗВРАЩАЕТСЯ ВМЕСТО ПОДМЕНЫ, И ПОЧЕМУ ЭТО ДВА РАЗНЫХ ОТВЕТА.
@@ -572,7 +784,16 @@ def _pick_value(entity_type: str, canonical: str, original: str,
     # by the restorer. The dictated exception stays for identifiers, whose
     # substitutes are still minted in digits.
     if (for_tool and entity_type in _CANONICAL_IS_THE_VALUE and entity_type not in ("DOB", "DATE")
+            and entity_type not in _IDENTITY_CANONICAL_IS_A_KEY
+            and entity_type not in _LEGAL_CANONICAL_IS_A_KEY
+            and entity_type not in _FINANCE_CANONICAL_IS_A_KEY
+            and entity_type not in _UTILITY_CANONICAL_IS_A_KEY
             and looks_dictated(original or "", canonical or "")):
+        # …and never for a document whose canonical is a KEY. A ПТС keys as
+        # «VEHICLE_DOC\x1f77YK123456» — the type is IN the key because the tokens
+        # table's primary key is (customer, canonical) and two documents may share
+        # a digit run. Handing that string to a tool would put a vault key in a
+        # field the customer's validator reads.
         return canonical
     # NO REPAIR — THE CUSTOMER'S LITERAL STRING, TYPO AND ALL. Fixing a
     # mistyped street to the register spelling («золоторожксий» →
@@ -736,6 +957,59 @@ def _digit_signatures(token: str, entity_type: str) -> tuple[str | None, str | N
     The signature is asked of the token's CONTENT, not of its spelling: a plate
     the mint showed in words has no digits at all, and a signature read off the
     words themselves would be a string of letters nobody could ever match."""
+    if entity_type in _IDENTITY_ATOMIC_LABELS and any(ch.isalpha() for ch in token):
+        # AN IDENTITY DOCUMENT'S SIGNATURE IS ITS CONTENT, LETTERS INCLUDED. A
+        # digit-only signature would let «77 УК 123456» and «77 ХК 123456» answer
+        # for each other — two ПТС, one row, and `_lookup_typed` returns whichever
+        # came last. `identity_signature` also carries the LABEL, because the
+        # tokens table keys on (customer, canonical) and two document types may
+        # share a digit run. A digit-only token of the same label (a СТС, a
+        # glued passport) keeps the plain digit signature, i.e. exactly the key it
+        # had before this family landed — which is what `test_product` pins.
+        signature = ru_pii_v6.identity_signature(token, entity_type)
+        return (signature, None) if signature else (None, None)
+    if entity_type in _LEGAL_ATOMIC_LABELS and any(ch.isalpha() for ch in token):
+        # THE v6 LEGAL FAMILY'S LETTER-BEARING TOKENS, the same rule for the same
+        # reason: «А31-2840/2013» and «А31-2840/2014» differ only in a digit, and
+        # «77 УК 123456»-style digit-only signatures would let a case number and a
+        # blank that share a digit run answer for each other. The signature
+        # carries the label (the court-case pair carries its GROUP) so the point
+        # query cannot cross types.
+        signature = ru_pii_v6.legal_signature(token, entity_type)
+        return (signature, None) if signature else (None, None)
+    if entity_type in _FINANCE_ATOMIC_LABELS and any(ch.isalpha() for ch in token):
+        # THE v6 FINANCE FAMILY'S LETTER-BEARING TOKENS, the same rule for the
+        # same reason: «У-671-475136/25» and «У-671-475136/26» differ only in a
+        # digit, and a digit-only signature would let two insurance claims that
+        # share a digit run answer for each other. The signature carries the LABEL
+        # — ten registry records, ten documents. A finance token with NO letter
+        # (a medcard, a prescription, a strip-numeral contract) keeps the plain
+        # DIGIT signature instead, i.e. exactly the key it had before this family
+        # landed, which is why every finance label is in `_NUMERIC_TYPES`.
+        signature = ru_pii_v6.finance_signature(token, entity_type)
+        return (signature, None) if signature else (None, None)
+    if entity_type in _TELECOM_ATOMIC_LABELS and any(ch.isalpha() for ch in token):
+        # THE v6 TELECOM/DEVICE FAMILY'S LETTER-BEARING TOKENS, the same rule for
+        # the same reason: a MAC's identity is twelve hex digits and a UUID's is
+        # thirty-two, and a digit-only signature would let two devices that share
+        # a digit run answer for each other. Only the tokens that actually carry
+        # a letter come here — a digit-only APP_DEVICE_ID or an IPv4 address falls
+        # through to the plain digit signature below, i.e. exactly the key it had
+        # before this family landed.
+        signature = ru_pii_v6.telecom_signature(token, entity_type)
+        return (signature, None) if signature else (None, None)
+    if entity_type in _UTILITY_ATOMIC_LABELS and any(ch.isalpha() for ch in token):
+        # THE v6 UTILITY/ACCOUNT/EDUCATION/TRAVEL FAMILY'S LETTER-BEARING TOKENS,
+        # the same rule for the same reason: a ЕЛС «60АА000593-01» and
+        # «60АВ000593-01» differ only in a letter, and a digit-only signature
+        # would let two payer accounts that share a digit run answer for each
+        # other. The signature carries the LABEL, so twelve registry records stay
+        # twelve documents. A utility token with NO letter (a diploma, an
+        # attestat, a digit-only pass or account) falls through to the plain DIGIT
+        # signature below — exactly the key every v5 identifier has, which is why
+        # those labels are in `_NUMERIC_TYPES`.
+        signature = ru_pii_v6.utility_signature(token, entity_type)
+        return (signature, None) if signature else (None, None)
     if entity_type == "PLATE":
         signature = notation.plate_signature(notation.plate_content(token))
         return (signature, None) if signature else (None, None)
@@ -1513,16 +1787,41 @@ def _fake_place(original: str, head: str = "") -> str:
     # КОРПУС И СТРОЕНИЕ — ТА ЖЕ ИСТОРИЯ, ЧТО И ПОДЪЕЗД. «репина тридцать пять
     # строение один» приходило моделью как «Речная, 56»: строения в подмене нет,
     # положить его в аргумент неоткуда, и до диспетчера оно не доезжает.
-    return _decorate_place(out, shape, {})
+    return _decorate_place(out, shape, {}, original)
 
 
-def _decorate_place(out: str, shape: dict[str, object], reuse: dict[str, str]) -> str:
+def _floor_like(original: str) -> int:
+    """Фальшивый этаж ТОГО ЖЕ РАЗРЯДА, что настоящий, — как номер дома.
+
+    Разряд этажа — это «первый или двенадцатый», и он решает, поедет ли
+    курьер на лифте; та же логика, что у `_house_like`, и та же цена.
+    """
+    spoken = morph_places.split_roles(original).get("floor", "") if original else ""
+    digits = re.sub(r"\D", "", spoken)
+    if not digits:
+        return secrets.randbelow(24) + 1
+    bands = ((1, 9), (10, 99))
+    real = min(int(digits[:4]), 99) or 1
+    low, high = next(band for band in bands if real <= band[1])
+    return low + secrets.randbelow(high - low + 1)
+
+
+def _decorate_place(out: str, shape: dict[str, object], reuse: dict[str, str],
+                    original: str = "") -> str:
     """The tails a mention carries, in Russian order; a tail the substitute
     being extended already had is kept, a new one is drawn."""
     if shape.get("has_building"):
         out = f"{out}, корп. {reuse.get('building') or secrets.randbelow(12) + 1}"
     if shape.get("has_entrance"):
         out = f"{out}, подъезд {reuse.get('entrance') or secrets.randbelow(24) + 1}"
+    # ЭТАЖ ЧЕКАНИТСЯ, И ЭТО НЕ УКРАШЕНИЕ. Его не чеканили вовсе, а `in_form_of`
+    # выкладывает подмену в форму ИСХОДНОЙ строки: «…, 3 этаж» превращалось в
+    # «…, этаж» — маркер без числа. Модель видит в схеме поле `floor`, числа при
+    # нём нет, и в инструмент уезжает пустота; в тексте остаётся «этаж», который
+    # восстановитель не может сопоставить ни с чем. Ровно та же дыра, что была у
+    # подъезда до `_fake_place`, и лечится она там же.
+    if shape.get("has_floor"):
+        out = f"{out}, этаж {reuse.get('floor') or _floor_like(original)}"
     if shape.get("has_flat"):
         out = f"{out}, кв. {reuse.get('flat') or secrets.randbelow(250) + 1}"
     return out
@@ -1546,8 +1845,8 @@ def _extend_place(short_token: str, original: str, shape: dict[str, object]) -> 
         return None
     out = f"{_settlement_of(original) or _fake_city(original)}, {base}"
     reuse = {role: part for role, part in morph_places.split_roles(short_token).items()
-             if role in ("building", "entrance", "flat")}
-    return _decorate_place(out, shape, reuse)
+             if role in ("building", "entrance", "floor", "flat")}
+    return _decorate_place(out, shape, reuse, original)
 
 
 _INITIAL_LETTERS = "АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЭЮЯ"
@@ -1842,31 +2141,111 @@ def _render_token(entity_type: str, gender: str | None = None,
     # validator expects, so a masked account number would fail their form check
     # and break the very tool call the product exists to keep working.
     if entity_type == "OMS":
-        return _rand_digits(16)
+        # v6 OMS_ENP (luhn, 16 digits). A substitute that FAILS its own checksum
+        # is the rejected mutant: an agent that verifies the policy number
+        # refused the fake and the tool call stopped — the same failure the
+        # valid СНИЛС fixed on 04.09.2026. The verdict is INHERITED: a faulty
+        # source is mirrored, never repaired.
+        return ru_pii_v6.mint("OMS_ENP", original)
     if entity_type == "ACCOUNT":
-        return "40817810" + _rand_digits(12)
+        # v6 BANK_ACCOUNT (cbr515). Its key is a (account, BIK) pair: the BIK
+        # the pair was minted against is inherited from the field context when
+        # one is there, and the synthetic unassignable BIK is used otherwise —
+        # the honest limit is recorded in TYPES.md.
+        return ru_pii_v6.mint("BANK_ACCOUNT", original)
     if entity_type in ("DRIVER_LICENSE", "VEHICLE_DOC"):
-        return f"{_rand_digits(2)} {_rand_digits(2)} {_rand_digits(6)}"
+        # THE v6 IDENTITY DOCUMENTS. Their format IS the mechanism (the registry
+        # gives them no checksum), so the substitute keeps the source's character
+        # classes, separators, case and script: a ПТС mints letters where the
+        # source had letters («77 УК 123456» -> «91 КС 340936») and a СТС mints
+        # digits, and a grouped source stays grouped. The v5 renderer minted a
+        # digit-only «NN NN NNNNNN» for both, which is a shape the СТС field
+        # accepts and the ПТС field does not.
+        return ru_pii_v6.mint_identity(entity_type, original)
     if entity_type == "INTL_PASSPORT":
-        return _rand_digits(9)
+        # Nine digits, in the customer's own grouping — «75 1234567» minted a
+        # glued substitute and `token_re` could not see it in full.
+        return ru_pii_v6.mint_identity(entity_type, original)
     if entity_type == "OGRN":
+        # ОГРНИП IS A PERSON, ОГРН IS NOT. The detection labels the fifteen-digit
+        # individual entrepreneur's number OGRN (`engine_labels`), and a
+        # thirteen-digit fake for a fifteen-digit source was neither format- nor
+        # verdict-preserving. A fifteen-digit source now mints a fifteen-digit
+        # fake whose mod-13 key is VALID (COV-CHECKSUM-INHERIT) and whose region
+        # code «00» cannot be real. The bare thirteen-digit call keeps the v5
+        # INVALID renderer — `test_product.test_tokens_are_not_valid_documents`
+        # pins it, and a legal entity's ОГРН is never detected.
+        if len(_digits_of(original)) == 15:
+            return ru_pii_v6.mint("OGRNIP", original)
         return _fake_ogrn(13)
     if entity_type == "PLATE":
         letters = "АВЕКМНОРСТУХ"
         return (secrets.choice(letters) + _rand_digits(3)
                 + "".join(secrets.choice(letters) for _ in range(2)) + _rand_digits(3))
-    if entity_type == "IP":
-        # 198.18.0.0/15 is the RFC 2544 benchmarking range: reserved, must never
-        # appear on the public internet, so a token can never address a real host.
-        # Chosen over the RFC 5737 documentation /24 it replaced for size alone —
-        # that range holds 254 addresses, and the 255th distinct IP a customer
-        # logged became an unmintable token and a permanent 5xx.
-        return (f"198.{secrets.choice((18, 19))}."
-                f"{secrets.randbelow(256)}.{secrets.randbelow(254) + 1}")
+    # THE v5 `IP` AND `MAC` RENDERERS THAT USED TO STAND HERE ARE GONE, AND THEY
+    # ARE GONE BECAUSE THEY CANNOT RUN: both labels are in
+    # `ru_pii_v6.TELECOM_LABELS`, so the family's own branch above answers for
+    # every one of them. A renderer that is unreachable is a claim about
+    # behaviour no test can hold, and the v6 family's renderer is the strict
+    # superset of both — it keeps the RFC 2544 reservation for IPv4 and the
+    # source's own notation, which is the axis the benchmark measures. The
+    # reservation argument is carried in `mint_telecom`; the MAC one (a random
+    # hex draw may or may not set the locally-administered bit) is recorded in
+    # TYPES.md as a KNOWN RELAXATION rather than hidden here.
     if entity_type == "BIRTH_CERT":
-        roman = secrets.choice(("I", "II", "III", "IV", "V", "VI"))
-        cyr = "АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЩЭЮЯ"
-        return f"{roman}-{secrets.choice(cyr)}{secrets.choice(cyr)} №{_rand_digits(6)}"
+        # The v6 renderer. The roman series KEEPS ITS LENGTH («IV-МЮ № 123456»
+        # minted «V-РИ №083887» — one character shorter, and a shape the
+        # customer's own form may refuse) and the separators are the customer's.
+        return ru_pii_v6.mint_identity(entity_type, original)
+    if entity_type == "MILITARY_ID":
+        return ru_pii_v6.mint_identity(entity_type, original)
+    if entity_type == "RESIDENCE_PERMIT":
+        return ru_pii_v6.mint_identity(entity_type, original)
+    if entity_type in ru_pii_v6.LEGAL_LABELS:
+        # THE v6 LEGAL/COURT FAMILY. There is no checksum to inherit (the
+        # registry gives every one of the six `generated_checksum == ""`), so the
+        # substitute preserves FORMAT and nothing else: the source's separators,
+        # letter case, script and group lengths come back unchanged, while every
+        # digit is drawn afresh and the two content-bearing letter pairs
+        # (COURT_CASE_UID's court code, EXEC_DOC_NO's blank series) are
+        # regenerated. The grammar letters — ARBITRAZH's «А»/«Ф»/«С»/«АП», the
+        # СОУ index letter, FSSP's «ИП»/«СД» — are NOT content and stay, because
+        # replacing them would mint a string that is not a case number at all.
+        return ru_pii_v6.mint_legal(entity_type, original)
+    if entity_type in ru_pii_v6.FINANCE_LABELS:
+        # THE v6 FINANCE FAMILY. There is no checksum to inherit (the registry
+        # gives every one of the ten `generated_checksum == ""`), so the substitute
+        # preserves FORMAT and nothing else: the source's separators, letter case,
+        # script, digit count and letter count come back unchanged while every
+        # alphanumeric character is drawn afresh — the rule the frozen benchmark's
+        # own `id_alnum`/`id_digits` mint states (§6.2). Two of the ten are
+        # `ГРАММАТИКА?` and one carries `pd_context: OD-22`; both are recorded in
+        # `ru_pii_v6` rather than papered over here.
+        return ru_pii_v6.mint_finance(entity_type, original)
+    if entity_type in ru_pii_v6.TELECOM_LABELS:
+        # THE v6 TELECOM/DEVICE FAMILY. There is no checksum to inherit (the
+        # registry gives every one of the eight `generated_checksum == ""`), so
+        # the substitute preserves FORMAT and nothing else: the source's
+        # separators, letter case, script (a Cyrillic hex twin stays Cyrillic) and
+        # its FORM — a grouped UUID stays grouped, a Cisco-dotted MAC stays
+        # dotted, an IPv6 address keeps its group count. MAC and IP_ADDRESS reach
+        # here for a value that ALREADY was an address (the v5 recognizers), so
+        # the v5 behaviour is the fallback and this renderer only ever supersedes
+        # it with a shape-preserving one; see TYPES.md for the reservation
+        # argument (RFC 2544 for IPv4, the locally-administered bit for MAC).
+        return ru_pii_v6.mint_telecom(entity_type, original)
+    if entity_type in ru_pii_v6.UTILITY_LABELS:
+        # THE v6 UTILITY / ACCOUNT / EDUCATION / TRAVEL FAMILY. There is no
+        # checksum to inherit (the registry gives every one of the twelve
+        # `generated_checksum == ""`), so the substitute preserves FORMAT and
+        # nothing else: the source's separators, letter case, script and character
+        # classes come back unchanged while every alphanumeric character is drawn
+        # afresh — the rule the frozen benchmark's own `id_alnum`/`id_digits` mint
+        # states (§6.2), with the two grammar-pinned digits of a diploma series
+        # kept by the family. Three of the twelve are `ГРАММАТИКА?` and two carry
+        # a `pd_context`; all five facts are recorded in `ru_pii_v6` rather than
+        # papered over here.
+        return ru_pii_v6.mint_utility(entity_type, original)
     if entity_type == "PHONE":
         return _fake_phone()
     if entity_type == "EMAIL":
@@ -1890,6 +2269,18 @@ def _render_token(entity_type: str, gender: str | None = None,
         if year == 2000:
             year = 2001
         return f"00 {year % 100:02d} {_rand_digits(6)}"
+    if entity_type in cvc.LABEL_SET:
+        # THE TEMPORARY SECRETS (C1, O-SECRET). Format-preserving and NOTHING
+        # else: a three-digit card code mints three digits, a four-digit one
+        # four, and an issuer OTP keeps the width the customer wrote, because its
+        # length is UNASSERTED and no rule here may invent one (`pseudex/cvc.py`).
+        # Two failures stand on either side of this branch and both are REDs on
+        # the pinned build: without it a value named for a card code falls through
+        # to `REDACTED<6 hex>` INSIDE a numeric field (RED-8), and with the class
+        # mistyped as CARD the same three digits become a SIXTEEN-digit Luhn-valid
+        # card number (RED-9). Neither is a substitute: one is a marker where a
+        # number belongs, the other answers a question nobody asked.
+        return cvc.mint(entity_type, original)
     if entity_type in ("DATE", "DOB"):
         # DOB WAS FALLING THROUGH TO REDACTED…, and it only started to matter
         # when DOB became a type of its own: recall went 22.2% -> 82.8% the same
@@ -1902,17 +2293,19 @@ def _render_token(entity_type: str, gender: str | None = None,
     if entity_type == "NAME":
         return _fake_name(gender, morph_names.name_shape(original) if original else (),
                           original=original)
-    if entity_type == "MAC":
-        # 02: sets the locally-administered bit, so the address can never belong
-        # to a vendor OUI — the MAC analogue of the reserved IP range.
-        return "02:" + ":".join(f"{secrets.randbelow(256):02X}" for _ in range(5))
     if entity_type == "VIN":
-        # Deliberately built to FAIL its own check digit, like the fake СНИЛС and
-        # ИНН: a token must never name a real vehicle.
-        alphabet = "ABCDEFGHJKLMNPRSTUVWXYZ0123456789"
-        body = "".join(secrets.choice(alphabet) for _ in range(17))
-        wrong = next(c for c in "0123456789X" if c != body[8])
-        return body[:8] + wrong + body[9:]
+        # v6 VIN (iso3779). The check digit at position 9 now PASSES — a valid
+        # source must mint a valid fake (COV-CHECKSUM-INHERIT), where the v5
+        # renderer corrupted it on purpose. The value still cannot name a real
+        # car: the first ISO 3779 position is the region and «0» is not an
+        # assigned one, so no manufacturer issued it.
+        return ru_pii_v6.mint("VIN", original)
+    if entity_type in ("IBAN", "LOAN_UID", "EPTS", "UIN", "IMEI", "ICCID",
+                       "LOYALTY"):
+        # The rest of the v6 checksum family. Each mint preserves the source's
+        # length, alphabet and grouping class and inherits its verdict; the
+        # safe-range argument per type is in `ru_pii_v6` and in TYPES.md.
+        return ru_pii_v6.mint(ru_pii_v6.LABEL_TO_TYPE[entity_type], original)
     if entity_type == "SECRET":
         return _fake_secret(original)
     if entity_type == "LOC":
@@ -2014,9 +2407,42 @@ def _loc_token_pattern() -> str:
     # уходили подменой в инструмент (замерено на публичном rewriter-агенте). Дом
     # клиент почти всегда пишет без слова, но модель его дописывает — обе формы
     # тут и восстанавливаются.
-    return (rf"(?:(?:{city}), )?{head}(?:,? (?:(?i:дом|д)\.? ?)?\d{{1,3}})?"
-            rf"(?:,? (?i:корп|кор|стр|строение|литер)\.? ?\d{{1,3}})?"
-            rf"(?:,? (?i:подъезд|под)\.? ?\d{{1,3}})?(?:,? кв\.? ?\d{{1,3}})?")
+    # ХВОСТ ПОДМЕНЫ — В ЛЮБОМ ПОРЯДКЕ И В ОБЕ СТОРОНЫ, ПОТОМУ ЧТО ПОРЯДОК
+    # ЗАДАЁТ КЛИЕНТ. `redact._token_for_text` кладёт подмену в ФОРМУ ИСХОДНОЙ
+    # строки (`morph_places.in_form_of`), и «…, кв. 87, 3 подъезд» чеканится как
+    # «…, кв. 43 подъезд 17»: квартира ПЕРЕД подъездом, «подьезд» с мягким
+    # знаком, число-перед-маркером. Здесь стояли жёстко фиксированные
+    # «подъезд N, затем кв. N» — маркер-перед-числом, только твёрдый знак, —
+    # и такая подмена восстановителю не видна. Замерено: 11 значений LOC на
+    # PII-Bench перестают возвращаться (в инструмент уходит подмена, а это хуже
+    # утечки, которую правка чинит), и это ровно тот случай, ради которого
+    # `test_addr_passport_tail.py` вектор 4 держит круг.
+    #
+    # ИМЕННО ПОЭТОМУ ХВОСТ — ПОВТОРЕНИЕ ЧАСТЕЙ, А НЕ ЧЕТЫРЕ ПОЗИЦИИ. Части
+    # чеканятся в русском порядке (корпус, подъезд, этаж, квартира), но
+    # `in_form_of` переставляет их в порядок ИСХОДНОЙ строки; «этаж» в списке
+    # потому, что подмена этаж теперь ЧЕКАНИТ (см. `_decorate_place`) — без
+    # него шестизначная часть оригинала исчезала из маскированного текста.
+    tail = "|".join((
+        r",?\s*(?i:дом|д)\.?\s*\d{1,4}",                                    # д. 5 / дом 5
+        r",?\s*(?i:корп\w*|кор|стр\w*|строен\w*|литер\w*|лит)\.?\s*\d{1,3}",  # корп. 5 / корпус 5
+        r",?\s*(?i:под[ъь]езд\w*|под|этаж\w*|эт)\.?\s*\d{1,3}",             # подъезд 3 / этаж 3
+        r",?\s*\d{1,3}\s*(?i:под[ъь]езд\w*|под|этаж\w*)",                   # 3 подъезд / 3-й этаж
+        r",?\s*(?i:кв\w*|квартир\w*|офис\w*|оф|помещени\w*|пом|комнат\w*|комн)\.?\s*\d{1,4}",
+        r",?\s*\d{1,3}\s*(?i:кв|квартир\w*)",                               # 12 кв
+    ))
+    return (rf"(?:(?:(?:{city}), )?{head}(?:,? (?:(?i:дом|д)\.? ?)?\d{{1,3}})?"
+            # СТРОКА БЕЗ РОДОВОГО СЛОВА, И ДОМ В НЕЙ ОБЯЗАТЕЛЕН. `_compose_head`
+            # возвращает ОДНО имя, когда упоминание типа не назвало («Победы 81»),
+            # а `in_form_of` выводит подмену в форме клиента — строчными, если он
+            # писал строчными. Такую подмену шаблон не видел вовсе: каждое
+            # плечо головы требовало родового слова. Дом здесь не опция, а
+            # единственное, что удерживает плечо от «любого слова»: без него
+            # «Счёт 1234» и «Заказ 5» стали бы адресными кандидатами в каждой
+            # строке. Два слова допущены («Большая Московская»), потому что и
+            # такие упоминания бывают без типа.
+            rf"|(?:(?:{city}), )?{name}(?:\s{name})?,? (?:(?i:дом|д)\.? ?)?\d{{1,3}})"
+            rf"(?:{tail}){{0,5}}")
 
 
 LOC_TOKEN_PATTERN = _loc_token_pattern()
@@ -2067,6 +2493,14 @@ def _token_re(version: str) -> re.Pattern[str]:
         # to the nominative is what exposed a boundary that was always missing.
         # An inflected city now falls through to the signature path, which resolves it.
         *(rf"\b{re.escape(value)}\b" for value in fakes.cities),       # LOC (city)
+        # ПАСПОРТ, ЗАПИСАННЫЙ СЛОВАМИ. Спан, накрывающий «серия 4607 номер
+        # 238914», чеканится НЕ «00 23 237431», а «серия 0023 номер 237431»:
+        # `_digits_laid_like` кладёт цифры подмены в СЛОТЫ ИСХОДНОЙ строки, а
+        # слова вокруг остаются клиентские. Цифровая ветка ниже такую подмену не
+        # видит — она не кандидат вовсе, восстановитель возвращает её же, и в
+        # инструмент уезжает фейк. Форма идёт ПЕРЕД цифровой, потому что
+        # сканирование идёт слева направо, а «серия» стоит левее чисел.
+        r"(?i:сери[яию]\w*)[^\d\n]{0,12}\d{4}[^\d\n]{1,12}\d{6}(?!\d)",  # PASSPORT, фразой
         r"\d{2} \d{2} \d{6}",                        # DRIVER_LICENSE / VEHICLE_DOC / PASSPORT
         r"198\.1[89]\.\d{1,3}\.\d{1,3}",              # IP (RFC 2544 benchmarking)
         r"[IVX]{1,4}-[А-ЯЁ]{2} №\d{6}",               # BIRTH_CERT
@@ -2095,6 +2529,30 @@ def _token_re(version: str) -> re.Pattern[str]:
         # of the fours plus a 1..3 tail is exactly 13-19, and the sixteen-digit
         # form keeps its original spelling.
         r"\d{4}(?: \d{4}){2,4}(?: \d{1,3})?",        # CARD — 13..19, fours with the remainder last
+        # THE v6 CHECKSUM FAMILY'S OWN SHAPES, before the bare digit runs: an
+        # IBAN and a УИД are alphanumeric and would otherwise be invisible to
+        # the restorer, and a fake that is not a candidate is a fake that
+        # reaches the customer's tool. `ru_pii_v6.TOKEN_PATTERNS` is minted and
+        # matched from ONE tuple so the two cannot fall apart.
+        *ru_pii_v6.TOKEN_PATTERNS,
+        # THE v6 LEGAL FAMILY'S SHAPES, again minted and matched from ONE tuple.
+        # They stand BEFORE the identity-document shapes and before the bare digit
+        # runs for a MEASURED reason: an FSSP token is «5478867/36/30972-ИП», and
+        # the MILITARY_ID shape `[А-ЯЁ]{2} №? \d{7}` matches its first twelve
+        # characters («ИП № 5478867» is what stands to the LEFT of the token after
+        # a cue!). `finditer` would take that dead candidate, fail to resolve it,
+        # and continue AFTER it — the real token never became a candidate and the
+        # FAKE reached the tool with a 200. Every pattern below carries a
+        # mandatory separator or its own letters, so none of them can claim a
+        # prefix of another type's token; `test_pii_v6` pins that over the shapes
+        # this module can mint.
+        *ru_pii_v6.LEGAL_TOKEN_PATTERNS,
+        # THE v6 IDENTITY-DOCUMENT SHAPES, from the same tuple that mints them.
+        # `\b\d{9}\b` (INTL_PASSPORT, glued) was the only form the v5 list knew:
+        # the SPACED substitute the mint has always produced — «62 3046271» —
+        # escaped it in full, and only the digit-signature path saved the round
+        # trip. A ПТС is letters AND digits and was not a candidate at all.
+        *ru_pii_v6.IDENTITY_TOKEN_PATTERNS,
         # Bare digit runs, LONGEST FIRST: leftmost-first alternation would otherwise
         # let \d{10} consume the head of a 20-digit account.
         r"\b\d{20}\b",                                # ACCOUNT
@@ -2121,6 +2579,37 @@ def _token_re(version: str) -> re.Pattern[str]:
         r"\+79\d{9}(?!\d)",                          # PHONE, never a numeric prefix
         REDACTION_MARKER_PATTERN,                    # fallback: редакция, а не подмена
         r"\b\d{10}\b",                                # INN — least specific, last
+        # THE v6 FINANCE FAMILY'S SHAPES, and they stand LAST ON PURPOSE. Their
+        # records are FREE-FORM numbers — the registry gives eight of the ten no
+        # national grammar — so the shape is a digit run with separators and it
+        # would otherwise claim the head of a shape a SPECIFIC family already
+        # matched: a twenty-digit ACCOUNT token, a sixteen-digit ОМС, a ten-digit
+        # INN. Placed here, every specific pattern runs first and the finance
+        # alternation only answers for what nothing else claimed (a twelve-digit
+        # ЭЛН, an eleven-digit sick-leave-shaped number, a «У-671…» claim). The
+        # lookup itself is by TOKEN STRING, not by type, so a candidate another
+        # family's label would have named still resolves to the right row.
+        *ru_pii_v6.FINANCE_TOKEN_PATTERNS,
+        # THE v6 TELECOM/DEVICE FAMILY'S SHAPES. They stand AFTER the specific v5
+        # shapes for a measured reason: a MAC is `[0-9A-Fa-f]{2}(:…)` and a glued
+        # v5 MAC regex already claims the colon form; the UUID and IPv6 shapes are
+        # alphanumeric and would otherwise be invisible to the restorer. The
+        # family's tuple carries its own boundaries (`(?<!…)`/`(?!…)` on every
+        # entry), so no pattern here can claim a prefix of another type's token,
+        # and the digit-only ones stand last inside the family for the same
+        # reason they do in `ru_pii_v6`.
+        *ru_pii_v6.TELECOM_TOKEN_PATTERNS,
+        # THE v6 UTILITY / ACCOUNT / EDUCATION / TRAVEL FAMILY'S SHAPES, and they
+        # stand LAST OF ALL. Their records are cue/key-typed rather than
+        # format-anchored — a pass, a tab number and a CRM id are all digit runs,
+        # and a login is a bare Latin handle — so every specific pattern must get
+        # its chance first: the bare `\b\d{13}\b` and `\b\d{14}\b` above belong to
+        # ОГРН and a loyalty card at their own lengths, and a utility candidate the
+        # scan skipped is not lost, because the restoring leg asks
+        # `UTILITY_TOKEN_RE` separately (`redact._restore_tokens_spans`). The
+        # lookup is by TOKEN STRING and by CONTENT signature, never by which
+        # pattern found the candidate.
+        *ru_pii_v6.UTILITY_TOKEN_PATTERNS,
     ]))
 
 
@@ -3193,6 +3682,108 @@ class Vault:
                 # digits under whatever form the customer used first — and the
                 # digit-signature index resolves every rewriting of it.
                 token = _digits_in_customer_form(value, token)
+            elif entity_type in _IDENTITY_ATOMIC_LABELS and any(
+                    ch.isalnum() for ch in value):
+                # THE v6 IDENTITY DOCUMENTS' NOTATION, IN ONE STEP. Their identity
+                # is letters AND digits, so laying only the digits into the
+                # customer's slots (`_digits_laid_like`, the branch below) would
+                # keep the SOURCE's letters next to the substitute's digits: for
+                # «77 УК 123456» that hands back the customer's own series «УК»
+                # under a fake number. `render_like_atomic` moves every
+                # alphanumeric character and keeps every separator, which is the
+                # same rule for a certificate, a ВНЖ and a СТС.
+                token = ru_pii_v6.render_like_atomic(token, value)
+            elif entity_type in _LEGAL_ATOMIC_LABELS and any(
+                    ch.isalnum() for ch in value):
+                # THE v6 LEGAL FAMILY, THE SAME RULE. «А31-2840/2013» is shown in
+                # the customer's separators and letter case, and a УИД typed with
+                # Cyrillic twins keeps the twins — the substitute's identity is
+                # content, its presentation is the sender's, on both legs.
+                token = ru_pii_v6.render_like_atomic(token, value)
+            elif entity_type in _FINANCE_ATOMIC_LABELS and any(
+                    ch.isalnum() for ch in value):
+                # THE v6 FINANCE FAMILY, THE SAME RULE, and it has to come BEFORE
+                # the numeric branch: a medcard number and a prescription are
+                # digits with separators, and `_digits_laid_like` would keep the
+                # client's letter prefix («001SB…», «У-…») beside the substitute's
+                # digits — the source's own characters under a fake's name.
+                # `render_like_atomic` moves every alphanumeric character and keeps
+                # every separator.
+                #
+                # A SPELLING THE SHAPE LANGUAGE DOES NOT ACCEPT KEEPS THE MINT'S
+                # OWN LAYOUT. A field key types the WHOLE value with no shape check
+                # (`ru_pii_v6` decides the shape, `structured.py` decides the key),
+                # so a value can arrive written in separators no finance shape
+                # admits — and `mint_finance` then answers from the registry's
+                # SAMPLE. Mirroring the source's separators onto that sample made
+                # the TOKEN unwritable in the family's own shapes: «{"medcard":
+                # "123 456 789"}» minted «312 995 119», and neither `token_re` nor
+                # `FINANCE_TOKEN_RE` matched it — a FAKE in the customer's tool
+                # with a 200. The guard is the family's own shape question, and a
+                # spelling it accepts is still mirrored exactly as before.
+                if ru_pii_v6.finance_label_of_shape(value):
+                    token = ru_pii_v6.render_like_atomic(token, value)
+            elif entity_type in _TELECOM_ATOMIC_LABELS and any(
+                    ch.isalnum() for ch in value) and any(
+                    not ch.isalnum() for ch in value):
+                # THE v6 TELECOM/DEVICE FAMILY, THE SAME RULE, and it also has to
+                # come BEFORE the numeric branch: a MAC's colons and a UUID's
+                # hyphens are the customer's notation and `_digits_laid_like`
+                # would keep the source's hex LETTERS beside the substitute's
+                # digits — the source's own characters under a fake's name, and
+                # for a MAC «00:1A:…» that is half the device's address left in
+                # the clear.
+                #
+                # A SPELLING WITH NO SEPARATOR AT ALL CARRIES NO NOTATION TO
+                # MIRROR: `render_like_atomic` would hand back the mint's own
+                # string, which is right, so the separator test above keeps this
+                # branch from running for nothing. A DIGIT-ONLY value (an IMSI,
+                # an operator account, an IPv4 address) keeps the numeric branch
+                # below — exactly the rule it had before this family landed — but
+                # a value whose own shape the family does not accept keeps the
+                # MINT'S layout instead of mirroring separators no telecom shape
+                # admits (the finance family's rule, for the same reason: a field
+                # key types the WHOLE value with no shape check).
+                if not ru_pii_v6.telecom_own_layout(entity_type, value) and \
+                        ru_pii_v6.telecom_label_of_shape(value):
+                    # IPvN ADDRESSES ARE THE EXCEPTION INSIDE THE FAMILY: their
+                    # fake is a complete reserved address, not a run of the
+                    # source's length, so mirroring the source onto it produced
+                    # `19.819.70.83` — not an address, and matched by no token
+                    # shape. `telecom_own_layout` is the same predicate
+                    # `mint_telecom` uses, so the two cannot disagree; for every
+                    # other label here the token is a run and the source's
+                    # notation is laid onto it, exactly as the identity and
+                    # finance families do.
+                    token = ru_pii_v6.render_like_atomic(token, value)
+            elif entity_type in _UTILITY_ATOMIC_LABELS and any(
+                    ch.isalpha() for ch in value):
+                # THE v6 UTILITY / ACCOUNT / EDUCATION / TRAVEL FAMILY, THE SAME
+                # RULE, and it has to come BEFORE the numeric branch: a ЕЛС's
+                # series, a login's letters, a PNR's locator and a contract's «ТД»
+                # are CONTENT, and `_digits_laid_like` would keep the SOURCE's
+                # letters beside the substitute's digits — the customer's own
+                # characters under a fake's name.
+                #
+                # THE CONDITION IS `isalpha`, NOT «has a separator», and that is
+                # the one difference from the telecom branch above: a ЕЛС is
+                # «60АА000593-01» (separated) but a ПНР is «2ZYVAL» and a login is
+                # «ivanovd85» — a glued token whose layout carries no notation. The
+                # positional splice of `render_like_atomic` is still the right
+                # answer for them (every alphanumeric character moves, every
+                # separator — there are none — stays), and it is what keeps the
+                # letters from surviving.
+                #
+                # A SPELLING NO SHAPE OF THE FAMILY ACCEPTS KEEPS THE MINT'S OWN
+                # LAYOUT: a field key types the WHOLE value with no shape check, so
+                # `mint_utility` may have answered from the registry's SAMPLE — and
+                # mirroring the source's separators onto that sample can mint a
+                # token no shape of the family matches, which is a FAKE in the
+                # customer's tool with a 200. The guard is the family's own shape
+                # question (`utility_label_of_shape`), exactly as the finance branch
+                # above asks `finance_label_of_shape`.
+                if ru_pii_v6.utility_label_of_shape(value):
+                    token = ru_pii_v6.render_like_atomic(token, value)
             elif entity_type in _NUMERIC_TYPES and any(ch.isdigit() for ch in value):
                 # EVERY OTHER IDENTIFIER, THE SAME WAY: the customer's
                 # grouping, not the register's. See `_digits_laid_like`.
@@ -4913,6 +5504,25 @@ class Vault:
                 # three-word one grown from it — are not an ambiguity.
                 fullest = self._one_identity({token for _, token in rows})
                 rows = [row for row in rows if row[1] == fullest] if fullest else rows
+            if len(rows) != 1 and self._conversation:
+                # AN AMBIGUITY THE DIALOGUE DID NOT CREATE IS NOT ONE IT HAS TO
+                # CARRY. `name_parts` is customer-scoped, so a woman named in
+                # ANOTHER dialogue — «Зинаида Битюкова» there, the full name and
+                # the lone surname here — competes for her surname with the row
+                # THIS dialogue minted, and the count of two used to mean a fresh
+                # substitute (defect C, C-R1). But inside this dialogue the model
+                # was shown exactly one person for that word, and that is the
+                # only candidate the sentence can mean. The narrowing is done
+                # AFTER the count: two rows of this same conversation still
+                # refuse — then the dialogue itself cannot say which person it
+                # means, and that refusal is the control C-C4.
+                rows = self._conn.execute(
+                    "SELECT t.canonical, t.token FROM name_parts p "
+                    "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
+                    "WHERE p.customer=? AND p.part=? AND t.entity_type='NAME' "
+                    "AND t.minted_in=? LIMIT 2",
+                    (self._customer, candidate.casefold(), self._conversation),
+                ).fetchall()
             if len(rows) != 1:
                 continue
             full_canonical, full_token = rows[0]
@@ -4927,6 +5537,41 @@ class Vault:
             if clash:
                 continue
             return derived, full_token
+        # A MENTION OF SEVERAL WORDS THAT IS A SUBSET OF ONE OWNER OF THIS
+        # DIALOGUE. The loop above answers a ONE-WORD mention; «Зинаида
+        # Битюкова» after «Битюкова Зинаида Сергеевна» is the same question with
+        # one part left out, and it used to mint a second identity (defect C,
+        # C-SAME-CONV-REORDERED-LATE) — the two owner rows then made the lone
+        # surname that follows ambiguous, so the whole dialogue split. Licensed
+        # by `minted_in` and never at customer scope: the subset rule at customer
+        # scope would merge «Иванов Пётр» into «Иванов Пётр Сергеевич», which is
+        # why `_same_person_reordered` demands the same multiset. The mirror
+        # direction — the fuller name after the shorter one — is
+        # `_extends_known_person`, under the same conversation gate.
+        if self._conversation:
+            words = canonical.split()
+            if len(words) > 1 and all(len(word) > 2 for word in words):
+                rows = self._conn.execute(
+                    "SELECT DISTINCT t.canonical, t.token FROM name_parts p "
+                    "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
+                    "WHERE p.customer=? AND p.part=? AND t.entity_type='NAME' "
+                    "AND t.minted_in=? LIMIT 2",
+                    (self._customer, words[0].casefold(), self._conversation),
+                ).fetchall()
+                wanted = {word.casefold() for word in words}
+                owners = [(other, token) for other, token in rows
+                          if wanted < {word.casefold() for word in other.split()
+                                       if len(word) > 2}]
+                if len(owners) == 1:
+                    other, token = owners[0]
+                    built = [_corresponding_part(word, other, token) for word in words]
+                    candidate = " ".join(built)
+                    clash = self._conn.execute(
+                        "SELECT 1 FROM tokens WHERE customer=? AND token=? LIMIT 1",
+                        (self._customer, candidate),
+                    ).fetchone()
+                    if None not in built and candidate != token and not clash:
+                        return candidate, token
         return None
 
     def _extends_known_person(self, canonical: str, value: str,
@@ -4960,6 +5605,26 @@ class Vault:
         candidates = {(other, token) for other, token in rows
                       if 2 <= len([w for w in other.split() if len(w) > 2])
                       and set(w.casefold() for w in other.split() if len(w) > 2) < wanted}
+        if not candidates:
+            # THE SHORTER FORM MAY BE ONE WORD. `name_parts` indexes only
+            # multi-word names, so a lone substitute minted FIRST — «напишите
+            # Битюкова», and only then the whole name — is invisible to the
+            # query above, and the whole minted a second identity (defect C,
+            # C-R2). A lone substitute is the same evidence as a two-word one:
+            # the same conversation, and a strict subset of this name's parts.
+            # The single-candidate rule is unchanged — two lone parts that could
+            # each be the parent refuse, exactly as two two-word owners do,
+            # because then the dialogue cannot say which person it means.
+            lone_rows = self._conn.execute(
+                "SELECT canonical, token FROM tokens WHERE customer=? "
+                "AND entity_type='NAME' AND minted_in=? "
+                f"AND canonical_fold IN ({','.join('?' * len(parts))})",
+                (self._customer, self._conversation,
+                 *[fold_key(part) for part in parts]),
+            ).fetchall()
+            candidates = {(other, token) for other, token in lone_rows
+                          if len(other.split()) == 1 and len(token.split()) == 1
+                          and {other.casefold()} < wanted}
         tokens = {token for _, token in candidates}
         if len(tokens) != 1:
             return None

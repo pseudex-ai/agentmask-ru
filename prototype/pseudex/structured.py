@@ -8,7 +8,7 @@ so the entire value is masked. Offsets are taken straight from the regex match
 
 import re
 
-from pseudex import morph_places
+from pseudex import cvc, morph_places
 from pseudex.assets import ASSETS, CompositeType, StructuredAssets
 from pseudex.detect import PartSpan, Span
 
@@ -52,8 +52,38 @@ def _is_running_text(value: str) -> bool:
 # The key->type map is LEASED (pseudex/assets.py); the shapes below are the
 # structure of JSON and of a form field, not tuned vocabulary.
 # Types whose value is meaningless without digits.
-_NUMERIC_KEY_TYPES = frozenset({"PHONE", "SNILS", "INN", "CARD", "PASSPORT"})
+_NUMERIC_KEY_TYPES = frozenset({"PHONE", "SNILS", "INN", "CARD", "PASSPORT",
+                                # THE TEMPORARY SECRETS. Their digit form IS the
+                                # class — a three-digit CVC and a six-digit OTP
+                                # are the same glyphs — so a value with no digit
+                                # under a field that names one is a mistyping,
+                                # not a value: it is demoted to OPAQUE exactly as
+                                # the five above are, and never passed in the
+                                # clear (RED-5, `MAL-CVC-001`).
+                                *cvc.LABELS})
 _JSON_KV = re.compile(r'"([^"\s][^"]*?)"\s*:\s*"([^"]*?)"')
+# NUMBERS ARE STRING-VALUES TOO, AND THE REGEX ONLY KNEW QUOTES (RED-3).
+# `{"cvc": 314}` is how a customer's own system serialises a short code — a
+# numeric schema field, not a string one — and it matched NOTHING: the key typed
+# nothing, the value reached the model, and the field the customer declared
+# sensitive was the one form the layer could not read. The alternative is
+# INTEGERS ONLY and never a float (`(?![\d.])`), because a decimal is a quantity
+# by construction and no identifier this layer types is fractional.
+#
+# IT IS DELIBERATELY NARROW — THE TEMPORARY SECRETS AND NOTHING ELSE — and the
+# reason is the FLAT-TEXT masking path. Masking works on the string, so a
+# substitute whose shape carries anything a JSON number may not (a plus, a space,
+# a dash) would leave `{"phone": +7916…}` or `{"card": 0162 7271 …}` behind: an
+# object the model cannot parse and the tool never receives. That hazard already
+# exists wherever a BARE recogniser claims the digits (the v5 renderers are
+# unchanged); this pass must not widen it to keyed fields of thirty types whose
+# substitutes were designed for QUOTED values. The two classes here are safe by
+# construction — their substitute is a run of digits with no leading zero
+# (`cvc.mint`) — and they are the class RED-3 is about. Recorded in DELTA.json as
+# the limit of the fix: a general unquoted-numeric reading needs each type's
+# renderer to be notation-safe first.
+_JSON_KV_NUM = re.compile(r'"([^"\s][^"]*?)"\s*:\s*(-?\d+)(?![\d.])')
+_NUMBER_KEY_TYPES = frozenset(cvc.LABELS)
 # A form value ends at a newline, a comma, a semicolon — OR AT THE NEXT KEY.
 # The last clause was missing, and a 1C export puts every pair on ONE line:
 # «Номер телефона для связи: +7 (931) 256 - 07 - 70 Дата доставки: Завтра» typed
@@ -79,6 +109,15 @@ def _key_type(key: str, structured: StructuredAssets) -> str | None:
         if normalized.startswith(stem):
             return entity_type
     return None
+
+
+def key_type(key: str) -> str | None:
+    """The type the LEASED key map names for this field, or None.
+
+    One public door onto `_key_type`, for callers whose own module cannot hold the
+    map (the restoring leg asks the same question the masking leg asked, and two
+    readers of one map is how they stay one answer)."""
+    return _key_type(key, ASSETS.get().structured)
 
 
 def key_edge(key: str, structured: StructuredAssets) -> tuple[str | None, str | None]:
@@ -312,64 +351,130 @@ def _part_span(match: re.Match[str], entity_type: str, whole: str, role: str) ->
     return PartSpan(start, start + len(value), entity_type, value, whole, role)
 
 
-def detect_structured_kv(text: str) -> list[Span]:
-    """Detect PII by typing whole values from their key name."""
+def _raw_value(raw: str, text: str, start: int, end: int, value: str) -> str:
+    """THE CUSTOMER'S OWN CHARACTERS behind a key, when the raw seam is given.
+
+    Layer 0 (`normalize`) is a 1:1 fold, and it rewrites digit LOOK-ALIKES inside
+    any run holding five or more real digits. A UUID is exactly such a run, so
+    `…AE5B…` reaches this module as `…AE58…` and the key path used to store the
+    FOLDED string: the MASK stayed safe (a substitute stood where the value
+    stood) but the vault held a value the customer never wrote, so the round trip
+    handed their tool `…AE58…`. Reading the value back out of the RAW text at the
+    same offsets fixes the key path the way the cue path was already fixed
+    (`ru_pii.detect_structured` runs `detect_telecom` on the raw text).
+
+    Offsets are shared because `normalize` is 1:1 — the same invariant every
+    other raw-text recognizer relies on. An empty or mismatched raw text falls
+    back to the normalized value, which is the previous behaviour exactly, so the
+    seam is inert unless the caller supplies it."""
+    if not raw or len(raw) != len(text):
+        return value
+    surface = raw[start:end]
+    return surface if surface else value
+
+
+def _leaf_span(text: str, raw: str, key: str, matched: str, group_start: int) -> Span | None:
+    """ONE keyed leaf, decided — the ONE reader both KV spellings use.
+
+    `matched` is the value AS WRITTEN in the payload (the group the regex took),
+    `group_start` its offset, and the return is the span or None when this key
+    names nothing / the value is not PII of that class. Pulled out of
+    `detect_structured_kv` the moment a SECOND spelling of a value (an unquoted
+    number) had to be read: two copies of these decisions would have drifted, and
+    the drift would be a value masked in one spelling and passed in the other —
+    the exact failure RED-3 is.
+    """
     structured = ASSETS.get().structured
+    entity_type = _key_type(key, structured)
+    if entity_type is None:
+        return None
+    lead = len(matched) - len(matched.lstrip())
+    value = matched.strip()
+    # A ONE-CHARACTER VALUE IS STILL A VALUE UNDER A FIELD THAT NAMES A SECRET.
+    # The two-character floor below is the engine's ordinary anti-noise gate (a
+    # lone digit is not a phone); for the temporary secrets it would be a hole,
+    # because `{"cvc": "7"}` is a mistyping of a field the customer declared
+    # sensitive and must be masked, not skipped.
+    if not value or (len(value) < 2 and entity_type not in cvc.LABEL_SET):
+        return None
+    if _is_running_text(value):
+        return None
+    # `name` is genuinely ambiguous: in English payloads it usually means
+    # the name OF A THING, and agents pass `{"name": "ideas.txt"}`
+    # constantly. Typing those as NAME rewrote the agent's own file
+    # arguments into Russian personal names and broke tasks that had
+    # nothing to do with PII.
+    #
+    # The gate is deliberately NARROW — a filename or path is the only
+    # thing here that can NEVER be a person, so excluding it costs zero
+    # recall. A wider "must look like a person" gate was tried and is
+    # wrong: it silently stopped masking `{"name": "johnsecret"}`, i.e.
+    # it traded a leak for precision, which is backwards in a fail-closed
+    # gateway. Ambiguous bare words (`test`, `config`) therefore stay
+    # masked — over-masking is the safe side of this trade.
+    if entity_type == "NAME" and _is_filename(value):
+        return None
+    # A NAME VALUE HAS THE SHAPE OF A NAME. «клиенты: сидоров иван из
+    # самары и петрова анна из казани» — the key typed the whole clause
+    # as ONE person: two customers and their cities became a nine-word
+    # substitute, the cities vanished from the model's view, and the
+    # count by city the agent was asked for had nothing to count. A
+    # person is at most four words with no preposition or conjunction
+    # between them; anything wider is prose for the name arms to read.
+    if entity_type == "NAME" and not _name_shaped(value):
+        return None
+    # Key matching is prefix-based, so a compound key can pick up the
+    # wrong stem: `cardholder_name` starts with `card` and was typed
+    # CARD, which replaced a person's NAME with a fake CARD NUMBER — the
+    # model then saw a card number where a name belongs.
+    #
+    # A numeric type whose value carries no digits is always mistyped.
+    # It is NOT dropped, though: the customer put that value in a PII
+    # field, so dropping it would trade a leak for tidiness. It is
+    # demoted to the opaque type instead — still masked, but rendered as
+    # REDACTED… rather than a fake number, and at the lowest overlap
+    # priority so a recognizer that actually understands the value (NER
+    # seeing a person's name) wins the span.
+    if entity_type in _NUMERIC_KEY_TYPES and not any(c.isdigit() for c in value):
+        entity_type = "OPAQUE"
+    # THE SAME RULE, ONE STEP FURTHER, FOR THE TEMPORARY SECRETS (RED-5). A
+    # value under a field that NAMES a card code or an issuer OTP is masked even
+    # when it does not have the class's declared digit form — as OPAQUE, so the
+    # model sees a REDACTED marker rather than a fake of a shape the customer's
+    # own validator would reject, and the value never travels in the clear.
+    # `leaf_shape_ok` is the declared-length reader (`pseudex/cvc.py`), and for
+    # an OTP it asserts NO length at all: any digit run is accepted, exactly as
+    # the class's unasserted length requires.
+    elif entity_type in cvc.LABEL_SET and not cvc.leaf_shape_ok(
+            entity_type, key, value):
+        entity_type = "OPAQUE"
+    start = group_start + lead
+    return Span(start, start + len(value), entity_type,
+                _raw_value(raw, text, start, start + len(value), value))
+
+
+def detect_structured_kv(text: str, raw: str = "") -> list[Span]:
+    """Detect PII by typing whole values from their key name.
+
+    `raw` is the UNNORMALIZED text (offsets are shared — see `_raw_value`); it is
+    what the KEY path reads a value from, so a hex value behind a field key keeps
+    its own characters. The type DECISIONS below (a filename, a name shape, a
+    sentence break, the numeric demotion) are still taken on the normalized
+    `value`: `normalize` folds look-alikes, never letters into filenames or
+    sentence punctuation, and the demotion asks whether a digit is present at all
+    — which the fold cannot remove. Only the string that is STORED and masked
+    moves to the raw reading."""
     json_matches = list(_JSON_KV.finditer(text))
     claimed: set[int] = set()
     spans: list[Span] = _object_spans(text, json_matches, claimed)
-    for regex in (_JSON_KV, _FORM_KV):
+    for regex in (_JSON_KV, _FORM_KV, _JSON_KV_NUM):
         for match in regex.finditer(text):
-            if regex is _JSON_KV and match.start() in claimed:
+            if regex in (_JSON_KV, _JSON_KV_NUM) and match.start() in claimed:
                 continue
-            entity_type = _key_type(match.group(1), structured)
-            if entity_type is None:
+            if regex is _JSON_KV_NUM and key_type(match.group(1)) not in _NUMBER_KEY_TYPES:
                 continue
-            raw = match.group(2)
-            lead = len(raw) - len(raw.lstrip())
-            value = raw.strip()
-            if len(value) < 2:
-                continue
-            if _is_running_text(value):
-                continue
-            # `name` is genuinely ambiguous: in English payloads it usually means
-            # the name OF A THING, and agents pass `{"name": "ideas.txt"}`
-            # constantly. Typing those as NAME rewrote the agent's own file
-            # arguments into Russian personal names and broke tasks that had
-            # nothing to do with PII.
-            #
-            # The gate is deliberately NARROW — a filename or path is the only
-            # thing here that can NEVER be a person, so excluding it costs zero
-            # recall. A wider "must look like a person" gate was tried and is
-            # wrong: it silently stopped masking `{"name": "johnsecret"}`, i.e.
-            # it traded a leak for precision, which is backwards in a fail-closed
-            # gateway. Ambiguous bare words (`test`, `config`) therefore stay
-            # masked — over-masking is the safe side of this trade.
-            if entity_type == "NAME" and _is_filename(value):
-                continue
-            # A NAME VALUE HAS THE SHAPE OF A NAME. «клиенты: сидоров иван из
-            # самары и петрова анна из казани» — the key typed the whole clause
-            # as ONE person: two customers and their cities became a nine-word
-            # substitute, the cities vanished from the model's view, and the
-            # count by city the agent was asked for had nothing to count. A
-            # person is at most four words with no preposition or conjunction
-            # between them; anything wider is prose for the name arms to read.
-            if entity_type == "NAME" and not _name_shaped(value):
-                continue
-            # Key matching is prefix-based, so a compound key can pick up the
-            # wrong stem: `cardholder_name` starts with `card` and was typed
-            # CARD, which replaced a person's NAME with a fake CARD NUMBER — the
-            # model then saw a card number where a name belongs.
-            #
-            # A numeric type whose value carries no digits is always mistyped.
-            # It is NOT dropped, though: the customer put that value in a PII
-            # field, so dropping it would trade a leak for tidiness. It is
-            # demoted to the opaque type instead — still masked, but rendered as
-            # REDACTED… rather than a fake number, and at the lowest overlap
-            # priority so a recognizer that actually understands the value (NER
-            # seeing a person's name) wins the span.
-            if entity_type in _NUMERIC_KEY_TYPES and not any(c.isdigit() for c in value):
-                entity_type = "OPAQUE"
-            start = match.start(2) + lead
-            spans.append(Span(start, start + len(value), entity_type, value))
+            span = _leaf_span(text, raw, match.group(1), match.group(2),
+                              match.start(2))
+            if span is not None:
+                spans.append(span)
     return spans

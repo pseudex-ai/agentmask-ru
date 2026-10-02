@@ -181,6 +181,29 @@ def _guess_inside_person(span: Span, ner: list[Span], text: str) -> bool:
                for other in ner)
 
 
+def _drop_address_inside_multipart_name(spans: list[Span], text: str) -> list[Span]:
+    """Drop an ADDR guess that sits inside a MULTI-PART NAME (S1 defect B).
+
+    A marker-less street guess typed «битюкова» (ADDR) outranks the full person
+    «битюкова зинаида» (NAME) and left the given name «зинаида» in the clear.
+    `_guess_inside_person` only drops an ADDR inside a name the NER found; the
+    gazetteer name below is produced later and the NER misses the lower-case
+    full name, so the ADDR won on priority. A single-word street («Пушкина»
+    without a given) stays ADDR — the NAME here has at least two parts, so the
+    whole person outranks the partial street guess.
+    """
+    full_names = [s for s in spans
+                  if s.entity_type == "NAME"
+                  and len(text[s.start:s.end].split()) >= 2]
+    if not full_names:
+        return spans
+    return [s for s in spans
+            if not (s.entity_type == "ADDR"
+                    and any(n.start <= s.start and s.end <= n.end
+                            and not (n.start == s.start and n.end == s.end)
+                            for n in full_names))]
+
+
 class Detector:
     """Holds the Natasha NER model (external model -> class is appropriate)."""
 
@@ -229,7 +252,15 @@ class Detector:
             with stage("detect.regex"):
                 spans = detect_pii(norm)
             with stage("detect.structured_id"):
-                spans += detect_structured(norm)
+                # `text` (the RAW text) is passed through, and it is KEPT by the
+                # Lead's integration review: it is the only reading of a HEX value
+                # behind a cue (a UUID's `B`, a ЕЛС series' `В`), and the raw
+                # reading supersedes the folded one inside `detect_structured`.
+                # Reverting this one argument degrades the telecom and utility
+                # families to the NORMALIZED reading — a wrong value restored to
+                # the customer's tool, never a leak — which is why it is kept;
+                # `detect_structured(text, raw="")` stays callable without it.
+                spans += detect_structured(norm, text)
                 # DICTATED ALOUD, so no digit exists for the arms above to find.
                 # Measured on a corpus built from real transcripts: 281
                 # identifiers spoken as words, and every recognizer here missed
@@ -299,7 +330,14 @@ class Detector:
                 # Russian word was masked. Extending the cue list would have
                 # fixed one key and left the next one to be discovered the same
                 # way; the provenance is the real answer.
-                kv_spans = detect_structured_kv(norm)
+                #
+                # `text` (the RAW text) is the second argument, and it is what the
+                # KEY path reads a VALUE from: `normalize()` folds digit
+                # look-alikes inside any run of five or more real digits, so a
+                # UUID behind its field key arrived as `…AE58…` and the round trip
+                # gave the customer's tool a value they never wrote. Offsets are
+                # shared because the fold is 1:1; the masks are unchanged.
+                kv_spans = detect_structured_kv(norm, text)
             with stage("detect.quasi"):           # quasi: DOB/age/medical
                 spans += detect_quasi(norm)
             # Suppress denied phones BEFORE resolving, else a phone that wins the
@@ -319,7 +357,10 @@ class Detector:
                 # either way. Dropping it earlier could leave the text with
                 # nothing at all — a leak bought for a notation.
                 resolved = _resolve(
-                    _boundary_beats_checksum(suppress(text, spans), text) + kv_spans,
+                    _boundary_beats_checksum(
+                        suppress(text,
+                                 _drop_address_inside_multipart_name(spans, text)),
+                        text) + kv_spans,
                     ASSETS.get().priority, text, keyed=kv_spans)
             # A NAME LEAVES WITH THE CASES ITS SENTENCE ALLOWS (`NameSpan`): the
             # vault reads the phrase alone, and «на имя марину» alone is a man.
