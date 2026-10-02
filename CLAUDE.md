@@ -1402,6 +1402,7 @@ Run from `prototype/`; each loads the dev bundle itself.
 | `test_pii_v6.py` | N1 — the v6 registry families the engine supports natively (checksum, identity, legal, finance, telecom): RECOGNIZE / MINT / RESTORE per type, with format-preserving substitutes that INHERIT the source's checksum validity (COV-CHECKSUM-INHERIT) |
 | `test_r1_seed20_f4.py` | R1 — seed20 (D1-N F1) + street-adjacency veto (D1-N F4) on the leased NAME path: twenty lower-case diminutives as seed entries, a street word vetoes the lower-case NAME branch; runs the real detector and prints the two fixed denominators |
 | `test_v6_gaps.py` | G7 follow-up — the two v6 detection gaps (type-label alignment and six real 0%-coverage gaps), each positive with four controls (own register, negative, no fuzzy numerals, typed over bare) |
+| `test_identity_invariant.py` | D-081 — the PIN test: the eight `bench/identity_invariant.py` groups as asserts (NAME case/order collapse, NAME differ control, NAME patronymic collapse, LOC form/dictation/flat/entrance collapse, PHONE notation) plus the key/trap controls (lone-surname gender, to_nominative single-guard) |
 
 Not in `prototype/`: `licensing/test_*.py` (§2), `storefront/test_*.py` (§6),
 `e2e/` gates (§5).
