@@ -84,6 +84,46 @@ V6_TYPES: tuple[str, ...] = (
     "EPTS_NUMBER", "UIN", "IMEI", "ICCID", "LOYALTY_CARD_NUMBER",
 )
 
+# --- the registry id <-> engine label bridge (G7, 02.10.2026) -----------------
+#
+# THE SPAN CARRIES THE REGISTRY ID; THE VAULT SPEAKS THE ENGINE LABEL. Six v6
+# records declare an `engine_labels` entry in `pii_types.py` — the v5-internal
+# label the engine emitted for them — and for two more the engine itself had
+# merged two records under one label (`VEHICLE_DOC` is ПТС and СТС). The G7
+# sweep measured what that cost: the value was masked, the TYPE was not, and the
+# benchmark's `typed` axis scored the span as a miss (EPTS_NUMBER 0/37,
+# OGRNIP 0/36, OMS_ENP 0/34, LOYALTY_CARD_NUMBER 0/34, PTS_NUMBER 0/35,
+# STS_NUMBER 0/35, BANK_ACCOUNT 0/35 — each with coverage 94–100%).
+#
+# SO DETECTION NOW EMITS THE REGISTRY ID and this table hands the engine label
+# back at the ONE boundary that needs it: the vault, which keys rows, mint
+# branches, signature indices and `_PRIORITY` on that vocabulary. `engine_label`
+# is total (an unmapped label is returned unchanged), so every other v6 family —
+# whose label already IS its type id — passes through untouched.
+#
+# WHY NOT RENAME EVERYTHING: the engine label is not a leftover. The vault's
+# `canonicalize`, `_render_token` and the identity/legal/finance signature
+# functions branch on it, the persisted rows are keyed through it, and the v5
+# conversations that already hold `VEHICLE_DOC` rows must keep resolving to the
+# same substitutes. One translation function keeps the label change a LABEL
+# change.
+ENGINE_LABEL: dict[str, str] = {
+    "BANK_ACCOUNT": "ACCOUNT",
+    "OGRNIP": "OGRN",
+    "OMS_ENP": "OMS",
+    "EPTS_NUMBER": "EPTS",
+    "LOYALTY_CARD_NUMBER": "LOYALTY",
+    "IP_ADDRESS": "IP",
+    "PTS_NUMBER": "VEHICLE_DOC",
+    "STS_NUMBER": "VEHICLE_DOC",
+}
+
+
+def engine_label(entity_type: str) -> str:
+    """The engine's own label for a span type — total, and the identity on every
+    label the two vocabularies already share."""
+    return ENGINE_LABEL.get(entity_type, entity_type)
+
 # The country codes the registry's IBAN card names for this market. A bare
 # IBAN is anchored on this closed list — that is a SOURCE fact (the card's own
 # grammar), not a bare-value guess, which is why it may stand without a cue
@@ -396,10 +436,82 @@ _LOAN_UID_DASHED = re.compile(
     r"-[0-9a-fA-F]{12}-[0-9a-fA-F])(?![0-9A-Za-z])")
 _LOAN_UID_GLUED = re.compile(r"(?<![0-9A-Za-z])([0-9a-fA-F]{33})(?![0-9A-Za-z])")
 
+# THE ONE BARE VALUE WHOSE ANCHOR IS THE CHECKSUM ITSELF RATHER THAN A CLOSED
+# SOURCE LIST, and it is admitted here on the registry's own word: IMEI's
+# `generated_checksum` is `luhn`, and G7 measured 0/34 for it with 0% coverage —
+# the corpus writes «вот номер 404552178070951», a bare fifteen-digit IMEI whose
+# only cue is the generic «номер». `bare_typed=False` on the record forbids
+# letting a bare run stand WITHOUT evidence; a Luhn check digit on a
+# token-bounded fifteen-digit run IS evidence, and it is the same class of
+# evidence a bare IBAN's country registry gives (1 false positive in 10 random
+# fifteen-digit runs, against the narrowest non-cue shape in the family).
+# THE CHECK DIGIT ALONE TURNED OUT TO BE NECESSARY AND NOT SUFFICIENT — see the
+# context gate immediately below, which is the rule that now stands.
+_IMEI_BARE = re.compile(r"(?<!\d)(\d{15})(?!\d)")
+
+# THE CONTEXT GATE, ADDED BY THE CI FIX OF 02.10.2026, AND IT IS A NARROWING.
+# The first version of the bare IMEI admitted EVERY uncued, token-bounded,
+# Luhn-valid fifteen-digit run, and `test_hard_cases.py` caught what that means:
+# «заказ 401234567890124» — an ORDINARY order number that happens to divide by
+# ten the same way a card does — was typed IMEI. That contradicts the record's
+# own `bare_typed=False`, and the property the test pins is older than this
+# family: a 13..19-digit run with no cue is not a card to this engine, however
+# valid its checksum, and a fifteen-digit run is not an IMEI for the same reason.
+#
+# SO THE CHECK DIGIT IS NECESSARY AND NOT SUFFICIENT: the run must ALSO be named
+# by a word. The word is the GENERIC NUMBER WORD — «номер», the only cue the
+# corpus writes for this type, and the one the registry's own sample sentence
+# carries («вот номер …»). It is deliberately NOT the IMEI cue list
+# (`IMEI`/`имей`), which the LEASED `CTX_TYPES` already types through the cue
+# path: this gate exists for the sentence where the ONLY evidence is that a
+# number is being named.
+#
+# THE PRICE IS MEASURED AND RECORDED. Of the 34 corpus IMEI gold spans, 27 carry
+# «вот номер» (and its one-edit damage «номр»/«ноер»/«номре»); the seven that
+# carry only «проверьте вот это» no longer reach the model as IMEIs — they are
+# ordinary-looking fifteen-digit runs with no word naming them, which is exactly
+# what `bare_typed=False` says to leave alone. The sweep's honest v6 recall moves
+# 90.5% -> the number in GATE.json; the IMEI type itself 34/34 -> 27/34.
+_IMEI_BARE_CUES: tuple[str, ...] = ("номер",)
+
+
+def _number_word_before(text: str, start: int) -> bool:
+    """A WORD names this number, or the bare IMEI does not stand.
+
+    THE TYPO RULE HAS ONE HOME. «номр», «ноер» and «номре» are one edit from
+    «номер» — the same damage the existing cue tables already forgive for
+    «паспрот» and «сннилс» — so the test is `ru_pii._damaged_cue_before`,
+    IMPORTED rather than copied: a second copy of the rule is a second value
+    that has to stay equal to the first, which is the drift `test_v6_gaps` pins
+    against for the card cue. The import is LOCAL for the same reason `ru_pii`'s
+    own is: the two modules read each other at call time, never at import time.
+    """
+    from pseudex.ru_pii import _damaged_cue_before  # local: ru_pii imports this module
+    return _damaged_cue_before(text, start, _IMEI_BARE_CUES)
+
+
+# EVIDENCE BEATS A GUESS, AND THE CARD CUE IS EVIDENCE. A fifteen-digit run that
+# passes Luhn is a CARD as readily as an IMEI — it is the same algorithm — and
+# `ru_pii._CARD_CUE_RE` types it CARD behind «карта». That span is NOT `typed`,
+# while the bare IMEI below IS (it comes out of `detect_checksum_anchored`), and
+# `detect_structured` drops every non-typed span that sits inside a typed one:
+# the bare guess DELETED the cued reading. `test_hard_cases.py` caught it
+# («a 15-digit card named by its cue is masked whole» came back typed IMEI), and
+# the fix is the rule the whole engine follows — a type named by its own cue
+# outranks a shape that merely could be it. The cue literal is `ru_pii._CARD_CUE`
+# VERBATIM; `test_v6_gaps` pins the two strings equal so they cannot drift.
+_IMEI_CARD_CUE = (
+    r"(?i:\bкарт(?:а|ы|е|у|ой|ою|ам|ами|ах)?\b(?!-[а-яё])"
+    r"|\bкарточ\w*|\bcard\b)")
+_IMEI_CARD_CUE_BEFORE = re.compile(_IMEI_CARD_CUE + r"\D{0,16}$")
+
 
 def detect_checksum_anchored(text: str) -> list[Span]:
     """Bare-valued positives whose anchor is a closed source list: IBAN and
-    LOAN_UID. Everything else needs a cue or a field key (`bare_typed=False`)."""
+    LOAN_UID — plus the bare IMEI, whose anchor is its Luhn check digit AND a
+    number word in front of it (see `_IMEI_BARE` and `_IMEI_BARE_CUES`; the
+    check digit alone is not enough, or an uncued order number would be typed).
+    Everything else needs a cue or a field key (`bare_typed=False`)."""
     spans: list[Span] = []
     seen: set[tuple[int, int]] = set()
     for pattern, kind in ((_IBAN_GLUED, "IBAN"), (_IBAN_SPACED, "IBAN"),
@@ -417,6 +529,31 @@ def detect_checksum_anchored(text: str) -> list[Span]:
                 continue
             seen.add((match.start(1), match.end(1)))
             spans.append(Span(match.start(1), match.end(1), kind, value))
+    # THE BARE FIFTEEN-DIGIT IMEI. A run that fails its own Luhn is not a
+    # mistyped IMEI, it is a different number (the rule `spoken.py` states for
+    # every checksum: no fuzzy numerals), so a corrupt value yields NO span here
+    # and only the cue path can still type it — which is exactly what
+    # `test_pii_v6.test_bare_checksum_anchor` and `test_no_fuzzy_numerals` pin.
+    # A value that is ALSO a valid ОГРНИП keeps both readings and `_PRIORITY`
+    # (OGRNIP 7 > IMEI 5) hands the span to the ОГРНИП, which is the record
+    # whose fifteen digits carry a second, independent check.
+    for match in _IMEI_BARE.finditer(text):
+        value = match.group(1)
+        if not validate_imei(value):
+            continue
+        # A WORD NAMES THIS NUMBER, OR IT IS NOT AN IMEI. See `_IMEI_BARE_CUES`:
+        # the check digit is necessary and not sufficient, and an uncued run is
+        # the order number `test_hard_cases.py` pins as untouched.
+        if not _number_word_before(text, match.start(1)):
+            continue
+        # A CARD CUE NAMED THIS RUN, SO IT IS A CARD. See `_IMEI_CARD_CUE_BEFORE`:
+        # the bare reading is a guess and must not displace the cued one.
+        if _IMEI_CARD_CUE_BEFORE.search(text[:match.start(1)]):
+            continue
+        if (match.start(1), match.end(1)) in seen:
+            continue
+        seen.add((match.start(1), match.end(1)))
+        spans.append(Span(match.start(1), match.end(1), "IMEI", value))
     return spans
 
 
@@ -728,7 +865,12 @@ LABEL_IDENTITY_TYPES: dict[str, tuple[str, ...]] = {
     for label in dict.fromkeys(IDENTITY_LABEL.values())
 }
 
-IDENTITY_LABELS: frozenset[str] = frozenset(IDENTITY_LABEL.values())
+IDENTITY_LABELS: frozenset[str] = frozenset(IDENTITY_LABEL.values()) | frozenset(
+    # THE SPAN'S SPELLING OF THE TWO VEHICLE DOCUMENTS. The label set is asked of
+    # DETECTION spans (`redact`, `ru_pii`) as well as of the vault's rows, so it
+    # must hold both the registry ids a span now carries and the engine label the
+    # vault stores — one set, two vocabularies, and `engine_label` is the bridge.
+    ("PTS_NUMBER", "STS_NUMBER"))
 
 # `grammar_status == "ГРАММАТИКА?"` in the registry — the ORDER MINISTRY
 # documents the composition of the series were not obtained (Приказ Минюста 167),
@@ -794,6 +936,12 @@ def identity_signature(value: str, label: str) -> str:
     squeezed = _IDENTITY_SEPARATORS.sub("", value).upper()
     if not squeezed:
         return ""
+    # THE SPAN CARRIES THE REGISTRY ID, THE KEY CARRIES THE ENGINE LABEL. A ПТС
+    # and a СТС are ONE identity key space (the label covers both, the shape tells
+    # them apart) and every row minted before G7 was keyed `VEHICLE_DOC` — so the
+    # translation is what keeps the old rows resolving to the same substitute
+    # instead of forking each document into two identities.
+    label = engine_label(label)
     if label in IDENTITY_FOLD_LABELS:
         squeezed = squeezed.translate(_VIN_GLYPH_FOLD)
     return f"{label}\x1f{squeezed}"
@@ -885,6 +1033,10 @@ def mint_identity(label: str, original: str) -> str:
     An empty or content-free source falls back to the registry's own sample
     layout, so the mint is total — a renderer that raises is a 5xx on the masking
     path, which is the one failure this product does not accept."""
+    # `PTS_NUMBER`/`STS_NUMBER` are ONE mint branch (`VEHICLE_DOC`): the source's
+    # own characters decide whether the fake carries letters (ПТС) or only digits
+    # (СТС), exactly as `identity_label_of_shape` decides it on the restore leg.
+    label = engine_label(label)
     surface = original.strip()
     if not surface or not any(ch.isalnum() for ch in surface):
         sample = {
@@ -1058,11 +1210,23 @@ _LEGAL_SHAPE_TEXT: dict[str, str] = {
         r"|" + _A + r"\d{2}-\d{1,7}/\d{4}"
         r"|\d{2}" + _A + _P + r"-\d{1,7}/\d{4}"
         r"|" + _F + r"\d{2}-\d{1,7}/\d{4}"
-        r"|" + _S + r"01-\d{1,7}/\d{4})",
-    "COURT_CASE_NO_SOU": r"(?:\d{1,2}[а-я]?|[МM])-\d{1,6}/\d{4}",
+        r"|" + _S + r"01-\d{1,7}/\d{4}"
+        # THE SQUEEZED SPELLING (G7 follow-up, 02.10.2026). The lease claims it
+        # and the module must read the same register, or the cue path would
+        # detect a value the mint then re-shapes from the SAMPLE: «А11-14094/
+        # 2024» arrives as «A11140942024», and the two readings of one number
+        # have to agree on its shape.
+        r"|(?<![0-9A-Za-zА-Яа-яЁё])" + _A + r"\d{7,13}(?![0-9A-Za-zА-Яа-яЁё]))",
+    "COURT_CASE_NO_SOU":
+        r"(?:(?:\d{1,2}[а-я]?|[МM])-\d{1,6}/\d{4}"
+        # THE SQUEEZED SPELLING (G7 follow-up): 1–2 + 1–6 + 4 digits glued.
+        r"|(?<!\d)\d{6,12}(?!\d))",
     "FSSP_IP_NO": r"\d{1,7}/\d{2}/\d{5}-(?:ИП|СД)|\d{1,7}/\d{2}/\d{2}/\d{2}",
     "EXEC_DOC_NO": r"[А-ЯЁA-Z]{2}\s?№?\s?\d{9}",
-    "CADASTRAL_NUMBER": r"\d{2}[ .\-/:]\d{2}[ .\-/:]\d{6,7}[ .\-/:]\d{1,10}",
+    "CADASTRAL_NUMBER":
+        r"(?:\d{2}[ .\-/:]\d{2}[ .\-/:]\d{6,7}[ .\-/:]\d{1,10}"
+        # THE SQUEEZED SPELLING (G7 follow-up): 2 + 2 + 6..7 + 1..5 digits glued.
+        r"|(?<!\d)\d{11,16}(?!\d))",
 }
 
 LEGAL_SHAPES: dict[str, "re.Pattern[str]"] = {
@@ -1809,7 +1973,13 @@ TELECOM_LABEL: dict[str, str] = {
 }
 
 TELECOM_TYPES: tuple[str, ...] = tuple(TELECOM_LABEL)
-TELECOM_LABELS: frozenset[str] = frozenset(TELECOM_LABEL.values())
+TELECOM_LABELS: frozenset[str] = frozenset(TELECOM_LABEL.values()) | frozenset(
+    # THE SPAN'S SPELLING OF THE ADDRESS. `_IPV4_RE` (the v5 bare recognizer)
+    # still emits `IP`, the v6 cue path emits `IP_ADDRESS`, and every consumer of
+    # this set — `redact`'s notation branch, `ru_pii`'s supersede filter, the
+    # vault's own family branch — must answer for BOTH or one of the two readings
+    # of one address would silently lose its renderer.
+    ("IP_ADDRESS",))
 
 # ENGINE LABEL -> REGISTRY TYPE ID. The vault stores and hands back the ENGINE
 # label (`IP` for IP_ADDRESS), so `mint_telecom` must accept it and the restorer
@@ -2006,12 +2176,18 @@ _TC_MAC_PAIRS = (r"(?<!" + _TC_HEX_B + r")"
 _TC_MAC_DOTTED = (r"(?<!" + _TC_HEX_B + r")"
                   + _TC_HEX + r"{4}\." + _TC_HEX + r"{4}\." + _TC_HEX + r"{4}"
                   + r"(?!" + _TC_HEX_B + r")")
-# THE SOLID 12-HEX FORM IS DELIBERATELY NOT CLAIMED, and the registry itself is
-# why: its grammar lists «голый 12-hex», and a bare 12-hex run is ALSO a 12-digit
-# order number, an IMEI prefix and — worst of the three — a PREFIX of the 32-hex
-# UUID that MOBILE_AD_ID's squeezed form already claims. The v5 recognizer never
-# claimed it either; NOT_IMPLEMENTED records the cost.
-_TC_MAC = r"(?:" + _TC_MAC_PAIRS + r"|" + _TC_MAC_DOTTED + r")"
+# THE SOLID 12-HEX FORM IS CLAIMED SINCE G7 (02.10.2026). The old note said a
+# bare 12-hex run is «ALSO a 12-digit order number, an IMEI prefix and — worst —
+# a PREFIX of the 32-hex UUID», and that reasoning cost 35/35 spans: the corpus
+# writes «mac FCF3C2CFA5AC» and the type scored 0% coverage. The risk the note
+# named is answered by the BOUNDARIES rather than by the omission — `_TC_HEX_B`
+# on both sides refuses a 12-hex run standing inside a longer hex token, so the
+# UUID prefix cannot match — and a cue is still required (`bare_typed=False`).
+# The lease (`assets_source.CTX_TYPES`) carries the same third alternative; the
+# two readings are pinned together by this module's own token patterns.
+_TC_MAC_SOLID = (r"(?<!" + _TC_HEX_B + r")" + _TC_HEX + r"{12}"
+                 + r"(?!" + _TC_HEX_B + r")")
+_TC_MAC = r"(?:" + _TC_MAC_PAIRS + r"|" + _TC_MAC_DOTTED + r"|" + _TC_MAC_SOLID + r")"
 
 # IPv4: four octets 0–255. The class is the octet alternation the v5 recognizer
 # already uses, so the two readings of an address cannot disagree.
@@ -2497,6 +2673,12 @@ TELECOM_TOKEN_PATTERNS: tuple[str, ...] = (
     _TC_UUID_GROUPED,      # GAID / IFV / GAID-shaped app id, grouped
     _TC_MAC_PAIRS,         # MAC, 2-2-2-2-2-2
     _TC_MAC_DOTTED,        # MAC, Cisco 4-4-4
+    # MAC, the SOLID 12-hex form (G7). A substitute must be a spelling the
+    # restorer can scan or the tool receives a FAKE with a 200: without this
+    # entry `TELECOM_TOKEN_RE.fullmatch` refused the solid fake and `_mint_like`
+    # fell back to the colon SAMPLE, so a customer who wrote «FCF3C2CFA5AC» got
+    # «B0:E3:38:C9:5D:CF» back — a notation the source never used.
+    _TC_MAC_SOLID,
     _TC_UUID_SQUEEZED,     # the same UUID with its separators stripped
     _TC_IPV6,              # IPv6, colon notation (incl. the IPv4-mapped tail)
     _TC_IPV4,              # IPv4
@@ -2832,12 +3014,17 @@ _UT_TAB = (r"(?<!\d)(?:\d{4}[ \t\-/]\d{5,6}|\d{6,10})(?!\d)")
 # EMPLOYMENT_CONTRACT_NUMBER — «свободная ("145-ТД", "ТД-2024/017")». A free-form
 # number is read as LETTERS AND DIGITS held together by `-` or `/`, with the
 # letter group one to three characters: that is what the registry's two samples
-# are, and it is narrow enough to refuse a sentence. A GLUED «ТД2024» is
-# deliberately not claimed (no registry sample is glued) — TYPES.md records it.
+# are, and it is narrow enough to refuse a sentence. THE GLUED FORM IS CLAIMED
+# TOO: G7 measured the corpus writing «TД202569917», the squeeze+glyph-fold of
+# «ТД-2025/69917», and 0 of 35 spans were found while this shape refused it. The
+# lease's entry (`assets_source.CTX_TYPES`) carries the SAME third alternative —
+# `test_pii_v6.the_leased_shapes_and_the_module_shapes_agree` is what keeps the
+# two readings from drifting, and it is why this edit is not optional.
 _UT_CONTRACT = (
     r"(?<![0-9A-Za-zА-Яа-яЁё])"
     r"(?:\d{1,6}[-/][А-ЯЁA-Zа-яё]{1,3}(?:[-/]\d{1,6})*"
-    r"|[А-ЯЁA-Zа-яё]{1,3}[-/]\d{1,6}(?:[-/]\d{1,6})*)"
+    r"|[А-ЯЁA-Zа-яё]{1,3}[-/]\d{1,6}(?:[-/]\d{1,6})*"
+    r"|[А-ЯЁA-Zа-яё]{1,3}\d{4,12})"
     r"(?![0-9A-Za-zА-Яа-яЁё])")
 
 # PNR — `ГРАММАТИКА?`: «5–6 алфавитно-цифровых (GDS); локаторы "Сирены" могут

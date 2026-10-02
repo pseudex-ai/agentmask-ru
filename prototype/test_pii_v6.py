@@ -180,13 +180,19 @@ def test_typed_invalid_path() -> None:
     detector = Detector()
     problems: list[str] = []
     for cue, type_id, value, label in (
-            ("полис ОМС ", "OMS_ENP", VALID["OMS_ENP"], "OMS"),
+            # THE LABEL IS THE REGISTRY ID (G7, 02.10.2026). The span used to
+            # carry the engine's internal alias (`OMS`, `OGRN`, `EPTS`,
+            # `LOYALTY`) and the benchmark's `typed` axis read the record id;
+            # `ru_pii_v6.engine_label` translates back for the vault, so the
+            # masking, the mint and the restore are unchanged and only the span's
+            # name moved.
+            ("полис ОМС ", "OMS_ENP", VALID["OMS_ENP"], "OMS_ENP"),
             ("УИН ", "UIN", VALID["UIN"], "UIN"),
             ("IMEI ", "IMEI", VALID["IMEI"], "IMEI"),
-            ("ОГРНИП ", "OGRNIP", VALID["OGRNIP"], "OGRN"),
-            ("номер ЭПТС ", "EPTS_NUMBER", VALID["EPTS_NUMBER"], "EPTS"),
+            ("ОГРНИП ", "OGRNIP", VALID["OGRNIP"], "OGRNIP"),
+            ("номер ЭПТС ", "EPTS_NUMBER", VALID["EPTS_NUMBER"], "EPTS_NUMBER"),
             ("карта лояльности ", "LOYALTY_CARD_NUMBER",
-             VALID["LOYALTY_CARD_NUMBER"], "LOYALTY"),
+             VALID["LOYALTY_CARD_NUMBER"], "LOYALTY_CARD_NUMBER"),
             ("ICCID ", "ICCID", VALID["ICCID"], "ICCID"),
     ):
         broken = _corrupt_last(value)
@@ -204,10 +210,13 @@ def test_typed_invalid_path() -> None:
 # --------------------------------------------------------------- recognize
 
 CUE_TEXTS: list[tuple[str, str, str, str]] = [
-    # (type_id, label, text, value that must be typed)
-    ("BANK_ACCOUNT", "ACCOUNT", "расчётный счёт 40817810899910004312",
+    # (type_id, label, text, value that must be typed). THE LABEL COLUMN IS THE
+    # SPAN'S LABEL AND SINCE G7 IT IS THE REGISTRY ID for the eight aligned
+    # records (`engine_labels` named the old alias); the two columns are kept so
+    # a reader can see the pair rather than infer it.
+    ("BANK_ACCOUNT", "BANK_ACCOUNT", "расчётный счёт 40817810899910004312",
      "40817810899910004312"),
-    ("BANK_ACCOUNT", "ACCOUNT", "{\"account\": \"40817810099910004312\"}",
+    ("BANK_ACCOUNT", "BANK_ACCOUNT", "{\"account\": \"40817810099910004312\"}",
      "40817810099910004312"),
     ("IBAN", "IBAN", "IBAN RU9404980574640602810700000000025",
      "RU9404980574640602810700000000025"),
@@ -218,22 +227,22 @@ CUE_TEXTS: list[tuple[str, str, str, str]] = [
     ("LOAN_UID", "LOAN_UID",
      "{\"loan_uid\": \"a13043b0-26c4-8bbf-33fe-ff9243a8f506-0\"}",
      "a13043b0-26c4-8bbf-33fe-ff9243a8f506-0"),
-    ("OMS_ENP", "OMS", "полис ОМС 6613186091390990", "6613186091390990"),
-    ("OMS_ENP", "OMS", "{\"enp\": \"6613186091390990\"}", "6613186091390990"),
+    ("OMS_ENP", "OMS_ENP", "полис ОМС 6613186091390990", "6613186091390990"),
+    ("OMS_ENP", "OMS_ENP", "{\"enp\": \"6613186091390990\"}", "6613186091390990"),
     ("IMEI", "IMEI", "IMEI 526018159083010", "526018159083010"),
     ("IMEI", "IMEI", "{\"imei\": \"526018159083010\"}", "526018159083010"),
     ("ICCID", "ICCID", "ICCID 6030824628194821990", "6030824628194821990"),
     ("ICCID", "ICCID", "{\"iccid\": \"6030824628194821990\"}",
      "6030824628194821990"),
-    ("EPTS_NUMBER", "EPTS", "номер ЭПТС 287702287921741", "287702287921741"),
-    ("EPTS_NUMBER", "EPTS", "{\"epts\": \"287702287921741\"}", "287702287921741"),
-    ("OGRNIP", "OGRN", "ОГРНИП 231948757491188", "231948757491188"),
+    ("EPTS_NUMBER", "EPTS_NUMBER", "номер ЭПТС 287702287921741", "287702287921741"),
+    ("EPTS_NUMBER", "EPTS_NUMBER", "{\"epts\": \"287702287921741\"}", "287702287921741"),
+    ("OGRNIP", "OGRNIP", "ОГРНИП 231948757491188", "231948757491188"),
     ("UIN", "UIN", "УИН 79711471049746507524", "79711471049746507524"),
     ("UIN", "UIN", "{\"uin\": \"9170342366712768426846565\"}",
      "9170342366712768426846565"),
-    ("LOYALTY_CARD_NUMBER", "LOYALTY",
+    ("LOYALTY_CARD_NUMBER", "LOYALTY_CARD_NUMBER",
      "карта лояльности 852808414852538885", "852808414852538885"),
-    ("LOYALTY_CARD_NUMBER", "LOYALTY",
+    ("LOYALTY_CARD_NUMBER", "LOYALTY_CARD_NUMBER",
      "{\"loyalty_card\": \"5393363387501\"}", "5393363387501"),
     # «VIN» alone is tagged a person by the NER (three capitals), so the cue
     # used here is the Russian one the registry also names.
@@ -243,14 +252,14 @@ CUE_TEXTS: list[tuple[str, str, str, str]] = [
 # THE PRINTED GROUPINGS ARE PART OF THE GRAMMAR, not decoration: the registry
 # card names «слитно, 4×4» for ОМС and «4×5» for an account, and a shape that
 # demands the glued form is the shape the customer who copies off their own
-# document does not have.
+# document does not have. The label is the registry id (G7).
 GROUPED_TEXTS: list[tuple[str, str, str]] = [
-    ("OMS", "полис ОМС 6613 1860 9139 0990", "6613 1860 9139 0990"),
-    ("ACCOUNT", "расчётный счёт 4081 7810 8999 1000 4312",
+    ("OMS_ENP", "полис ОМС 6613 1860 9139 0990", "6613 1860 9139 0990"),
+    ("BANK_ACCOUNT", "расчётный счёт 4081 7810 8999 1000 4312",
      "4081 7810 8999 1000 4312"),
-    ("OGRN", "ОГРНИП 231 948 757 491 188", "231 948 757 491 188"),
+    ("OGRNIP", "ОГРНИП 231 948 757 491 188", "231 948 757 491 188"),
     ("ICCID", "ICCID 6030 8246 2819 4821 990", "6030 8246 2819 4821 990"),
-    ("LOYALTY", "карта лояльности 8528 0841 4852 5388 85",
+    ("LOYALTY_CARD_NUMBER", "карта лояльности 8528 0841 4852 5388 85",
      "8528 0841 4852 5388 85"),
 ]
 
@@ -667,13 +676,13 @@ IDENTITY_CASED: list[tuple[str, str, str, str]] = [
      "99 12 345678"),
     ("DRIVER_LICENSE", "DRIVER_LICENSE",
      '{"driver_license": "99 12 345678"}', "99 12 345678"),
-    ("PTS_NUMBER", "VEHICLE_DOC", "ПТС 77 УК 123456", "77 УК 123456"),
-    ("PTS_NUMBER", "VEHICLE_DOC", "паспорт транспортного средства 77-УК-123456",
+    ("PTS_NUMBER", "PTS_NUMBER", "ПТС 77 УК 123456", "77 УК 123456"),
+    ("PTS_NUMBER", "PTS_NUMBER", "паспорт транспортного средства 77-УК-123456",
      "77-УК-123456"),
-    ("PTS_NUMBER", "VEHICLE_DOC", '{"pts_number": "77УК123456"}', "77УК123456"),
-    ("STS_NUMBER", "VEHICLE_DOC", "СТС 77 12 345678", "77 12 345678"),
-    ("STS_NUMBER", "VEHICLE_DOC", "СТС 77-12-345678", "77-12-345678"),
-    ("STS_NUMBER", "VEHICLE_DOC", '{"sts_number": "7712 345678"}',
+    ("PTS_NUMBER", "PTS_NUMBER", '{"pts_number": "77УК123456"}', "77УК123456"),
+    ("STS_NUMBER", "STS_NUMBER", "СТС 77 12 345678", "77 12 345678"),
+    ("STS_NUMBER", "STS_NUMBER", "СТС 77-12-345678", "77-12-345678"),
+    ("STS_NUMBER", "STS_NUMBER", '{"sts_number": "7712 345678"}',
      "7712 345678"),
 ]
 
@@ -749,11 +758,11 @@ def test_identity_typed_invalid_no_gate() -> None:
     validator that would send it to the model in the clear."""
     detector = Detector()
     negatives = [
-        ("СТС 00 00 000000", "VEHICLE_DOC"),
+        ("СТС 00 00 000000", "STS_NUMBER"),
         ("ВНЖ 82 0000000", "RESIDENCE_PERMIT"),
         ("военный билет ХХ № 0000000", "MILITARY_ID"),
         ("свидетельство о браке I-АА № 000000", "BIRTH_CERT"),
-        ("ПТС 00 ХХ 000000", "VEHICLE_DOC"),
+        ("ПТС 00 ХХ 000000", "PTS_NUMBER"),
     ]
     problems = [text for text, label in negatives
                 if not any(span.entity_type == label for span in detector.detect(text))]
@@ -2251,10 +2260,12 @@ def test_finance_policy_key_overlap_is_recorded() -> None:
     detector = Detector()
     problems: list[str] = []
     vault = _vault()
-    # The shared field key keeps its v5 meaning.
+    # The shared field key keeps its v5 meaning — which since G7 is the registry
+    # id `OMS_ENP` on the span, while the vault's row still carries `OMS`
+    # (`ru_pii_v6.engine_label`). The label MOVED; the meaning did not.
     payload = '{"policy_number": "6613186091390990"}'
     spans = detector.detect(payload)
-    if not any(s.entity_type == "OMS" for s in spans):
+    if not any(s.entity_type == "OMS_ENP" for s in spans):
         problems.append(f"the shared `policy_number` key no longer types ОМС "
                         f"({_types_found(detector, payload)})")
     if any(s.entity_type in v6.FINANCE_LABELS for s in spans):
@@ -2308,14 +2319,14 @@ TELECOM_CASED: list[tuple[str, str, str, str, str]] = [
      "00-1A-2B-3C-4D-5E", "cue"),
     ("MAC", "MAC", '{"mac_address": "00:1A:2B:3C:4D:5E"}',
      "00:1A:2B:3C:4D:5E", "key"),
-    ("IP_ADDRESS", "IP", "IP 95.165.12.34", "95.165.12.34", "cue"),
-    ("IP_ADDRESS", "IP", "айпи 198.18.0.1", "198.18.0.1", "cue"),
-    ("IP_ADDRESS", "IP", "ip-адрес 2001:db8::1", "2001:db8::1", "cue"),
-    ("IP_ADDRESS", "IP", "ip-адрес ::ffff:192.168.1.1",
+    ("IP_ADDRESS", "IP_ADDRESS", "IP 95.165.12.34", "95.165.12.34", "cue"),
+    ("IP_ADDRESS", "IP_ADDRESS", "айпи 198.18.0.1", "198.18.0.1", "cue"),
+    ("IP_ADDRESS", "IP_ADDRESS", "ip-адрес 2001:db8::1", "2001:db8::1", "cue"),
+    ("IP_ADDRESS", "IP_ADDRESS", "ip-адрес ::ffff:192.168.1.1",
      "::ffff:192.168.1.1", "cue"),
-    ("IP_ADDRESS", "IP", '{"client_ip": "95.165.12.34"}',
+    ("IP_ADDRESS", "IP_ADDRESS", '{"client_ip": "95.165.12.34"}',
      "95.165.12.34", "key"),
-    ("IP_ADDRESS", "IP", '{"remote_addr": "2001:db8::1"}',
+    ("IP_ADDRESS", "IP_ADDRESS", '{"remote_addr": "2001:db8::1"}',
      "2001:db8::1", "key"),
     ("ESIA_OID", "ESIA_OID", "ЕСИА 1000123456", "1000123456", "cue"),
     ("ESIA_OID", "ESIA_OID", "Госуслуги ID 1000123456", "1000123456", "cue"),
@@ -3924,6 +3935,15 @@ V6_ADDED_PRIORITY: dict[str, int] = {
     "STUDENT_ID_NUMBER": 6, "ACCESS_PASS_NUMBER": 6,
     "EMPLOYEE_TAB_NUMBER": 6, "EMPLOYMENT_CONTRACT_NUMBER": 6,
     "PNR": 6, "E_TICKET_NUMBER": 6,
+    # THE G7 LABEL ALIGNMENT. Each one carries the rank its OLD spelling already
+    # had (OMS/ACCOUNT/OGRN/VEHICLE_DOC were 7, IP was 5), and IP_ADDRESS is the
+    # one that MOVES: to 6, because the squeezed reading of an address is a bare
+    # digit run that libphonenumber reads as a PHONE, and at a tie `_resolve`
+    # keeps the span appended first. A missing entry here is a label regression,
+    # not a cosmetic one — STS_NUMBER is a ten-digit 2-2-6 run.
+    "BANK_ACCOUNT": 7, "OGRNIP": 7, "OMS_ENP": 7, "EPTS_NUMBER": 7,
+    "LOYALTY_CARD_NUMBER": 7, "PTS_NUMBER": 7, "STS_NUMBER": 7,
+    "IP_ADDRESS": 6,
 }
 
 
@@ -3978,8 +3998,8 @@ def test_priority_v6_arbitration(detector: Detector) -> None:
     # telecom label (the utility family's recorded decision).
     negatives = [
         ("АК 1234567", "PLATE"),
-        ("полис ОМС 6613186091390990", "OMS"),
-        ("ОГРНИП 231948757491188", "OGRN"),
+        ("полис ОМС 6613186091390990", "OMS_ENP"),
+        ("ОГРНИП 231948757491188", "OGRNIP"),
         ("л/с 12345678", "SUBSCRIBER_ACCOUNT"),
     ]
     for text, label in negatives:

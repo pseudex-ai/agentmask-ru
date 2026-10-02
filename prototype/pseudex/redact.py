@@ -400,11 +400,21 @@ def _token_for_text(span: Span, vault: Vault) -> str:
                             # the restore leg re-applies in the agent's.
                             "IMEI", "ICCID", "EPTS", "UIN", "LOYALTY",
                             "IBAN", "LOAN_UID", "VIN",
+                            # …AND THE EIGHT RECORDS WHOSE SPAN NOW CARRIES THE
+                            # REGISTRY ID (G7). The vault translates the label
+                            # back, but this branch runs on the SPAN, before
+                            # `tokenize_span`, so both spellings have to stand
+                            # here or a masked ОМС/ПТС/счёт would reach the model
+                            # in the vault's fallback rendering instead of the
+                            # customer's own notation.
+                            "OMS_ENP", "BANK_ACCOUNT", "OGRNIP", "EPTS_NUMBER",
+                            "LOYALTY_CARD_NUMBER",
                             # the v6 identity documents: a certificate's roman
                             # series, a ПТС's letters and every document's
                             # separators are the customer's, on both legs.
                             "INTL_PASSPORT", "BIRTH_CERT", "MILITARY_ID",
                             "DRIVER_LICENSE", "RESIDENCE_PERMIT", "VEHICLE_DOC",
+                            "PTS_NUMBER", "STS_NUMBER",
                             # the v6 legal family: a case number's separators and
                             # its Cyrillic/Latin twins, a writ's blank series and
                             # a cadastral number's colons are the sender's form.

@@ -112,12 +112,23 @@ def check_account_is_not_one_word(detector: Detector) -> list[str]:
     One sentence, one value, two outcomes: «счёт 4081…, реквизиты 4081…» masked
     the first and leaked the second. The page promises detection «по формату
     счёта РФ»; it was the word.
+
+    THE LABEL IS THE REGISTRY ID SINCE G7 (02.10.2026). The span used to carry
+    the v5-internal «ACCOUNT»; it now carries «BANK_ACCOUNT», the id the registry
+    and the benchmark name, and `ru_pii_v6.engine_label` hands «ACCOUNT» back to
+    the vault. The check's logic is unchanged — TWO spans for ONE value written
+    twice — and only the spelling it compares against moved. The other half of
+    the promise stays asserted below and by the engine's own shape: the account
+    is anchored to the cue AND the 20-digit RU account form, so an uncued
+    twenty-digit run is not typed (no bare-account recognizer exists — see
+    `ru_pii_v6.detect_checksum_anchored`, which claims IBAN, LOAN_UID and IMEI
+    only, and `test_pii_v6.test_bare_checksum_anchor`).
     """
     text = "счёт 40817810099910004312, реквизиты 40817810099910004312"
     problems: list[str] = []
-    found = [s for s in detector.detect(text) if s.entity_type == "ACCOUNT"]
+    found = [s for s in detector.detect(text) if s.entity_type == "BANK_ACCOUNT"]
     if len(found) != 2:
-        problems.append(f"ACCOUNT найдено {len(found)} из 2 в {text!r}")
+        problems.append(f"BANK_ACCOUNT найдено {len(found)} из 2 в {text!r}")
     masked, _vault = _mask(detector, text)
     if "40817810099910004312" in masked:
         problems.append(f"настоящий номер ушёл к модели: {masked!r}")

@@ -194,6 +194,15 @@ def canonicalize(entity_type: str, value: str) -> str:
     """Normalize a value so equivalent forms collapse to one key.
 
 """
+    # THE SPAN'S LABEL BECOMES THE ENGINE'S HERE, AND ONLY HERE. Detection now
+    # emits the v6 registry id (`OGRNIP`, `OMS_ENP`, `PTS_NUMBER`, `IP_ADDRESS`,
+    # …) so the benchmark's `typed` axis reads the record the value belongs to;
+    # every branch below, every stored row and every signature index speaks the
+    # engine's own label (`OGRN`, `OMS`, `VEHICLE_DOC`, `IP`, …). One translation
+    # at the boundary keeps the change a LABEL change: the canonical is
+    # byte-identical for a digit-only identifier, and for a ПТС/СТС it stays the
+    # single `VEHICLE_DOC` key space the two documents shared before.
+    entity_type = ru_pii_v6.engine_label(entity_type)
     if entity_type in cvc.LABEL_SET:
         # THE TEMPORARY SECRETS. Grouping is presentation for every digit-only
         # identifier and these have none of their own — a card code and an issuer
@@ -2136,6 +2145,13 @@ def _corresponding_part(mention: str, full_canonical: str, full_token: str) -> s
 
 def _render_token(entity_type: str, gender: str | None = None,
                   original: str = "", head: str = "") -> str:
+    # SAME BOUNDARY AS `canonicalize`: the span may carry a v6 registry id
+    # (`OMS_ENP`, `BANK_ACCOUNT`, `OGRNIP`, `EPTS_NUMBER`, `LOYALTY_CARD_NUMBER`,
+    # `PTS_NUMBER`, `STS_NUMBER`, `IP_ADDRESS`), and every branch below — the
+    # branches, the mint ids they pass on, the `_TOKEN_RE` shape they must satisfy
+    # — speaks the engine label. Translating once here means a label change
+    # cannot silently route a value to `REDACTED…` or to the wrong mint.
+    entity_type = ru_pii_v6.engine_label(entity_type)
     # Format-preserving substitutes for the document types. Without these they
     # fall through to REDACTED… — which is NOT the shape the customer's own
     # validator expects, so a masked account number would fail their form check
@@ -3585,6 +3601,12 @@ class Vault:
             self._conn.commit()
 
     def _tokenize_unrecorded(self, value: str, entity_type: str, cases: tuple[str, ...] = ()) -> str:
+        # THE ROW KEEPS THE ENGINE LABEL. `canonicalize` and `_render_token`
+        # translate a v6 registry id already; the row's `entity_type` column,
+        # `_digit_signatures`, `_is_free_token` and every `reveal` caller read
+        # this local, so it takes the same translation — otherwise the same value
+        # masked under `STS_NUMBER` and under `VEHICLE_DOC` would be two rows.
+        entity_type = ru_pii_v6.engine_label(entity_type)
         canonical = (canonicalize_person(value, cases) if entity_type == "NAME" and cases
                      else canonicalize(entity_type, value))
         with self._lock:
@@ -5940,6 +5962,11 @@ class Vault:
         nothing was replaced."""
         if not self._conversation or shown == original:
             return
+        # The caller hands the SPAN's type (a v6 registry id for the eight
+        # aligned records); this table is compared against rows written by the
+        # same callers and read beside `tokens`, whose column holds the engine
+        # label — one vocabulary, so the translation is here too.
+        entity_type = ru_pii_v6.engine_label(entity_type)
         # The first write obtains SQLite's transaction lock before reading the
         # previous owner. A Python lock alone cannot serialize other workers.
         # A self-mapping is a sticky ambiguity marker: it preserves the visible
