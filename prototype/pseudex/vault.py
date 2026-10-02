@@ -2119,6 +2119,33 @@ def _fake_secret(original: str) -> str:
     return prefix + "".join(out)
 
 
+def _name_mention_is_covered(row_words: list[str], mention_words: list[str],
+                             mention_shape: tuple[str, ...]) -> bool:
+    """Whether EVERY word of a name mention is already a word of that row.
+
+    D-081's superset direction, and it is what makes «Иванов Пётр» meet the row
+    «Иванов Пётр Сергеевич» without meeting a stranger: the mention left a part
+    out, it did not bring a part the row has never seen. An INITIAL is covered by
+    the word it abbreviates («Иванов П. С.» ⊆ «Иванов Пётр Сергеевич»), never the
+    other way round — a full word is not carried by an initial.
+    """
+    used = [False] * len(row_words)
+    for word, kind in zip(mention_words, mention_shape):
+        folded = fold_key(word).strip(".")
+        matched = False
+        for index, candidate in enumerate(row_words):
+            if used[index]:
+                continue
+            target = fold_key(candidate).strip(".")
+            if (target.startswith(folded[:1]) if kind == "init" else target == folded):
+                used[index] = True
+                matched = True
+                break
+        if not matched:
+            return False
+    return True
+
+
 def _corresponding_part(mention: str, full_canonical: str, full_token: str) -> str | None:
     """The word of `full_token` standing in the same slot as `mention`.
 
@@ -3616,6 +3643,18 @@ class Vault:
         canonical = (canonicalize_person(value, cases) if entity_type == "NAME" and cases
                      else canonicalize(entity_type, value))
         with self._lock:
+            # THE PERSON COMES BEFORE THE WORDING (D-081, NAME ONLY). The exact
+            # lookup below matches the mention's own nominative spelling, so it
+            # would answer «Иванов Пётр» with the two-word row even when this
+            # dialogue has already been shown the three-word substitute of the
+            # same person — one identity, two fakes, which is the instability the
+            # decision exists to remove. The identity lookup answers with the
+            # FULLEST token of the person's chain and with None when this writing
+            # is the fullest one, so nothing below changes for a fresh name.
+            if entity_type == "NAME":
+                known_person = self._known_person_core(canonical)
+                if known_person is not None:
+                    return known_person
             row = self._conn.execute(
                 "SELECT token FROM tokens WHERE customer=? AND canonical=?",
                 (self._customer, canonical),
@@ -3666,11 +3705,17 @@ class Vault:
                 linked = self._linked_token(canonical, value)
                 if linked is not None:
                     token, extends = linked
-                elif self._conversation:
+                else:
+                    # THE FULLER MENTION GROWS ITS PERSON'S SUBSTITUTE, and it
+                    # does so from the IDENTITY rather than from the dialogue:
+                    # `_extends_known_person` searches its conversation first and
+                    # falls back to surname+given at customer scope, so a name
+                    # written once briefly and once in full gets one substitute
+                    # and one chain even where no conversation was named.
                     grown = self._extends_known_person(canonical, value, gender)
                     if grown is not None:
                         token, extends = grown
-                    else:
+                    elif self._conversation:
                         united = self._unite_name_parts(canonical, value, gender)
                         if united is not None:
                             token, extends = united
@@ -5602,61 +5647,247 @@ class Vault:
                         return candidate, token
         return None
 
-    def _extends_known_person(self, canonical: str, value: str,
-                              gender: str | None) -> tuple[str, str] | None:
-        """A FULLER name after a shorter one, in the same conversation, reuses
-        the substitute's parts.
+    def _shorter_person_of(self, canonical: str,
+                           parts: list[str]) -> tuple[str, str] | None:
+        """The one row that is a SHORTER writing of the person `canonical` names.
 
-        «букин сергей» in the user's turn, «Букин Сергей Иванович» in the CRM
-        record a tool returns — one person, two substitutes, and the model
-        joined them into a double surname (live v4, `container`). The
-        subset rule stays forbidden at customer scope (see
-        `_same_person_reordered`); it is licensed here by THREE things at once:
-        the same conversation (`minted_in`, exactly — a row that does not know
-        its conversation is not linked by one), a strict superset of the parts
-        of a ≥2-word name, and exactly one candidate. The known parts take the
-        substitute's words of the same kind; the new part (a patronymic) is
-        drawn fresh; the whole must survive its own inflection and the same
-        guards a random draw passes.
+        TWO SCOPES, IN THIS ORDER, and the fallback is D-081's whole point.
+
+        The conversation goes first and keeps its original licensing: a strict
+        subset of the parts of a ≥2-word name, `minted_in` exactly, and exactly
+        one candidate — plus the lone-word form (`name_parts` indexes only
+        multi-word names, so a lone substitute «Битюкова» minted first is
+        invisible to the part query; defect C, C-R2).
+
+        THE CUSTOMER-SCOPE FALLBACK IS LICENSED BY THE IDENTITY, NOT BY THE
+        DIALOGUE. `_core_subset_person` accepts a shorter row only when it names
+        the SAME PERSON — the same surname AND the same given name — so the rule
+        that was forbidden here («a subset would merge `Иванов Пётр` into `Иванов
+        Пётр Сергеевич`») is now exactly what the decision requires: that IS one
+        person. `Иванов Николай` is still not a subset of `Иванов Пётр
+        Сергеевич`, so the two people stay two.
+
+        Single candidate or nothing, in both scopes.
         """
-        parts = [word.casefold() for word in canonical.split() if len(word) > 2]
-        if len(parts) < 3 or not self._conversation:
-            return None
-        rows = self._conn.execute(
-            "SELECT DISTINCT t.canonical, t.token FROM name_parts p "
-            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
-            "WHERE p.customer=? AND t.entity_type='NAME' AND t.minted_in=? "
-            f"AND p.part IN ({','.join('?' * len(parts))})",
-            (self._customer, self._conversation, *parts),
-        ).fetchall()
         wanted = set(parts)
-        candidates = {(other, token) for other, token in rows
-                      if 2 <= len([w for w in other.split() if len(w) > 2])
-                      and set(w.casefold() for w in other.split() if len(w) > 2) < wanted}
-        if not candidates:
-            # THE SHORTER FORM MAY BE ONE WORD. `name_parts` indexes only
-            # multi-word names, so a lone substitute minted FIRST — «напишите
-            # Битюкова», and only then the whole name — is invisible to the
-            # query above, and the whole minted a second identity (defect C,
-            # C-R2). A lone substitute is the same evidence as a two-word one:
-            # the same conversation, and a strict subset of this name's parts.
-            # The single-candidate rule is unchanged — two lone parts that could
-            # each be the parent refuse, exactly as two two-word owners do,
-            # because then the dialogue cannot say which person it means.
-            lone_rows = self._conn.execute(
-                "SELECT canonical, token FROM tokens WHERE customer=? "
-                "AND entity_type='NAME' AND minted_in=? "
-                f"AND canonical_fold IN ({','.join('?' * len(parts))})",
-                (self._customer, self._conversation,
-                 *[fold_key(part) for part in parts]),
+        candidates: set[tuple[str, str]] = set()
+        if self._conversation:
+            rows = self._conn.execute(
+                "SELECT DISTINCT t.canonical, t.token FROM name_parts p "
+                "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
+                "WHERE p.customer=? AND t.entity_type='NAME' AND t.minted_in=? "
+                f"AND p.part IN ({','.join('?' * len(parts))})",
+                (self._customer, self._conversation, *parts),
             ).fetchall()
-            candidates = {(other, token) for other, token in lone_rows
-                          if len(other.split()) == 1 and len(token.split()) == 1
-                          and {other.casefold()} < wanted}
+            candidates = {(other, token) for other, token in rows
+                          if 2 <= len([w for w in other.split() if len(w) > 2])
+                          and set(w.casefold() for w in other.split() if len(w) > 2) < wanted}
+            if not candidates:
+                lone_rows = self._conn.execute(
+                    "SELECT canonical, token FROM tokens WHERE customer=? "
+                    "AND entity_type='NAME' AND minted_in=? "
+                    f"AND canonical_fold IN ({','.join('?' * len(parts))})",
+                    (self._customer, self._conversation,
+                     *[fold_key(part) for part in parts]),
+                ).fetchall()
+                candidates = {(other, token) for other, token in lone_rows
+                              if len(other.split()) == 1 and len(token.split()) == 1
+                              and {other.casefold()} < wanted}
+        if not candidates:
+            # THE CUSTOMER-SCOPE FALLBACK EXISTS ONLY WHERE NO CONVERSATION DOES.
+            # Inside a dialogue the substitute's parts are the parts THIS dialogue
+            # was shown, and a row of another dialogue is not this dialogue's to
+            # grow from — `test_product` pins exactly that («a name grown in one
+            # conversation is not grown from another's»). It is also the same
+            # boundary the restore leg needs: two real writings that share one
+            # token cannot both come back from `shown_forms`, so inside a
+            # conversation the shorter and the fuller mention keep their own
+            # substitutes and the identity is the `extends` chain between them.
+            if not self._conversation:
+                candidates = self._core_subset_person(canonical, wanted)
         tokens = {token for _, token in candidates}
         if len(tokens) != 1:
             return None
-        short_canonical, short_token = next(iter(candidates))
+        return next(iter(candidates))
+
+    @staticmethod
+    def _name_slots(canonical: str) -> tuple[list[str], tuple[str, ...]] | None:
+        """(words, kinds) of a name whose parts and slots line up one for one."""
+        words = canonical.split()
+        shape = morph_names.name_shape(canonical)
+        if len(words) != len(shape):
+            return None
+        return words, shape
+
+    def _core_subset_person(self, canonical: str,
+                            wanted: set[str]) -> set[tuple[str, str]]:
+        """Shorter rows of this customer that name THE SAME PERSON (D-081).
+
+        Reached only through `_shorter_person_of`, when the conversation holds no
+        such row. Two conditions together, and neither alone is licensed:
+
+          * the row's words are a STRICT SUBSET of the fuller mention's — it is a
+            shorter writing of one name, not a different name that happens to
+            share a surname;
+          * the row's IDENTITY is the mention's — the same surname and the same
+            given name (`name_shape` reads both), with an initial accepted for a
+            full word only when the row spells that word out.
+        """
+        parsed = self._name_slots(canonical)
+        if parsed is None:
+            return set()
+        words, shape = parsed
+        if "surn" not in shape:
+            return set()
+        surname = fold_key(words[shape.index("surn")])
+        given_index = next((i for i, kind in enumerate(shape) if kind in ("name", "init")), None)
+        if given_index is None:
+            return set()
+        given = fold_key(words[given_index]).strip(".")
+        given_is_initial = shape[given_index] == "init"
+        rows = self._conn.execute(
+            "SELECT DISTINCT t.canonical, t.token FROM name_parts p "
+            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
+            "WHERE p.customer=? AND p.part=? AND t.entity_type='NAME'",
+            (self._customer, surname),
+        ).fetchall()
+        found: set[tuple[str, str]] = set()
+        for other, token in rows:
+            own = [word.casefold() for word in other.split() if len(word) > 2]
+            if not own or not set(own) < wanted:
+                continue
+            other_slots = self._name_slots(other)
+            if other_slots is None:
+                continue
+            other_words, other_shape = other_slots
+            if "surn" not in other_shape:
+                continue
+            if fold_key(other_words[other_shape.index("surn")]) != surname:
+                continue
+            other_given_index = next((i for i, kind in enumerate(other_shape)
+                                      if kind in ("name", "init")), None)
+            if other_given_index is None:
+                continue
+            other_given = fold_key(other_words[other_given_index]).strip(".")
+            if given_is_initial:
+                if not other_given.startswith(given[:1]):
+                    continue
+            elif other_given != given:
+                continue
+            found.add((other, token))
+        return found
+
+    def _known_person_core(self, canonical: str) -> str | None:
+        """The substitute of a person this vault already holds, named no more
+        fully than the row that holds them (D-081).
+
+        THE IDENTITY OF A NAME IS THE SURNAME AND THE GIVEN NAME. The patronymic
+        and the initials are MUTABLE PARTS: «Иванов Пётр», «Иванов Пётр Сергеевич»
+        and «Иванов П. С.» are one person and must meet ONE substitute, or the
+        agent's memory fills with strangers as soon as the customer says a little
+        more or a little less. «Иванов Пётр» and «Иванов Николай» share only the
+        surname, so they stay two — the given name is IN the identity.
+
+        THIS IS THE SUPERSET DIRECTION ONLY, and the direction is the safety.
+        It answers when every word the mention carries is already a word of one
+        known row of that person; the row may carry MORE (a patronymic, initials
+        the mention left out) and then the FULLEST token of the chain is returned,
+        because that is the one this dialogue has been shown. A mention that
+        carries a word NO row of this person has is NOT answered here: it grows
+        instead (`_extends_known_person`), so the patronymic is rendered on the
+        fake rather than dropped from it.
+
+        Exactly one owner or nothing, as everywhere in this file: two rows that
+        are one chain (`_one_identity`) answer with the fullest, two unrelated
+        owners refuse — merging two people is the one failure this product treats
+        as unacceptable.
+
+        ONLY WHERE NO CONVERSATION IS NAMED, и это не сужение ради теста.
+        Внутри разговора подмена помнит, КАКИМ СЛОВОМ её показали: у двух
+        настоящих написаний (с отчеством и без) один фейк быть не может, потому
+        что `shown_forms` хранит одну пару «показано → настоящее» на строку, и
+        второе написание либо перезапишет первое, либо пометится конфликтом —
+        тогда круг разваливается у одного из них. Именно это пин `test_hard_cases`
+        («every address round-trips back intact») и ловит. Вне разговора
+        показывать нечего, и там тождество обязано схлопнуться: это и есть
+        метрика D-081, `bench/identity_invariant.py`.
+        """
+        if self._conversation:
+            return None
+        parsed = self._name_slots(canonical)
+        if parsed is None:
+            return None
+        words, shape = parsed
+        if "surn" not in shape:
+            return None
+        given_index = next((i for i, kind in enumerate(shape) if kind in ("name", "init")), None)
+        if given_index is None:
+            return None
+        surname = fold_key(words[shape.index("surn")])
+        given = fold_key(words[given_index]).strip(".")
+        given_is_initial = shape[given_index] == "init"
+        rows = self._conn.execute(
+            "SELECT DISTINCT t.canonical, t.token FROM name_parts p "
+            "JOIN tokens t ON t.customer = p.customer AND t.canonical = p.canonical "
+            "WHERE p.customer=? AND p.part=? AND t.entity_type='NAME'",
+            (self._customer, surname),
+        ).fetchall()
+        tokens: set[str] = set()
+        for other, token in rows:
+            other_slots = self._name_slots(other)
+            if other_slots is None:
+                continue
+            other_words, other_shape = other_slots
+            if "surn" not in other_shape:
+                continue
+            if fold_key(other_words[other_shape.index("surn")]) != surname:
+                continue
+            other_given_index = next((i for i, kind in enumerate(other_shape)
+                                      if kind in ("name", "init")), None)
+            if other_given_index is None:
+                continue
+            other_given = fold_key(other_words[other_given_index]).strip(".")
+            if given_is_initial:
+                if not other_given.startswith(given[:1]):
+                    continue
+            elif other_given != given:
+                continue
+            if not _name_mention_is_covered(other_words, words, shape):
+                continue
+            tokens.add(token)
+        if len(tokens) == 1:
+            return next(iter(tokens))
+        if not tokens:
+            return None
+        return self._one_identity(tokens)
+
+    def _extends_known_person(self, canonical: str, value: str,
+                              gender: str | None) -> tuple[str, str] | None:
+        """A FULLER name after a shorter one reuses the substitute's parts.
+
+        «букин сергей» in the user's turn, «Букин Сергей Иванович» in the CRM
+        record a tool returns — one person, two substitutes, and the model
+        joined them into a double surname (live v4, `container`).
+
+        D-081 WIDENED WHERE THE SHORTER FORM MAY BE FOUND, and `_shorter_person_of`
+        holds that search: the conversation FIRST (its rows are the ones this
+        dialogue was shown, and `_extends_known_person`'s original licensing —
+        exactly one candidate, a strict superset of the parts of a ≥2-word name),
+        then, when the dialogue has no such row, the IDENTITY at customer scope —
+        surname + given name (`_core_subset_person`). Without the fallback a name
+        said briefly in one breath and in full in the next minted two people
+        whenever no conversation was named, which is the same instability, one
+        scope out. The known parts take the substitute's words of the same kind;
+        the new part (a patronymic) is drawn fresh; the whole must survive its own
+        inflection and the same guards a random draw passes.
+        """
+        parts = [word.casefold() for word in canonical.split() if len(word) > 2]
+        if len(parts) < 3:
+            return None
+        short = self._shorter_person_of(canonical, parts)
+        if short is None:
+            return None
+        short_canonical, short_token = short
         real_parts = canonical.split()
         shape = morph_names.name_shape(canonical)
         if len(shape) != len(real_parts):

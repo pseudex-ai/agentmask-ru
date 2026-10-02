@@ -489,6 +489,77 @@ _SLOT_ALIASES: dict[str, str] = {
 # it. Left in, «на Ленинском проспекте» and «Ленинский проспект» were two rows.
 _PREPOSITIONS = frozenset({"на", "в", "во", "по", "с", "со", "у", "до", "от",
                            "из", "за", "к", "ко", "о", "об", "при", "около"})
+
+# МЕЛКИЕ ЧАСТИ АДРЕСА — ИЗМЕНЯЕМЫЕ, И КЛЮЧ ДЕРЖИТ ИХ РОЛЬ, А НЕ ИХ ЗНАЧЕНИЕ.
+#
+# D-081: тождество подмены адреса — улица И дом, а квартира, подъезд, этаж и
+# корпус/строение это ИЗМЕНЯЕМЫЕ ЧАСТИ. Человек сменил квартиру — это не новый
+# фейк, поэтому ЗНАЧЕНИЕ мелкой части из ключа уходит: «Лермонтова 38 кв 7» и
+# «Лермонтова 38 кв 42» дают один ключ и одну подмену, а диктовка «дом тридцать
+# восемь» встречается с «дом 38».
+#
+# РОЛЬ ПРИ ЭТОМ ОСТАЁТСЯ В КЛЮЧЕ, И ЭТО НЕ НЕДОСМОТР. Три вещи держатся на ней
+# одновременно, и каждая измерена:
+#   * «мира семь» и «Мира 7 кв 3» — одна улица, но РАЗНАЯ конкретность: первое
+#     упоминание не назвало квартиры, и подмена не смеет её показать
+#     (`strip_flat`, test_product: «two short candidates mean a guess»);
+#   * связывание полного и короткого написания (`_linked_place`,
+#     `_extends_linked_place`) требует РОВНО ОДНОГО короткого владельца, а
+#     владельцев различает именно набор ролей;
+#   * поиск владельца фрагмента (`place_owner`) несёт роль в вопросе, поэтому
+#     «дом 41» и «кв 41» — разные вопросы.
+# Значение части НЕ в ключе ровно настолько, насколько это нужно D-081:
+# смена квартиры/подъезда/этажа/корпуса ключ не меняет, а её появление или
+# исчезновение — меняет.
+_MUTABLE_KEY_MARKERS = frozenset({"кв", "к", "стр", "подъезд", "подьезд", "этаж"})
+
+# СЛОВА, ПОСЛЕ КОТОРЫХ ЧИСЛО-СЛОВО — ЭТО НОМЕР ДОМА. Список тот же, что
+# `_SLOT_ALIASES` отправляет в пустоту («дом» в ключе не остаётся: голое число
+# за улицей и есть дом), и он читается здесь ДО выкидывания маркера — иначе
+# «дом восемь» и «дом 8» остались бы двумя тождествами.
+_HOUSE_KEY_MARKERS = frozenset({"дом", "дома", "д", "владение", "вл"})
+
+
+def _fold_spoken_cardinals(tokens: list[str]) -> list[str]:
+    """Продиктованные числа — в цифры, но НЕ любой ценой.
+
+    D-081 требует, чтобы «дом тридцать восемь» и «дом 38» были одним
+    тождеством. Свернуть при этом ЛЮБОЕ число-слово нельзя: `test_product`
+    держит пин `address_key("центральная сто") == "центральный сто"` —
+    «сохранённая каноническая форма не двигается», потому что смена ключа
+    переразмечает строки, отчеканенные раньше. Поэтому правило узкое и
+    позиционное:
+
+      * РЯД из двух и более числительных («тридцать восемь», «сорок два»)
+        сворачивается всегда — сам по себе он и есть одно число, и как голое
+        число за улицей он читается однозначно;
+      * ОДИНОЧНОЕ числительное («восемь», «сто») сворачивается только тогда,
+        когда перед ним стоит МАРКЕР ДОМА («дом восемь», «д. восемь»): там
+        написание само говорит, что это номер дома, и слова-числительного в
+        ключе быть не должно.
+
+    Числа, записанные цифрами, не трогаются вовсе.
+    """
+    out: list[str] = []
+    index = 0
+    while index < len(tokens):
+        word = tokens[index]
+        if not spoken.is_numeral_word(word):
+            out.append(word)
+            index += 1
+            continue
+        stop = index
+        while stop < len(tokens) and spoken.is_numeral_word(tokens[stop]):
+            stop += 1
+        run = tokens[index:stop]
+        after_house = (index > 0
+                       and tokens[index - 1].strip(",.").casefold() in _HOUSE_KEY_MARKERS)
+        if len(run) > 1 or after_house:
+            out.append(spoken.run_to_digits(run) or " ".join(run))
+        else:
+            out.extend(run)
+        index = stop
+    return out
 # NOT split on «-»: «пр-т» and «б-р» are single words in the abbreviation table,
 # and splitting them meant they never matched it — so «пр-т» and «проспект»
 # stayed two different addresses.
@@ -622,6 +693,13 @@ def address_key(phrase: str) -> str:
     if trailing_city and not _is_settlement_word(trailing_city):
         trailing_city = ""
     tokens = _KEY_SPLIT_RE.split((stripped or phrase.strip()).casefold().replace("ё", "е"))
+    # ДИКТОВКА — ТА ЖЕ АДРЕСНАЯ ФРАЗА, ЧТО И ЦИФРЫ (D-081). «дом тридцать
+    # восемь» и «дом 38» — один дом, и пока числа-слова оставались словами,
+    # это были два тождества и две подмены. Свёртка идёт ДО разбора по слотам
+    # (`_fold_spoken_cardinals`: ряд числительных сворачивается всегда, одиночное
+    # — за маркером дома, см. её доккомментарий и пин `test_product`).
+    # Числа, записанные цифрами, свёртка не трогает.
+    tokens = _fold_spoken_cardinals(tokens)
     # ДВУСЛОВНЫЙ ГОРОД БЕЗ ЗАПЯТОЙ. Городом считался только ПЕРВЫЙ токен, и
     # «нижний новгород проезд калашникова 12» разбиралось как улица «нижний
     # новгород проезд калашникова»: город уезжал в поле `street` карточки
@@ -639,9 +717,24 @@ def address_key(phrase: str) -> str:
         if (parses and all(parse.tag.POS == "ADJF" for parse in parses[:3])
                 and not _is_settlement_word(tokens[0])):
             compound_city = 1
+    # Идёт ли за только что прочитанным маркером изменяемой части её значение.
+    drop_value = False
     for index, raw in enumerate(tokens):
         if not raw or raw in _PREPOSITIONS:
             continue
+        if drop_value:
+            # ЗНАЧЕНИЕ ИЗМЕНЯЕМОЙ ЧАСТИ В ТОЖДЕСТВО НЕ ВХОДИТ (D-081), и
+            # выбрасывается оно ЗДЕСЬ, сразу за своим маркером. Значение может
+            # быть и ДИКТОВАННЫМ («кв семь»), поэтому числом-словом оно тоже
+            # отбрасывается — иначе «квартира семь» и «квартира 7» разошлись бы
+            # ключами ровно там, где D-081 требует их встречи. Токен, который
+            # ни цифра, ни числительное, значит маркер стоял без значения
+            # («…, кв»), и тогда не выбрасывается ничего: следующий токен — уже
+            # другая часть.
+            if raw[:1].isdigit() or spoken.is_numeral_word(raw):
+                previous = raw
+                continue
+            drop_value = False
         names_city = (previous in _CITY_MARKERS or (index == 0 and _is_settlement_word(raw))
                       or (compound_city == 1 and index in (0, 1))
                       or (raw == trailing_city))
@@ -649,7 +742,27 @@ def address_key(phrase: str) -> str:
         alias = _SLOT_ALIASES.get(raw)
         if alias is not None:
             if alias:
+                # «второй подъезд» — порядковое ПЕРЕД маркером это та же
+                # изменяемая часть, а не улица: `street_house_key` снимает его
+                # ровно так же, иначе «…второй подъезд 3» и «…подъезд 3» — два
+                # написания одного места.
+                if (alias in _MUTABLE_KEY_MARKERS and parts
+                        and _ORDINAL_ONLY.fullmatch(parts[-1])
+                        and not spoken.is_numeral_word(parts[-1])):
+                    parts.pop()
                 parts.append(alias)
+                if alias in _MUTABLE_KEY_MARKERS:
+                    drop_value = True
+            continue
+        if raw in _MUTABLE_KEY_MARKERS:
+            # «подъезд»/«этаж» в `_SLOT_ALIASES` не лежат и до этой строки
+            # доезжают как обычное слово: без неё они попадали бы в ключ ВМЕСТЕ
+            # со своим числом, и смена подъезда снова плодила бы подмену.
+            if (parts and _ORDINAL_ONLY.fullmatch(parts[-1])
+                    and not spoken.is_numeral_word(parts[-1])):
+                parts.pop()
+            parts.append(raw)
+            drop_value = True
             continue
         full = _GENERIC_SHORT.get(raw)
         if full:
