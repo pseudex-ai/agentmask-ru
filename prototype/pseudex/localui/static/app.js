@@ -959,6 +959,149 @@ function IdentityTable({ identity }) {
     </div>`;
 }
 
+/* THE ENGINE'S OWN LATENCY — what the masking costs the agent waiting on it.
+ *
+ * WHY IT IS ON THIS SCREEN. Every other number here counts VALUES: «защищено
+ * значений», by type, by agent. A value has no duration, so the one question an
+ * operator asks before sizing a gateway — «сколько движок добавляет к ответу» —
+ * was unanswerable from this page. The profiler has measured it into a bounded
+ * ring buffer since `profiling.py` existed; this table is its view.
+ *
+ * THE PERCENTILES COME FROM THE RING BUFFER, NOT FROM THE PERIOD. They describe
+ * RECENT traffic in THIS engine process (the window is capped, so a burst an hour
+ * ago ages out), which is why the caption says so instead of sitting under the
+ * «за N дней» heading. The four percentile columns are generated from the
+ * server's own `latency.percentiles` list, so adding p90 on the engine side
+ * cannot leave a screen that still renders three columns.
+ *
+ * A DURATION, NEVER A VALUE. What crosses `/stats` is a stage name we chose, a
+ * float in milliseconds and a count. Nothing here can carry a token or a
+ * personal value, which is what makes it safe on a screen the operator leaves
+ * open.
+ *
+ * THE STAGES NEST, AND THE TABLE SAYS SO. `normalize` sits inside `detect.total`,
+ * and `detect.total` sits inside `mask.one` — `_mask_one` masks a whole TEXT (a
+ * message content or an entire tool-arguments JSON) and runs the detection pass
+ * for it in its own `_compute`. So «МАСКИРОВАНИЕ» is the enclosing row, and the
+ * two above it break that row down rather than sitting beside it. The relationship
+ * arrives from the server (`groups[..].nested_in`) and is printed in each tooltip,
+ * so the screen cannot drift from the pipeline.
+ *
+ * `total` ADDS ONLY NON-OVERLAPPING PHASES, AND STILL SAYS IT IS AN ESTIMATE.
+ * Its sources are `mask.one` + `unmask.total` — the two legs a caller waits on —
+ * never `detect.total`, which is already inside `mask.one`; adding it would count
+ * detection twice. It remains a planning figure: quantiles do not add, so it is
+ * not the percentile of one operation. The server marks it `derived`, the row is
+ * labelled «маскирование + восстановление», and the caption repeats it. The exact
+ * cumulative figure — time in `mask.one` since this worker started, one enclosing
+ * stage rather than a prefix sum over nested ones — is printed below the table.
+ *
+ * «—» IS THE ONLY THING SHOWN WHEN THE PROFILER IS OFF. Not 0, and not a dash
+ * that could be mistaken for «too fast to measure»: `PSEUDEX_PROFILE=1` is what
+ * fills the buffer, and a screen that printed 0.000 would certify an unmeasured
+ * engine as instant. The note names the variable, and the table still renders
+ * its shape so the operator learns where the number will appear. An ABSENT block
+ * is a third state — an engine that did not answer or one too old to carry
+ * `latency` — and it must not be reported as «profiling is off», which is a
+ * configuration fact we do not have.
+ */
+const LATENCY_ROWS = [
+  ['normalize', 'НОРМАЛИЗАЦИЯ', 'detect.normalize', 'свёртка входа, 1:1 по длине'],
+  ['detect', 'ДЕТЕКЦИЯ', 'detect.total', 'весь проход детекции, включает нормализацию'],
+  ['mask', 'МАСКИРОВАНИЕ', 'mask.one', 'один текст (сообщение или аргумент целиком), включая его детекцию'],
+  ['unmask', 'ВОССТАНОВЛЕНИЕ', 'unmask.total', 'один вызов раскрытия'],
+  ['total', 'ИТОГО · МАСКИРОВАНИЕ + ВОССТАНОВЛЕНИЕ', null, 'mask.one + unmask.total'],
+];
+
+/* ms with a resolution matched to the magnitude: the whole point is to see a
+ * 0.4 ms stage and a 400 ms one on the same table, and a fixed precision either
+ * rounds the first to zero or prints noise on the second. */
+function msFmt(value) {
+  if (value === null || value === undefined || typeof value !== 'number' || !isFinite(value)) {
+    return '—';
+  }
+  if (value >= 100) return value.toFixed(1);
+  if (value >= 10) return value.toFixed(2);
+  return value.toFixed(3);
+}
+
+const pctLabel = (key) => key.replace(/_ms$/, '');
+
+function LatencyTable({ latency }) {
+  // THREE STATES, not two. `present` false means /stats carried no latency block
+  // at all (engine unreachable, or an engine older than this screen): the screen
+  // must not turn that into the CONFIGURATION claim «профилирование выключено».
+  const present = latency !== null && latency !== undefined && typeof latency === 'object';
+  const enabled = present && latency.enabled === true;
+  const percentiles = latency?.percentiles?.length
+    ? latency.percentiles
+    : ['p50_ms', 'p90_ms', 'p95_ms', 'p99_ms'];
+  const groups = latency?.groups || {};
+  const total = latency?.total || null;
+  const rows = LATENCY_ROWS.map(([key, label, stage, what]) => {
+    const row = key === 'total' ? total : (groups[key] || null);
+    return { key, label, stage, what, row };
+  });
+  const measured = rows.filter((entry) => entry.row).length;
+  // The tooltip carries the nesting the server reported, so the containment is
+  // visible where the number is, not only in a paragraph.
+  const titleOf = (entry) => {
+    const nested = entry.row && entry.row.nested_in ? ` · входит в ${entry.row.nested_in}` : '';
+    const stage = entry.stage ? ` · ${entry.stage}` : '';
+    const window = entry.row && entry.row.window !== undefined
+      ? ` · в окне ${num(entry.row.window)}` : '';
+    return `${entry.what}${stage}${nested}${window}`;
+  };
+
+  return html`
+    <div class="cell" style="border:1px solid var(--line-2);padding:22px 24px 26px;margin-top:18px">
+      <div class="label mb">ЗАДЕРЖКА ДВИЖКА · ПРОЦЕНТИЛИ, мс · ОКНО ЭТОГО ПРОЦЕССА</div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr>
+            <th style=${TYPE_TH}>СТАДИЯ</th>
+            ${percentiles.map((key) => html`
+              <th key=${key} style=${TYPE_TH + ';text-align:right;width:80px'}>${pctLabel(key).toUpperCase()}</th>`)}
+            <!-- «СУММА» and «ЗАМЕРОВ» are PROCESS-LIFETIME, while the percentile
+                 columns describe the retained window only. Naming the difference
+                 in the headers is cheaper than a footnote, and without it a row
+                 could read «ЗАМЕРОВ 1 000 000» beside a percentile computed from
+                 the last 4096 samples. -->
+            <th style=${TYPE_TH + ';text-align:right;width:96px'}>СУММА · ПРОЦЕСС</th>
+            <th style=${TYPE_TH + ';text-align:right;width:104px'}>ЗАМЕРОВ · ПРОЦЕСС</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((entry) => html`
+            <tr key=${entry.key}>
+              <td style=${TYPE_TD_NAME} title=${titleOf(entry)}>
+                ${entry.label}${entry.stage ? html`<span style="color:var(--dim-3)"> ${entry.stage}</span>` : ''}
+              </td>
+              ${percentiles.map((key) => html`
+                <td key=${key} style=${TYPE_TD_NUM + ';color:' + (entry.row ? 'var(--text-2)' : 'var(--dim-3)')}>
+                  ${entry.row ? msFmt(entry.row[key]) : '—'}</td>`)}
+              <td style=${TYPE_TD_NUM}>${entry.row ? msFmt(entry.row.total_ms) : '—'}</td>
+              <td style=${TYPE_TD_NUM}>${entry.row ? num(entry.row.count) : '—'}</td>
+            </tr>`)}
+        </tbody>
+      </table>
+      <div class="hint" style="margin-top:8px">
+        ${!present
+          ? 'Данных нет: движок не ответил или не отдаёт блок задержки. Это не утверждение о настройке профилирования.'
+          : (!enabled
+              ? html`Профилирование выключено. Числа появятся после запуска контейнера с <span class="mono">PSEUDEX_PROFILE=1</span> — до этого здесь «—», а не нули: неизмеренное нельзя показывать как мгновенное.`
+              : (measured
+                  ? 'Процентили — по удержанному окну этого процесса (старые замеры вытесняются), «сумма» и «замеров» — за всё время процесса. Стадии вложены: нормализация внутри детекции, детекция внутри маскирования. «ИТОГО» складывает только непересекающиеся фазы — планировочная оценка, а не процентиль одной операции.'
+                  : 'Профилирование включено, но замеров ещё нет: с момента запуска процесса движка не было трафика маскирования.'))}
+      </div>
+      <div class="hint" style="margin-top:4px">
+        Накопленное время маскирования текстов (стадия mask.one, объемлющая) за жизнь этого процесса:
+        ${enabled ? `${msFmt(latency?.total_mask_ms)} мс` : '—'}.
+        Счётчики и длительности; ни значений, ни токенов здесь нет и быть не может.
+      </div>
+    </div>`;
+}
+
 /* The stats screen polls. WHY POLL AT ALL: this is the screen an operator leaves
  * open while an agent run is in flight, and a number that only moves on a manual
  * reload answers the question minutes late. 5 s is short enough to watch a run
@@ -1114,6 +1257,12 @@ function Stats({ org }) {
           rows=${suppressed} fill="var(--green)" empty="Защита от избыточности ещё не срабатывала." />
         <${IdentityTable} identity=${identity} />
       </div>
+
+      <!-- THE ENGINE'S OWN COST, after the three count tables and before the
+           per-day bars: it shares no denominator with the period figures above
+           (it is THIS process's recent window), so it gets its own block and its
+           own caption rather than a place in the «ЗА ПЕРИОД» header. -->
+      <${LatencyTable} latency=${data?.latency} />
 
       <div class="cell" style="border:1px solid var(--line-2);padding:22px 24px 26px;margin-top:18px">
         <div class="label mb">ЗАПРОСЫ ПО ДНЯМ</div>

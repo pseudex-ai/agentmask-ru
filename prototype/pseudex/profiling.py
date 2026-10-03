@@ -31,6 +31,18 @@ ENABLED = os.environ.get("PSEUDEX_PROFILE", "") == "1"
 # Samples retained per stage for percentile estimation.
 _CAPACITY = int(os.environ.get("PSEUDEX_PROFILE_SAMPLES", "4096"))
 
+# THE percentile set, in ONE place. Every consumer that shows a latency number —
+# `/stats` (and therefore the local UI's stats screen) and profile_deep.py — reads
+# the keys this tuple generates, so a percentile cannot be added to the profiler
+# and silently missing from a screen. p90 joined p50/p95/p99 because an operator
+# sizing a gateway wants the near-tail, not only the median and the 1-in-100.
+PERCENTILES: tuple[tuple[str, float], ...] = (
+    ("p50", 0.50),
+    ("p90", 0.90),
+    ("p95", 0.95),
+    ("p99", 0.99),
+)
+
 
 class StageStats:
     """Thread-safe accumulator. Detection runs across worker threads, so every
@@ -61,7 +73,9 @@ class StageStats:
     def snapshot(self) -> dict[str, dict[str, float]]:
         """Per-stage stats, sorted by total time spent — the top row is the thing
         worth optimizing. `count`/`total_ms` cover the whole process lifetime;
-        percentiles cover the retained window."""
+        percentiles cover the retained window (`window` = samples in it, capped by
+        the ring buffer's capacity, so memory stays bounded in a long-lived
+        process and the numbers describe RECENT traffic)."""
         with self._lock:
             frozen = {name: (sorted(samples), self._counts[name], self._totals[name])
                       for name, samples in self._samples.items()}
@@ -69,16 +83,16 @@ class StageStats:
         for name, (samples, count, total) in frozen.items():
             if not samples:
                 continue
-            out[name] = {
+            row: dict[str, float] = {
                 "count": count,
                 "total_ms": round(total * 1000, 3),
                 "mean_ms": round(total / count * 1000, 4),
-                "p50_ms": round(_percentile(samples, 0.50) * 1000, 4),
-                "p95_ms": round(_percentile(samples, 0.95) * 1000, 4),
-                "p99_ms": round(_percentile(samples, 0.99) * 1000, 4),
-                "max_ms": round(samples[-1] * 1000, 4),
-                "window": len(samples),
             }
+            for label, fraction in PERCENTILES:
+                row[f"{label}_ms"] = round(_percentile(samples, fraction) * 1000, 4)
+            row["max_ms"] = round(samples[-1] * 1000, 4)
+            row["window"] = len(samples)
+            out[name] = row
         return dict(sorted(out.items(), key=lambda item: item[1]["total_ms"], reverse=True))
 
     def reset(self) -> None:

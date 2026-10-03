@@ -28,7 +28,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from pseudex import metrics as metrics_format
 from pseudex import preflight, schema, sqlite_setup
 from pseudex.audit import SELFCHECK_ORG
-from pseudex.profiling import snapshot as profiling_snapshot
+from pseudex.profiling import PERCENTILES, snapshot as profiling_snapshot
 
 # Config worth showing an operator, and nothing else. An allowlist rather than a
 # denylist of secret-looking names: a denylist silently starts leaking the moment
@@ -228,6 +228,105 @@ def identity_stability() -> dict[str, object]:
     _IDENTITY_RESULT = result
     return result
 
+
+# THE LATENCY READOUT — the cost the ENGINE adds, by phase.
+#
+# WHY IT EXISTS. «Движок тормозит агента» is the one complaint about a gateway
+# that cannot be answered from the audit journal: every row there counts a
+# value, and a value has no duration. profiling.py already measures each phase
+# into a bounded ring buffer (PSEUDEX_PROFILE=1); this block is the operator's
+# view of it, so the number comes from the process that actually paid it rather
+# than from a benchmark run somewhere else.
+#
+# WHICH MEASURED STAGE EACH ROW IS, named explicitly, and HOW THE STAGES NEST —
+# a row called «detect» that silently meant one sub-stage would be worse than no
+# row at all, and so would a «total» that added phases which contain each other:
+#   normalize -> `detect.normalize`  one Layer-0 fold        (inside detect.total)
+#   detect    -> `detect.total`      the whole detect pass   (inside mask.one)
+#   mask      -> `mask.one`          masking ONE TEXT — a message content or a
+#                                    whole tool-arguments JSON — including the
+#                                    detection pass that text runs (`_mask_one`
+#                                    calls `detector.detect` inside its own
+#                                    `_compute`), plus mint/audit and splice
+#   unmask    -> `unmask.total`      one restore call
+# `nested_in` carries that containment to the screen, so the operator can see
+# that the normalize and detect rows are INSIDE the mask row rather than beside
+# it. (The `detect.*` counters also collect detection runs that happen WITHOUT
+# masking — the interface's own `/spans` highlighting, `/selfcheck` — so they
+# describe all detection in this worker, which is why the mask row, not the
+# detect row, is the one the cumulative masking figure is taken from.)
+#
+# TWO CONSEQUENCES, BOTH LOAD-BEARING:
+#   * the `total` row sums only stages that CANNOT overlap — `mask.one` and
+#     `unmask.total`, the two legs a caller waits on — never `detect.total`,
+#     which is already inside `mask.one`. It is still marked `derived: true`
+#     with its `sources`, because it adds per-phase percentiles and quantiles do
+#     not add: a planning figure, not the percentile of one operation.
+#   * `total_mask_ms` is the cumulative total of ONE enclosing stage
+#     (`mask.one`), never a prefix sum over `mask.*`: `mask.tokenize_and_audit`
+#     and `mask.splice` run inside `mask.one`, so summing the prefix would count
+#     them twice — the same overlap `profile_deep.py` warns about for `detect.*`.
+#
+# WHY p90 IS NOT DECORATION: a gateway is sized on the near-tail, and p95/p99
+# alone hide the shoulder that most slow requests actually sit on. p50 is the
+# number that never hurts. p90 is the one an operator can act on.
+#
+# NEVER PII. A stage name is ours, a duration is a float, a count is an integer:
+# nothing here can carry a token or a value, which is what lets it ride the
+# endpoint the interface already polls. When PSEUDEX_PROFILE is off every group
+# is `null` — never a zero that reads as «instant» — so the screen can print «—»
+# and the operator learns the feature needs enabling instead of believing a
+# fabricated number.
+_LATENCY_GROUPS: tuple[tuple[str, str, str], ...] = (
+    ("normalize", "detect.normalize", "detect.total"),
+    ("detect", "detect.total", "mask.one"),
+    ("mask", "mask.one", ""),
+    ("unmask", "unmask.total", ""),
+)
+# The legs a caller waits on. Disjoint by construction: masking a request and
+# restoring a response are different endpoints, and neither contains the other.
+_LATENCY_TOTAL_SOURCES: tuple[str, ...] = ("mask.one", "unmask.total")
+# The enclosing mask stage, for the cumulative figure. See the overlap note above.
+_LATENCY_MASK_TOTAL_STAGE = "mask.one"
+_PERCENTILE_KEYS: tuple[str, ...] = tuple(f"{label}_ms" for label, _ in PERCENTILES)
+
+
+def latency_snapshot() -> dict[str, object]:
+    """Per-phase latency for /stats — durations and counts only, never a value.
+
+    Read-only and lock-scoped: `profiling_snapshot()` takes the profiler's lock
+    only to freeze the sample deques, so this endpoint stays cheap enough for the
+    5-second poll the stats screen runs.
+    """
+    profile = profiling_snapshot()
+    stages = profile.get("stages") or {}
+    groups: dict[str, object] = {}
+    for label, stage_name, nested_in in _LATENCY_GROUPS:
+        row = stages.get(stage_name)
+        if row:
+            groups[label] = {"stage": stage_name, "nested_in": nested_in or None, **row}
+        else:
+            groups[label] = None
+    present = [name for name in _LATENCY_TOTAL_SOURCES if name in stages]
+    total: dict[str, object] | None = None
+    if present:
+        total = {"derived": True, "sources": present, "nested_in": None}
+        for key in _PERCENTILE_KEYS:
+            total[key] = round(sum(stages[name][key] for name in present), 4)
+        # The cumulative column IS exact: summing disjoint phase totals is the
+        # total time spent in those phases. Only the percentile columns are the
+        # planning approximation the `derived` flag announces.
+        total["total_ms"] = round(sum(stages[name]["total_ms"] for name in present), 3)
+    mask_total_ms = round(
+        (stages.get(_LATENCY_MASK_TOTAL_STAGE) or {}).get("total_ms", 0.0), 3)
+    return {
+        "enabled": bool(profile.get("enabled")),
+        "percentiles": list(_PERCENTILE_KEYS),
+        "groups": groups,
+        "total": total,
+        "total_mask_ms": mask_total_ms,
+        "stages": stages,
+    }
 
 
 def _clock_ticks() -> int:
@@ -524,6 +623,23 @@ def build_router(audit, license_client, assets, detector_version: str,
         # runs morphology, and this endpoint also serves /health's neighbours).
         # COUNTS ONLY — see `identity_stability`.
         identity = await anyio.to_thread.run_sync(identity_stability)
+        # THE ENGINE'S OWN COST, BESIDE THE COUNTS IT EXPLAINS. «Защищено
+        # значений» says how much was protected and nothing about what that cost
+        # the agent waiting on the gateway; this block is that answer, measured in
+        # this worker. It does NOT share the period above: the percentiles come
+        # from a bounded ring buffer of RECENT samples (and `count`/`total_ms` are
+        # process-lifetime), which is why the screen gives it its own caption
+        # instead of filing it under «за N дней».
+        #
+        # Counts and durations only: a stage name is ours, a float carries no
+        # token. `latency.enabled` is False (and every group null) unless the
+        # container runs with PSEUDEX_PROFILE=1, and the screen prints «—» rather
+        # than a zero: an unconfigured profiler must not read as «instant».
+        #
+        # OFF THE LOOP, like the identity probe: the snapshot sorts the retained
+        # window per stage, and this endpoint is polled every 5 s by a screen
+        # that must not make /health late.
+        latency = await anyio.to_thread.run_sync(latency_snapshot)
         return JSONResponse({
             "org_id": org_id,
             "days": await anyio.to_thread.run_sync(audit.daily_series, org_id, days, agent_id),
@@ -535,6 +651,7 @@ def build_router(audit, license_client, assets, detector_version: str,
             "suppressed_total": suppressed["total"],
             "suppressed_since": suppressed["since"],
             "identity": identity,
+            "latency": latency,
         })
 
     @router.get("/stats.csv")
