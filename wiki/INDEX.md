@@ -71,6 +71,16 @@ Not in root `docs/`: `storefront/docs/tz-site.md` and `storefront/docs/tz-site-s
 
 ## research/ — the evidence archive (mixed RU/EN)
 
+### Agent-hop integrity repair (in progress)
+
+| file | answers | status |
+|---|---|---|
+| `research/agent-integrity-repair/SCOPE.md` | Complete repair scope, acceptance requirements, frozen source separation, baseline and pending semantic decisions | has-open-items |
+| `research/agent-integrity-repair/run_battery.py` | Reproducible per-script before/after regression logs without paid model calls; generated results live beside the runner | evidence tooling |
+| `research/agent-integrity-repair/REVIEW-AND-MEASUREMENT.md` | Independent-review corrections, preliminary paired measurements and honest outstanding test failures; not live acceptance | has-open-items |
+| `research/agent-integrity-repair/compare_name_seeds.py` | Isolated paired seeded NAME-suite runs against baseline and repair to classify nondeterministic restoration faults | evidence tooling |
+| `research/agent-integrity-repair/NAME-PROVENANCE.md` | Candidate-type and bound-identity restoration repairs, full Latin windows, initials-index collision guard; preliminary tests, open mint/morphology scope | has-open-items |
+
 ### Market, pricing, distribution
 
 | file | answers | STATE |

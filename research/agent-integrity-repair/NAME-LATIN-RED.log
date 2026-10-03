@@ -1,0 +1,2 @@
+FAIL test_coherent_latin_name_outranks_colliding_single_token AssertionError 
+Failures: 1 ['test_coherent_latin_name_outranks_colliding_single_token']

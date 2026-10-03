@@ -1,0 +1,5 @@
+SENT TO MODEL: Найди заказ по телефону +7 993 922-18-07 и почте ayyczitp@example.ru
+MODEL TOOL CALL (tokens): {"phone": "+7 993 922-18-07", "email": "ayyczitp@example.ru"}
+TOOL EXECUTES WITH: {"phone": "+7 999 123-45-67", "email": "ivan@mail.ru"}
+
+PASS — model saw only tokens; tool received real values.

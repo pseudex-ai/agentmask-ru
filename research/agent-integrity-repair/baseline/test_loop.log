@@ -1,0 +1,5 @@
+SENT TO MODEL: Найди заказ по телефону +7 976 688-86-87 и почте lmthsvza@example.ru
+MODEL TOOL CALL (tokens): {"phone": "+7 976 688-86-87", "email": "lmthsvza@example.ru"}
+TOOL EXECUTES WITH: {"phone": "+7 999 123-45-67", "email": "ivan@mail.ru"}
+
+PASS — model saw only tokens; tool received real values.

@@ -117,9 +117,18 @@ Layer 1: JSON / form key-value, where the KEY types the WHOLE value with no shap
 check (`KEY_TYPE`), or only licenses a shape (`CTX_TYPES`). A KV-typed span skips
 `suppress`.
 - **API:** `key_type`, `key_edge`, `detect_structured_kv`
-- **Uses:** assets, cvc, detect, morph_places · **Used by:** cvc, detect_all, redact
+- **Uses:** assets, cvc, detect, json_fields, morph_places · **Used by:** context, cvc, detect_all, redact
 - **Tests:** none direct · via detect_all → test_hard_cases, test_persona_defects, test_product
 - **Docs:** `research/dd4-B-structured.md` · rules: INVARIANTS.md#structured-kv
+
+#### `pseudex/json_fields.py` — `live`
+Source-offset string-value boundaries and structural paths for valid JSON payloads.
+No PII policy: callers attribute evidence within a value or its typed ancestry,
+never by proximity to another field. Invalid JSON falls back to ordinary detection.
+- **API:** `StringLeaf`, `string_leaves`
+- **Uses:** — · **Used by:** context, structured
+- **Tests:** test_hop_integrity
+- **Docs:** `research/agent-integrity-repair/SCOPE.md` · rules: INVARIANTS.md#structured-kv
 
 #### `pseudex/cvc.py` — 362 lines · `live`
 Temporary secrets with NO internal evidence — the card verification code
@@ -209,7 +218,7 @@ Context-aware false-positive suppression (the deny-context layer): document
 words before a date, cue words within 60 characters and never across a sentence
 end, place-reference vs address. Runs BEFORE overlap resolution.
 - **API:** `location_is_pii`, `suppress`
-- **Uses:** assets, detect, fuzzy, quasi · **Used by:** detect_all
+- **Uses:** assets, detect, fuzzy, json_fields, quasi, structured (lazy) · **Used by:** detect_all
 - **Tests:** none direct · via detect_all → test_overmasking, test_hard_cases, test_coverage_152fz
 - **Docs:** `research/dd2-notes-C-disambiguation.md`, `research/dd3-location-pii.md` · rules: INVARIANTS.md#context
 
@@ -697,6 +706,7 @@ Run from `prototype/`; each loads the dev bundle itself.
 | `test_v6_gaps.py` | G7 follow-up — the two v6 detection gaps (type-label alignment and six real 0%-coverage gaps), each positive with four controls (own register, negative, no fuzzy numerals, typed over bare) |
 | `test_identity_invariant.py` | D-081 — the PIN test: the eight `bench/identity_invariant.py` groups as asserts (NAME case/order collapse, NAME differ control, NAME patronymic collapse, LOC form/dictation/flat/entrance collapse, PHONE notation) plus the key/trap controls (lone-surname gender, to_nominative single-guard) |
 | `test_phase4b.py` | phase 4b — the PIN test for the five owner-approved clusters (W1 build/corpus leaf round-trip, W2 word→digit detokenization, W3/W4 NAME case + initials, W5/W6 VIN/PTS separators + glued cue, W7 leading-zero preservation) + the D-081 core intact (55 assertions) |
+| `test_hop_integrity.py` | Cross-hop repair regressions: role-bounded numerical restoration, phone priority, compatible address projections versus distinct owners, field-scoped operational dates and DOB controls, Markdown labels, JSON offsets and quantity tails. Work-in-progress tests remain red for pending classes; not a release gate substitute. |
 
 Not in `prototype/`: `licensing/test_*.py` (§2), `storefront/test_*.py` (§6),
 `e2e/` gates (§5).

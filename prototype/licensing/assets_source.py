@@ -1021,7 +1021,11 @@ ADDRESS_PATTERNS: dict[str, str] = {
         r"(?i)\s*(?:м²|м2|%"
         r"|(?:кв\.?\s*м|гектар\w*|га|метр\w*|километр\w*|км|сантиметр\w*|см"
         r"|миллиметр\w*|мм|сотк\w+|квадратн\w+|штук\w*|шт|тонн\w*|кг"
-        r"|литр\w*|процент\w*|м)\b)"
+        # Spoken full units license a quantity just as their abbreviations do.
+        # A fuzzy street followed by 'пять килограммов' must not become a house
+        # merely because the sender did not abbreviate the unit to 'кг'.
+        r"|(?:кило|милли|микро)?грамм\w*|мг|мкг"
+        r"|(?:милли)?литр\w*|мл|процент\w*|м)\b)"
     ),
     # СТРОЧНАЯ УЛИЦА БЕЗ НОМЕРА ДОМА И БЕЗ СЛОВА-ТИПА. «адрес репина», «на
     # бибиревская»: слово в нижнем регистре потеряло заглавную — второй сигнал,

@@ -1,0 +1,27 @@
+WARNING:pseudex.vault_key:vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/persona-defects-ps98ov5q/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+INFO:pseudex.schema:schema: /var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/persona-defects-ps98ov5q/tenants.db created at user_version 1
+INFO:pseudex.schema:schema: /var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/persona-defects-ps98ov5q/audit.db created at user_version 1
+WARNING:pseudex:PSEUDEX_ADMIN_TOKEN was not set — generated a per-process one. With more than one worker the operator interface will fail intermittently. entrypoint.sh sets one for the container.
+WARNING:pseudex:PSEUDEX_GATEWAY_TOKEN was not set — generated a per-process one. With more than one worker the gateway will be rejected at random. entrypoint.sh sets it once for the container.
+WARNING:pseudex.service:PSEUDEX_GATEWAY_TOKEN was not set — generated a per-process one. With more than one worker the gateway will be rejected at random. entrypoint.sh sets it once for the container.
+WARNING:pseudex.service:PSEUDEX_ADMIN_TOKEN was not set — generated a per-process one. With more than one worker the operator interface will fail intermittently. Set it once for the container.
+INFO:httpx:HTTP Request: GET http://t/usage "HTTP/1.1 401 Unauthorized"
+INFO:httpx:HTTP Request: GET http://t/usage "HTTP/1.1 401 Unauthorized"
+INFO:httpx:HTTP Request: GET http://t/usage "HTTP/1.1 401 Unauthorized"
+INFO:httpx:HTTP Request: GET http://t/usage?org_id=x "HTTP/1.1 401 Unauthorized"
+INFO:httpx:HTTP Request: GET http://t/license "HTTP/1.1 503 Service Unavailable"
+INFO:httpx:HTTP Request: GET http://t/license "HTTP/1.1 503 Service Unavailable"
+WARNING:pseudex.vault_key:vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/one-person-ny_lmh98/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+INFO:pseudex.schema:schema: /var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/one-person-ny_lmh98/vault.db created at user_version 9
+PASS  нормализация: look-alike на краю слова
+PASS  строчное ФИО в косвенном падеже
+PASS  KV-спан несёт своё свидетельство
+PASS  счёт держится на формате, не на слове
+PASS  двусмысленные слова не ключи
+PASS  /usage требует известный ключ
+PASS  тревога по лицензии одинакова на обоих легах
+PASS  просторечные имена не утекают
+PASS  слипшиеся написания не прячут ПД
+PASS  регистр и ё не расщепляют человека
+
+все 10 дефекта прогона персон закрыты

@@ -39,6 +39,7 @@ from bench.agentpii4.schema import Case, Expectation, Message, Provenance, SeedR
 from bench.agentpii5 import harness as h
 from bench.agentpii5 import records, runinfo
 from bench.agentpii5.actual_hops import actual_events
+from bench.agentpii5.connectors import Conversation, DialogueHooks, ToolSpec
 from bench.agentpii5.contracts import ArmRunV5, CaseV5
 from bench.agentpii5.fixtures import _in_message, _in_seed, _item, _hop
 from bench.agentpii5.harness import (
@@ -699,6 +700,50 @@ def test_chain_repeat_correction_memory_two_entities() -> list[str]:
     return failures
 
 
+class PartialThenErrorAgent:
+    """A connector double that executes two tool calls, then fails the engine.
+
+    The RuntimeError is NOT a transient blip, so `arm_verdict` classifies the I
+    arm as `gateway_5xx` — exactly the long_order-012 shape where three accepted
+    orders once vanished behind an empty record."""
+
+    async def converse(self, system: str, tools: tuple[ToolSpec, ...],
+                       user_indices: tuple[int, ...], hooks: DialogueHooks,
+                       timeout_s: float, max_calls: int) -> Conversation:
+        for index in user_indices:
+            hooks.user(index)
+        hooks.response("lookup")
+        hooks.tool("crm_find_contact", {"query": {"phone": CHAIN_PHONE_ONE}})
+        hooks.response("send")
+        hooks.tool("notify_sms", {"number": CHAIN_PHONE_ONE, "text": "ok", "sign": "SMS Aero"})
+        raise RuntimeError("engine failed closed after two calls")
+
+
+def test_partial_history_preserved_on_error() -> list[str]:
+    """An error AFTER executed calls must keep those calls and the mock state."""
+    failures: list[str] = []
+    case = _chain_case()
+    gateway = GatewayV5(case, Detector(), Vault(":memory:", "partial-history"),
+                        AuditLog(":memory:"), MaskCache(256))
+    backend = seed_backend_v5(case)
+    outcome = asyncio.run(h.ConnectedArms(PartialThenErrorAgent(), max_calls=100).intervention(
+        case, 0, gateway, backend, "fixture", 0.15, "fixture-run"))
+    run = outcome.run
+    if outcome.base.run.termination != "gateway_5xx":
+        failures.append(f"termination={outcome.base.run.termination}, want gateway_5xx")
+    if len(run.base.calls) != 2:
+        failures.append(f"calls={len(run.base.calls)}, want 2")
+    if not run.base.state:
+        failures.append("state empty despite two executed calls")
+    if len(run.tool_results) != 2:
+        failures.append(f"tool_results={len(run.tool_results)}, want 2")
+    if tuple(run.call_turns) != (2, 2):
+        failures.append(f"call_turns={run.call_turns}, want (2, 2)")
+    if run.model_trace is None:
+        failures.append("model_trace lost although responses were reported")
+    return failures
+
+
 def main() -> int:
     checks: tuple[tuple[str, Callable[[], list[str]]], ...] = (
         ("chunked_answer", test_chunked_answer),
@@ -709,6 +754,7 @@ def main() -> int:
          test_a_provider_blip_is_retried_on_the_real_path),
         ("chain_repeat_correction_memory_two_entities",
          test_chain_repeat_correction_memory_two_entities),
+        ("partial_history_preserved_on_error", test_partial_history_preserved_on_error),
     )
     failures: list[str] = []
     for name, check in checks:

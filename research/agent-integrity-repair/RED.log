@@ -1,0 +1,10 @@
+FAIL test_short_numeric_components_do_not_rewrite_business_values AssertionError ('ord-6', 'ord-9')
+FAIL test_complete_phone_outranks_unrelated_house_literal AssertionError ('+7 992 395-55-43', '+6 992 395-55-43')
+FAIL test_city_omission_keeps_core_and_apartment AssertionError ('Курск, переулок Ольховый 3, кв. 700', 'переулок Кленовый 9, кв. 441')
+FAIL test_city_family_cannot_steal_full_address_owner AssertionError ('Чернь, Некрасова., 108, кв. 69', 'Чернь.')
+PASS test_ambiguous_cityless_address_never_picks_a_city_owner
+PASS test_explicit_street_types_remain_distinct
+FAIL test_operational_json_dates_ignore_adjacent_person_fields AssertionError ('date', [Span(start=10, end=20, entity_type='DOB', value='2026-09-10'), NameSpan(start=46, end=57, entity_type='NAME', value='Иванов Пётр', cases=()), Span(start=70, end=82, entity_type='PHONE', value='+79164021187')])
+FAIL test_markdown_name_caption_is_not_part_of_identity AssertionError ('**Получатель:** Ершов Кирилл', '**Получатель:Бирюков Карпов Денис')
+FAIL test_quantity_tail_is_not_a_second_address AssertionError ('килограмма', [Span(start=12, end=101, entity_type='LOC', value='красноярск бульвар маяковского дом четырнадцать квартира сто девяносто пять коробкаа пять')])
+Failures: 7 ['test_short_numeric_components_do_not_rewrite_business_values', 'test_complete_phone_outranks_unrelated_house_literal', 'test_city_omission_keeps_core_and_apartment', 'test_city_family_cannot_steal_full_address_owner', 'test_operational_json_dates_ignore_adjacent_person_fields', 'test_markdown_name_caption_is_not_part_of_identity', 'test_quantity_tail_is_not_a_second_address']

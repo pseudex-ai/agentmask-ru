@@ -40,6 +40,7 @@
 import argparse
 import json
 import re
+import ssl
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
@@ -772,8 +773,10 @@ TRANSPORT_ERROR_NAMES: frozenset[str] = frozenset({
     "CLIConnectionError", "CLIJSONDecodeError", "ProcessError",
     "ClientConnectorError", "ServerDisconnectedError", "IncompleteRead"})
 # Встроенные классы — отдельно: `ConnectionError` и `TimeoutError` не имеют
-# отношения к SDK и ловятся по типу, как и положено.
-TRANSPORT_ERROR_TYPES: tuple[type[BaseException], ...] = (ConnectionError, TimeoutError)
+# отношения к SDK и ловятся по типу, как и положено. `ssl.SSLError` — тоже
+# транспорт («record layer failure» на живом прогоне): это не наш дефект и не
+# «нет места на диске», а обрыв TLS до провайдера; повтор даёт другой сэмпл.
+TRANSPORT_ERROR_TYPES: tuple[type[BaseException], ...] = (ConnectionError, TimeoutError, ssl.SSLError)
 
 
 def is_transport_error(error: BaseException) -> bool:

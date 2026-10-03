@@ -1,0 +1,1306 @@
+{
+  "artifact_purity": {
+    "durable_violations": [
+      {
+        "case_id": "long_order-002",
+        "call": "notify_sms",
+        "field": "text",
+        "leak_type": "NAME",
+        "leak": "Бирюков",
+        "durable": true
+      },
+      {
+        "case_id": "long_order-022",
+        "call": "crm_add_note",
+        "field": "text",
+        "leak_type": "SUBSTITUTE",
+        "leak": "жасминовый",
+        "durable": true
+      },
+      {
+        "case_id": "long_clinic-015",
+        "call": "clinic_book",
+        "field": "slot",
+        "leak_type": "DATE",
+        "leak": "2026-09-08T09",
+        "durable": true
+      },
+      {
+        "case_id": "long_clinic-015",
+        "call": "appointment_reschedule",
+        "field": "slot",
+        "leak_type": "DATE",
+        "leak": "2026-09-08T09",
+        "durable": true
+      },
+      {
+        "case_id": "long_clinic-021",
+        "call": "clinic_book",
+        "field": "slot",
+        "leak_type": "DATE",
+        "leak": "2026-09-02T09",
+        "durable": true
+      },
+      {
+        "case_id": "long_clinic-021",
+        "call": "appointment_reschedule",
+        "field": "slot",
+        "leak_type": "DATE",
+        "leak": "2026-09-08T09",
+        "durable": true
+      },
+      {
+        "case_id": "long_clinic-040",
+        "call": "clinic_book",
+        "field": "slot",
+        "leak_type": "DATE",
+        "leak": "2026-09-03T09",
+        "durable": true
+      },
+      {
+        "case_id": "long_clinic-040",
+        "call": "appointment_reschedule",
+        "field": "slot",
+        "leak_type": "DATE",
+        "leak": "2026-09-03T09",
+        "durable": true
+      },
+      {
+        "case_id": "long_clinic-040",
+        "call": "appointment_reschedule",
+        "field": "slot",
+        "leak_type": "DATE",
+        "leak": "2026-09-03T09",
+        "durable": true
+      },
+      {
+        "case_id": "long_clinic-040",
+        "call": "appointment_reschedule",
+        "field": "slot",
+        "leak_type": "DATE",
+        "leak": "2026-09-08T09",
+        "durable": true
+      },
+      {
+        "case_id": "long_bank-008",
+        "call": "payment_create",
+        "field": "payment_method_data.card.cardholder",
+        "leak_type": "SUBSTITUTE",
+        "leak": "ERSHOV",
+        "durable": true
+      },
+      {
+        "case_id": "long_bank-008",
+        "call": "crm_upsert_contact",
+        "field": "contact.name_latin",
+        "leak_type": "SUBSTITUTE",
+        "leak": "ERSHOV",
+        "durable": true
+      },
+      {
+        "case_id": "long_bank-008",
+        "call": "crm_add_note",
+        "field": "text",
+        "leak_type": "SUBSTITUTE",
+        "leak": "ERSHOV",
+        "durable": true
+      },
+      {
+        "case_id": "long_bank-008",
+        "call": "notify_sms",
+        "field": "text",
+        "leak_type": "SUBSTITUTE",
+        "leak": "ERSHOV",
+        "durable": true
+      },
+      {
+        "case_id": "memory_anaphora-033",
+        "call": "escalate_to_human",
+        "field": "summary",
+        "leak_type": "SUBSTITUTE",
+        "leak": "г. Чернь, ул. Сосновая",
+        "durable": true
+      },
+      {
+        "case_id": "tool_chain-002",
+        "call": "crm_add_note",
+        "field": "text",
+        "leak_type": "SUBSTITUTE",
+        "leak": "речная",
+        "durable": true
+      },
+      {
+        "case_id": "tool_chain-004",
+        "call": "crm_add_note",
+        "field": "text",
+        "leak_type": "SUBSTITUTE",
+        "leak": "осиновая",
+        "durable": true
+      },
+      {
+        "case_id": "tool_chain-026",
+        "call": "crm_add_note",
+        "field": "text",
+        "leak_type": "SUBSTITUTE",
+        "leak": "полевая",
+        "durable": true
+      },
+      {
+        "case_id": "chain-002",
+        "call": "crm_upsert_contact",
+        "field": "contact.name_latin",
+        "leak_type": "SUBSTITUTE",
+        "leak": "Radislav",
+        "durable": true
+      },
+      {
+        "case_id": "chain-002",
+        "call": "crm_upsert_contact",
+        "field": "contact.name_latin",
+        "leak_type": "SUBSTITUTE",
+        "leak": "Radislav",
+        "durable": true
+      },
+      {
+        "case_id": "chain-002",
+        "call": "crm_upsert_contact",
+        "field": "contact.name_latin",
+        "leak_type": "SUBSTITUTE",
+        "leak": "Radislav",
+        "durable": true
+      },
+      {
+        "case_id": "chain-010",
+        "call": "crm_upsert_contact",
+        "field": "contact.name_latin",
+        "leak_type": "SUBSTITUTE",
+        "leak": "Savely",
+        "durable": true
+      }
+    ],
+    "readonly_violations": [
+      {
+        "case_id": "long_order-002",
+        "call": "pickup_points_near",
+        "field": "address",
+        "leak_type": "NAME",
+        "leak": "Бирюков",
+        "durable": false
+      },
+      {
+        "case_id": "long_support-008",
+        "call": "order_status",
+        "field": "order_id",
+        "leak_type": "SUBSTITUTE",
+        "leak": "D-245",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-002",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "речная",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-005",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "жасминовая",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-008",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "жасминовая",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-012",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "полевая",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-011",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "рябиновая",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-013",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "мятная",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-016",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "грушевая",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-015",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "рябиновая",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-021",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "вязовая",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-022",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "сиреневая",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-024",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "рябиновая",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-031",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "пихтовая",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-031",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "пихтовая",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-025",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "рябиновая",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-033",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "липовая",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-043",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "мятная",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-040",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "кедровая",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-039",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "рябиновая",
+        "durable": false
+      },
+      {
+        "case_id": "tool_chain-041",
+        "call": "address_suggest",
+        "field": "query",
+        "leak_type": "SUBSTITUTE",
+        "leak": "пихтовая",
+        "durable": false
+      }
+    ]
+  },
+  "behavioural_parity": [
+    {
+      "case_id": "long_order-009",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-009",
+      "tool": "order_cancel",
+      "I": 3,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_order-003",
+      "tool": "delivery_create_order",
+      "I": 5,
+      "C": 2,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-003",
+      "tool": "order_cancel",
+      "I": 3,
+      "C": 1,
+      "C2": 0
+    },
+    {
+      "case_id": "long_order-003",
+      "tool": "order_reschedule",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-008",
+      "tool": "delivery_create_order",
+      "I": 5,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-008",
+      "tool": "order_cancel",
+      "I": 5,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_order-001",
+      "tool": "delivery_create_order",
+      "I": 4,
+      "C": 2,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-001",
+      "tool": "order_cancel",
+      "I": 4,
+      "C": 2,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-007",
+      "tool": "delivery_create_order",
+      "I": 5,
+      "C": 1,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-007",
+      "tool": "order_cancel",
+      "I": 5,
+      "C": 1,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-010",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 2,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-010",
+      "tool": "order_cancel",
+      "I": 3,
+      "C": 2,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-000",
+      "tool": "delivery_create_order",
+      "I": 5,
+      "C": 2,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-000",
+      "tool": "order_cancel",
+      "I": 3,
+      "C": 1,
+      "C2": 0
+    },
+    {
+      "case_id": "long_order-000",
+      "tool": "order_reschedule",
+      "I": 5,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-015",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-015",
+      "tool": "order_cancel",
+      "I": 2,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_order-013",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 2,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-013",
+      "tool": "order_cancel",
+      "I": 4,
+      "C": 2,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-011",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 2,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-011",
+      "tool": "order_cancel",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-006",
+      "tool": "delivery_create_order",
+      "I": 5,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-006",
+      "tool": "order_cancel",
+      "I": 4,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_order-006",
+      "tool": "order_reschedule",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-021",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-021",
+      "tool": "order_cancel",
+      "I": 1,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_order-017",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 2,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-017",
+      "tool": "order_cancel",
+      "I": 3,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-026",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 2,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-026",
+      "tool": "order_cancel",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-022",
+      "tool": "delivery_create_order",
+      "I": 5,
+      "C": 2,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-022",
+      "tool": "order_cancel",
+      "I": 5,
+      "C": 2,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-024",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 1,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-024",
+      "tool": "order_cancel",
+      "I": 2,
+      "C": 0,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-024",
+      "tool": "order_reschedule",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-027",
+      "tool": "delivery_create_order",
+      "I": 4,
+      "C": 1,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-027",
+      "tool": "order_cancel",
+      "I": 4,
+      "C": 0,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-023",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 2,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-023",
+      "tool": "order_cancel",
+      "I": 3,
+      "C": 1,
+      "C2": 0
+    },
+    {
+      "case_id": "long_order-028",
+      "tool": "delivery_create_order",
+      "I": 5,
+      "C": 0,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-028",
+      "tool": "order_cancel",
+      "I": 4,
+      "C": 0,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-016",
+      "tool": "delivery_create_order",
+      "I": 4,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-016",
+      "tool": "order_cancel",
+      "I": 4,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-032",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-032",
+      "tool": "order_cancel",
+      "I": 1,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_order-031",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-031",
+      "tool": "order_cancel",
+      "I": 3,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-033",
+      "tool": "order_reschedule",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-037",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-037",
+      "tool": "order_cancel",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-040",
+      "tool": "delivery_create_order",
+      "I": 4,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-040",
+      "tool": "order_cancel",
+      "I": 4,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-035",
+      "tool": "delivery_create_order",
+      "I": 5,
+      "C": 1,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-035",
+      "tool": "order_cancel",
+      "I": 3,
+      "C": 0,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-039",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-039",
+      "tool": "order_cancel",
+      "I": 2,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_order-039",
+      "tool": "order_reschedule",
+      "I": 4,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-044",
+      "tool": "delivery_create_order",
+      "I": 4,
+      "C": 2,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-044",
+      "tool": "order_cancel",
+      "I": 4,
+      "C": 1,
+      "C2": 0
+    },
+    {
+      "case_id": "long_order-045",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-045",
+      "tool": "order_cancel",
+      "I": 2,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_order-045",
+      "tool": "order_reschedule",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-041",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-041",
+      "tool": "order_cancel",
+      "I": 2,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_order-038",
+      "tool": "delivery_create_order",
+      "I": 6,
+      "C": 2,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-038",
+      "tool": "order_cancel",
+      "I": 4,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-046",
+      "tool": "delivery_create_order",
+      "I": 5,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-046",
+      "tool": "order_cancel",
+      "I": 5,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-048",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-048",
+      "tool": "order_cancel",
+      "I": 1,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_order-052",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 1,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-052",
+      "tool": "order_cancel",
+      "I": 3,
+      "C": 1,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-053",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 1,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-053",
+      "tool": "order_cancel",
+      "I": 2,
+      "C": 0,
+      "C2": 1
+    },
+    {
+      "case_id": "long_clinic-000",
+      "tool": "appointment_reschedule",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-059",
+      "tool": "order_cancel",
+      "I": 2,
+      "C": 0,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-054",
+      "tool": "delivery_create_order",
+      "I": 5,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-054",
+      "tool": "order_cancel",
+      "I": 5,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_clinic-006",
+      "tool": "appointment_reschedule",
+      "I": 3,
+      "C": 1,
+      "C2": 2
+    },
+    {
+      "case_id": "long_order-056",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_order-056",
+      "tool": "order_cancel",
+      "I": 2,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_clinic-008",
+      "tool": "appointment_reschedule",
+      "I": 1,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_order-057",
+      "tool": "order_reschedule",
+      "I": 2,
+      "C": 0,
+      "C2": 1
+    },
+    {
+      "case_id": "long_clinic-011",
+      "tool": "referral_create",
+      "I": 1,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_clinic-010",
+      "tool": "appointment_reschedule",
+      "I": 2,
+      "C": 0,
+      "C2": 1
+    },
+    {
+      "case_id": "long_clinic-010",
+      "tool": "referral_create",
+      "I": 1,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_clinic-017",
+      "tool": "clinic_book",
+      "I": 1,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_clinic-016",
+      "tool": "appointment_reschedule",
+      "I": 2,
+      "C": 1,
+      "C2": 0
+    },
+    {
+      "case_id": "long_clinic-019",
+      "tool": "appointment_reschedule",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_clinic-023",
+      "tool": "appointment_reschedule",
+      "I": 1,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_clinic-023",
+      "tool": "referral_create",
+      "I": 1,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_clinic-018",
+      "tool": "clinic_book",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_clinic-018",
+      "tool": "appointment_reschedule",
+      "I": 4,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_clinic-025",
+      "tool": "appointment_reschedule",
+      "I": 2,
+      "C": 1,
+      "C2": 0
+    },
+    {
+      "case_id": "long_clinic-025",
+      "tool": "referral_create",
+      "I": 1,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_clinic-026",
+      "tool": "clinic_book",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_clinic-027",
+      "tool": "clinic_book",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_clinic-027",
+      "tool": "appointment_reschedule",
+      "I": 2,
+      "C": 0,
+      "C2": 1
+    },
+    {
+      "case_id": "long_clinic-028",
+      "tool": "appointment_reschedule",
+      "I": 6,
+      "C": 0,
+      "C2": 1
+    },
+    {
+      "case_id": "long_clinic-028",
+      "tool": "referral_create",
+      "I": 1,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_clinic-038",
+      "tool": "appointment_reschedule",
+      "I": 1,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_clinic-040",
+      "tool": "appointment_reschedule",
+      "I": 3,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_bank-003",
+      "tool": "payment_create",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_bank-008",
+      "tool": "payment_create",
+      "I": 1,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_bank-014",
+      "tool": "payment_create",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_bank-032",
+      "tool": "payment_create",
+      "I": 1,
+      "C": 0,
+      "C2": 0
+    },
+    {
+      "case_id": "long_bank-042",
+      "tool": "payment_create",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "long_bank-036",
+      "tool": "payment_create",
+      "I": 3,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "tool_chain-002",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "tool_chain-003",
+      "tool": "delivery_create_order",
+      "I": 3,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "tool_chain-001",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "tool_chain-004",
+      "tool": "delivery_create_order",
+      "I": 4,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "tool_chain-013",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "tool_chain-006",
+      "tool": "delivery_create_order",
+      "I": 4,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "tool_chain-021",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "tool_chain-026",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "tool_chain-029",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "tool_chain-020",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "tool_chain-030",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "tool_chain-031",
+      "tool": "delivery_create_order",
+      "I": 4,
+      "C": 2,
+      "C2": 2
+    },
+    {
+      "case_id": "tool_chain-025",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "tool_chain-034",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "tool_chain-032",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "prompt_rule-000",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "tool_chain-040",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 0
+    },
+    {
+      "case_id": "tool_chain-041",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "prompt_rule-003",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "prompt_rule-006",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "prompt_rule-014",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "prompt_rule-020",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "prompt_rule-015",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "prompt_rule-018",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "prompt_rule-024",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "prompt_rule-027",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    },
+    {
+      "case_id": "prompt_rule-032",
+      "tool": "delivery_create_order",
+      "I": 2,
+      "C": 1,
+      "C2": 1
+    }
+  ]
+}

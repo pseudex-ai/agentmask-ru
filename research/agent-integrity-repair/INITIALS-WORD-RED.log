@@ -1,0 +1,2 @@
+FAIL test_initials_index_does_not_rewrite_ordinary_words AssertionError 
+Failures: 1 ['test_initials_index_does_not_rewrite_ordinary_words']

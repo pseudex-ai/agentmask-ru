@@ -12,6 +12,7 @@ from pseudex.fuzzy import within_one_typo
 from pseudex.assets import ASSETS, ContextAssets
 from pseudex import quasi as quasi_mod
 from pseudex.detect import Span
+from pseudex.json_fields import StringLeaf, string_leaves
 
 # The deny list, the phone cues, the region set and the address/place vocabulary
 # are LEASED (pseudex/assets.py). This module holds the rules that read them.
@@ -336,10 +337,49 @@ def _sentence_around(text: str, span: Span) -> str:
     return text[start:end]
 
 
+def _date_in_own_field(text: str, span: Span, spans: list[Span],
+                       leaf: StringLeaf) -> bool:
+    """A JSON date's evidence belongs to its own value or a typed ancestor.
+
+    A patient's name in a SIBLING field cannot make an appointment slot their
+    birthday. Equally, `dob: ["..."]` carries explicit evidence via its path,
+    and a free-text note may carry a birth cue inside its own value.
+    """
+    from pseudex.structured import key_type
+    if any(isinstance(key, str) and key_type(key) == "DOB" for key in leaf.path):
+        return True
+    local = Span(span.start - leaf.start, span.end - leaf.start,
+                 span.entity_type, span.value)
+    local_text = text[leaf.start:leaf.end]
+    # Re-evaluate the original birth recognizer INSIDE this leaf. Its typo,
+    # abbreviation and pronoun evidence is stronger than the generic DATE
+    # association rule and must not be lost by enforcing field isolation.
+    # Reusing it also avoids a second, inevitably drifting birth-cue dialect.
+    if any(birth.entity_type == "DOB" and birth.start <= local.start
+           and local.end <= birth.end for birth in quasi_mod.detect_quasi(local_text)):
+        return True
+    neighbours = [Span(other.start - leaf.start, other.end - leaf.start,
+                       other.entity_type, other.value)
+                  for other in spans
+                  if leaf.start <= other.start and other.end <= leaf.end]
+    return _date_is_personal(local_text, local, neighbours)
+
+
 def suppress(text: str, spans: list[Span]) -> list[Span]:
     context = ASSETS.get().context
     kept: list[Span] = []
+    # This is context attribution AFTER all recognizers ran, never a PII
+    # pre-filter. Parse once per payload, not once per date or adjacent person.
+    leaves = string_leaves(text) if any(s.entity_type in ("DATE", "DOB") for s in spans) else ()
     for span in spans:
+        if span.entity_type in ("DATE", "DOB"):
+            leaf = next((field for field in leaves
+                         if field.start <= span.start and span.end <= field.end), None)
+            if leaf is not None:
+                if not _date_in_own_field(text, span, spans, leaf):
+                    continue
+                if span.entity_type == "DATE":
+                    span = Span(span.start, span.end, "DOB", span.value)
         if span.entity_type == "IP" and _is_version_string(text, span.start, context):
             continue
         if span.entity_type == "DATE":

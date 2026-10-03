@@ -831,8 +831,10 @@ class ConnectedArms:
 
     async def _run(self, case: CaseV5, arm: str, repeat: int,
                    gateway: GatewayV5 | PassThrough, backend: BackendV5,
-                   model: str, cap: float) -> tuple[v4_harness.ArmOutcome, ArmRunV5 | None]:
-        hooks = GatewayHooks(case, gateway, backend)
+                   model: str, cap: float,
+                   hooks: GatewayHooks | None = None) -> tuple[v4_harness.ArmOutcome, ArmRunV5 | None]:
+        if hooks is None:
+            hooks = GatewayHooks(case, gateway, backend)
         system = gateway.push_system(case.base.messages[0].content)
         tools = connector_tools(gateway.tools())
         indices = tuple(i for i, message in enumerate(case.base.messages)
@@ -893,8 +895,13 @@ class ConnectedArms:
     async def intervention(self, case: CaseV5, repeat: int, gateway: GatewayV5,
                            backend: BackendV5, model: str, cap: float,
                            run_id: str) -> ArmOutcomeV5:
+        # The hooks are owned HERE, not inside `_run`: an error must still yield
+        # the calls, state and results the arm produced before it failed, never
+        # the empty record that once claimed a gateway_5xx arm did nothing.
+        hooks = GatewayHooks(case, gateway, backend)
         try:
-            outcome, run = await self._run(case, 'I', repeat, gateway, backend, model, cap)
+            outcome, run = await self._run(case, 'I', repeat, gateway, backend,
+                                           model, cap, hooks=hooks)
             if run is None:
                 raise HarnessError('intervention did not record observations')
             return ArmOutcomeV5(outcome, run)
@@ -903,10 +910,12 @@ class ConnectedArms:
             # is a transient blip re-raised by `arm_verdict` below.
             outcome = v4_harness._failed_arm(case.base, 'I', repeat, 'timeout',
                                            type(error).__name__ + ': ' + str(error), cap, cap, run_id)
-            return ArmOutcomeV5(outcome, _empty_run(case, repeat))
         except (HarnessError, OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
-            return ArmOutcomeV5(arm_verdict(case.base, 'I', repeat, error, cap, run_id, self.timeout_scale),
-                                _empty_run(case, repeat))
+            outcome = arm_verdict(case.base, 'I', repeat, error, cap, run_id, self.timeout_scale)
+        return ArmOutcomeV5(
+            outcome,
+            _partial_run_v5(case, gateway, backend, hooks, repeat,
+                            outcome.run.termination, outcome.run.cost_usd))
 
 
 async def run_arm_v5(case: CaseV5, arm: str, repeat: int, gateway: GatewayV5,
@@ -1125,6 +1134,37 @@ def _empty_run(case: CaseV5, repeat: int) -> ArmRunV5:
     return ArmRunV5(base=base, reply_raw="", control_reply="", tool_results=(), mentions=(),
                     turn_replies=(), call_turns=(), request_count=0, stream_mismatch=False,
                     reply_whole="", turn_residual=0, model_trace=None)
+
+
+def _partial_run_v5(case: CaseV5, gateway: GatewayV5, backend: BackendV5,
+                    hooks: GatewayHooks, repeat: int, termination: str,
+                    cost_usd: float) -> ArmRunV5:
+    """The observations an arm made BEFORE an error, never an empty record.
+
+    `_empty_run` is correct only for an arm that never started. A gateway_5xx
+    or a connector error raised AFTER calls executed otherwise erases the
+    created/cancelled orders from the main record while the capture still proves
+    they happened — the long_order-012 contradiction (three accepted/cancelled
+    orders under calls=[], v5=None). State, calls, tool results, mentions and
+    chronology are preserved; the final reply stays empty because none was
+    produced. `model_trace` can be unbuildable when a call arrived with no
+    reported response — that is a separate chronology fault and must not erase
+    the preserved operations, so it degrades to None rather than failing again.
+    """
+    base = ArmRun(case_id=case.base.id, arm="I", repeat=repeat,
+                  calls=tuple(hooks.calls), state=backend.snapshot(), reply="",
+                  termination=termination, cost_usd=cost_usd,
+                  substitutes=substitutes_for(case.base, gateway.substitutes_seen()),
+                  masked_spans=gateway.masked_spans())
+    try:
+        trace = hooks.model_trace()
+    except HarnessError:
+        trace = None
+    return ArmRunV5(base=base, reply_raw="", control_reply="",
+                    tool_results=gateway.tool_records(), mentions=gateway.mentions(),
+                    turn_replies=(), call_turns=tuple(hooks.turns),
+                    request_count=gateway.request_index, stream_mismatch=False,
+                    reply_whole="", turn_residual=0, model_trace=trace)
 
 
 # --- one triple ---------------------------------------------------------------------------

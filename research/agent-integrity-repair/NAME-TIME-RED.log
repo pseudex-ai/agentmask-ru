@@ -1,0 +1,2 @@
+FAIL test_name_fragment_does_not_claim_adjacent_time_or_quantity AssertionError ('Записать Льва Юдина на 15:00', 'Записать Никиты Никита Гущин:00')
+Failures: 1 ['test_name_fragment_does_not_claim_adjacent_time_or_quantity']

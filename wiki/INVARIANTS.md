@@ -122,6 +122,17 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 
 ## Structured KV
 
+- **Evidence in one JSON value does not type another value.** A patient NAME
+  or PHONE in a sibling field cannot make a booking/delivery date a DOB.
+  Source-offset JSON paths retain birth-key ancestry and birth cues inside a
+  free-text leaf. Invalid JSON falls back to prose, never bypasses detection.
+  Pins: `test_hop_integrity` (`test_operational_json_dates_ignore_adjacent_person_fields`,
+  `test_json_value_context_preserves_source_offsets`).
+- **Formatting of a field label is not part of its value.** Markdown delimiters
+  surrounding a NAME label stay outside the NAME span; issued pseudonyms remain
+  their own identity, but new real names under that label remain detectable.
+  Pins: `test_hop_integrity` (`test_markdown_name_caption_is_not_part_of_identity`).
+
 - **A `KEY_TYPE` entry types the WHOLE value with no shape check, so an
   ambiguous business word may never be one.** «счёт» is an invoice more often
   than an account, «Реквизиты:» introduces a LIST — adding them cost 12 of 298 on
@@ -567,6 +578,24 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 
 ## Swap
 
+- **Candidate provenance constrains restoration.** A PLACE-only framing may not
+  borrow a NAME fragment and swallow the time/count next to a name. A complete
+  key/alignment-bound NAME can outrank an unrelated contained token, but guessed
+  residual fragments cannot obtain that priority. Every plain NAME fragment must
+  align all source words; synthetic initials-index hits do not license ordinary
+  words. Latin and Cyrillic complete names have the same1–4word window capacity.
+  Pins: `test_hop_integrity` (`test_name_fragment_does_not_claim_adjacent_time_or_quantity`,
+  `test_coherent_latin_name_outranks_colliding_single_token`,
+  `test_full_transliterated_name_keeps_all_roles_and_script`,
+  `test_initials_index_does_not_rewrite_ordinary_words`).
+
+- **Numeric address projections are not global literal tokens.** A shown house
+  or flat digit only restores under role evidence (typed address object or
+  licensed cue). Matching it inside an ID/count/list number/phone prefix may
+  neither rewrite that value nor preempt the full PHONE restoration.
+  Pins: `test_hop_integrity` (`test_short_numeric_components_do_not_rewrite_business_values`,
+  `test_complete_phone_outranks_unrelated_house_literal`).
+
 - **A DIGIT FRAGMENT COMES BACK REAL ONLY IN THE ROLE IT WAS NAMED IN** (Б29).
   «Ровно одна наша подмена НОСИТ эти цифры» — утверждение о наших строках, а
   не о том, чьё число написал агент, и его вероятность растёт с трафиком
@@ -784,6 +813,19 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   membership. Pins: `test_notation_symmetry.py`, `test_location_form_adversarial.py`.
 
 ## Vault
+
+- **Address family lookup changes only the generic-type slot, never an
+  arbitrary canonical prefix.** A city is not the owner of its full address.
+  Pins: `test_hop_integrity` (`test_city_family_cannot_steal_full_address_owner`,
+  `test_explicit_street_types_remain_distinct`).
+- **A compositional projection reuses its full core's part namespace but stays
+  conversation-scoped.** City omission with a retained apartment must not mint
+  another house/flat; another apartment stays distinct; two city owners remain
+  ambiguous and projections from another conversation do not answer this one.
+  Pins: `test_hop_integrity` (`test_city_omission_keeps_core_and_apartment`,
+  `test_projected_parts_restore_without_city_or_other_flat`,
+  `test_missing_city_projection_is_conversation_scoped`,
+  `test_ambiguous_cityless_address_never_picks_a_city_owner`).
 
 - **Canonicalization collapses spellings to one key → one token**: `+7 999…` /
   `8 999…` / `89991234567`. Canonical identity is not a universal output

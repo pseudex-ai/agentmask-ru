@@ -41,6 +41,7 @@ class _ResolvedSpan(NamedTuple):
     end: int
     value: str
     entity_type: str
+    bound_identity: bool = False
 
 
 class _Whole:
@@ -1064,12 +1065,21 @@ def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
         taken: list[tuple[int, int, str]] = _conflicting_place_spans(
             text, vault, verbatim_spans + token_spans)
         for candidate in sorted(resolved_spans, key=lambda item: item.end - item.start, reverse=True):
-            start, end, value, entity_type = candidate
-            if entity_type not in {"LOC", "ADDR"}:
-                continue
+            start, end, value = candidate.start, candidate.end, candidate.value
+            entity_type = candidate.entity_type
             surface: str = text[start:end]
-            roles: dict[str, tuple[int, int]] = morph_places.role_spans(surface)
-            if "street" not in roles or "house" not in roles:
+            if entity_type in {"LOC", "ADDR"}:
+                roles: dict[str, tuple[int, int]] = morph_places.role_spans(surface)
+                if "street" not in roles or "house" not in roles:
+                    continue
+            elif entity_type == "NAME":
+                # A complete aligned/lookup-bound name is stronger than an
+                # unrelated shorter token inside it (legacy cross-script mint
+                # collisions). Inferred residual fragments do NOT get this
+                # priority: length alone cannot prove they share one identity.
+                if not candidate.bound_identity or len(surface.split()) < 2:
+                    continue
+            else:
                 continue
             # A copied whole has exact spelling evidence, including typos.
             # Only smaller copied leaves must yield to their resolved whole.
@@ -1087,7 +1097,7 @@ def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
                   _restore_spoken_identifier_spans(text, vault, for_tool)]
         # A cue inside a JSON string carries the same role as one in prose.
         # Field-level numeric values remain governed by the schema path.
-        passes.append(_restore_cued_numbers_spans(text, vault))
+        passes.append(_restore_cued_numbers_spans(text, vault, token_spans))
         # THE TEMPORARY SECRETS (C1, O-SECRET). Their substitutes are NOT in
         # `TOKEN_RE` on purpose: a bare `\b\d{3}\b` would make every three-digit
         # number of every answer a restoration candidate, and the class's domain
@@ -1212,7 +1222,10 @@ def _cue_kind(cue: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def _restore_cued_numbers_spans(text: str, vault: Vault) -> list[tuple[int, int, str]]:
+def _restore_cued_numbers_spans(
+        text: str, vault: Vault,
+        resolved_tokens: list[tuple[int, int, str]] | None = None,
+) -> list[tuple[int, int, str]]:
     # A NUMBER INSIDE A WHOLE ADDRESS OR TOKEN IS NOT A FRAGMENT. «кв. 83» in
     # «Кинешму, ул. Озёрную 96, кв. 83» belongs to the token the inflected
     # window restores as one piece; replacing its flat here first broke the
@@ -1225,7 +1238,12 @@ def _restore_cued_numbers_spans(text: str, vault: Vault) -> list[tuple[int, int,
     for m in _PLACE_RUN.finditer(text):
         framings = _place_windows(text, m.start(), m.end())
         protected.append((min(s for s, _ in framings), max(e for _, e in framings)))
-    protected += [m.span() for m in token_re().finditer(text)]
+    # A regex shape alone is not a bound token. Its broad numeric alternatives
+    # also match an isolated house/flat digit and used to block the very role
+    # cues that license it (notably 'д.' / 'кв.'). Reuse already RESOLVED whole
+    # tokens from the main pass; direct callers compute that same evidence once.
+    bound = _restore_tokens_spans(text, vault) if resolved_tokens is None else resolved_tokens
+    protected += [(start, end) for start, end, _ in bound]
     spans: list[tuple[int, int, str]] = []
     for match in _CUE_NUMBER.finditer(text):
         if not _licensed_number_cue(text, match):
@@ -1267,6 +1285,20 @@ def _restore_cued_numbers_spans(text: str, vault: Vault) -> list[tuple[int, int,
             owner = vault.digit_fragment_owner(digits, kind, position)
             if owner is not None:
                 replacement = _same_shape(number, owner[0])
+            # A masked card the model wrote as HEAD **** … TAIL keeps its TAIL
+            # resolved by the `*` cue above; the HEAD sits BEFORE the mask and has
+            # no backward cue. Only a card mask whose tail already resolved is
+            # licensed, and only the first digits then resolve: `digit_fragment_owner`
+            # still demands a unique conversation owner, so an unrelated number is
+            # never guessed into a card prefix.
+            if (replacement is not None and replacement != number
+                    and kind == "CARD" and position == "end" and cue.startswith("*")):
+                head = re.search(r'(?<![0-9])(\d{2,4})\s*$', text[:match.start()])
+                if head is not None:
+                    head_owner = vault.digit_fragment_owner(head.group(1), "CARD", "start")
+                    if head_owner is not None and head_owner[0] != head.group(1):
+                        spans.append((head.start(1), head.end(1),
+                                      _same_shape(head.group(1), head_owner[0])))
         if replacement is not None and replacement != number:
             spans.append((match.start("num"), match.end("num"), replacement))
     return spans
@@ -1386,6 +1418,14 @@ def _restore_verbatim_spans(text: str, shown_forms: list[tuple[str, str, str]],
     spans: list[tuple[int, int, str]] = []
     for shown, original, kind in shown_forms:
         if not shown:
+            continue
+        # A numeric address LEAF is not a self-identifying literal. It was
+        # licensed by its source role (house/flat), which this string-only table
+        # does not carry into a new occurrence. Replacing it here rewrites IDs,
+        # counts, list indices and even the prefix of a reformatted phone.
+        # Restore such projections only via the existing role-aware address
+        # object join or the cued-number resolver, never by substring identity.
+        if kind == "LOC" and shown.strip().isdecimal():
             continue
         matches = list(re.finditer(re.escape(shown), text))
         if not matches and kind == "PLATE":
@@ -2635,7 +2675,10 @@ def _name_windows(text: str) -> list[tuple[int, int, str]]:
     # Latin letters with an empty residual list. Misses cost one lookup.
     latin = [(m.start(), m.end(), m.group()) for m in _LATIN_WORD.finditer(text)]
     for i in range(len(latin)):
-        for size in (2, 1):
+        # The script must not truncate identity: surnames/given names and
+        # patronymics need the same complete windows as Cyrillic names. A pair
+        # plus an exact single-part hit can otherwise yield mixed-script output.
+        for size in (4, 3, 2, 1):
             if i + size > len(latin):
                 continue
             start, end = latin[i][0], latin[i + size - 1][1]
@@ -2893,6 +2936,7 @@ def _restore_inflected_candidates(text: str, vault: Vault, inflect: bool,
     # a generic word. The window is offered with a PLACE key only: a person
     # followed by a number («Иванов, 25 лет») produces a key no address token
     # has, and the miss costs one indexed query.
+    place_only: set[tuple[int, int]] = set()
     for start, end, surface in list(windows):
         if " " in surface:
             continue
@@ -2904,6 +2948,7 @@ def _restore_inflected_candidates(text: str, vault: Vault, inflect: bool,
             except Exception:  # noqa: BLE001
                 continue
             windows.append((low, high, text[low:high]))
+            place_only.add((low, high))
 
     place_framings: set[tuple[int, int]] = set()
     seen_runs: set[tuple[int, int]] = set()
@@ -2919,6 +2964,7 @@ def _restore_inflected_candidates(text: str, vault: Vault, inflect: bool,
                 continue
             windows.append((start, end, surface))
             place_framings.add((start, end))
+            place_only.add((start, end))
     if not windows:
         return []
     resolved = vault.resolve_name_keys_typed(
@@ -2942,11 +2988,14 @@ def _restore_inflected_candidates(text: str, vault: Vault, inflect: bool,
            and any(k in resolved for k in keys.get((start, end), []))}
     for start, end, surface in sorted(windows, key=lambda w: ((w[0], w[1]) in hit, w[1] - w[0]),
                                       reverse=True):
+        only_place = (start, end) in place_only
         found = next((resolved[k] for k in keys.get((start, end), [])
-                      if k in resolved), None)
-        derived = _derived_owner(surface, vault) if found is None and _is_derived_surface(surface) else None
+                      if k in resolved and (not only_place or resolved[k][0] == "LOC")), None)
+        derived = (_derived_owner(surface, vault)
+                   if not only_place and found is None and _is_derived_surface(surface) else None)
+        bound_identity = found is not None or derived is not None
         if found is None and derived is None:
-            if _is_derived_surface(surface):
+            if not only_place and _is_derived_surface(surface):
                 continue
             # PART OF A SUBSTITUTE IS STILL OURS. The key above is built from the
             # whole window, so «Жуков Филипп Алексеевич» resolves and «Филипп
@@ -2971,7 +3020,11 @@ def _restore_inflected_candidates(text: str, vault: Vault, inflect: bool,
             # Без этого схема «улица и дом, без квартиры» не работает вовсе:
             # ключ префикса не равен ключу отчеканенной подмены, владелец не
             # находится, и в инструмент уходит НАША подмена целиком.
-            owner = (_residual_owner(surface, vault, for_tool)
+            # A wider window offered ONLY as an address cannot be owned by
+            # a NAME fragment it happens to contain. Otherwise 'Юдина на 15'
+            # consumes a schedule and restores as the whole person, before the
+            # genuine 'Льва Юдина' name window ever gets a chance to resolve.
+            owner = ((_residual_owner(surface, vault, for_tool) if not only_place else None)
                      or _place_fragment(surface, vault, for_tool))
             if owner is None:
                 continue
@@ -2999,11 +3052,12 @@ def _restore_inflected_candidates(text: str, vault: Vault, inflect: bool,
                 continue
         taken.append((start, end))
         if derived is not None:
-            spans.append(_ResolvedSpan(start, end, derived, "NAME"))
+            spans.append(_ResolvedSpan(start, end, derived, "NAME", bound_identity=True))
             continue
         entity_type, value = found
         spans.append(_ResolvedSpan(start, end,
-                      _in_case_of(value, surface, entity_type, inflect, vault), entity_type))
+                      _in_case_of(value, surface, entity_type, inflect, vault), entity_type,
+                      bound_identity=bound_identity))
     return spans
 
 
@@ -3286,6 +3340,13 @@ def _residual_owner(surface: str, vault: Vault,
                     break
         if len(picked) == len(surface.split()):
             return entity_type, " ".join(picked)
+    if entity_type == "NAME":
+        # The part index also contains DERIVED forms such as squeezed initials.
+        # A hit is an owner candidate, not proof that ordinary 'по' names the
+        # person whose fake initials are ПО. Every source word must align to an
+        # actual fake part here; explicit initials/transliteration use their own
+        # derivation path. Falling back to the whole person invents information.
+        return None
     return entity_type, value
 
 

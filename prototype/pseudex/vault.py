@@ -1219,6 +1219,10 @@ def _place_identity(canonical: str) -> tuple[str, ...]:
     родовым, а дом/улица читались бы с мусором — связывание двух написаний
     одного места сломалось бы ровно на втором человеке в доме.
     """
+    # Storage scope is not part of the street/house identity. Owner lookup
+    # enforces the conversation; comparison must not interpret its prefix as
+    # a city/street when a shortened alias is shortened again.
+    canonical = canonical.split("\x00", 1)[-1]
     canonical = morph_places.strip_parts_key(canonical)
     return tuple(morph_places._fold_cardinals(
         [part for part in canonical.split() if part not in morph_places._GENERIC]))
@@ -3840,8 +3844,13 @@ class Vault:
                 # (иначе фрагмент «улица Кленовая» находит ДВА владельца — два
                 # человека в одном доме — и правило единственного владельца
                 # отказывает, а поле `street` схемы остаётся с фейком).
+                projected_head = self._short_place_core_owner(canonical, value, shape)
                 token, canonical, extends, _fresh = self._composed_place_token(
-                    value, loc_parts, shape)
+                    value, loc_parts, shape, projected_head=projected_head)
+                if projected_head is not None:
+                    # A missing-city projection is evidence local to THIS
+                    # dialogue, not another global owner or a new house.
+                    linked_place = (token, projected_head)
                 if not _fresh:
                     return token
             if token is None and entity_type == "LOC" and not loc_parts:
@@ -4372,8 +4381,33 @@ class Vault:
             return plain
         return morph_places.place_parts_key(value)
 
+    def _short_place_core_owner(self, canonical: str, value: str,
+                                shape: dict[str, object]) -> str | None:
+        """One full CORE owning a cityless compositional mention in this scope.
+
+        Several flats can name one core. They must not look like several
+        unrelated owners, nor may the new flat borrow an old flat's whole token.
+        Resolve street/house/type first; compose each part through that core's
+        own mapping afterwards. Two city-bearing cores remain ambiguous.
+        """
+        if not self._conversation or shape.get("has_city"):
+            return None
+        part = morph_places.street_house_key(value)
+        if not part:
+            return None
+        wanted = _house_identity(canonical, False)
+        owners = {
+            morph_places.core_phrase(token)
+            for other, token in self._place_rows(part, has_city=1)
+            if _same_house(_house_identity(other, True), wanted)
+            and _same_place_type(canonical, other)
+        }
+        owners.discard("")
+        return next(iter(owners)) if len(owners) == 1 else None
+
     def _composed_place_token(self, value: str, parts: dict[str, str],
-                              shape: dict[str, object]) -> tuple[str, str, str, bool]:
+                              shape: dict[str, object], *,
+                              projected_head: str | None = None) -> tuple[str, str, str, bool]:
         """ПОЛНАЯ подмена адреса: ядро этого дома + подмены ЕГО частей.
 
         Возвращает `(подмена, ключ строки, ядро, свежая)`. Две подмены одного
@@ -4388,7 +4422,9 @@ class Vault:
         """
         plain = morph_places.address_key(value)
         signature = morph_places.parts_signature(parts)
-        for candidate in (plain, morph_places.place_parts_key(value)):
+        candidates = (() if projected_head is not None else
+                      (plain, morph_places.place_parts_key(value)))
+        for candidate in candidates:
             row = self._conn.execute(
                 "SELECT token, original FROM tokens WHERE customer=? AND canonical=?",
                 (self._customer, candidate)).fetchone()
@@ -4403,7 +4439,7 @@ class Vault:
         core_key = morph_places.place_core_key(value)
         core_value = morph_places.core_phrase(value) or value
         same: tuple[str, str] | None = None
-        head = self._place_cores_lookup(core_key)
+        head = projected_head or self._place_cores_lookup(core_key)
         if head is None:
             # ОДНО МЕСТО, НАПИСАННОЕ ИНАЧЕ — ОДНА ГОЛОВА. Две законные связи уже
             # есть у волта, и здесь спрашиваются обе, в порядке силы:
@@ -4424,7 +4460,14 @@ class Vault:
                 self._remember_place_core(value, head)
         if head is None:
             head = self._place_core_head(core_key, core_value, shape)
-        row_canonical = self._place_row_canonical(plain, value)
+        row_canonical = (f"{self._conversation}\x00{morph_places.place_parts_key(value)}"
+                         if projected_head is not None
+                         else self._place_row_canonical(plain, value))
+        # Storage uses the FULL owning core so the apartment mapping is shared.
+        # Presentation drops the city only on the shortened mention, never by
+        # minting another head or creating a second part namespace.
+        visible_head = (morph_places.strip_leading_city(head)
+                        if projected_head is not None else head)
         resolved: dict[str, str] = {}
         missing: list[str] = []
         for role in morph_places.MUTABLE_PLACE_ROLES:
@@ -4442,7 +4485,7 @@ class Vault:
             for role in missing:
                 drawn[role] = self._draw_part_fake(head, role, parts[role], taken)
                 taken.add(drawn[role])
-            token = _decorate_place(head, shape, drawn, value)
+            token = _decorate_place(visible_head, shape, drawn, value)
             # ФОРМУ ПОДМЕНЫ ЗДЕСЬ НЕ ПРОВЕРЯЮТ (`LOC_TOKEN_PATTERN`): тот шаблон
             # — про то, что находит восстановитель, и он не описывает каждую
             # законную подмену (например, город с маркером «г Торжок», который
@@ -5779,12 +5822,16 @@ class Vault:
         if not base:
             return None
         plain = " ".join(base)
-        # НАПИСАНИЯ С ТИПОМ НА ЭТОЙ ЖЕ ОСНОВЕ — это «plain <пробел> тип».
-        # Диапазон начинается с пробела, поэтому «plainfoo» в него не попадает.
+        # Only the TYPE slot may differ. A prefix range also admitted a whole
+        # address as a continuation of its CITY, creating two incompatible
+        # originals under one fake/name_key. Exact indexed alternatives preserve
+        # every other component and do not let an arbitrary prefix steal its owner.
+        typed_keys = tuple(plain + " " + kind for kind in morph_places._GENERIC)
+        placeholders = ",".join("?" for _ in typed_keys)
         typed_rows = self._conn.execute(
             "SELECT canonical, token FROM tokens WHERE customer=? AND entity_type='LOC' "
-            "AND canonical >= ? AND canonical < ? LIMIT 2",
-            (self._customer, plain + " ", plain + " \uffff"),
+            f"AND canonical IN ({placeholders}) LIMIT 2",
+            (self._customer, *typed_keys),
         ).fetchall()
         if len(base) == len(words):
             # БЕЗ ТИПА: ровно одно продолжение — это одно место; два («переулок»

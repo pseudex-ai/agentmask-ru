@@ -1162,7 +1162,7 @@ _PAIR_GAP_RE = re.compile(r"[\s,.:;()«»\"'-]{0,3}\Z")
 # four, exactly as `markerless` limits it — a fourth digit is a year far more
 # often than a door, and «улица Ленина 2024 года» must not swallow the year.
 _HOUSE_AFTER_RE = re.compile(
-    r"[\s,]{0,3}(?:дом|д)?\.?\s*\d{1,3}[А-ЯЁа-яё]?(?:/\d+)?(?![0-9A-Za-zА-Яа-яёЁ])")
+    r"[\s,]{0,3}(?:дом|д)?\.?\s*\d{1,3}\s?[А-ЯЁа-яё]?(?:/\d+)?(?![0-9A-Za-zА-Яа-яёЁ])")
 
 
 @functools.lru_cache(maxsize=4)
@@ -1755,7 +1755,7 @@ _HOUSE_MARKER_RE = re.compile(r"(?i)(?:дом(?![а-яё])|д\.)")
 _NAME_BEFORE_HOUSE_RE = re.compile(r"([А-Яа-яЁё]{4,})\s+$")
 _NAME_COMMA_BEFORE_HOUSE_RE = re.compile(r"([А-Яа-яЁё]{4,}),\s*$")
 _CITY_STREET_HOUSE_RE = re.compile(
-    r"(?<![А-Яа-яЁё])([А-ЯЁ][а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?),\s*([А-Яа-яЁё]{4,}),\s*(\d{1,3}(?:[а-яё](?![а-яё]))?)(?!\d)")
+    r"(?<![А-Яа-яЁё])([А-ЯЁ][а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?),\s*([А-Яа-яЁё]{4,}),\s*(\d{1,3}\s?(?:[а-яё](?![а-яё]))?)(?!\d)")
 _CITY_CLAUSE_BEFORE_RE = re.compile(r"[А-ЯЁ][а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?,\s*$")
 
 

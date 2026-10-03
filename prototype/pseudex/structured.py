@@ -11,6 +11,7 @@ import re
 from pseudex import cvc, morph_places
 from pseudex.assets import ASSETS, CompositeType, StructuredAssets
 from pseudex.detect import PartSpan, Span
+from pseudex.json_fields import StringLeaf, string_leaves
 
 # A filename/extension or a path separator. No person's name contains either, so
 # rejecting these is free of recall risk.
@@ -93,10 +94,27 @@ _NUMBER_KEY_TYPES = frozenset(cvc.LABELS)
 #
 # The next key must start with a LETTER, which is what keeps «с 18:00 до 21:00»
 # out: a time is introduced by digits and cannot look like a key.
-_KEY_SHAPE = r"[А-Яа-яЁёA-Za-z][А-Яа-яЁёA-Za-z .\-]{1,24}?\s*:"
+_KEY_NAME = r"[А-Яа-яЁёA-Za-z][А-Яа-яЁёA-Za-z .\-]{1,24}?"
+_KEY_SHAPE = _KEY_NAME + r"\s*:"
+_MARKDOWN_KEY_SHAPE = (
+    r"(?:\*{1,2}|_{1,2})" + _KEY_NAME
+    + r"\s*(?:(?:\*{1,2}|_{1,2})\s*:|:\s*(?:\*{1,2}|_{1,2}))"
+)
+# Every accepted label spelling also terminates the PREVIOUS field. Otherwise
+# adding Markdown support would swallow a following status/quantity field.
+_FORM_VALUE = r"(?:(?!\s+(?:" + _KEY_SHAPE + "|" + _MARKDOWN_KEY_SHAPE + r"))[^\n,;]){2,60}"
 _FORM_KV = re.compile(
-    r"([А-Яа-яЁёA-Za-z][А-Яа-яЁёA-Za-z .\-]{1,24}?)\s*:\s*"
-    r"((?:(?!\s+" + _KEY_SHAPE + r")[^\n,;]){2,60})"
+    r"(" + _KEY_NAME + r")\s*:\s*"
+    r"(" + _FORM_VALUE + r")"
+)
+# The delimiter belongs to the KEY, not the value. Treat both **Name:** x
+# and **Name**: x as the same keyed leaf, with offsets into the untouched text.
+# Otherwise the ordinary form regex captures '** x' as a different NAME and
+# re-mints the assistant's own pseudonym as a third person.
+_MARKDOWN_FORM_KV = re.compile(
+    r"(?P<mark>\*{1,2}|_{1,2})(?P<key>" + _KEY_NAME + r")"
+    r"\s*(?:(?P=mark)\s*:|:\s*(?P=mark))\s*"
+    r"(?P<value>" + _FORM_VALUE + r")"
 )
 _KEY_CLEAN_RE = re.compile(r"[\s\-_.]")
 
@@ -453,6 +471,19 @@ def _leaf_span(text: str, raw: str, key: str, matched: str, group_start: int) ->
                 _raw_value(raw, text, start, start + len(value), value))
 
 
+def _form_leaf_span(text: str, raw: str, key: str, matched: str,
+                    start: int, key_start: int, leaves: tuple[StringLeaf, ...]) -> Span | None:
+    # A form can live INSIDE a JSON note, but its value may not consume the
+    # closing quote or evidence from a sibling field. Reuse the same structural
+    # boundaries as context attribution, keeping source offsets unchanged.
+    enclosing = next((leaf for leaf in leaves if leaf.start <= key_start < leaf.end), None)
+    if enclosing is not None:
+        if start >= enclosing.end:
+            return None
+        matched = matched[:enclosing.end - start]
+    return _leaf_span(text, raw, key, matched, start)
+
+
 def detect_structured_kv(text: str, raw: str = "") -> list[Span]:
     """Detect PII by typing whole values from their key name.
 
@@ -467,14 +498,28 @@ def detect_structured_kv(text: str, raw: str = "") -> list[Span]:
     json_matches = list(_JSON_KV.finditer(text))
     claimed: set[int] = set()
     spans: list[Span] = _object_spans(text, json_matches, claimed)
+    markdown = list(_MARKDOWN_FORM_KV.finditer(text))
+    leaves = string_leaves(text)
+    for match in markdown:
+        span = _form_leaf_span(text, raw, match.group("key"), match.group("value"),
+                              match.start("value"), match.start("key"), leaves)
+        if span is not None:
+            spans.append(span)
     for regex in (_JSON_KV, _FORM_KV, _JSON_KV_NUM):
         for match in regex.finditer(text):
             if regex in (_JSON_KV, _JSON_KV_NUM) and match.start() in claimed:
                 continue
+            if regex is _FORM_KV and any(m.start("key") <= match.start() < m.end("key")
+                                         for m in markdown):
+                continue
             if regex is _JSON_KV_NUM and key_type(match.group(1)) not in _NUMBER_KEY_TYPES:
                 continue
-            span = _leaf_span(text, raw, match.group(1), match.group(2),
-                              match.start(2))
+            if regex is _FORM_KV:
+                span = _form_leaf_span(text, raw, match.group(1), match.group(2),
+                                      match.start(2), match.start(1), leaves)
+            else:
+                span = _leaf_span(text, raw, match.group(1), match.group(2),
+                                  match.start(2))
             if span is not None:
                 spans.append(span)
     return spans
