@@ -453,7 +453,13 @@ class Command(BaseCommand):
         licensing.set_status(organization_id, "unpaid")
         subscription.state = Subscription.PAST_DUE
         subscription.save(update_fields=["state"])
-        self._notify_trial_over(subscription)
+        # ПИСЬМО ГОВОРИТ «ПРОБА КОНЧИЛАСЬ», И ЭТО ДОЛЖНО БЫТЬ ПРАВДОЙ. У аккаунта,
+        # которому проба не досталась (`trial_granted=False` — та же почта или тот
+        # же адрес; `services.create_account`), бесплатных дней не было вовсе, и
+        # письмо об их конце звало бы заплатить за то, чего не было. Останавливаем
+        # молча: останавливать действительно нечего, ключей у него нет.
+        if subscription.organization.trial_granted:
+            self._notify_trial_over(subscription)
 
     def _issue_for_ended_periods(self, now) -> None:
         # ОТМЕНИВШИЙ НЕ ПОЛУЧАЕТ СЧЁТА. `cancel_at_period_end` значит «доработаю

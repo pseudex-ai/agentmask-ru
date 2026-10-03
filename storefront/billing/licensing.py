@@ -61,7 +61,15 @@ class LicensingError(RuntimeError):
     customer is watching — issuing their key, resuming their service after
     payment — and a silent failure there is a support ticket that starts with
     "I paid and nothing happened".
+
+    `status` carries the HTTP code when the server answered at all, so a caller
+    can tell «the server has never heard of this organisation» from «the server
+    is down» without parsing the message.
     """
+
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 def _auth() -> dict[str, str]:
@@ -81,7 +89,8 @@ def _post(path: str, payload: dict[str, object]) -> dict[str, object]:
         raise LicensingError(f"{url} unreachable: {error}") from error
     if response.status_code != 200:
         raise LicensingError(
-            f"{url} returned {response.status_code}: {response.text[:300]}"
+            f"{url} returned {response.status_code}: {response.text[:300]}",
+            status=response.status_code,
         )
     return response.json()
 
@@ -95,7 +104,8 @@ def _get(path: str, params: dict[str, str]) -> dict[str, object]:
         raise LicensingError(f"{url} unreachable: {error}") from error
     if response.status_code != 200:
         raise LicensingError(
-            f"{url} returned {response.status_code}: {response.text[:300]}"
+            f"{url} returned {response.status_code}: {response.text[:300]}",
+            status=response.status_code,
         )
     return response.json()
 
@@ -107,6 +117,27 @@ def issue_key(org_id: str, plan: str) -> str:
     if not key:
         raise LicensingError(f"licensing server issued no key for {org_id}")
     return key
+
+
+def _no_such_org(error: LicensingError) -> bool:
+    """«ЭТОЙ ОРГАНИЗАЦИИ У НАС НЕТ» — ОТВЕТ, А НЕ ПОЛОМКА.
+
+    Лицензионный сервер узнаёт об организации, когда выдан ПЕРВЫЙ ключ. Аккаунт,
+    которому проба не досталась (`services.create_account`, та же почта или тот
+    же адрес), рождается с уже кончившейся пробой и БЕЗ ключей, и часовой цикл
+    штатно пытается его остановить. Сервер отвечает 404 «unknown org_id»: двигать
+    нечего, то есть изменено НОЛЬ ключей, а не «не удалось».
+
+    Пока это считалось ошибкой, ОДИН такой ряд обрывал ВЕСЬ цикл — счета не
+    выставлялись и пробы не останавливались ни у кого. Найдено на проде
+    03.10.2026 (`billing` unhealthy), закреплено `test_refused_trial_cycle.py`.
+
+    Сверяется ТЕЛО ответа, а не «любой 404». 404 на переименованной ручке — это
+    ошибка в коде, и принять его молча значило бы спрятать целый неработающий
+    переход статуса; ровно этот класс уже случался с `revoked` и `suspended`,
+    которые уходили на несуществующие `/admin/revoked` и `/admin/suspended`.
+    """
+    return error.status == 404 and "unknown org_id" in str(error)
 
 
 def set_status(org_id: str, status: str) -> int:
@@ -121,7 +152,12 @@ def set_status(org_id: str, status: str) -> int:
     if path is None:
         raise LicensingError(
             f"unknown status {status!r}, expected one of {sorted(_STATUS_ACTION)}")
-    body = _post(path, {"org_id": org_id})
+    try:
+        body = _post(path, {"org_id": org_id})
+    except LicensingError as error:
+        if _no_such_org(error):
+            return 0
+        raise
     return int(body.get("keys_changed", 0))
 
 

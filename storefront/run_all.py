@@ -87,6 +87,10 @@ STEPS = [
     ("04g-passwordless", "test_passwordless.py", lambda: True, ""),
     ("04h-signup-forms", "test_signup_forms.py", lambda: True, ""),
     ("04i-paywall", "test_paywall.py", lambda: True, ""),
+    # ОДИН РЯД, КОТОРОГО НЕТ НА ЛИЦЕНЗИОННОМ СЕРВЕРЕ, НЕ ОСТАНАВЛИВАЕТ ДЕНЬГИ.
+    # 03.10.2026 `billing` был unhealthy на проде ровно поэтому, а в батарее не
+    # было ничего, что гоняет `run_billing_cycle` до конца с таким рядом.
+    ("04i2-refused-trial", "test_refused_trial_cycle.py", lambda: True, ""),
     ("04j-seo", "test_seo.py", lambda: True, ""),
     ("04k-yandex-api", "test_yandex_api.py", lambda: True, ""),
     ("05-billing-lifecycle", "test_billing_lifecycle.py", _stand_up,
