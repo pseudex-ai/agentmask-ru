@@ -1154,7 +1154,7 @@ surfaces under the ADMIN token: `/status`, `/events`, `/stats`, `/stats.csv`,
 `release_verdict` is the `engine.release` block of `/status` and `/subscription`:
 the server's verdict on this version (D-055) with unix dates and the one
 upgrade command, `None` fields when the server said nothing.
-- **API:** `processes`, `memory`, `release_verdict`, `build_router`, `identity_stability`
+- **API:** `processes`, `memory`, `release_verdict`, `build_router`, `identity_stability`, `latency_snapshot`
 - **Uses:** audit, metrics, morph_names, preflight, profiling, ru_pii_v6, schema, sqlite_setup, vault · **Used by:** proxy, service
 - **Tests:** none direct · via service → test_localui, test_perf_masking (401 on token drift), test_detok_security
 - **Docs:** `docs/tz-local-ui.md` · rules: INVARIANTS.md#surfaces, INVARIANTS.md#audit
