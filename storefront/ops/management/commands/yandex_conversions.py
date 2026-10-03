@@ -42,7 +42,7 @@ from ops.analytics_models import ConversionSent, Funnel
 # офлайн-конверсией, она показывает обе. Активация и оплата в браузере
 # невозможны: первая несёт токен в адресе, вторая не имеет страницы вовсе.
 TARGETS = [
-    (Funnel.ACTIVATED, "activated", "pseudex: активация ключа"),
+    (Funnel.ACTIVATED, "activated", "pseudex: подтверждение почты"),
     (Funnel.PAID, "paid", "pseudex: оплата"),
 ]
 
@@ -59,6 +59,13 @@ class Command(BaseCommand):
                             help="потолок строк на одну цель за запуск")
 
     def handle(self, *args, **options) -> None:
+        # Setup mutates Metrika before _send can apply its dry-run branch.
+        # Reject the combination here as call_command can bypass CLI parsing.
+        if options["dry_run"] and options["setup_goals"]:
+            raise CommandError(
+                "--setup-goals нельзя сочетать с --dry-run: настройка целей "
+                "изменяет Метрику. Для просмотра используйте только --dry-run."
+            )
         if not settings.METRIKA_ID:
             raise CommandError(
                 "PSEUDEX_METRIKA_ID не задан — конверсию некуда отправлять."

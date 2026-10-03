@@ -220,7 +220,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       <div class="metric">
         <div class="metric-label">ДАННЫХ У НАС</div>
         <div class="metric-num" style="font-size:34px;font-weight:900;letter-spacing:-.035em">0</div>
-        <div class="metric-note">Только счётчики, и счёт от них не зависит.</div>
+        <div class="metric-note">Только счётчики использования, без текстов и значений.</div>
       </div>
       <div class="metric">
         <div class="metric-label">СЕКУНДЫ</div>
@@ -344,7 +344,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       <h2 style="margin:0;font-size:clamp(28px,3.4vw,42px);font-weight:900;letter-spacing:-.035em">Цены</h2>
       <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">ЦЕНЫ НА САЙТЕ · ENTERPRISE — ПО ДОГОВОРУ</div>
     </div>
-    <p style="margin:0 0 40px;font-size:16px;line-height:1.6;color:var(--dim);max-width:62ch">Абонплата по контейнерам, сверх включённого — по запросам. Сверяется с логом вашего шлюза.</p>
+    <p style="margin:0 0 40px;font-size:16px;line-height:1.6;color:var(--dim);max-width:62ch">Абонплата включает объём запросов, а не число контейнеров. Перерасход по умолчанию выключен: после включённого объёма — остановка, не дополнительный счёт.</p>
     {% comment %}
 ЧИСЛО КОЛОНОК ЗНАЕТ ШАБЛОН, А НЕ ШИРИНА ОКНА. Тарифы — единственная
        сетка, число карточек в которой меняется; `auto-fit` на пяти тарифах оставлял
@@ -364,7 +364,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
           <div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">{{ free_plan.title|upper }}</div>
             <div style="font-size:38px;font-weight:900;letter-spacing:-.035em;margin-top:20px">0 ₽</div>
-            <div style="font-size:13.5px;color:var(--dim-2);margin-top:6px">{{ free_plan.trial_days }} {{ free_plan.trial_days|plural:"день,дня,дней" }} · {{ free_plan.max_instances }} {{ free_plan.max_instances|plural:"контейнер,контейнера,контейнеров" }}</div>
+            <div style="font-size:13.5px;color:var(--dim-2);margin-top:6px">{{ free_plan.trial_days }} {{ free_plan.trial_days|plural:"день,дня,дней" }}</div>
           </div>
           <div style="display:grid;gap:11px;font-size:14.5px;line-height:1.5;color:var(--text-3)">
             <div>{{ free_plan.included_requests }} запросов включено</div>
@@ -381,11 +381,11 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
           <div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:{% if plan.code == "work" %}var(--accent-2){% else %}var(--dim-2){% endif %}">{{ plan.title|upper }}</div>
             <div style="font-size:38px;font-weight:900;letter-spacing:-.035em;margin-top:20px">{{ plan.monthly_price|floatformat:0 }} ₽</div>
-            <div style="font-size:13.5px;color:var(--dim-2);margin-top:6px">в месяц · {{ plan.max_instances }} {{ plan.max_instances|plural:"контейнер,контейнера,контейнеров" }}</div>
+            <div style="font-size:13.5px;color:var(--dim-2);margin-top:6px">в месяц</div>
           </div>
           <div style="display:grid;gap:11px;font-size:14.5px;line-height:1.5;color:var(--text-3)">
             <div>{{ plan.included_requests }} запросов включено</div>
-            {% if plan.metered_per_1k %}<div>дальше {{ plan.metered_per_1k|floatformat:"-2" }} ₽ за 1000</div>{% endif %}
+            {% if plan.metered_per_1k %}<div>при включённом перерасходе — {{ plan.metered_per_1k|floatformat:"-2" }} ₽ за 1000 сверх включённого</div>{% endif %}
             {% if plan.metered_floor %}<div>первые {{ plan.metered_floor }} сверх включённого не начисляются</div>{% endif %}
             <div>{{ plan.max_keys }} {{ plan.max_keys|plural:"ключ,ключа,ключей" }} доступа</div>
             {% if plan.audience %}<div>Подходит: {{ plan.audience }}</div>{% endif %}
@@ -399,7 +399,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
           <div>
             <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">{{ enterprise.title|upper }}</div>
             <div style="font-size:28px;font-weight:900;letter-spacing:-.035em;margin-top:24px">по договору</div>
-            <div style="font-size:13.5px;color:var(--dim-2);margin-top:6px">до {{ enterprise.max_instances }} {{ enterprise.max_instances|plural:"контейнер,контейнера,контейнеров" }}</div>
+            <div style="font-size:13.5px;color:var(--dim-2);margin-top:6px">индивидуальный объём запросов</div>
           </div>
           <div style="display:grid;gap:11px;font-size:14.5px;line-height:1.5;color:var(--text-3)">
             <div>объём и лимиты по договору</div>
@@ -420,9 +420,9 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
     {% endcomment %}
     <div style="border:1px solid var(--line-3);border-top:0;padding:0 28px 22px;font-size:13.5px;color:var(--dim-2)">
       <div class="trust-row" style="margin-top:0;border-top:0">
-        <div>Запрос — один вызов модели. Считаем по вызовам, а не по диалогам.</div>
-        <div>Ставка убывает с тарифом. Превышение — счёт, а не рубильник.</div>
-        <div>Счёт в конце периода: {{ due_days }} дней на оплату плюс {{ grace_days }} дня запаса. Акты — в кабинете.</div>
+        <div>Запрос — одно успешно обработанное обращение за маскированием, а не вызов модели или диалог. Отклонённые обращения, восстановление значений и просмотр найденного не считаются.</div>
+        <div>Перерасход можно включить в кабинете. Тогда сверх включённого — по ставке тарифа; при наличии потолка и буфера после их исчерпания — остановка.</div>
+        <div>Абонплата — авансом. Счёт за включённый перерасход — в конце периода: {{ due_days }} дней на оплату плюс {{ grace_days }} дня запаса. Акты — в кабинете.</div>
       </div>
     </div>
   </section>
@@ -447,7 +447,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
  "entities": {"PHONE": 12043,
               "NAME": 8871,
               "LOC": 3310}}</pre>
-          <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--line-3);font-size:13.5px;line-height:1.6;color:var(--dim-2)">Всё, что мы видим со своей стороны. Счёт от этих чисел не зависит.</div>
+          <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--line-3);font-size:13.5px;line-height:1.6;color:var(--dim-2)">Без текстов и персональных значений. Объём запросов учитывается для квоты и, если вы включили перерасход, для начислений. Число найденных значений на цену не влияет.</div>
         </div>
       </div>
     </div>
@@ -488,7 +488,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
         для одного из них.
 {% endcomment %}
         <select name="plan" style="background:var(--panel);border:1px solid var(--line);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px;padding:15px;outline:none;width:100%;grid-column:1 / -1">
-          {% for plan in signup_plans %}<option value="{{ plan.code }}" data-paid="{% if plan.is_trial %}0{% else %}1{% endif %}">{% if plan.is_trial %}{{ plan.title }} — 0 ₽ · {{ plan.trial_days }} дней · {{ plan.included_requests }} запросов · {{ plan.max_instances }} {{ plan.max_instances|plural:"контейнер,контейнера,контейнеров" }}{% else %}{{ plan.title }} — {{ plan.monthly_price|floatformat:0 }} ₽/мес · {{ plan.max_instances }} {{ plan.max_instances|plural:"контейнер,контейнера,контейнеров" }}{% endif %}</option>{% endfor %}
+          {% for plan in signup_plans %}<option value="{{ plan.code }}" data-paid="{% if plan.is_trial %}0{% else %}1{% endif %}">{% if plan.is_trial %}{{ plan.title }} — 0 ₽ · {{ plan.trial_days }} дней · {{ plan.included_requests }} запросов{% else %}{{ plan.title }} — {{ plan.monthly_price|floatformat:0 }} ₽/мес · {{ plan.included_requests }} запросов{% endif %}</option>{% endfor %}
         </select>
         <label style="grid-column:1 / -1;display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.5;color:var(--dim-2);cursor:pointer">
           <input type="checkbox" name="consent" value="1" required style="margin-top:2px;flex:none;accent-color:var(--accent)">
@@ -499,7 +499,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
           <span>Я принимаю <a href="{% url 'offer' %}" target="_blank">оферту</a> и ознакомлен с <a href="{% url 'policy' %}" target="_blank">политикой обработки</a>.</span>
         </label>
         <button type="submit" data-label-free="ПОЛУЧИТЬ КЛЮЧ" data-label-paid="ЗАРЕГИСТРИРОВАТЬСЯ И ОПЛАТИТЬ" style="grid-column:1 / -1;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:16px;border:1px solid var(--accent);color:var(--accent-2);cursor:pointer;transition:background .25s,box-shadow .25s" class="hv-btn-glow">ПОЛУЧИТЬ КЛЮЧ</button>
-        <div data-when="free" style="grid-column:1 / -1;font-size:13px;color:var(--dim-3);line-height:1.6">Карта не спрашивается. Ключ работает сразу и {{ trial_days }} дней бесплатно{% if free_plan %} — {{ free_plan.included_requests }} запросов, {{ free_plan.max_instances }} {{ free_plan.max_instances|plural:"контейнер,контейнера,контейнеров" }}{% endif %}. Потом — любой тариф из кабинета.</div>
+        <div data-when="free" style="grid-column:1 / -1;font-size:13px;color:var(--dim-3);line-height:1.6">Карта не спрашивается. Ключ работает сразу и {{ trial_days }} дней бесплатно{% if free_plan %} — {{ free_plan.included_requests }} запросов{% endif %}. Потом — любой тариф из кабинета.</div>
         <div data-when="paid" hidden style="grid-column:1 / -1;font-size:13px;color:var(--dim-3);line-height:1.6">Ключ выпускается сразу после оплаты — картой или по счёту.</div>
       </form>
       <div data-reveal>

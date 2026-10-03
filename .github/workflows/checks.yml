@@ -231,6 +231,10 @@ jobs:
         run: .venv/bin/python test_crawler_allowlist.py
       - name: текст про аналитику следует за настройкой, в обе стороны
         run: .venv/bin/python test_analytics.py
+      - name: API-версия, смысл целей и dry-run не теряют безопасность
+        run: .venv/bin/python test_yandex_api.py
+      - name: перерасход включается только явным выбором
+        run: .venv/bin/python test_overage_toggle.py
       - name: страницы входа в брендовом каркасе
         run: .venv/bin/python test_auth_style.py
       - name: пароля у клиента нет, второй фактор админки цел
@@ -256,6 +260,8 @@ jobs:
       # перебивает браузерное `[hidden]{display:none}`.
       - name: браузер для проверки конфигуратора
         run: .venv/bin/pip install -q playwright && .venv/bin/python -m playwright install --with-deps chromium
+      - name: браузер исполняет consent, signup и маскирование email
+        run: .venv/bin/python test_analytics_browser.py
       - name: конфигуратор исполняется, а не просто отдаёт 200
         run: .venv/bin/python test_configurator_renders.py
       # Консоль операций закрыта вторым фактором, и проверка ходит туда тем же

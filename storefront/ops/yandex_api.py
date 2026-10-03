@@ -35,7 +35,9 @@ _log = logging.getLogger("ops.yandex")
 
 TOKEN_URL = "https://oauth.yandex.ru/token"
 METRIKA_API = "https://api-metrika.yandex.net"
-DIRECT_API = "https://api.direct.yandex.com/json/v5"
+# v5 compatibility reports a Unified campaign as TEXT_CAMPAIGN; v501 keeps
+# the real type, which the operator needs before interpreting its settings.
+DIRECT_API = "https://api.direct.yandex.com/json/v501"
 
 # ЗАПАС К ИСТЕЧЕНИЮ. Токен меняется на границе срока, а не в момент отказа:
 # запрос, начатый за секунду до истечения, доедет уже с мёртвым токеном и
@@ -212,10 +214,10 @@ def metrika_get(path: str, params: dict | None = None) -> dict:
 
 
 def direct(service: str, method: str, params: dict) -> dict:
-    """POST к API Директа v5. Один сервис — один путь.
+    """POST к API Директа v501. Один сервис — один путь.
 
     Формат Директа — не REST: и чтение, и запись идут POST'ом на
-    `/json/v5/<сервис>` с телом `{"method": ..., "params": ...}`. Поэтому
+    `/json/v501/<сервис>` с телом `{"method": ..., "params": ...}`. Поэтому
     «получить список кампаний» и «создать кампанию» выглядят одинаково, и
     различает их только `method`.
     """

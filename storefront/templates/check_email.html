@@ -12,12 +12,12 @@
 <section>
   <div class="eyebrow"><i></i><span>ОСТАЛСЯ ОДИН ШАГ</span></div>
   {% comment %}
-     АДРЕС ПОСЕТИТЕЛЯ НЕ ДОЛЖЕН ПОПАСТЬ В ЗАПИСЬ ВЕБВИЗОРА. Он здесь напечатан
-     текстом и повторён в поле формы, а Вебвизор записывает содержимое страницы.
-     `ym-hide-content` заменяет элемент в записи на размытую случайную строку,
-     `ym-disable-keys` гасит поле — и то и другое действует только в записи, на
-     живой странице ничего не меняется. Это единственная публичная страница, где
-     напечатаны данные самого посетителя.
+     Both replay trackers need their own privacy markers: Metrika masks text
+     with `ym-hide-content` and input values with `ym-disable-keys`; Rybbit's
+     text selector in analytics.js uses `data-private`. Mark both copies of
+     the visitor's email, retaining the input marker even though Rybbit also
+     masks all inputs. Neither tracker's marker substitutes for the other's;
+     the email remains visible to the visitor on the live page.
 
      ИМЕНА ТЕГОВ ЗДЕСЬ НЕ ПИШУТСЯ, И ЭТО НЕ СТИЛИСТИКА: блокирующий комментарий
      Django не вкладывается, поэтому закрывающий тег, набранный в тексте, closes
@@ -27,7 +27,7 @@
      на первом закрывающем символе, и многострочная заметка в нём — не
      комментарий, а текст для посетителя.
   {% endcomment %}
-  <h2>Письмо ушло на <span class="ym-hide-content">{{ email }}</span></h2>
+  <h2>Письмо ушло на <span class="ym-hide-content" data-private>{{ email }}</span></h2>
   <p class="sub" style="margin-top:16px">{% if pending %}В нём ссылка: она подтверждает почту и ведёт в кабинет с оплатой, ключ будет выпущен сразу после оплаты.{% else %}В нём ссылка, по которой ключ будет выпущен и показан один раз.{% endif %} Ссылка действует сутки.</p>
   <div style="max-width:640px;padding:22px;border:1px solid var(--line-2);font-size:14px;color:var(--dim);line-height:1.7">
     <b style="color:var(--text-3)">Почему не сразу.</b><br>
@@ -42,7 +42,7 @@
     <form method="post" action="{% url 'resend' %}" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
       {% csrf_token %}
       <input type="email" name="email" value="{{ email }}" required autocomplete="email"
-             style="flex:1;min-width:240px;background:var(--panel);border:1px solid var(--line);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px;padding:15px;outline:none" class="fc-accent ym-disable-keys">
+             style="flex:1;min-width:240px;background:var(--panel);border:1px solid var(--line);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px;padding:15px;outline:none" class="fc-accent ym-disable-keys" data-private>
       <button type="submit" style="font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;padding:11px 16px;border:1px solid var(--accent);color:var(--accent-2);cursor:pointer" class="hv-btn">ОТПРАВИТЬ ЕЩЁ РАЗ</button>
     </form>
     {% endif %}

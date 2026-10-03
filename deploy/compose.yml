@@ -382,6 +382,9 @@ services:
     # because renewal is the part that silently stops working, and here it is
     # not a cron job that can fail unnoticed.
     image: caddy:2-alpine
+    # BusyBox HTTPS probes spawn ssl_client; orphaned helpers need a reaper.
+    # Without init they accumulated until the cgroup refused healthcheck exec.
+    init: true
     restart: unless-stopped
     logging: *logging
     environment:
@@ -410,7 +413,7 @@ services:
       # сертификаты выданы, апстримы отвечают. Caddy, потерявший конфиг или
       # сертификат, продолжает работать и отвечать ошибкой — именно это и
       # ловится. `$$` — переменную читает shell контейнера, не compose.
-      test: ["CMD-SHELL", "wget -q --spider \"https://$$SITE_HOST/healthz\" && wget -q --spider \"https://$$LICENSE_HOST/v1/pubkey\" || exit 1"]
+      test: ["CMD-SHELL", "wget -T 5 -q --spider \"https://$$SITE_HOST/healthz\" && wget -T 5 -q --spider \"https://$$LICENSE_HOST/v1/pubkey\" || exit 1"]
       interval: 30s
       timeout: 15s
       retries: 3

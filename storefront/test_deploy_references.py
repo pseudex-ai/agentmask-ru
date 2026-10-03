@@ -131,6 +131,11 @@ def main() -> int:
     # токен для витрины и не передавал его лицензионному сервису, и консоль
     # говорила «цифр сейчас нет» вместо «нас не пускают».
     compose = (_DEPLOY / "compose.yml").read_text(encoding="utf-8")
+    caddy_block = compose.split("\n  caddy:", 1)[1].split("\n  backup:", 1)[0]
+    check("TLS-прокси убирает дочерние процессы HTTPS-проверок",
+          re.search(r"^    init: true$", caddy_block, re.M) is not None)
+    check("каждая HTTPS-проверка имеет собственный таймаут до Docker kill",
+          caddy_block.count("wget -T 5 -q --spider") == 2)
     start = compose.index("  storefront-migrate:")
     end = compose.index("\n  ", compose.index("depends_on:", start))
     block = compose[start:compose.index("\n\n", start)]

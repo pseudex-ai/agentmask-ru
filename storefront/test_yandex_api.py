@@ -68,6 +68,11 @@ def main() -> int:  # noqa: C901 — линейный сценарий из пр
 
     from ops import yandex_api
     from ops.management.commands import yandex_auth
+    from ops.management.commands.daily_digest import Command as DigestCommand
+
+    # SEO has its own mocked suite. A newly added digest section must not send
+    # this suite's fake OAuth token to a real Webmaster endpoint.
+    DigestCommand._seo = lambda self: []
 
     ok = True
 
@@ -165,6 +170,8 @@ def main() -> int:  # noqa: C901 — линейный сценарий из пр
           "Директ получает схему Bearer, а не OAuth", str(direct_headers))
     check(calls[-1][2].get("json", {}).get("method") == "get",
           "тело Директа — method+params, а не REST-путь", str(calls[-1][2]))
+    check(calls[-1][1] == "https://api.direct.yandex.com/json/v501/campaigns",
+          "v501 сохраняет настоящий тип Единой перфоманс-кампании")
 
     # ── 3. отказ внутри HTTP 200 ───────────────────────────────────────────
     reset_token_cache()
@@ -452,10 +459,55 @@ def main() -> int:  # noqa: C901 — линейный сценарий из пр
           "dry-run работает без флага и ничего не отправляет",
           f"запросов: {len(calls)}")
 
+    # A dry-run flag must never be defeated by an earlier setup branch.
+    before_rows = (Organization.objects.count(), Funnel.objects.count(),
+                   ConversionSent.objects.count())
+    combinations = [(("--setup-goals", "--dry-run"), {}),
+                    (("--dry-run", "--setup-goals"), {}),
+                    ((), {"setup_goals": True, "dry_run": True})]
+    for flags, kwargs in combinations:
+        reset_token_cache()
+        calls.clear()
+        refused = False
+        with override_settings(METRIKA_ID="112743085", YANDEX_CONVERSIONS=False,
+                               **creds):
+            try:
+                _capture(call_command, "yandex_conversions", *flags, **kwargs)
+            except _CommandError as refusal:
+                refused = "--setup-goals" in str(refusal) and "--dry-run" in str(refusal)
+            except AssertionError as unexpected_request:
+                # An attempted mocked request is a real failure, never swallowed.
+                check(False, "dry-run попытался обратиться к API", str(unexpected_request))
+        check(refused and not calls,
+              "setup-goals вместе с dry-run отказан до любого API-вызова",
+              f"flags={flags}, kwargs={kwargs}, calls={len(calls)}")
+        check(before_rows == (Organization.objects.count(), Funnel.objects.count(),
+                              ConversionSent.objects.count()),
+              "отказ не изменил бизнес-события или отметки экспорта")
+
+    # Explicit setup still works; an existing goal is not duplicated.
+    reset_token_cache()
+    calls.clear()
+    scripted.extend([_Fake(200, token_payload()),
+                     _Fake(200, {"goals": [{"id": 11, "type": "action",
+                                           "conditions": [{"type": "exact", "url": "activated"}]}]}),
+                     _Fake(200, {"goal": {"id": 12}})])
+    with override_settings(METRIKA_ID="112743085", YANDEX_CONVERSIONS=False, **creds):
+        setup_out = _capture(call_command, "yandex_conversions", "--setup-goals")
+    goal_writes = [row for row in calls if row[0] == "POST" and "/goals" in row[1]]
+    check(len(goal_writes) == 1 and
+          goal_writes[0][2]["json"]["goal"]["conditions"][0]["url"] == "paid",
+          "явная настройка создаёт только отсутствующую цель paid")
+    from ops.management.commands.yandex_conversions import TARGETS
+    check(dict(Funnel.STEPS)[Funnel.ACTIVATED] == "подтвердил почту" and
+          next(name for step, _, name in TARGETS if step == Funnel.ACTIVATED)
+          == "pseudex: подтверждение почты",
+          "activated назван подтверждением почты, не выдачей ключа")
+
     # ── 13. yclid доезжает от рекламной ссылки до организации ──────────────
     from ops.analytics_models import Visit
 
-    call_command("seed_plans", verbosity=0)
+    call_command("seed_plans", "--no-licensing", verbosity=0)
     landing = client.get("/?yclid=987654321&utm_source=yandex&utm_medium=cpc")
     check(landing.status_code == 200, "лендинг отрисовался",
           f"status={landing.status_code}")

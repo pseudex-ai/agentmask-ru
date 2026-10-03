@@ -118,7 +118,7 @@ class Funnel(models.Model):
         (LANDING, "зашёл на лендинг"),
         (SIGNUP_SUBMITTED, "отправил форму"),
         (SIGNUP_REFUSED, "форма отклонена"),
-        (ACTIVATED, "открыл письмо"),
+        (ACTIVATED, "подтвердил почту"),
         (KEY_ISSUED, "получил ключ"),
         (FIRST_LEASE, "поднял контейнер"),
         (FIRST_MASK, "первый замаскированный запрос"),
