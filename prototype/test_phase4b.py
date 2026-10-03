@@ -16,19 +16,17 @@
           («Сазонов МС») разрешаются тем же разворотом, что и с точками;
   D (W5, W6)  VIN с разделителями/склеенной подсказкой и ПТС со склеенной
           подсказкой детокенизируются;
-  E (W7)  ведущий ноль, снятый у группы, возвращает настоящее, а не подмену.
+  E (W7)  ведущий ноль, снятый у группы, возвращает настоящее, а не подмену;
+  A (W8)  адрес СОСТАВНОЙ: тождество (улица+дом) чеканится ОДИН раз, а
+          квартира/подъезд/этаж/корпус растут на нём СВОИМИ подменами, поэтому
+          два человека в одном доме различимы, а `detokenize` возвращает РОВНО
+          написанное клиентом. Пин `test_identity_invariant.py` переписан вместе
+          с этим: полного равенства строк там больше нет, ядро — есть.
 
 НЕГАТИВНЫЕ КОНТРОЛИ — здесь же, потому что правило, проверенное только на том,
 что находиться ДОЛЖНО, это правило, про которое неизвестно, что ещё оно находит:
 два разных человека на одной улице остаются разными, разный дом форкает
-подмену, чужие цифры не трогаются.
-
-ЧЕГО ЗДЕСЬ НЕТ, И ЭТО ЗАПИСАНО, А НЕ ЗАМОЛЧАНО (W8, кластер A):
-изменяемая часть, ОТЛИЧНАЯ от первой, не получает собственной подмены —
-`vault.tokenize` обязан вернуть ТУ ЖЕ подмену (`test_identity_invariant.py:131`,
-D-081 фазы 2), а `redact.mask_text` — ту же строку, поэтому B1–B4/C1–C2/C7
-остаются красными. Полный разбор — в REGRESSION.md; здесь пин ТОГО, ЧТО НЕ
-СЛОМАНО: ядро «улица+дом» на месте.
+подмену, чужие цифры не трогаются, подмена части НЕ равна настоящей части.
 
     PYTHONDONTWRITEBYTECODE=1 .venv/bin/python test_phase4b.py
 """
@@ -40,7 +38,7 @@ import testkit
 
 testkit.load_dev_bundle()
 
-from pseudex import redact                                    # noqa: E402
+from pseudex import morph_places, redact                      # noqa: E402
 from pseudex.detect_all import Detector                       # noqa: E402
 from pseudex.morph_places import address_key, split_roles     # noqa: E402
 from pseudex.vault import Vault, canonicalize, place_key      # noqa: E402
@@ -224,13 +222,25 @@ def w7_leading_zero() -> None:
 
 # ======================================================= не сломанное ядро (W8)
 
+def _place_core(token: str) -> str:
+    """Ядро подмены адреса — улица, дом и настоящий город, без изменяемых частей."""
+    core = morph_places.core_phrase(token)
+    return core.casefold().replace("ё", "е") or token.casefold()
+
+
+def _place_part(token: str, role: str) -> str:
+    """Значение изменяемой части ПОДМЕНЫ, прочитанное тем же разбором, что у волта."""
+    roles = split_roles(token)
+    return morph_places.house_digits((roles.get(role) or "").strip())
+
+
 def core_intact() -> None:
     """Ядро фазы 2 НЕ откатано: значение изменяемой части ключ не двигает.
 
-    Это тот самый пин `test_identity_invariant.py:131`, и он здесь повторён
-    потому, что кластер A его однажды уже чуть не сломал: соблазн «пусть
-    квартира форкает подмену» возвращает исходный баг «смена квартиры = новый
-    фейк». См. REGRESSION.md о W8.
+    Соблазн «пусть квартира форкает подмену» возвращает исходный баг «смена
+    квартиры = новый фейк». Поэтому `address_key` (тождество БЕЗ значений) здесь
+    пиннится по-прежнему, а равенство ПОЛНЫХ строк заменено на то, что владелец
+    назвал в решении: ядро одно, части — разные (W8).
     """
     typed = address_key("улица Лермонтова дом 38 квартира 7")
     check(address_key("улица Лермонтова дом 38 квартира 42") == typed,
@@ -239,11 +249,18 @@ def core_intact() -> None:
           "ядро: смена дома форкает тождество")
     vault = Vault(":memory:", CUSTOMER)
     full = vault.tokenize("улица Лермонтова дом 38 квартира 7", "LOC")
-    check(vault.tokenize("улица Лермонтова дом 38 квартира 42", "LOC") == full,
-          "ядро: одна подмена на смену квартиры (D-081)")
+    other = vault.tokenize("улица Лермонтова дом 38 квартира 42", "LOC")
+    check(_place_core(other) == _place_core(full),
+          "ядро: смена квартиры — та же улица и тот же дом",
+          f"{_place_core(full)!r} / {_place_core(other)!r}")
+    check(_place_part(other, "flat") != _place_part(full, "flat"),
+          "ядро: смена квартиры — ДРУГАЯ квартира в подмене",
+          f"{full!r} / {other!r}")
     check("кв" in full, "ядро: подмена несёт квартиру, а не выбрасывает её", full)
     check(redact.unmask_text(full, vault) == "улица Лермонтова дом 38 квартира 7",
           "ядро: целая подмена размаскировывается")
+    check(redact.unmask_text(other, vault) == "улица Лермонтова дом 38 квартира 42",
+          "ядро: вторая квартира возвращается ЕЁ настоящей")
     check(canonicalize("LOC", "улица Лермонтова дом 38 кв 7")
           == canonicalize("LOC", "улица Лермонтова дом 38 кв 42"),
           "ядро: канонизация держит маркер и не держит значение")
@@ -251,11 +268,84 @@ def core_intact() -> None:
           "ядро: ключ подмены различает дома")
 
 
+# ============================================ W8 — составной адрес (кластер A)
+
+def w8_compositional_parts() -> None:
+    """Ядро одно, части растут на нём — ровно как решил владелец.
+
+    «улица Лермонтова дом 38 квартира 7»  -> «… кв N1»
+    «улица Лермонтова дом 38 квартира 42» -> та же улица и дом, «… кв N2»
+    «улица Лермонтова дом 38 корпус 1»    -> та же улица и дом, «… корп. N»
+    и detokenize каждой строки — её собственная настоящая запись.
+    """
+    vault = Vault(":memory:", CUSTOMER)
+    forms = [
+        ("улица Лермонтова дом 38 квартира 7", "flat"),
+        ("улица Лермонтова дом 38 квартира 42", "flat"),
+        ("улица Лермонтова дом 38 корпус 1", "building"),
+        ("улица Лермонтова дом 38 корпус 2", "building"),
+        ("улица Лермонтова дом 38 подъезд 3 квартира 7", "entrance"),
+        ("улица Лермонтова дом 38 этаж 5 квартира 7", "floor"),
+    ]
+    tokens = {value: vault.tokenize(value, "LOC") for value, _role in forms}
+    cores = {_place_core(token) for token in tokens.values()}
+    check(len(cores) == 1,
+          "W8: все упоминания одного дома — ОДНО ядро (улица+дом)",
+          f"{sorted(cores)}")
+    # ЧАСТИ РАЗЛИЧИМЫ ТАМ, ГДЕ РАЗЛИЧАЕТСЯ НАСТОЯЩЕЕ ЗНАЧЕНИЕ.
+    for role in ("flat", "building"):
+        values = [_place_part(tokens[value], role)
+                  for value, part in forms if part == role]
+        check(len(set(values)) == len(values),
+              f"W8: разные значения части {role!r} — разные подмены",
+              f"{values}")
+    # …И ОДНО ЗНАЧЕНИЕ — ОДНА ПОДМЕНА, сколько бы раз его ни назвали.
+    check(tokens["улица Лермонтова дом 38 квартира 7"]
+          == vault.tokenize("улица Лермонтова дом 38 квартира 7", "LOC"),
+          "W8: повторное значение части не чеканит второе")
+    # ИНСТРУМЕНТ ПОЛУЧАЕТ НАСТОЯЩЕЕ, А НЕ ПОДМЕНУ — на каждой строке.
+    for value, _role in forms:
+        token = tokens[value]
+        check(redact.unmask_text(token, vault) == value,
+              f"W8: detokenize возвращает ровно написанное: {value}",
+              f"{token!r} -> {redact.unmask_text(token, vault)!r}")
+    # ПОПРАВКА «ОЙ НЕ ТА КВАРТИРА» НЕ ЧЕКАНИТ НОВЫЙ ДОМ.
+    corrected = vault.tokenize("улица Лермонтова дом 38 квартира 13", "LOC")
+    check(_place_core(corrected) == _place_core(tokens[forms[0][0]]),
+          "W8: поправка квартиры сохраняет улицу и дом", corrected)
+    # НЕГАТИВ: ДРУГОЙ ДОМ — ДРУГОЕ ЯДРО, и подмена части не равна настоящей.
+    other_house = vault.tokenize("улица Лермонтова дом 39 квартира 7", "LOC")
+    check(_place_core(other_house) != _place_core(tokens[forms[0][0]]),
+          "W8-негатив: другой дом — другое ядро", other_house)
+    for value, role in forms:
+        fake = _place_part(tokens[value], role)
+        real = split_roles(value).get(role, "")
+        check(fake and fake != morph_places.house_digits(real),
+              f"W8-негатив: подмена части {role!r} не равна настоящей",
+              f"{fake!r} != {real!r}")
+    # ПОЛНЫЙ ПУТЬ МАСКИРОВАНИЯ (не только vault.tokenize): строка, показанная
+    # модели, обязана вернуться настоящей — иначе в инструмент уезжает фейк.
+    for value, _role in forms:
+        masked, leg_vault = mask(value)
+        back = redact.unmask_text(masked, leg_vault)
+        check(back == value,
+              f"W8: полный круг mask/unmask — {value}",
+              f"{masked!r} -> {back!r}")
+    # ДВА ЧЕЛОВЕКА В ОДНОМ ДОМЕ — ДВЕ РАЗНЫЕ ПОДМЕНЫ (негатив к «слить»).
+    couple = Vault(":memory:", CUSTOMER)
+    first_flat = couple.tokenize("улица Тверитина, дом 10, квартира 7", "LOC")
+    second_flat = couple.tokenize("улица Тверитина, дом 10, квартира 42", "LOC")
+    check(first_flat != second_flat
+          and _place_core(first_flat) == _place_core(second_flat),
+          "W8: два человека в одном доме — один дом, разные квартиры",
+          f"{first_flat!r} / {second_flat!r}")
+
+
 def main() -> int:
     print("phase 4b — пять решений владельца (пин к bench/edge_case_stress.py)")
     for group in (w1_address_leaf, w2_dictated_detok, w3_lowercase_name,
                   w4_squeezed_initials, w5_w6_vehicle_ids, w7_leading_zero,
-                  core_intact):
+                  core_intact, w8_compositional_parts):
         print(f"\n{group.__name__}")
         group()
     failed = [name for ok, name, _ in RESULTS if not ok]

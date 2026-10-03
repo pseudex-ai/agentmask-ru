@@ -895,6 +895,21 @@ def place_key(token: str) -> str:
     return morph_places.match_signature(token) if token else ""
 
 
+# РАЗРЯДЫ ПОДМЕННЫХ ЧАСТЕЙ АДРЕСА (W8). Шире, чем у случайной чеканки
+# (`_decorate_place` рисует квартиру до 250, подъезд до 24, корпус до 12):
+# подмена части ЗАКРЕПЛЕНА за значением навсегда, поэтому диапазон обязан
+# вмещать все различные значения, которые одна лестничная клетка может назвать,
+# — иначе двум разным квартирам досталась бы одна подмена, и два человека в
+# одном доме стали бы неразличимы. Инъективность держит не диапазон, а
+# `_draw_part_fake` (занятые значения читаются из `place_part_fakes`).
+_PLACE_PART_RANGES: dict[str, tuple[int, int]] = {
+    "building": (1, 99),
+    "entrance": (1, 99),
+    "floor": (1, 99),
+    "flat": (1, 999),
+}
+
+
 def _place_numbers_collide(token: str, original: str) -> bool:
     numbers = re.findall(r"\d+", token)
     if any(a != b and a in b for a in numbers for b in numbers) or len(numbers) != len(set(numbers)):
@@ -1197,7 +1212,14 @@ def _first_names_by_gender(version: str) -> dict[str, tuple[str, ...]]:
 
 def _place_identity(canonical: str) -> tuple[str, ...]:
     """An address canonical without its street-type words, the spoken numbers
-    folded to digits («сто» and «100» are one house, as in `street_house_key`)."""
+    folded to digits («сто» and «100» are one house, as in `street_house_key`).
+
+    ХВОСТ-ПОДПИСЬ ЧАСТЕЙ СНИМАЕТСЯ (W8): строка второй квартиры одного дома
+    несёт «…\\x1fflat=42», и без снятия последнее слово перестало бы быть
+    родовым, а дом/улица читались бы с мусором — связывание двух написаний
+    одного места сломалось бы ровно на втором человеке в доме.
+    """
+    canonical = morph_places.strip_parts_key(canonical)
     return tuple(morph_places._fold_cardinals(
         [part for part in canonical.split() if part not in morph_places._GENERIC]))
 
@@ -2767,6 +2789,32 @@ def create_tables(conn: Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_place_parts_created "
         "ON place_parts (created)"
     )
+    conn.execute(
+        # ЯДРО АДРЕСА (D-081/W8): подмена улицы и дома, ОДНА на `place_core_key`.
+        # Отдельная таблица, а не строка `tokens`: строка `tokens` — это
+        # УПОМИНАНИЕ (она несёт `original` и участвует в восстановлении), а ядро
+        # — общая голова, на которой растут части. Вторая строка `tokens` на тот
+        # же адрес удвоила бы счёт строк, и всё, что читает «одна подмена =
+        # одна строка» (связывание, `owned`-проверки, операторские выборки),
+        # увидело бы два адреса вместо одного.
+        "CREATE TABLE IF NOT EXISTS place_cores ("
+        "customer TEXT NOT NULL, core TEXT NOT NULL, token TEXT NOT NULL, "
+        "created REAL NOT NULL DEFAULT 0, "
+        "PRIMARY KEY (customer, core))"
+    )
+    conn.execute(
+        # ПОДМЕНЫ ИЗМЕНЯЕМЫХ ЧАСТЕЙ АДРЕСА (D-081/W8): роль -> значение ЦИФРАМИ,
+        # закреплённое за настоящим значением навсегда. Корпус, подъезд, этаж и
+        # квартира растут на общем ядре, и каждый РАЗНЫЙ номер получает СВОЮ
+        # подмену — иначе два человека в одном доме стали бы неразличимы.
+        # Таблица, а не `tokens`: подмена части — это число («81»), а числовая
+        # строка в `tokens` стала бы кандидатом на восстановление в любом
+        # предложении с этим числом и вернула бы чужой настоящий адрес.
+        "CREATE TABLE IF NOT EXISTS place_part_fakes ("
+        "customer TEXT NOT NULL, head TEXT NOT NULL, role TEXT NOT NULL, "
+        "real TEXT NOT NULL, fake TEXT NOT NULL, "
+        "PRIMARY KEY (customer, head, role, real))"
+    )
     # WHICH NAME SUBSTITUTES THIS CONVERSATION WAS SHOWN. A piece of a
     # substitute («Николая» for «Николай Крылов») can only come back from the
     # dialogue that saw the whole; resolved against the customer's WHOLE
@@ -3666,7 +3714,18 @@ class Vault:
         # this local, so it takes the same translation — otherwise the same value
         # masked under `STS_NUMBER` and under `VEHICLE_DOC` would be two rows.
         entity_type = ru_pii_v6.engine_label(entity_type)
+        # ЯДРО И ЧАСТИ АДРЕСА (D-081/W8). `canonicalize` для LOC — это
+        # `address_key`, тождество БЕЗ значений изменяемых частей; строке волта
+        # этих значений мало: два человека в одном доме обязаны быть ДВУМЯ
+        # строками, иначе второй из них получает чужую квартиру. `place_parts_key`
+        # добавляет к ядру сами значения, а у упоминания без частей он равен
+        # прежнему ключу (`place_core_key` == `address_key`), поэтому старые
+        # строки и старое поведение не двигаются.
+        loc_parts: dict[str, str] = {}
+        if entity_type == "LOC":
+            loc_parts = morph_places.mutable_parts(value)
         canonical = (canonicalize_person(value, cases) if entity_type == "NAME" and cases
+                     else morph_places.place_parts_key(value) if entity_type == "LOC"
                      else canonicalize(entity_type, value))
         with self._lock:
             # THE PERSON COMES BEFORE THE WORDING (D-081, NAME ONLY). The exact
@@ -3749,7 +3808,10 @@ class Vault:
                             initials = self._initials_reuse(canonical, value)
                             if initials is not None:
                                 token, extends = initials
-            elif entity_type == "LOC":
+            elif entity_type == "LOC" and not loc_parts:
+                # УПОМИНАНИЕ БЕЗ ЧАСТЕЙ — прежний путь целиком. Его ключ здесь и
+                # есть `address_key`, поэтому связывание короткого и полного
+                # написания, владелец семейства и проекция не двигаются.
                 same = self._same_place_written_differently(canonical, value, shape)
                 if same is not None:
                     # Not a guess, so the PLAIN canonical keeps it: one place,
@@ -3765,6 +3827,32 @@ class Vault:
                     grown_place = self._extends_linked_place(canonical, value, shape)
                     if grown_place is not None:
                         token, extends = grown_place
+            if token is None and entity_type == "LOC" and loc_parts:
+                # АДРЕС С ЧАСТЯМИ — СОСТАВНОЙ (D-081/W8). Ядро (улица+дом)
+                # чеканится/берётся ОДИН раз, части растут на нём своими
+                # подменами, и полная строка ложится в `tokens` отдельным
+                # упоминанием (обычный ключ, а для второй квартиры того же дома —
+                # ключ с хвостом-подписью частей), поэтому `detokenize`
+                # возвращает РОВНО то, что написал клиент, а два человека в
+                # одном доме не делят квартиру.
+                # `extends` СТАВИТСЯ НА ЯДРО: строка с частями — это ВЫРОСШАЯ
+                # строка ядра, и `_one_identity` обязан видеть в них одну цепочку
+                # (иначе фрагмент «улица Кленовая» находит ДВА владельца — два
+                # человека в одном доме — и правило единственного владельца
+                # отказывает, а поле `street` схемы остаётся с фейком).
+                token, canonical, extends, _fresh = self._composed_place_token(
+                    value, loc_parts, shape)
+                if not _fresh:
+                    return token
+            if token is None and entity_type == "LOC" and not loc_parts:
+                # ЯДРО УЖЕ ЧЕКАНИЛОСЬ. Упоминание без частей («улица Лермонтова
+                # дом 38») обязано показать ТУ ЖЕ улицу и тот же дом, что и
+                # упоминание с квартирой, — иначе «одно место — одна подмена»
+                # ломается на первом же человеке, назвавшем дом без квартиры.
+                core_head = self._place_cores_lookup(
+                    morph_places.place_core_key(value))
+                if core_head is not None:
+                    token = core_head
             if token is None:
                 head = (self._same_street_in_conversation(value, shape)
                         if entity_type == "LOC" else "")
@@ -3970,6 +4058,10 @@ class Vault:
             # OWNER for a later short mention, which is the trap the previous
             # rule guarded against. A projection (`linked_place`) is never
             # indexed: it is a view of a full address, not a place of its own.
+            # СТРОКА АДРЕСА ИНДЕКСИРУЕТСЯ КАК ВЛАДЕЛЕЦ МЕСТА, и строка с частями
+            # тоже (W8): её ключ несёт хвост-подпись частей, а `_place_identity`
+            # и `key_type` его снимают (`strip_parts_key`), поэтому «одно место —
+            # одна подмена» и проекция короткого упоминания работают как прежде.
             if (entity_type == "LOC" and self._conversation and linked_place is None
                     and (shape.get("has_city") or shape.get("has_house"))):
                 part = morph_places.street_house_key(value)
@@ -4050,21 +4142,343 @@ class Vault:
                 date_key = _date_canonical(token)
                 fake_parts = {date_key} if date_key else set()
             elif entity_type == "LOC":
-                stems, numbers = morph_places.signature_parts(token)
-                fake_parts = set(stems) | set(numbers)
-                # The settlement is REAL, so it is not a piece of the fake: a
-                # bare «Самара» in a tool argument is the customer's word, not
-                # a residual of ours, and must not be resolved or reported.
-                city = morph_places.split_roles(token).get("city", "")
-                if city:
-                    fake_parts -= set(morph_places.signature_parts(city)[0])
+                fake_parts = self._loc_fake_parts(token)
             if fake_parts:
                 self._conn.executemany(
                     "INSERT OR IGNORE INTO token_parts (customer, part, token) "
                     "VALUES (?,?,?)",
                     [(self._customer, part, token) for part in fake_parts])
+            if entity_type == "LOC" and not loc_parts and linked_place is None:
+                # ЕГО ПОДМЕНА И ЕСТЬ ЯДРО этого места — на нём вырастут части
+                # (D-081/W8). Для строки С частями ядро уже легло в
+                # `_place_core_head`.
+                #
+                # ПРОЕКЦИЯ СЮДА НЕ ПОПАДАЕТ (`linked_place`). Она — ДОГАДКА о
+                # том, какое место имела в виду короткая запись, и живёт ровно в
+                # своём разговоре (`tokens.canonical` со областью); запомни ядро
+                # по ней, догадка одного диалога обслужила бы следующий —
+                # «Ленина 14» из другого разговора получила бы чужую проекцию
+                # (test_product: «a link decided in one conversation must not be
+                # served to another»).
+                self._remember_place_core(value, token)
             self._conn.commit()
             return token
+
+    # --- D-081/W8: ядро адреса и растущие на нём части ---------------------------
+
+    def _loc_fake_parts(self, token: str) -> set[str]:
+        """Основы и числа ПОДМЕНЫ адреса — индекс `token_parts` для LOC.
+
+        Вынесено из общей вставки отдельной функцией, потому что тот же вопрос
+        задаёт и ядро: поле схемы просит `street`/`house` по отдельности, и
+        фрагмент разрешается по основе и дому ОДНОЙ строки (у ядра своей строки
+        в `tokens` нет — оно живёт в `place_cores`).
+        """
+        stems, numbers = morph_places.signature_parts(token)
+        parts = set(stems) | set(numbers)
+        # The settlement is REAL, so it is not a piece of the fake: a
+        # bare «Самара» in a tool argument is the customer's word, not
+        # a residual of ours, and must not be resolved or reported.
+        city = morph_places.split_roles(token).get("city", "")
+        if city:
+            parts -= set(morph_places.signature_parts(city)[0])
+        return parts
+
+    def _used_part_fakes(self, head: str) -> tuple[set[str], set[str]]:
+        """Подмены и НАСТОЯЩИЕ значения частей, закреплённые за этой ГОЛОВОЙ.
+
+        КЛЮЧ — САМА ПОДМЕНА ГОЛОВЫ, А НЕ КЛЮЧ ЯДРА, и это не мелочь: одно
+        место, написанное С типом и БЕЗ него («переулок Мончегорская 10» и
+        «Мончегорская 10»), связано отдельным правилом и получает ОДНУ голову
+        при РАЗНЫХ `place_core_key`. Ключ по ключу ядра выдал бы одной и той же
+        квартире разные подмены в двух написаниях одного адреса (A2).
+
+        Нужны оба множества: подмена части не смеет повторить ни другую подмену
+        той же головы (иначе «корп. 5, кв. 5» и два значения неразличимы), ни
+        ЛЮБОЕ настоящее значение части этой головы (иначе модель видит настоящую
+        квартиру под видом подмены — утечка).
+        """
+        rows = self._conn.execute(
+            "SELECT real, fake FROM place_part_fakes WHERE customer=? AND head=?",
+            (self._customer, head),
+        ).fetchall()
+        return ({row[1] for row in rows}, {row[0] for row in rows})
+
+    def _existing_part_fake(self, head: str, role: str, real: str) -> str | None:
+        row = self._conn.execute(
+            "SELECT fake FROM place_part_fakes "
+            "WHERE customer=? AND head=? AND role=? AND real=?",
+            (self._customer, head, role, real),
+        ).fetchone()
+        return row[0] if row is not None else None
+
+    def _save_part_fake(self, head: str, role: str, real: str, fake: str) -> None:
+        self._conn.execute(
+            "INSERT OR IGNORE INTO place_part_fakes "
+            "(customer, head, role, real, fake) VALUES (?,?,?,?,?)",
+            (self._customer, head, role, real, fake))
+
+    def _draw_part_fake(self, head: str, role: str, real: str,
+                        taken: set[str]) -> str:
+        """Свободная подмена для одной изменяемой части — инъективно и без утечки.
+
+        Один пул на роль и ядро, а решает занятость: значение, равное любой уже
+        закреплённой подмене этого ядра, ЛЮБОМУ настоящему значению части этого
+        ядра и любому числу, которое строка уже несёт (дом, другая часть), не
+        берётся. Вложенность чисел («1» внутри «11») запрещена по той же причине,
+        по которой её запрещает `_place_numbers_collide`: «корпус 1» нашёлся бы
+        внутри «11» и вернул бы чужую часть.
+        """
+        fakes, reals = self._used_part_fakes(head)
+        forbidden = {value for value in taken | fakes | reals if value}
+        low, high = _PLACE_PART_RANGES[role]
+        for _ in range(_TOKEN_MINT_ATTEMPTS):
+            candidate = str(low + secrets.randbelow(high - low + 1))
+            if candidate in forbidden:
+                continue
+            if any(candidate in other or other in candidate for other in forbidden):
+                continue
+            return candidate
+        raise RuntimeError(
+            f"exhausted the {role} pool for place head {head!r} of customer "
+            f"{self._customer!r} — widen _PLACE_PART_RANGES")
+
+    def _place_core_head(self, core_key: str, core_value: str,
+                         shape: dict[str, object]) -> str:
+        """Подмена ЯДРА (улица+дом) — одна на весь дом, навсегда.
+
+        Лежит в `place_cores`, а НЕ строкой `tokens`: `tokens` считает
+        УПОМИНАНИЯ, и вторая строка на тот же адрес удвоила бы их число —
+        «одна подмена = одна строка» читают связывание, `_one_identity` и
+        выборки тестов. Само ядро чеканится один раз по `place_core_key`, и
+        всякая часть этого дома растёт на нём.
+        """
+        row = self._conn.execute(
+            "SELECT token FROM place_cores WHERE customer=? AND core=?",
+            (self._customer, core_key),
+        ).fetchone()
+        if row is not None:
+            return row[0]
+        head = ""
+        for _ in range(_TOKEN_MINT_ATTEMPTS):
+            minted = self._unique_token(
+                "LOC", None, core_value,
+                core_key, self._same_street_in_conversation(core_value, shape))
+            # ГОЛОВА — ТОЛЬКО УЛИЦА И ДОМ. `_fake_place` чеканит по форме ядра и
+            # частей не добавляет; но подменённый в тестах/будущих правках
+            # генератор может вернуть и хвост, а хвост в ядре сложился бы с
+            # хвостом строки («…, кв. 12, кв. 19») и маска перестала бы
+            # разрешаться.
+            head = morph_places.core_phrase(minted) or minted
+            # ЯДРО ЖИВЁТ В `place_cores`, И `_unique_token` ЕГО НЕ ВИДИТ: строка
+            # ядра не лежит в `tokens` (там только упоминания), поэтому второе
+            # ядро могло вытянуть ту же улицу с тем же домом и два РАЗНЫХ
+            # настоящих адреса стали бы одним местом. Уникальность головы
+            # спрашивается здесь.
+            taken = self._conn.execute(
+                "SELECT 1 FROM place_cores WHERE customer=? AND token=?",
+                (self._customer, head)).fetchone()
+            if taken is None:
+                break
+        else:
+            raise RuntimeError(
+                f"exhausted the place-core pool for {core_value!r} of customer "
+                f"{self._customer!r} — widen FAKE_STREETS")
+        try:
+            self._conn.execute(
+                "INSERT INTO place_cores (customer, core, token, created) "
+                "VALUES (?,?,?,?)",
+                (self._customer, core_key, head, time.time()))
+        except IntegrityError:
+            # Другой процесс успел вставить это же ядро — его строка и есть ответ.
+            self._conn.rollback()
+            row = self._conn.execute(
+                "SELECT token FROM place_cores WHERE customer=? AND core=?",
+                (self._customer, core_key)).fetchone()
+            if row is None:
+                raise RuntimeError(
+                    f"lost the insert race for core {core_key!r} but no row followed")
+            return row[0]
+        return head
+
+    def _place_cores_lookup(self, core_key: str) -> str | None:
+        """Подмена ядра этого дома, если она уже чеканилась (`place_cores`)."""
+        row = self._conn.execute(
+            "SELECT token FROM place_cores WHERE customer=? AND core=?",
+            (self._customer, core_key)).fetchone()
+        return row[0] if row is not None else None
+
+    def _remember_place_core(self, value: str, token: str) -> None:
+        """Запомнить подмену ЯДРА этого места, чтобы части выросли на ней же.
+
+        Зовётся для упоминания БЕЗ частей: его подмена и ЕСТЬ ядро (город,
+        улица, дом), поэтому первое же «Лермонтова 38» без квартиры даёт ядро,
+        на котором потом растут квартиры 7 и 42, — и наоборот, если первой
+        пришла квартира, ядро уже лежит и это упоминание его показывает.
+        """
+        core_key = morph_places.place_core_key(value)
+        head = morph_places.core_phrase(token) or token
+        if not core_key or not head:
+            return
+        self._conn.execute(
+            "INSERT OR IGNORE INTO place_cores (customer, core, token, created) "
+            "VALUES (?,?,?,?)",
+            (self._customer, core_key, head, time.time()))
+
+    def _reuses_a_row_of_this_place(self, token: str, value: str,
+                                    shape: dict[str, object]) -> bool:
+        """Стоит ли эта подмена за ТО ЖЕ место, что `value` — а не за другое.
+
+        Вопрос задаётся той же меркой, что у связывания
+        (`_same_place_written_differently`): толерантный ключ улицы и дома,
+        точный дом с литерой, тип (когда назван с обеих сторон) и город. Совпало
+        — это одно место, написанное иначе, и второй подмены ему не чеканится;
+        не совпало — перед нами ЧУЖАЯ подмена, и её брать нельзя.
+        """
+        row = self._conn.execute(
+            "SELECT canonical, original FROM tokens WHERE customer=? AND token=?",
+            (self._customer, token)).fetchone()
+        if row is None:
+            return False
+        owner_canonical, owner_original = str(row[0]), str(row[1])
+        plain = morph_places.address_key(value)
+        if not _keys_match(morph_places.street_house_key(owner_original),
+                           morph_places.street_house_key(value)):
+            return False
+        has_city = bool(shape.get("has_city"))
+        if not _same_house(_house_identity(owner_canonical, has_city),
+                           _house_identity(plain, has_city)):
+            return False
+        if not _same_place_type(plain, owner_canonical):
+            return False
+        if has_city:
+            return (_settlement_of(owner_original).casefold()
+                    == _settlement_of(value).casefold())
+        return True
+
+    def _place_row_canonical(self, plain: str, value: str) -> str:
+        """Ключ строки волта для упоминания с частями.
+
+        ПЕРВАЯ подпись частей остаётся на ОБЫЧНОМ ключе: `peek_token`,
+        `place_parts` и `canonical LIKE «основа%»` читают его и работают ровно
+        как прежде. Как только обычный ключ занят ДРУГИМИ частями, строка
+        получает хвост-подпись (`place_parts_key`) — иначе вторая квартира
+        одного дома нашла бы строку первой и вернула инструменту чужой адрес.
+        """
+        row = self._conn.execute(
+            "SELECT 1 FROM tokens WHERE customer=? AND canonical=?",
+            (self._customer, plain)).fetchone()
+        if row is None:
+            return plain
+        return morph_places.place_parts_key(value)
+
+    def _composed_place_token(self, value: str, parts: dict[str, str],
+                              shape: dict[str, object]) -> tuple[str, str, str, bool]:
+        """ПОЛНАЯ подмена адреса: ядро этого дома + подмены ЕГО частей.
+
+        Возвращает `(подмена, ключ строки, ядро, свежая)`. Две подмены одного
+        ядра различаются ТОЛЬКО частями, и каждая часть закреплена за своим
+        настоящим значением (`place_part_fakes`), поэтому «квартира 7» и
+        «квартира 42» — один дом и две разные квартиры, а второе появление того
+        же значения возвращает ту же квартиру. `extends` вызывающий ставит на
+        ЯДРО: без этого `_one_identity` не увидел бы, что строки одного дома —
+        одно место, и правило единственного владельца отказало бы фрагменту
+        «улица X». `свежая=False` значит «строка уже есть» — вызывающий просто
+        возвращает подмену, ничего не вставляя.
+        """
+        plain = morph_places.address_key(value)
+        signature = morph_places.parts_signature(parts)
+        for candidate in (plain, morph_places.place_parts_key(value)):
+            row = self._conn.execute(
+                "SELECT token, original FROM tokens WHERE customer=? AND canonical=?",
+                (self._customer, candidate)).fetchone()
+            if row is None:
+                continue
+            # ЧУЖИЕ ЧАСТИ — ЧУЖАЯ СТРОКА. Обычный ключ занят первой подписью
+            # частей, и возвращать её для другой квартиры значило бы отдать
+            # инструменту чужой настоящий адрес (ровно дефект W8).
+            if morph_places.parts_signature(
+                    morph_places.mutable_parts(str(row[1]))) == signature:
+                return row[0], candidate, "", False
+        core_key = morph_places.place_core_key(value)
+        core_value = morph_places.core_phrase(value) or value
+        same: tuple[str, str] | None = None
+        head = self._place_cores_lookup(core_key)
+        if head is None:
+            # ОДНО МЕСТО, НАПИСАННОЕ ИНАЧЕ — ОДНА ГОЛОВА. Две законные связи уже
+            # есть у волта, и здесь спрашиваются обе, в порядке силы:
+            #   * `_same_place_written_differently` — то же место другим
+            #     написанием (с типом и без: «переулок Мончегорская 10» и
+            #     «Мончегорская 10», A2);
+            #   * `_extends_linked_place` — короткое упоминание без города, а
+            #     пришло полное с городом.
+            # Новая голова чеканится только когда ни то, ни другое не ответило.
+            same = self._same_place_written_differently(plain, value, shape)
+            if same is not None:
+                head = morph_places.core_phrase(same[0]) or None
+            else:
+                grown = self._extends_linked_place(plain, value, shape)
+                if grown is not None:
+                    head = morph_places.core_phrase(grown[0]) or None
+            if head is not None:
+                self._remember_place_core(value, head)
+        if head is None:
+            head = self._place_core_head(core_key, core_value, shape)
+        row_canonical = self._place_row_canonical(plain, value)
+        resolved: dict[str, str] = {}
+        missing: list[str] = []
+        for role in morph_places.MUTABLE_PLACE_ROLES:
+            if role not in parts:
+                continue
+            found = self._existing_part_fake(head, role, parts[role])
+            if found is None:
+                missing.append(role)
+            else:
+                resolved[role] = found
+        seen: set[str] = set()
+        for _ in range(_TOKEN_MINT_ATTEMPTS):
+            drawn = dict(resolved)
+            taken = set(re.findall(r"\d+", head)) | set(parts.values()) | set(drawn.values())
+            for role in missing:
+                drawn[role] = self._draw_part_fake(head, role, parts[role], taken)
+                taken.add(drawn[role])
+            token = _decorate_place(head, shape, drawn, value)
+            # ФОРМУ ПОДМЕНЫ ЗДЕСЬ НЕ ПРОВЕРЯЮТ (`LOC_TOKEN_PATTERN`): тот шаблон
+            # — про то, что находит восстановитель, и он не описывает каждую
+            # законную подмену (например, город с маркером «г Торжок», который
+            # приходит из подменённого генератора). Проверка здесь отвергала бы
+            # ГОТОВУЮ подмену и, поскольку части уже закреплены, крутила бы
+            # цикл до отказа — то есть 5xx на рабочем адресе.
+            if not token:
+                continue
+            if not self._is_free_token(token, "LOC", value, row_canonical):
+                if self._reuses_a_row_of_this_place(token, value, shape):
+                    # ТА ЖЕ СТРОКА ЗА ТО ЖЕ МЕСТО — второго ряда не чеканится.
+                    # Два написания одного адреса (с типом и без, A2; запись
+                    # инструмента, переписанная моделью и пришедшая повторно)
+                    # обязаны дать ОДНУ подмену — и дают её по построению:
+                    # голова одна и части одни. Вызывающий возвращает готовую
+                    # строку, и круг `detokenize` остаётся замкнутым.
+                    return token, plain, head, False
+                if not missing:
+                    raise RuntimeError(
+                        f"the composed place {token!r} is already another "
+                        f"place's substitute ({value!r} of customer "
+                        f"{self._customer!r})")
+                if token in seen:
+                    raise RuntimeError(
+                        f"the composed place {token!r} is not free for "
+                        f"{value!r} of customer {self._customer!r}")
+                seen.add(token)
+                continue
+            if _place_numbers_collide(token, value):
+                continue
+            for role in missing:
+                self._save_part_fake(head, role, parts[role], drawn[role])
+            return token, row_canonical, head, True
+        raise RuntimeError(
+            f"exhausted the composed place pool for {value!r} of customer "
+            f"{self._customer!r}")
 
     def _existing_token(self, canonical: str) -> str:
         """The token whichever process won the insert race wrote."""

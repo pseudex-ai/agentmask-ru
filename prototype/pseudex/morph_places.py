@@ -839,7 +839,13 @@ def key_type(canonical: str) -> tuple[str, ...]:
     кто решает вопрос СВЯЗЫВАНИЯ (`vault._same_place_written_differently`):
     «переулок Пушкина» и «улица Пушкина» — два места, а «переулок Мончегорская
     10» и «Мончегорская 10» — одно, написанное с типом и без.
+
+    ХВОСТ-ПОДПИСЬ ЧАСТЕЙ СНИМАЕТСЯ (W8): строка второй квартиры того же дома
+    несёт «…\\x1fflat=42», и без снятия последнее слово («улица\\x1fflat=42») не
+    было бы родовым — тип этого места пропадал бы, и связывание связало бы
+    разные места.
     """
+    canonical = strip_parts_key(canonical)
     return tuple(word for word in canonical.split() if word in _GENERIC)
 
 
@@ -2157,3 +2163,129 @@ def reduce_address(phrase: str, keep_city: bool, keep_tail: bool) -> str:
         if tail is not None:
             out = out[:tail.start()]
     return out.strip().strip(" ,.")
+
+
+# =====================================================================================
+# D-081 (W8): АДРЕС — ЯДРО И РАСТУЩИЕ НА НЁМ ЧАСТИ.
+# =====================================================================================
+# РЕШЕНИЕ ВЛАДЕЛЬЦА (OWNER-DECISIONS-PHASE4B.md, кластер A): тождество адреса —
+# УЛИЦА И ДОМ, и оно ОДНО. Корпус/строение, подъезд, этаж и квартира — ИЗМЕНЯЕМЫЕ
+# ЧАСТИ на том же ядре: две квартиры в одном доме получают ОДНУ подменную улицу и
+# дом, но РАЗНЫЕ подменные квартиры, поэтому два разных человека в одном доме
+# остаются различимыми, а поправка «ой не та квартира» не чеканит новый адрес.
+#
+# ЧИТАТЕЛЬ ОДИН. Части разбирает `split_roles` (та же пара `role_spans` +
+# маркеры, которой `in_form_of` выкладывает подмену в форму клиента), а диктовку
+# сворачивает `house_digits` — вторая читалка той же фразы разошлась бы с первой,
+# как расходятся в этом файле все вторые читалки.
+MUTABLE_PLACE_ROLES: tuple[str, ...] = ("building", "entrance", "floor", "flat")
+# РАЗДЕЛИТЕЛЬ ХВОСТА-ПОДПИСИ ЧАСТЕЙ. \x1f не встречается в адресной фразе, а
+# хвост стоит ПОСЛЕ обычного ключа, поэтому диапазонные чтения по
+# `(customer, canonical)` — и префиксные (`vault._real_place_with_stem_locked`:
+# «canonical LIKE <основа>%»), и слотовые (`vault._place_family_owner`) — видят
+# строку там же, где видели её без частей. Читатели тождества и типа снимают
+# хвост сами (`strip_parts_key`), поэтому тип места не теряется.
+PART_SEPARATOR = "\x1f"
+# МАРКЕР, СТОЯЩИЙ ПОСЛЕ ЧИСЛА. «3 подъезд», «2 корпус» — основная форма
+# диспетчерской речи, и без неё `core_phrase` оставлял бы маркер в ядре.
+_MARKER_AFTER = re.compile(
+    r"(?i)^[\s,]*\b(?:под[ъь]езд\w*|под|этаж\w*|эт|корп\w*|кор|стр\w*|строен\w*"
+    r"|литер\w*|лит)\.?")
+
+
+def mutable_parts(phrase: str) -> dict[str, str]:
+    """Изменяемые части адреса: роль -> значение ЦИФРАМИ («семь» -> «7»).
+
+    Пустая часть (маркер без числа) ролью не становится: «…, кв» не называет
+    квартиры, и подмены ей не чеканится.
+    """
+    roles = split_roles(phrase)
+    out: dict[str, str] = {}
+    for role in MUTABLE_PLACE_ROLES:
+        value = house_digits((roles.get(role) or "").strip())
+        if value:
+            out[role] = value
+    return out
+
+
+def core_phrase(phrase: str) -> str:
+    """Тот же адрес БЕЗ изменяемых частей: город, улица, дом.
+
+    Хвост, названный ролью, вырезается ЦЕЛИКОМ — и маркер, стоящий перед числом
+    («, квартира 7»), и маркер, стоящий после него («3 подъезд»): оставленный
+    маркер сделал бы из ядра второе тождество.
+    """
+    spans = role_spans(phrase)
+    drops: list[tuple[int, int]] = []
+    for role in MUTABLE_PLACE_ROLES:
+        span = spans.get(role)
+        if span is None:
+            continue
+        start, end = span
+        start = min(start, _marker_start(phrase, start))
+        after = _MARKER_AFTER.match(phrase[end:])
+        if after is not None:
+            end += after.end()
+        drops.append((start, end))
+    if not drops:
+        return phrase
+    out: list[str] = []
+    last = 0
+    for start, end in sorted(drops):
+        if start < last:
+            continue
+        out.append(phrase[last:start])
+        last = end
+    out.append(phrase[last:])
+    text = "".join(out)
+    text = re.sub(r"[ \t]*,[ \t]*(?=[,;]|$)", "", text)
+    text = re.sub(r"[\s,;]+$", "", text)
+    text = re.sub(r"^[\s,;]+", "", text)
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
+def place_core_key(phrase: str) -> str:
+    """ТОЖДЕСТВО адреса (D-081): улица и дом, и ничего кроме.
+
+    Ключ улицы, дома и города — тот же `address_key`, построенный на фразе без
+    изменяемых частей, поэтому упоминание без частей («улица Лермонтова дом 38»)
+    даёт РОВНО этот ключ и встречается со своей полной формой, а упоминание с
+    квартирой или корпусом — тот же ключ, но строка волта у него своя
+    (`place_parts_key`).
+    """
+    core = core_phrase(phrase)
+    return address_key(core if core.strip() else phrase)
+
+
+def parts_signature(parts: dict[str, str]) -> str:
+    """Подпись изменяемых частей: роль=значение, в русском порядке.
+
+    Она и есть то, чем различаются строки одного дома: «flat=7» и «flat=42» —
+    разные строки, а одно значение дважды — одна и та же.
+    """
+    return PART_SEPARATOR.join(f"{role}={parts[role]}"
+                               for role in MUTABLE_PLACE_ROLES if role in parts)
+
+
+def place_parts_key(phrase: str) -> str:
+    """КЛЮЧ СТРОКИ ВОЛТА, КОГДА ЧАСТИ НАЗВАНЫ: обычный ключ адреса + подпись.
+
+    Ключ адреса (`address_key`) значения частей выбрасывает — по решению
+    владельца это тождество. Но СТРОКЕ волта их мало: два человека в одном доме
+    обязаны быть ДВУМЯ строками. Поэтому вторая и следующие подписи частей
+    получают хвост-подпись, а первая остаётся на обычном ключе, чтобы связывание
+    короткого и полного написания, `peek_token` и индекс `place_parts` работали
+    ровно как прежде. ХВОСТ, А НЕ ПРЕФИКС: `canonical LIKE «<основа>%»`
+    (`vault._real_place_with_stem_locked`) обязан эту строку видеть.
+    """
+    plain = address_key(phrase)
+    parts = mutable_parts(phrase)
+    if not parts:
+        return plain
+    return f"{plain}{PART_SEPARATOR}{parts_signature(parts)}"
+
+
+def strip_parts_key(canonical: str) -> str:
+    """Ключ строки волта без хвоста-подписи частей — то, что читают тождество и тип."""
+    head, separator, _rest = canonical.partition(PART_SEPARATOR)
+    return head if separator else canonical

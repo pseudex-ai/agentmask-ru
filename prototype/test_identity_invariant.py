@@ -12,6 +12,10 @@
     (`test_product`: «brief carries a flat the mention never named»), а связывание
     короткого и полного написания потеряло бы различие владельцев. Диктовка
     («дом тридцать восемь») сворачивается в цифры, поэтому встречается с «дом 38».
+    ЧАСТИ ПРИ ЭТОМ НЕ ВЫБРАСЫВАЮТСЯ (W8, кластер A решения владельца): ядро
+    (улица+дом) чеканится ОДИН раз, а каждая часть растёт на нём своей подменой,
+    поэтому «квартира 7» и «квартира 42» — один дом и две РАЗНЫЕ квартиры, а
+    `detokenize` возвращает инструменту РОВНО написанное клиентом.
   * NAME — тождество есть ФАМИЛИЯ + ИМЯ. Отчество и инициалы это изменяемые
     части: «Иванов Пётр» и «Иванов Пётр Сергеевич» — один человек и одна подмена,
     а «Иванов Пётр» и «Иванов Николай» — два: имя В тождестве, отчество нет.
@@ -32,6 +36,7 @@ import testkit
 
 testkit.load_dev_bundle()
 
+from pseudex import morph_places                                  # noqa: E402
 from pseudex.morph_places import address_key                      # noqa: E402
 from pseudex.vault import Vault, canonicalize, _PLACE_PART_TTL    # noqa: E402
 from pseudex import morph_names                                   # noqa: E402
@@ -45,12 +50,34 @@ def check(ok: bool, name: str, detail: str = "") -> None:
     print(f"  {'PASS' if ok else 'FAIL'}  {name}" + (f"  {detail}" if detail else ""))
 
 
+def place_core(token: str) -> str:
+    """ЯДРО подмены адреса — улица, дом и настоящий город, без изменяемых частей."""
+    core = morph_places.core_phrase(token)
+    return core.casefold().replace("ё", "е") or token.casefold()
+
+
+def place_parts(token: str) -> tuple[tuple[str, str], ...]:
+    """Изменяемые части подмены, роль -> значение ЦИФРАМИ, в русском порядке."""
+    roles = morph_places.split_roles(token)
+    return tuple(
+        (role, morph_places.house_digits((roles.get(role) or "").strip()))
+        for role in morph_places.MUTABLE_PLACE_ROLES if roles.get(role))
+
+
 def token_of(forms: list[str], entity_type: str) -> dict[str, list[str]]:
-    """Формы → подмены, собранные в группы «один фейк = сколько форм»."""
+    """Формы → подмены, собранные в группы «одно тождество = сколько форм».
+
+    ДЛЯ LOC ТОЖДЕСТВО — ЯДРО (D-081/W8): «квартира 7» и «квартира 42» это ОДИН
+    адрес, и группа считается по `core_phrase`, а не по целой строке. Вторая
+    половина решения — части обязаны остаться РАЗЛИЧИМЫМИ — проверяется там же,
+    где группа (`test_metric_groups`).
+    """
     vault = Vault(":memory:", "identity-pin")
     out: dict[str, list[str]] = {}
     for form in forms:
-        out.setdefault(vault.tokenize(form, entity_type), []).append(form)
+        token = vault.tokenize(form, entity_type)
+        key = place_core(token) if entity_type == "LOC" else token
+        out.setdefault(key, []).append(token)
     return out
 
 
@@ -87,7 +114,21 @@ def test_metric_groups() -> None:
         tokens = token_of(forms, entity_type)
         if expect == "collapse":
             ok = len(tokens) == 1
-            detail = f"{len(tokens)} фейк(ов) на {len(forms)} форм"
+            detail = f"{len(tokens)} тождеств(о) на {len(forms)} форм"
+            if ok and entity_type == "LOC":
+                # ВТОРАЯ ПОЛОВИНА РЕШЕНИЯ ВЛАДЕЛЬЦА. Свёртка к ядру одна
+                # удовлетворила бы группу «смена квартиры» и на вырожденной
+                # подмене без квартиры; части обязаны быть РАЗЛИЧИМЫМИ, иначе
+                # два человека в одном доме становятся одним.
+                by_parts: dict[tuple[tuple[str, str], ...], set[str]] = {}
+                for group in tokens.values():
+                    for token in group:
+                        by_parts.setdefault(place_parts(token), set()).add(token)
+                collisions = {parts: group for parts, group in by_parts.items()
+                              if len(group) != 1}
+                ok = not collisions
+                detail += ("; части различимы" if ok
+                           else f"; части не различились: {collisions}")
         else:
             ok = len(tokens) == len(forms)
             detail = f"{len(tokens)} фейк(ов) на {len(forms)} форм (нужно по одному)"
@@ -126,13 +167,49 @@ def test_address_render_and_restore() -> None:
     настоящее написание обратно. Два человека в одном доме остаются различимы
     своими частями, а не тем, что один из них потерял квартиру."""
     vault = Vault(":memory:", "identity-pin-loc")
-    full = vault.tokenize("улица Лермонтова дом 38 квартира 7", "LOC")
-    check("кв" in full, "адрес: подмена несёт квартиру, а не выбрасывает её", f"{full!r}")
-    check(vault.tokenize("улица Лермонтова дом 38 квартира 42", "LOC") == full,
-          "адрес: смена квартиры — та же подмена", f"{full!r}")
-    check(unmask_text(full, vault) == "улица Лермонтова дом 38 квартира 7",
+    first = vault.tokenize("улица Лермонтова дом 38 квартира 7", "LOC")
+    second = vault.tokenize("улица Лермонтова дом 38 квартира 42", "LOC")
+    check("кв" in first, "адрес: подмена несёт квартиру, а не выбрасывает её", f"{first!r}")
+    # ЯДРО ОДНО (улица+дом), А КВАРТИРА — СВОЯ. Здесь стоял пин полного
+    # равенства строк: он и был исходным дефектом — вторая квартира получала
+    # чужую подмену, а инструмент — чужой настоящий адрес (W8).
+    check(place_core(first) == place_core(second),
+          "адрес: смена квартиры — ТО ЖЕ ядро улица+дом",
+          f"{place_core(first)!r} / {place_core(second)!r}")
+    check(place_parts(first) != place_parts(second)
+          and dict(place_parts(first)).get("flat") != dict(place_parts(second)).get("flat"),
+          "адрес: два человека в одном доме различимы квартирой",
+          f"{first!r} / {second!r}")
+    # ПОПРАВКА «ОЙ НЕ ТА КВАРТИРА» НЕ ЧЕКАНИТ НОВЫЙ ДОМ. Соседний номер
+    # квартиры приходит к тому же ядру — это и есть принцип владельца из D-081.
+    third = vault.tokenize("улица Лермонтова дом 38 квартира 13", "LOC")
+    check(place_core(third) == place_core(first),
+          "адрес: поправка квартиры сохраняет улицу и дом", f"{third!r}")
+    check(len({dict(place_parts(t)).get("flat")
+               for t in (first, second, third)}) == 3,
+          "адрес: три квартиры одного дома — три разные подмены")
+    check(unmask_text(first, vault) == "улица Лермонтова дом 38 квартира 7",
           "адрес: инструмент получает ровно то, что написал клиент",
-          f"{unmask_text(full, vault)!r}")
+          f"{unmask_text(first, vault)!r}")
+    check(unmask_text(second, vault) == "улица Лермонтова дом 38 квартира 42",
+          "адрес: вторая квартира возвращается ЕЁ настоящей, а не первой",
+          f"{unmask_text(second, vault)!r}")
+    check(unmask_text(third, vault) == "улица Лермонтова дом 38 квартира 13",
+          "адрес: поправка возвращается дословно",
+          f"{unmask_text(third, vault)!r}")
+    # КОРПУС — ТАКАЯ ЖЕ ЧАСТЬ НА ТОМ ЖЕ ЯДРЕ, и он тоже различим.
+    corpus_vault = Vault(":memory:", "identity-pin-corpus")
+    one = corpus_vault.tokenize("улица Лермонтова дом 38 корпус 1", "LOC")
+    two = corpus_vault.tokenize("улица Лермонтова дом 38 корпус 2", "LOC")
+    shared = Vault(":memory:", "identity-pin-corpus-2")
+    flat = shared.tokenize("улица Лермонтова дом 38 квартира 7", "LOC")
+    corpus = shared.tokenize("улица Лермонтова дом 38 корпус 1", "LOC")
+    check(place_core(one) == place_core(two),
+          "адрес: корпус 1 и корпус 2 — то же ядро", f"{one!r} / {two!r}")
+    check(dict(place_parts(one)).get("building") != dict(place_parts(two)).get("building"),
+          "адрес: разные корпуса различимы", f"{one!r} / {two!r}")
+    check(place_core(flat) == place_core(corpus),
+          "адрес: квартира и корпус растут на ОДНОМ ядре", f"{flat!r} / {corpus!r}")
     # КОРОТКОЕ УПОМИНАНИЕ НЕ ПОЛУЧАЕТ ЧУЖОЙ КВАРТИРЫ. Полная запись с городом
     # связывается с короткой отдельным правилом (`_linked_place`), и проекция
     # снимает часть, которой короткая не называла.

@@ -51,6 +51,16 @@ would be measuring its own comparison. `fake_identity` folds a NAME substitute
 to surname + given-name initial; every other type is its own string (their
 canonical IS a digit run or a typed key, so equal key = equal fake).
 
+THE SAME FOLD FOR A LOC, AND IT IS THE OWNER'S DECISION (W8). The identity of an
+address is STREET + HOUSE (the city in the token is the real one); flat,
+entrance, floor and corpus are MUTABLE PARTS rendered on that core, so
+«улица Лермонтова дом 38 квартира 7» and «… квартира 42» are ONE fake — the same
+street and house — written with a different flat. `fake_identity` therefore
+folds a LOC substitute to its core, and a `collapse` group whose forms name
+DIFFERENT mutable parts must ALSO satisfy the other half of the decision: the
+parts stay DISTINCT, or two people in one house would be one person (the fold
+would otherwise hide exactly the collision it must not create; see `_measure`).
+
 Run:  cd prototype && .venv/bin/python bench/identity_invariant.py
       exit 0 = every collapse group minted one fake and every control held.
 """
@@ -63,7 +73,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from testkit import load_dev_bundle  # noqa: E402
 load_dev_bundle()
 from pseudex.vault import Vault, canonicalize  # noqa: E402
-from pseudex import morph_names, ru_pii_v6  # noqa: E402
+from pseudex import morph_names, morph_places, ru_pii_v6  # noqa: E402
 
 # (title, entity_type, expect, [forms, ...])
 #   expect="collapse" — all forms MUST mint ONE fake (the invariant).
@@ -152,6 +162,28 @@ GROUPS = [
 ]
 
 
+def place_core(token: str) -> str:
+    """ЯДРО адресной подмены — улица, дом и настоящий город, без частей.
+
+    Читается `morph_places.core_phrase` — тот же читатель ролей, которым
+    `in_form_of` выкладывает подмену в форму клиента, поэтому метрика не может
+    разойтись с тем, что чеканит волт.
+    """
+    core = morph_places.core_phrase(token)
+    return core.casefold().replace("ё", "е") or token.casefold()
+
+
+def place_parts(token: str) -> tuple[tuple[str, str], ...]:
+    """Изменяемые части подмены, роль -> значение, в русском порядке.
+
+    Пустая часть ролью не становится: «…, кв» не называет квартиры.
+    """
+    roles = morph_places.split_roles(token)
+    return tuple(
+        (role, morph_places.house_digits((roles.get(role) or "").strip()))
+        for role in morph_places.MUTABLE_PLACE_ROLES if roles.get(role))
+
+
 def fake_identity(entity_type: str, token: str) -> str:
     """The IDENTITY a substitute stands for — not its spelling.
 
@@ -162,9 +194,15 @@ def fake_identity(entity_type: str, token: str) -> str:
     letter), and it is applied only to NAME: every other type's canonical is
     already the whole identity (a digit run or a typed key), so its token is
     its identity.
+
+    A LOC folds to its CORE, for the reason the module docstring gives: the
+    identity is street + house, and the flat/entrance/floor/corpus are the
+    mutable parts that must stay distinct (`_measure` checks that half).
     """
     if not token:
         return token
+    if ru_pii_v6.engine_label(entity_type) == "LOC":
+        return place_core(token)
     if ru_pii_v6.engine_label(entity_type) != "NAME":
         return token
     words = token.split()
@@ -186,11 +224,16 @@ def identity_key(entity_type: str, value: str) -> str:
     means equal substitute on a fresh vault. For NAME the canonical of a
     shorthand is a different STRING but the same person, so the same
     surname+initial fold `fake_identity` applies to substitutes is applied to
-    the canonical here. Verified to agree with `fake_identity(tokenize(...))`
-    on every group in this file (see `main`).
+    the canonical here. For LOC the row key of a mention with parts carries the
+    values too (W8), so the identity question is asked of the CORE:
+    `place_core_key` is exactly the key `fake_identity`'s fold describes.
+    Verified to agree with `fake_identity(tokenize(...))` on every group in
+    this file (see `main`).
     """
     if ru_pii_v6.engine_label(entity_type) == "NAME":
         return fake_identity("NAME", canonicalize(entity_type, value))
+    if ru_pii_v6.engine_label(entity_type) == "LOC":
+        return morph_places.place_core_key(value)
     return canonicalize(entity_type, value)
 
 
@@ -216,9 +259,29 @@ def _measure(scope: str):
                 (form, canonical, token))
         unique = len(rows)
         ok = (unique == 1) if expect == "collapse" else (unique == len(forms))
+        detail = ""
+        part_groups: int | None = None
+        if ok and expect == "collapse" and ru_pii_v6.engine_label(entity_type) == "LOC":
+            # ВТОРАЯ ПОЛОВИНА РЕШЕНИЯ, БЕЗ КОТОРОЙ ЯДРО СХЛОПНУЛО БЫ ЛЮДЕЙ.
+            # Свёртка до ядра одна удовлетворяла бы группу «смена квартиры» и
+            # на вырожденной подмене, у которой квартиры нет вовсе. Поэтому у
+            # LOC проверяется и то, что полная строка — функция ЧАСТЕЙ: формы с
+            # разными частями обязаны дать разные строки, формы с теми же —
+            # одну и ту же. Два человека в одном доме различимы ровно этим.
+            by_parts: dict[tuple[tuple[str, str], ...], set[str]] = {}
+            for group in rows.values():
+                for _form, _canonical, token in group:
+                    by_parts.setdefault(place_parts(token), set()).add(token)
+            collisions = {parts: tokens for parts, tokens in by_parts.items()
+                          if len(tokens) != 1}
+            ok = not collisions
+            part_groups = len(by_parts)
+            if collisions:
+                detail = f"части не различились: {collisions}"
         measured.append({
             "title": title, "entity_type": entity_type, "expect": expect,
             "forms": list(forms), "rows": rows, "unique": unique, "ok": ok,
+            "detail": detail, "part_groups": part_groups,
         })
     return measured
 
@@ -287,8 +350,17 @@ def main() -> int:
     total = len(measured)
     for row in measured:
         mark = "OK " if row["ok"] else "BAD"
+        note = ""
+        noun = "фейк(ов)"
+        if row.get("part_groups") is not None:
+            noun = "ядро(ер)"
+            if row["ok"]:
+                note = f", части: {row['part_groups']} различим(ы) набора"
         print(f"[{mark}] {row['entity_type']} | {row['title']} "
-              f"[{row['expect']}]: {row['unique']} фейк(ов) на {len(row['forms'])} форм")
+              f"[{row['expect']}]: {row['unique']} {noun} на {len(row['forms'])} форм"
+              f"{note}")
+        if not row["ok"] and row.get("detail"):
+            print(f"        {row['detail']}")
         if not row["ok"]:
             for key, rows in row["rows"].items():
                 for form, canonical, token in rows:
