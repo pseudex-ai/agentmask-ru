@@ -768,18 +768,20 @@ def address_key(phrase: str) -> str:
                         and _ORDINAL_ONLY.fullmatch(parts[-1])
                         and not spoken.is_numeral_word(parts[-1])):
                     parts.pop()
-                parts.append(alias)
                 if alias in _MUTABLE_KEY_MARKERS:
+                    # ИЗМЕНЯЕМАЯ ЧАСТЬ НЕ ВХОДИТ В ТОЖДЕСТВО (D-081): ни маркер
+                    # «кв», ни значение. Квартира/подъезд/этаж рендерятся
+                    # отдельной частью поверх того же ядра (place_parts).
                     drop_value = True
+                else:
+                    parts.append(alias)
             continue
         if raw in _MUTABLE_KEY_MARKERS:
             # «подъезд»/«этаж» в `_SLOT_ALIASES` не лежат и до этой строки
-            # доезжают как обычное слово: без неё они попадали бы в ключ ВМЕСТЕ
-            # со своим числом, и смена подъезда снова плодила бы подмену.
+            # доезжают как обычное слово; они тоже не входят в тождество.
             if (parts and _ORDINAL_ONLY.fullmatch(parts[-1])
                     and not spoken.is_numeral_word(parts[-1])):
                 parts.pop()
-            parts.append(raw)
             drop_value = True
             continue
         full = _GENERIC_SHORT.get(raw)

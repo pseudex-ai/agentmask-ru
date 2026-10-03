@@ -893,8 +893,22 @@ def _own_street_key(text: str) -> str:
     return morph_places.street_house_key(text)
 
 
-_OWN_SIGNATURES = (name_key, lambda text: morph_places.address_key(text),
-                   _own_street_key)
+def _own_address_key(text: str) -> str:
+    """`address_key`, but only for a mention WITHOUT mutable parts.
+
+    `address_key` is the IDENTITY (street+house, D-081) and no longer carries
+    the flat marker; the own-value guard must still NOT let the host's
+    «ленина 14» swallow a client's «ленина 14 квартира 7». Same narrow rule as
+    `_own_street_key`: a company address never names a flat/entrance/floor, so
+    a mention that does is the client's, not the host's.
+    """
+    shape = morph_places.place_shape(text)
+    if any(shape.get(role) for role in ("has_flat", "has_entrance", "has_building", "has_floor")):
+        return ""
+    return morph_places.address_key(text)
+
+
+_OWN_SIGNATURES = (name_key, _own_address_key, _own_street_key)
 
 
 def fold_key(canonical: str) -> str:
@@ -5987,7 +6001,12 @@ class Vault:
         full = owners[0]
         derived = morph_places.strip_leading_city(full)
         if not shape.get("has_flat"):
-            derived = morph_places.strip_flat(derived)
+            # A short mention that named no flat must get back ONLY the core
+            # (street+house): the fuller row may carry a corpus/entrance/floor
+            # the mention never named, and `strip_flat` leaves those on — the
+            # model was handed «корп. 38» it never said and read a phantom
+            # mismatch. `core_phrase` strips EVERY mutable part, not just the flat.
+            derived = morph_places.core_phrase(derived)
         # A projection identical to the full token is not a projection: the
         # stored address had no city either, so there is nothing shorter to
         # render and the two mentions are the same string anyway.

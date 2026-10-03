@@ -1,0 +1,5 @@
+SENT TO MODEL: Найди заказ по телефону +7 912 545-00-64 и почте tuyvtfjn@example.ru
+MODEL TOOL CALL (tokens): {"phone": "+7 912 545-00-64", "email": "tuyvtfjn@example.ru"}
+TOOL EXECUTES WITH: {"phone": "+7 999 123-45-67", "email": "ivan@mail.ru"}
+
+PASS — model saw only tokens; tool received real values.
