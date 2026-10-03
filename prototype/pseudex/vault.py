@@ -5845,7 +5845,23 @@ class Vault:
                          and named != morph_places.key_type(owner_canonical))]
         if len(same) != 1:
             return None
-        return same[0], same[0]
+        full = same[0]
+        # Project the full token onto THIS mention's form: the short «на Тверской
+        # 7» named no type and no mutable part, so it must get the core with the
+        # default «улица» (inflected downstream), never the full token's «ул.»
+        # abbreviation or its corpus — the model read «ул. … корп. N» inside an
+        # oblique slot as nominative and a phantom extra part (test_hard_cases).
+        projected = morph_places.core_phrase(morph_places.strip_leading_city(full))
+        if not any(shape.get(role) for role in ("has_flat", "has_entrance", "has_building", "has_floor")):
+            roles = morph_places.split_roles(projected)
+            street = roles.get("street_name") or ""
+            house = roles.get("house") or ""
+            if street and not shape.get("generic"):
+                gender = str(shape.get("gender") or "femn")
+                projected = _compose_head(morph_places.agree_with_generic(street, gender), "улица")
+                if house:
+                    projected = f"{projected} {house}"
+        return projected, full
 
     def _place_family_owner(self, canonical: str) -> str | None:
         """Подмена этого заказчика, чей ключ отличается только СЛОТОМ ТИПА.
@@ -6007,6 +6023,18 @@ class Vault:
             # model was handed «корп. 38» it never said and read a phantom
             # mismatch. `core_phrase` strips EVERY mutable part, not just the flat.
             derived = morph_places.core_phrase(derived)
+        # The full token carries ITS generic word («ул.» abbreviation) and its
+        # own case; a short oblique mention «на Тверской 7» must get the DEFAULT
+        # «улица» in full form so the downstream form-composition inflects it to
+        # «улицы», not read the abbreviation as nominative (test_hard_cases).
+        roles = morph_places.split_roles(derived)
+        street = roles.get("street_name") or ""
+        house = roles.get("house") or ""
+        if street:
+            gender = str(shape.get("gender") or "femn")
+            derived = _compose_head(morph_places.agree_with_generic(street, gender), "улица")
+            if house:
+                derived = f"{derived} {house}"
         # A projection identical to the full token is not a projection: the
         # stored address had no city either, so there is nothing shorter to
         # render and the two mentions are the same string anyway.

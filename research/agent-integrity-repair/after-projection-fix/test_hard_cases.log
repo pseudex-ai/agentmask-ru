@@ -1,0 +1,201 @@
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmpkpcax1u6/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+PASS  every hard case is detected  70 cases
+PASS  nothing that is not personal data is masked  19 negatives
+PASS  a 13-digit card named by its cue is masked whole  5 groupings
+PASS  a 14-digit card named by its cue is masked whole  5 groupings
+PASS  a 15-digit card named by its cue is masked whole  5 groupings
+PASS  a 16-digit card named by its cue is masked whole  5 groupings
+PASS  a 17-digit card named by its cue is masked whole  5 groupings
+PASS  a 18-digit card named by its cue is masked whole  5 groupings
+PASS  a 19-digit card named by its cue is masked whole  5 groupings
+PASS  the 16-digit card stays detected in every grouping  4276 1600 1234 5675
+PASS  two cards via space are both typed  found=['4012 3456 7890 1239', '4012 3456 7890 1238'], wanted=['4012 3456 7890 1239', '4012 3456 7890 1238']
+PASS  neither card survives the mask (space)  masked=карта 0448 1916 6907 2198 0012 4734 2078 5607
+PASS  two cards via hyphen are both typed  found=['4012-3456-7890-1239', '4012-3456-7890-1238'], wanted=['4012-3456-7890-1239', '4012-3456-7890-1238']
+PASS  neither card survives the mask (hyphen)  masked=карта 0448-1916-6907-2198-0012-4734-2078-5607
+PASS  two cards via touching second card are both typed  found=['4012 3456 7890 1239', '4012345678901238'], wanted=['4012 3456 7890 1239', '4012345678901238']
+PASS  neither card survives the mask (touching second card)  masked=карта 0448 1916 6907 21980012473420785607
+PASS  a card before an order number (space) is typed whole  found=['4012 3456 7890 1239'], wanted=['4012 3456 7890 1239']
+PASS  the order number after the card (space) stays clear
+PASS  a card before an order number (hyphen) is typed whole  found=['4012-3456-7890-1239'], wanted=['4012-3456-7890-1239']
+PASS  the order number after the card (hyphen) stays clear
+PASS  a card before a punctuated quantity is typed whole  found=['4012 3456 7890 1239']
+PASS  the quantity after a punctuated card stays clear
+PASS  two Luhn-valid cards with no cue are both typed  found=['4012 3456 7890 1239', '4276 1600 1234 5675']
+PASS  a 1..3-digit group after a card reads as the longer card (policy)  found=['4012 3456 7890 1239 12']
+PASS  that reading leaves no real digit behind
+PASS  a card after a non-card number is typed whole, and that number is not  4 leading-number runs
+PASS  a card beside one neighbour is the exact card, the neighbour clear  6 review literals
+PASS  a lost separator is cut in the sender's grouping, protecting both numbers  found=['4012 3456 7890 1239', '4012345678901']
+PASS  no digit of either card survives the lost-separator mask  masked=карта 0448 1916 6907 21980382121981627
+PASS  a card beside one differently grouped neighbour is exact, the neighbour clear  3 lengths x 8 widths x 2 sides x 2 separators
+PASS  a touching run is one card when card-shaped, else refused whole — never partial  3 lengths x 8 widths x 2 sides touching
+PASS  two cards in one run are both typed, separated or glued  9 pairs x 2 separators + 9 glued
+PASS  a run no grouping separates is refused whole, not bitten  4 account-shaped runs
+PASS  the checksum separates a twenty-digit run into two equal-grouped readings  one window of two passes Luhn
+PASS  a card before a differently grouped number is typed, that number is not  three mixed runs
+PASS  a 13-digit run beside a card is a card behind the cue  found=['1234567890123', '4012345678901239']
+PASS  the same run with no cue types only the Luhn-valid sixteen  found=['4012345678901239']
+PASS  the reviewer's literal: both cards, whole  found=['4012 3456 7890 1239', '4012 3456 7890 1238']
+PASS  the reviewer's literal: no digit of either card survives  masked=карта 0448 1916 6907 2198 0012 4734 2078 5607
+PASS  a word that only starts like the cue does not type a number  5 words x 8 lengths
+PASS  an uncued digit run is not a card at any other length  8 ordinary + 6 Luhn-valid runs
+PASS  a run longer than any card is not bitten into  20 digits behind the cue, loose and grouped
+PASS  a word that only ends like, or compounds with, the cue types nothing  3 words x 2 writings, each behind a 13-digit run
+PASS  the cue itself still types the same run  карта 1234567890123
+PASS  every detected value round-trips back intact
+PASS  no detected value reaches the model  70 messages
+PASS  phone mention returns its own form: +7 916 214-88-03
+PASS  phone mention returns its own form: 8 916 214 88 03
+PASS  phone mention returns its own form: 89162148803
+PASS  phone mention returns its own form: +79162148803
+PASS  one phone written four ways is ONE identity  tokens={'9687561930'}
+PASS  a JSON tool payload survives masking and still parses
+PASS  the order number is untouched inside JSON  order=WA-4471
+PASS  the phone comes back exactly  phone=+7 916 214-88-03
+PASS  masking the same text twice gives the same tokens  first=Клиент Титов Артём Александрович, +7 968 756-19-30 second=Клиент Титов Артём Александрович, +7 968 756-19-30
+PASS  a masked message is not masked a second time  once=Клиент Титов Артём Александрович, +7 968 756-19-30 twice=Клиент Титов Артём Александрович, +7 968 756-19-30
+PASS  every address round-trips back intact  12 addresses
+PASS  no address substitute sits in the nominative inside an oblique slot  []
+PASS  the address signature survives every case of every pool entry  275 combinations
+PASS  a street is replaced by a street, never by a town
+PASS  one address span: здравствуйте курьера на воткинск бульвар…  ['воткинск бульвар комиссарого двадцать семь в третий подъезд квартира сто шестьдесят два']
+PASS  house role is «двадцать семь»  roles={'flat': 'сто шестьдесят два', 'entrance': 'третий', 'house': 'двадцать семь', 'street': 'бульвар комиссарого', 'city': 'воткинск', 'street_type': 'бульвар', 'street_name': 'комиссарого'}
+PASS  one address span: адрес улица ленина двадцать семь в кварт…  ['улица ленина двадцать семь в квартиру пять']
+PASS  house role is «двадцать семь»  roles={'flat': 'пять', 'house': 'двадцать семь', 'street': 'улица ленина', 'street_type': 'улица', 'street_name': 'ленина'}
+PASS  one address span: адрес улица ленина двадцать семь к пятом…  ['улица ленина двадцать семь к пятому подъезду']
+PASS  house role is «двадцать семь»  roles={'entrance': 'пятому', 'house': 'двадцать семь', 'street': 'улица ленина', 'street_type': 'улица', 'street_name': 'ленина'}
+PASS  one address span: бибиревская дом семнадцать в квартира дв…  ['бибиревская дом семнадцать в квартира двести двадцать девять']
+PASS  house role is «семнадцать в»  roles={'flat': 'двести двадцать девять', 'house': 'семнадцать в', 'street': 'бибиревская', 'street_name': 'бибиревская'}
+PASS  one address span: так двадцать пять а корпус два квартира …  ['двадцать пять а корпус два квартира двадцать семь']
+PASS  house role is «двадцать пять а»  roles={'flat': 'двадцать семь', 'building': 'два', 'house': 'двадцать пять а'}
+PASS  building 27, porch 3, flat 162 reach the courier  token='Воткинск, Липовый бульвар 85, подъезд 72, кв. 660' back={'address': {'building': '27', 'porch': '3', 'sflat': '162'}}
+PASS  the customer's own presentation is mirrored when nothing real survives  ['Доставка на г. Ачинск, б-р Берёзовый, д. 16, кв. 136', 'Доставка на г. Ачинск, б-р Мятный, д. 38, кв. 841', 'Доставка на г. Ачинск, б-р Тополиный, д. 98, кв. 668', 'Доставка на г. Ачинск, б-р Буковый, д. 39, кв. 961', 'Доставка на г. Ачинск, б-р Каштановый, д. 22, кв. 416']
+PASS  and the mirror shows no real word of the address  ['Доставка на г. Ачинск, б-р Берёзовый, д. 16, кв. 136', 'Доставка на г. Ачинск, б-р Мятный, д. 38, кв. 841', 'Доставка на г. Ачинск, б-р Тополиный, д. 98, кв. 668', 'Доставка на г. Ачинск, б-р Буковый, д. 39, кв. 961', 'Доставка на г. Ачинск, б-р Каштановый, д. 22, кв. 416']
+PASS  a mis-aligned mirror is refused: г. Киров, пр-д 4-й Вешняковс…  []
+PASS  a mis-aligned mirror is refused: г. Балашов, ул. 3-я Победило…  []
+PASS  a mis-aligned mirror is refused: г Казань, бульвар 26 Бакинск…  []
+PASS  a mis-aligned mirror is refused: ул.26 Бакинских Комиссаров д…  []
+PASS  a mis-aligned mirror is refused: ул.9 Мая д32 кв.139…  []
+PASS  a mis-aligned mirror is refused: г Тюмень, площадь 9 Мая, дом…  []
+PASS  a mis-aligned mirror is refused: г. Челябинск, ш. 8 Марта, д.…  []
+PASS  one fake street for one real street: курьера на адрес заречная пять…  tokens=['улица Пихтовая 37, кв. 151', 'улица Пихтовая 42, кв. 895']
+PASS  two different fake houses  tokens=['улица Пихтовая 37, кв. 151', 'улица Пихтовая 42, кв. 895']
+PASS  street and house restore to the CORRECTED real address  masked='курьера на адрес пихтовая тридцать семь квартира сто пятьдесят один ой нет правильно пихтовая сорок два квартира восемьсот девяносто пять это в воткинск' back={'address': {'street': 'Заречная', 'building': '29'}}
+PASS  the street alone resolves when every owner agrees on it  back={'address': {'street': 'Заречная'}}
+PASS  one fake street for one real street: курьера на адрес калашнкова 61…  tokens=['улица Вязовая 19, кв. 497', 'улица Вязовая 47, кв. 386']
+PASS  two different fake houses  tokens=['улица Вязовая 19, кв. 497', 'улица Вязовая 47, кв. 386']
+PASS  street and house restore to the CORRECTED real address  masked='курьера на адрес вязовая 19кв497 стоп правильно вязовая 47 квартира 386 это в абакан' back={'address': {'street': 'Калашникова', 'building': '33'}}
+PASS  the street alone resolves when every owner agrees on it  back={'address': {'street': 'Калашникова'}}
+PASS  one fake street for one real street: привет курьера на энгельса 134…  tokens=['улица Луговая 155, кв. 251', 'улица Луговая 189, кв. 163']
+PASS  two different fake houses  tokens=['улица Луговая 155, кв. 251', 'улица Луговая 189, кв. 163']
+PASS  street and house restore to the CORRECTED real address  masked='привет курьера на луговая 155 кв 251 нет не так правильно луговая 189 квартира 163 это в воткинск' back={'address': {'street': 'Энгельса', 'building': '106'}}
+PASS  the street alone resolves when every owner agrees on it  back={'address': {'street': 'Энгельса'}}
+PASS  two real streets keep two fake streets  tokens=['улица Сиреневая 20, кв. 703', 'улица Рябиновая 174, кв. 8']
+PASS  роли: г. Балашов, ул. 3-я Победиловская, д. …  {'flat': '113', 'house': '77', 'street': 'ул. 3-я Победиловская', 'city': 'Балашов', 'street_type': 'ул.', 'street_name': '3-я Победиловская'}
+PASS  роли: г. Киров, пр-д 4-й Вешняковский, д. 38…  {'flat': '77', 'house': '38', 'street': 'пр-д 4-й Вешняковский', 'city': 'Киров', 'street_name': 'пр-д 4-й Вешняковский'}
+PASS  роли: Москва, 2-я Тверская-Ямская 10, кв. 4…  {'flat': '4', 'house': '10', 'street': '2-я Тверская-Ямская', 'city': 'Москва', 'street_name': '2-я Тверская-Ямская'}
+PASS  роли: улица 5-й армии д62 кв149…  {'flat': '149', 'house': '62', 'street': 'улица 5-й армии', 'street_type': 'улица', 'street_name': '5-й армии'}
+PASS  роли: 3-я линия 5…  {'house': '5', 'street': '3-я линия', 'street_type': 'линия', 'street_name': '3-я'}
+PASS  роли: дом 5-й корпус 2…  {'building': '2', 'house': '5'}
+PASS  роли: ул. Ленина, д. 14, кв. 3…  {'flat': '3', 'house': '14', 'street': 'ул. Ленина', 'street_type': 'ул.', 'street_name': 'Ленина'}
+PASS  поля street/house/flat возвращают настоящий адрес без остатка  []
+PASS  замороженный родительный зеркалится, а не склоняется: курьера на заболоцкого 81 кв…  ['сиреневая 97 кв 52', 'кленовая 60 кв 856', 'грушевая 40 кв 108', 'буковая 19 кв 830']
+PASS  замороженный родительный зеркалится, а не склоняется: адрес чернышевского 29 кв 52…  ['родниковая 84 кв 633', 'берёзовая 18 кв 604', 'озёрная 22 кв 757', 'озёрная 90 кв 993']
+PASS  а согласующееся прилагательное по-прежнему склоняется  []
+PASS  настоящая улица не вставляется внутрь названия города  []
+PASS  склеенная дефисом подмена разрешается, а не уезжает в инструмент  []
+PASS  опечатка чинится по реестру: мончгорская  мончгорская -> 'мончегорская'
+PASS  опечатка чинится по реестру: калашнкова  калашнкова -> 'калашникова'
+PASS  опечатка чинится по реестру: грибоеодва  грибоеодва -> 'грибоедова'
+PASS  опечатка чинится по реестру: пушшкина  пушшкина -> 'пушкина'
+PASS  опечатка чинится по реестру: садвая  садвая -> 'садовая'
+PASS  опечатка чинится по реестру: полвая  полвая -> 'полевая'
+PASS  опечатка чинится по реестру: неркасова  неркасова -> 'некрасова'
+PASS  опечатка чинится по реестру: чапева  чапева -> 'чапаева'
+PASS  опечатка чинится по реестру: вишёнвая  вишёнвая -> 'вишневая'
+PASS  опечатка чинится по реестру: вишнвая  вишнвая -> 'вишневая'
+PASS  опечатка чинится по реестру: зелный  зелный -> 'зеленый'
+PASS  правильное или неоднозначное не трогается: мончегорская  мончегорская -> ''
+PASS  правильное или неоднозначное не трогается: мончегорской  мончегорской -> ''
+PASS  правильное или неоднозначное не трогается: вишнёвой  вишнёвой -> ''
+PASS  правильное или неоднозначное не трогается: садовой  садовой -> ''
+PASS  правильное или неоднозначное не трогается: чапаевской  чапаевской -> ''
+PASS  правильное или неоднозначное не трогается: ленина  ленина -> ''
+PASS  правильное или неоднозначное не трогается: улица  улица -> ''
+PASS  правильное или неоднозначное не трогается: проспект  проспект -> ''
+PASS  правильное или неоднозначное не трогается: лениа  лениа -> ''
+PASS  правильное или неоднозначное не трогается: ленна  ленна -> ''
+PASS  правильное или неоднозначное не трогается: шумайова  шумайова -> ''
+PASS  правильное или неоднозначное не трогается: смльный  смльный -> ''
+PASS  правильное или неоднозначное не трогается: барашникова  барашникова -> ''
+PASS  правильное или неоднозначное не трогается: комиссарва  комиссарва -> ''
+PASS  правильное или неоднозначное не трогается: полная  полная -> ''
+PASS  правильное или неоднозначное не трогается: садвал  садвал -> ''
+PASS  короткое слово не чинится
+PASS  в инструмент уходит написание КЛИЕНТА (опечатка), дом и квартира — тоже  {'address': {'street': 'Мончгорская', 'building': '195', 'sflat': '12'}}
+PASS  в прозе — слова клиента  Записал: мончгорская 195 квартира 12.
+PASS  склонённая правильная улица доходит как написана  {'address': {'street': 'Мончегорской'}}
+PASS  подмена улицы в карточке — строчная, как поле  грушевая
+PASS  адрес из карточки, склеенный моделью в строку, восстановлен  омск, улица солнечная 104, кв. 203
+PASS  продиктованный телефон найден: телефон для чека восемь де…  ['PHONE']
+PASS  продиктованный телефон найден: телефон для связи восемь д…  ['PHONE']
+PASS  без подсказки слово-отрицание держит: чек восемь девятьс…  []
+PASS  без подсказки слово-отрицание держит: трек восемь девять…  []
+PASS  без подсказки слово-отрицание держит: заказ восемь девят…  []
+PASS  the spoken year is inside the DOB span:  одиннадцатого сентября пятьдесят пятого  spans=['одиннадцатого сентября пятьдесят пятого']
+PASS  no digit in the substitute of a spoken date  запишите беляева валентина игоревича родился двадцатого июня пятьдесят пятого
+PASS  the year is kept  token='двадцатого июня пятьдесят пятого'
+PASS  the century style of the customer is mirrored  token='двадцатого июня пятьдесят пятого'
+PASS  the same side of today, so the derived age agrees  fake=20.06.1955 real=1955-09-11
+PASS  the ISO the agent writes resolves to the real ISO  1955-06-20 -> {'patient': {'birth_date': '1955-09-11'}}
+PASS  the prose paraphrase comes back as the real date  Пациент родился одиннадцатого сентября пятьдесят пятого, записал.
+PASS  the spoken substitute is recognised as ours when echoed  двадцатого июня пятьдесят пятого
+PASS  the spoken year is inside the DOB span: рта тысяча девятьсот восемьдесят второго  spans=['двадцать третьего марта тысяча девятьсот восемьдесят второго']
+PASS  no digit in the substitute of a spoken date  пациент родилась второго февраля тысяча девятьсот восемьдесят второго
+PASS  the year is kept  token='второго февраля тысяча девятьсот восемьдесят второго'
+PASS  the century style of the customer is mirrored  token='второго февраля тысяча девятьсот восемьдесят второго'
+PASS  the same side of today, so the derived age agrees  fake=02.02.1982 real=1982-03-23
+PASS  the ISO the agent writes resolves to the real ISO  1982-02-02 -> {'patient': {'birth_date': '1982-03-23'}}
+PASS  the prose paraphrase comes back as the real date  Пациент родился двадцать третьего марта тысяча девятьсот восемьдесят второго, записал.
+PASS  the spoken substitute is recognised as ours when echoed  второго февраля тысяча девятьсот восемьдесят второго
+PASS  the spoken year is inside the DOB span: ать первого сентября восьмидесятого года  spans=['двадцать первого сентября восьмидесятого года']
+PASS  no digit in the substitute of a spoken date  дата рождения двадцатого сентября восьмидесятого года
+PASS  the year is kept  token='двадцатого сентября восьмидесятого года'
+PASS  the century style of the customer is mirrored  token='двадцатого сентября восьмидесятого года'
+PASS  the same side of today, so the derived age agrees  fake=20.09.1980 real=1980-09-21
+PASS  the ISO the agent writes resolves to the real ISO  1980-09-20 -> {'patient': {'birth_date': '1980-09-21'}}
+PASS  the prose paraphrase comes back as the real date  Пациент родился двадцать первого сентября восьмидесятого года, записал.
+PASS  the spoken substitute is recognised as ours when echoed  двадцатого сентября восьмидесятого года
+PASS  the result leg does not raise: {"appointment_id": "apt-1", "slot": "202…
+PASS  a birth date keeps its year: 1955-09-11 → 1955-07-13  1955-07-13
+PASS  the result leg does not raise: {"id": "clm-1", "interval": {"from": "20…
+PASS  the result leg does not raise: доставка 30.09.2026 получатель родился 1…
+PASS  a birth date keeps its year: 30.09.2026 → 15.05.2026  15.05.2026
+PASS  a birth date keeps its year: 11.09.1955 → 17.07.1955  17.07.1955
+chat register OK — lower-case streets and glued dates, without the prose
+PASS  имя с заглавной уходит с заглавной  0 из 40: []
+PASS  имя строчными уходит строчными и ЦЕЛИКОМ  0 из 40: []
+PASS  имя КАПСОМ уходит КАПСОМ, а не подменой  0 из 40: []
+PASS  родовое слово агента остаётся, название и регистр — тоже  0 из 40: []
+
+PASS  разряд дома сохранён: улица мира 4  0 из 30: []
+PASS  разряд дома сохранён: улица солнечная 33  0 из 30: []
+PASS  разряд дома сохранён: улица солнечная 157  0 из 30: []
+PASS  разряд дома сохранён: школьная пятьдесят девять  0 из 30: []
+PASS  город внутри адреса остаётся настоящим  Краснодар, улица Вязовая 158
+
+PASS  объявлено хостом — не трогаем: здравствуйте татьяна  здравствуйте татьяна
+PASS  объявлено хостом — не трогаем: спасибо татьяне  спасибо татьяне
+PASS  объявлено хостом — не трогаем: а вы на ленина 14?  а вы на ленина 14?
+PASS  объявлено хостом — не трогаем: мы на ул. Ленина, д. 14  мы на ул. Ленина, д. 14
+PASS  объявлено хостом — не трогаем: вы находитесь на ленина 14  вы находитесь на ленина 14
+PASS  чужое значение маскируется: запишите клиента петрова ольга тел  запишите клиента рыбакова милена телефон 89947886908
+PASS  чужое значение маскируется: клиент татьяна смирнова  клиент фаина беляева
+PASS  чужое значение маскируется: везите на ленина 14 квартира 7  везите на черёмуховая 99 квартира 419
+PASS  чужое значение маскируется: доставка ленина 14 подъезд 3  полевая 82 подъезд 1
+PASS  чужое значение маскируется: курьера на ленина 14 корпус 2  курьера на вязовая 84 корпус 81
+PASS  без объявления имя маскируется по-прежнему  здравствуйте татьяна
+
+
+hard cases OK — detected, restored, and nothing over-masked

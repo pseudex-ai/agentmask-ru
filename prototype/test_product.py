@@ -430,14 +430,21 @@ def test_short_address_resolves_to_the_full_one() -> None:
     delivery) means neither links. That is Fellegi-Sunter's middle outcome with
     no human to refer it to, so it collapses to «do not guess».
     """
+    from pseudex.morph_places import is_generic_word
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "vault.db")
         talk = Vault(path, "acme").for_conversation("dialog-1")
         full = talk.tokenize("г. Москва, ул. Ленина, д. 14", "LOC")
         short = talk.tokenize("Ленина 14", "LOC")
         assert short and short != full, "a short mention is not the full address"
-        assert short in full, f"{short!r} must be the street and house of {full!r}"
-        assert not any(char.isdigit() for char in full[:full.index(short)]), \
+        # The projection keeps the STREET+HOUSE fake; the generic word may be
+        # re-composed — a short mention gets the inflectable default «улица» (so
+        # «на Тверской 7» inflects to «улицы»), while the full token keeps its
+        # own «ул.». The literal substring no longer holds across that generic.
+        short_core = " ".join(w for w in short.split() if not is_generic_word(w))
+        assert short_core and short_core in full, \
+            f"{short_core!r} must be the street and house of {full!r}"
+        assert not any(char.isdigit() for char in full[:full.index(short_core)]), \
             "what the projection drops must be the CITY, not part of the street"
         assert unmask_text(f"адрес {short}", talk) == "адрес Ленина 14", \
             "the tool receives what the customer wrote, not the fuller form"

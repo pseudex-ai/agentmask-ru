@@ -1,0 +1,82 @@
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex-license-oz3w62qk/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+PSEUDEX_SIGNING_KEY is not set — generated an EPHEMERAL signing key. Every binary compiled against a different public key will reject this server's leases. Public key: A3xa6x0oRllS6riYZejIyTsBhgbt4jBRsW8dp9lJdmo=
+WARNING:pseudex.vault_key:vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex_perf_3ppy9xlg/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+INFO:pseudex.schema:schema: /var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex_perf_3ppy9xlg/audit.db created at user_version 1
+WARNING:pseudex.service:PSEUDEX_GATEWAY_TOKEN was not set — generated a per-process one. With more than one worker the gateway will be rejected at random. entrypoint.sh sets it once for the container.
+WARNING:pseudex.service:PSEUDEX_ADMIN_TOKEN was not set — generated a per-process one. With more than one worker the operator interface will fail intermittently. Set it once for the container.
+INFO:licensing.server:lease issued org=testkit instance=6c9d3506e15946589a3b7e324ad98ffb plan=start ttl=3600
+INFO:httpx:HTTP Request: POST http://127.0.0.1:63770/v1/lease "HTTP/1.1 200 OK"
+WARNING:pseudex.license:using PSEUDEX_LICENSE_PUBKEY from the environment — development build, not a release
+INFO:httpx:HTTP Request: POST http://127.0.0.1:63770/v1/meter "HTTP/1.1 200 OK"
+INFO:pseudex.license:capacity grant 1: +200 (reserve 0), ceiling 200, consumed 0
+INFO:pseudex.license:lease acquired: ls_61x0v_tOJ8jDldwTswg0Vw bundle=6c22fd9824d86f84 ttl=3600s grace=3600s capacity=200
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:pseudex.schema:schema: /var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex_perf_3ppy9xlg/vault.db created at user_version 9
+INFO:httpx:HTTP Request: POST http://127.0.0.1:63770/v1/usage "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/usage?org_id=audit_org "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/unmask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/usage?org_id=passthru_org "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: GET http://pseudex/health "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/unmask_chunk "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/unmask_chunk "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/unmask_chunk "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/unmask_chunk "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/unmask_chunk "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/unmask_arguments "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/mask "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/unmask_arguments "HTTP/1.1 200 OK"
+INFO:httpx:HTTP Request: POST http://pseudex/unmask_chunk "HTTP/1.1 200 OK"
+generic-name-key OK — 4 identifiers left alone, 5 person names still caught
+cache hit skips compute OK
+cache org isolation OK
+cache LRU bound OK
+no-leak + idempotency OK
+latin pre-filter leak regression OK (6 cases masked)
+audit de-dup OK — 5 resends -> counts {'LOC': 1, 'NAME': 1, 'PHONE': 1}
+unmask round-trip OK
+no-PII passthrough OK
+event-loop responsiveness: big /mask 955 ms; /health p99 1.0 ms, max 1.2 ms (n=20)
+event-loop responsiveness OK
+tool-schema masking OK — 'Найти заказ. Пример: телефон +7 987 738-81-65'
+/unmask_chunk OK — 'Перезвоню на +7 999 123-45-67 завтра, всё в силе, до связи.'
+/unmask_arguments OK — {'company': 'ООО "Заря"'}
+
+ALL PERF-MASKING TESTS PASSED
