@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.23](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.22...platform/v0.3.23) (2026-10-03)
+
+
+### Исправления
+
+* **storefront:** prepare privacy-safe acquisition and reap proxy probes ([#33](https://github.com/Isk4R1oT/Obscura/issues/33)) ([2160705](https://github.com/Isk4R1oT/Obscura/commit/2160705f1c3e3bf249c21a3dfef16caee8d4cff3))
+
 ## [0.3.22](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.21...platform/v0.3.22) (2026-09-30)
 
 
