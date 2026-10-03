@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.24](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.23...platform/v0.3.24) (2026-10-03)
+
+
+### Исправления
+
+* **billing:** an org the licensing server never saw is zero keys, not an error ([#35](https://github.com/Isk4R1oT/Obscura/issues/35)) ([170c7b1](https://github.com/Isk4R1oT/Obscura/commit/170c7b180dfa8bb52d9efdc7740e4d99802b9cb0))
+
 ## [0.3.23](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.22...platform/v0.3.23) (2026-10-03)
 
 
