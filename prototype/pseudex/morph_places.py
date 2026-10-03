@@ -512,6 +512,8 @@ _PREPOSITIONS = frozenset({"на", "в", "во", "по", "с", "со", "у", "д
 # смена квартиры/подъезда/этажа/корпуса ключ не меняет, а её появление или
 # исчезновение — меняет.
 _MUTABLE_KEY_MARKERS = frozenset({"кв", "к", "стр", "подъезд", "подьезд", "этаж"})
+# A lone Cyrillic letter (not «я» — the pronoun), the house litera «145 а».
+_LONE_LITERA = re.compile(r"[а-ё](?![а-яё])")
 
 # СЛОВА, ПОСЛЕ КОТОРЫХ ЧИСЛО-СЛОВО — ЭТО НОМЕР ДОМА. Список тот же, что
 # `_SLOT_ALIASES` отправляет в пустоту («дом» в ключе не остаётся: голое число
@@ -555,7 +557,23 @@ def _fold_spoken_cardinals(tokens: list[str]) -> list[str]:
         after_house = (index > 0
                        and tokens[index - 1].strip(",.").casefold() in _HOUSE_KEY_MARKERS)
         if len(run) > 1 or after_house:
-            out.append(spoken.run_to_digits(run) or " ".join(run))
+            folded = spoken.run_to_digits(run) or " ".join(run)
+            # D-081: a dictated house with a litera folds to the SAME key as the
+            # digit form. The phrase-level regexes glue «145 а» only where a
+            # DIGIT sits before the letter; a dictated «сто сорок пять а» folds
+            # to «145» HERE and the «а» is the next token, so it must glue here
+            # too, or «дом сто сорок пять а» and «дом 145а» stay two identities.
+            # Glued only when the run was a HOUSE number (after_house) and the
+            # letter is a lone non-«я», followed by a mutable-part marker (short
+            # or full) or by the end — the same license the digit path grants.
+            if (after_house and isinstance(folded, str) and folded.isdigit()
+                    and stop < len(tokens) and _LONE_LITERA.fullmatch(tokens[stop])):
+                nxt = tokens[stop + 1].strip(",.").casefold() if stop + 1 < len(tokens) else ""
+                if (not nxt or nxt in _MUTABLE_KEY_MARKERS
+                        or nxt.startswith(("квартир", "строен", "подъезд", "подьезд", "этаж", "корп"))):
+                    folded += tokens[stop]
+                    stop += 1
+            out.append(folded)
         else:
             out.extend(run)
         index = stop

@@ -283,6 +283,15 @@ def test_markdown_name_caption_is_not_part_of_identity() -> None:
     assert mask(real, vault) != real
 
 
+def test_dictated_house_litera_unifies_with_digit_form() -> None:
+    from pseudex.morph_places import address_key
+    assert address_key('г Брянск, ул. Пушкина, д. 145а, кв. 44') == \
+           address_key('брянск улица пушкина дом сто сорок пять а квартира сорок четыре'), \
+           ('dictated litera must fold to the same identity as the digit form',
+            address_key('г Брянск, ул. Пушкина, д. 145а, кв. 44'),
+            address_key('брянск улица пушкина дом сто сорок пять а квартира сорок четыре'))
+
+
 def test_city_plus_bare_street_restores() -> None:
     import pseudex.vault as vault_mod
     vault_mod.seed_token_rng(42)
@@ -370,6 +379,7 @@ TESTS: tuple[Callable[[], None], ...] = (
     test_spaced_house_litera_is_detected_not_leaked,
     test_token_mint_is_deterministic_when_seeded,
     test_city_plus_bare_street_restores,
+    test_dictated_house_litera_unifies_with_digit_form,
 )
 
 if __name__ == '__main__':
