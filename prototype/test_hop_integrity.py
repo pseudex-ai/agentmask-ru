@@ -283,6 +283,34 @@ def test_markdown_name_caption_is_not_part_of_identity() -> None:
     assert mask(real, vault) != real
 
 
+def test_city_plus_bare_street_restores() -> None:
+    import pseudex.vault as vault_mod
+    vault_mod.seed_token_rng(42)
+    v = fresh('city-bare-street')
+    seed = '{"address": {"city": "красноярск", "street": "энгельса", "house": "54"}}'
+    mask_text(seed, v, DETECTOR.detect(seed))
+    token = v._conn.execute("SELECT token FROM tokens WHERE entity_type='LOC'", ()).fetchone()[0]
+    roles = split_roles(token)
+    city, street = roles['city'], roles.get('street_name') or roles.get('street')
+    assert unmask_text(f'{city}, {street}', v) == f'{city}, Энгельса', (token, city, street)
+    assert unmask_text(f'{city.lower()}, {street.lower()}', v) == f'{city.lower()}, энгельса'
+    vault_mod.seed_token_rng(None)
+
+
+def test_token_mint_is_deterministic_when_seeded() -> None:
+    import pseudex.vault as vault_mod
+    def mint_one() -> str:
+        v = fresh('seed-det')
+        return mask_text('Букин Сергей', v, DETECTOR.detect('Букин Сергей')) \
+            + '|' + mask_text('г. Тверь, ул. Речная, д. 5', v, DETECTOR.detect('г. Тверь, ул. Речная, д. 5'))
+    vault_mod.seed_token_rng(42)
+    a = mint_one()
+    vault_mod.seed_token_rng(42)
+    b = mint_one()
+    assert a == b, ('seeded mint is not reproducible', a, b)
+    vault_mod.seed_token_rng(None)
+
+
 def test_spaced_house_litera_is_detected_not_leaked() -> None:
     d = Detector()
     full = d.detect('псков, проезд маросейка, 152 б, кв. 105')
@@ -340,6 +368,8 @@ TESTS: tuple[Callable[[], None], ...] = (
     test_initials_index_does_not_rewrite_ordinary_words,
     test_masked_card_shape_restores_head_and_tail,
     test_spaced_house_litera_is_detected_not_leaked,
+    test_token_mint_is_deterministic_when_seeded,
+    test_city_plus_bare_street_restores,
 )
 
 if __name__ == '__main__':

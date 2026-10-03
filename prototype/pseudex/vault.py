@@ -17,7 +17,41 @@ import functools
 import hashlib
 import re
 import secrets
+import random as _random
 import string
+
+# The mint RNG. Production uses `secrets` (cryptographic, unpredictable);
+# the benchmark and tests call `seed_token_rng(seed)` to make the SAME
+# value draw the SAME fake, so a before/after comparison is not confounded
+# by random street/surname draws. Both `secrets` (the module) and
+# `_SeededRng` expose the same two calls the mint uses — `choice` and
+# `randbelow` — so the call sites read `_rng.choice` / `_rng.randbelow`
+# and never know which one they are holding.
+_rng = secrets
+
+
+class _SeededRng:
+    """A deterministic stand-in for `secrets` with the same two methods."""
+
+    def __init__(self, seed: int) -> None:
+        self._random = _random.Random(seed)
+
+    def choice(self, seq: object) -> object:
+        return self._random.choice(seq)  # type: ignore[arg-type]
+
+    def randbelow(self, n: int) -> int:
+        return self._random._randbelow(n)
+
+
+def seed_token_rng(seed: int | None) -> None:
+    """Swap the mint RNG for a deterministic one (benchmark/tests only).
+
+    `None` restores the cryptographic default. This is the ONE place the
+    mint's randomness is chosen; every `_rng.*` call routes through it, so
+    a seeded process draws the same token sequence every time.
+    """
+    global _rng
+    _rng = secrets if seed is None else _SeededRng(seed)
 
 from pseudex import credentials
 from pseudex import cvc
@@ -68,7 +102,7 @@ REDACTION_MARKER = re.compile(REDACTION_MARKER_PATTERN)
 
 
 def _rand_digits(count: int) -> str:
-    return "".join(secrets.choice(string.digits) for _ in range(count))
+    return "".join(_rng.choice(string.digits) for _ in range(count))
 
 
 def count_values_since(db_path: str, since: float) -> int:
@@ -1114,7 +1148,7 @@ def _fake_date(original: str) -> str:
         # Future: near enough to read as a real booking, never today itself, so
         # the substitute cannot be mistaken for «сегодня» by a model reasoning
         # about relative dates.
-        year = year_now + secrets.randbelow(3) + 1
+        year = year_now + _rng.randbelow(3) + 1
     else:
         # A PAST DATE KEEPS ITS YEAR. The agent derives the AGE from a date of
         # birth — a clinic's `patient.age`, an insurer's tariff — and from a
@@ -1123,7 +1157,7 @@ def _fake_date(original: str) -> str:
         # nobody (≈1.5 million people a year in Russia); the day and the month,
         # which do, stay fake — the same line the settlement of an address
         # draws (`_settlement_of`).
-        year = int(known[-4:]) if len(known) == 10 else 1960 + secrets.randbelow(max(1, year_now - 1960))
+        year = int(known[-4:]) if len(known) == 10 else 1960 + _rng.randbelow(max(1, year_now - 1960))
     # …AND THE SAME SIDE OF TODAY. The year alone left the AGE off by one:
     # real 11.09, fake 17.08, today 05.09 — the real birthday is still to come
     # this year and the fake one has passed, so `patient.age` read 70 in the
@@ -1132,13 +1166,13 @@ def _fake_date(original: str) -> str:
     # which side of today they fall on is kept, which is one bit.
     today = time.localtime()
     real_month_day = ((int(known[3:5]), int(known[:2])) if len(known) >= 5 and known[2] == "." else None)
-    month, day = secrets.randbelow(12) + 1, secrets.randbelow(28) + 1
+    month, day = _rng.randbelow(12) + 1, _rng.randbelow(28) + 1
     if real_month_day is not None and not _is_future(original):
         today_month_day = (today.tm_mon, today.tm_mday)
         for _ in range(64):
             if (month, day) != today_month_day and ((month, day) < today_month_day) == (real_month_day < today_month_day):
                 break
-            month, day = secrets.randbelow(12) + 1, secrets.randbelow(28) + 1
+            month, day = _rng.randbelow(12) + 1, _rng.randbelow(28) + 1
     rendered = f"{day:02d}.{month:02d}.{year}"
     # A DATE THE CUSTOMER SAID IS REPLACED BY A DATE IN WORDS. «родился
     # одиннадцатого сентября пятьдесят пятого» was masked as «родился
@@ -1651,7 +1685,7 @@ def _fake_city(original: str) -> str:
     wanted = morph_places.place_gender(original) if original else None
     pool = [city for city in cities
             if morph_places.place_gender(city) == wanted] if wanted else []
-    return secrets.choice(pool or cities)
+    return _rng.choice(pool or cities)
 
 
 @functools.lru_cache(maxsize=4)
@@ -1726,10 +1760,10 @@ def _house_like(original: str) -> int:
     spoken_house = morph_places.split_roles(original).get("house", "") if original else ""
     digits = re.sub(r"\D", "", morph_places.house_digits(spoken_house))
     if not digits:
-        return secrets.randbelow(house_max) + 1
+        return _rng.randbelow(house_max) + 1
     real = min(int(digits[:6]), house_max)
     low, high = next(band for band in bands if real <= band[1])
-    return low + secrets.randbelow(high - low + 1)
+    return low + _rng.randbelow(high - low + 1)
 
 
 def _compose_head(street: str, generic: str) -> str:
@@ -1810,10 +1844,10 @@ def _fake_place(original: str, head: str = "") -> str:
         # формой.
         named = [w for w in head.split() if not morph_places.is_generic_word(w)]
         street = (" ".join(named) if named else
-                  morph_places.to_nominative(secrets.choice(_usable_streets(ASSETS.version))))
+                  morph_places.to_nominative(_rng.choice(_usable_streets(ASSETS.version))))
         head = _compose_head(morph_places.agree_with_generic(street, gender), generic)
     else:
-        street = morph_places.to_nominative(secrets.choice(_usable_streets(ASSETS.version)))
+        street = morph_places.to_nominative(_rng.choice(_usable_streets(ASSETS.version)))
         # The pool is written feminine because most generics are; reusing the
         # original's generic word means the name has to follow it.
         street = morph_places.agree_with_generic(street, gender)
@@ -1863,11 +1897,11 @@ def _floor_like(original: str) -> int:
     spoken = morph_places.split_roles(original).get("floor", "") if original else ""
     digits = re.sub(r"\D", "", spoken)
     if not digits:
-        return secrets.randbelow(24) + 1
+        return _rng.randbelow(24) + 1
     bands = ((1, 9), (10, 99))
     real = min(int(digits[:4]), 99) or 1
     low, high = next(band for band in bands if real <= band[1])
-    return low + secrets.randbelow(high - low + 1)
+    return low + _rng.randbelow(high - low + 1)
 
 
 def _decorate_place(out: str, shape: dict[str, object], reuse: dict[str, str],
@@ -1875,9 +1909,9 @@ def _decorate_place(out: str, shape: dict[str, object], reuse: dict[str, str],
     """The tails a mention carries, in Russian order; a tail the substitute
     being extended already had is kept, a new one is drawn."""
     if shape.get("has_building"):
-        out = f"{out}, корп. {reuse.get('building') or secrets.randbelow(12) + 1}"
+        out = f"{out}, корп. {reuse.get('building') or _rng.randbelow(12) + 1}"
     if shape.get("has_entrance"):
-        out = f"{out}, подъезд {reuse.get('entrance') or secrets.randbelow(24) + 1}"
+        out = f"{out}, подъезд {reuse.get('entrance') or _rng.randbelow(24) + 1}"
     # ЭТАЖ ЧЕКАНИТСЯ, И ЭТО НЕ УКРАШЕНИЕ. Его не чеканили вовсе, а `in_form_of`
     # выкладывает подмену в форму ИСХОДНОЙ строки: «…, 3 этаж» превращалось в
     # «…, этаж» — маркер без числа. Модель видит в схеме поле `floor`, числа при
@@ -1887,7 +1921,7 @@ def _decorate_place(out: str, shape: dict[str, object], reuse: dict[str, str],
     if shape.get("has_floor"):
         out = f"{out}, этаж {reuse.get('floor') or _floor_like(original)}"
     if shape.get("has_flat"):
-        out = f"{out}, кв. {reuse.get('flat') or secrets.randbelow(250) + 1}"
+        out = f"{out}, кв. {reuse.get('flat') or _rng.randbelow(250) + 1}"
     return out
 
 
@@ -2034,7 +2068,7 @@ def _fake_name(gender: str | None, shape: tuple[str, ...] = (),
     so the choice cannot systematically mis-gender the half of the population a
     default would.
     """
-    resolved = gender if gender in ("masc", "femn") else secrets.choice(("masc", "femn"))
+    resolved = gender if gender in ("masc", "femn") else _rng.choice(("masc", "femn"))
     # Mirror the ORIGINAL's arrangement. A three-part name replaced by a
     # two-part one changes the word count the surrounding sentence was built
     # around, and a model that notices the mismatch is a model that rewrites the
@@ -2068,17 +2102,17 @@ def _fake_name(gender: str | None, shape: tuple[str, ...] = (),
         parts: list[str] = []
         for slot in plan:
             if slot == "surn":
-                surname = secrets.choice(surnames)
+                surname = _rng.choice(surnames)
                 parts.append(morph_names.feminine_surname(surname)
                              if resolved == "femn" else surname)
             elif slot == "patr":
-                parts.append(secrets.choice(patronymics))
+                parts.append(_rng.choice(patronymics))
             elif slot == "init":
                 # An initial stands for a name we are not told; a letter is the
                 # whole of the information, so a letter is the whole of the fake.
-                parts.append(secrets.choice(_INITIAL_LETTERS) + ".")
+                parts.append(_rng.choice(_INITIAL_LETTERS) + ".")
             else:
-                parts.append(secrets.choice(pool))
+                parts.append(_rng.choice(pool))
         candidate = " ".join(parts)
         # The round-trip check runs on the DECLINABLE part only: initials have no
         # paradigm, and a name that is nothing but initials cannot fail one.
@@ -2150,7 +2184,7 @@ def _fake_secret(original: str) -> str:
         if len(lines) < 3:
             return original
         body = [
-            "".join(secrets.choice(string.ascii_letters + string.digits + "+/")
+            "".join(_rng.choice(string.ascii_letters + string.digits + "+/")
                     for _ in range(len(line)))
             for line in lines[1:-1]
         ]
@@ -2161,11 +2195,11 @@ def _fake_secret(original: str) -> str:
     out: list[str] = []
     for char in tail:
         if char.isdigit():
-            out.append(secrets.choice(string.digits))
+            out.append(_rng.choice(string.digits))
         elif char.isupper():
-            out.append(secrets.choice(string.ascii_uppercase))
+            out.append(_rng.choice(string.ascii_uppercase))
         elif char.islower():
-            out.append(secrets.choice(string.ascii_lowercase))
+            out.append(_rng.choice(string.ascii_lowercase))
         else:
             out.append(char)  # separators keep the shape readable
     return prefix + "".join(out)
@@ -2278,8 +2312,8 @@ def _render_token(entity_type: str, gender: str | None = None,
         return _fake_ogrn(13)
     if entity_type == "PLATE":
         letters = "АВЕКМНОРСТУХ"
-        return (secrets.choice(letters) + _rand_digits(3)
-                + "".join(secrets.choice(letters) for _ in range(2)) + _rand_digits(3))
+        return (_rng.choice(letters) + _rand_digits(3)
+                + "".join(_rng.choice(letters) for _ in range(2)) + _rand_digits(3))
     # THE v5 `IP` AND `MAC` RENDERERS THAT USED TO STAND HERE ARE GONE, AND THEY
     # ARE GONE BECAUSE THEY CANNOT RUN: both labels are in
     # `ru_pii_v6.TELECOM_FAMILY_LABELS`, so the family's own branch above answers for
@@ -2350,7 +2384,7 @@ def _render_token(entity_type: str, gender: str | None = None,
     if entity_type == "PHONE":
         return _fake_phone()
     if entity_type == "EMAIL":
-        return "".join(secrets.choice(string.ascii_lowercase) for _ in range(8)) + "@example.ru"
+        return "".join(_rng.choice(string.ascii_lowercase) for _ in range(8)) + "@example.ru"
     if entity_type == "SNILS":
         return _fake_snils()
     if entity_type == "INN":
@@ -2363,7 +2397,7 @@ def _render_token(entity_type: str, gender: str | None = None,
         # Series «00YY»: no ОКАТО region is 00, the year digits stay plausible
         # (blanks of 1997–2026), the format check passes, and no person can
         # hold it. See the note above `_fake_inn`.
-        year = 1997 + secrets.randbelow(30)
+        year = 1997 + _rng.randbelow(30)
         # …but never the blank year 2000: a series «00 00» is the placeholder
         # shape the credential rules refuse, and the agent's `series` field
         # then came back as the fake (fresh-seed v4, decompose-006).
@@ -3153,8 +3187,8 @@ class Vault:
             # back to the street shape is a mismatch in a rare case; a permanent
             # 5xx is an outage. Attempts are bounded either way.
             if entity_type == "LOC" and attempt >= _TOKEN_MINT_ATTEMPTS // 2:
-                street = morph_places.to_nominative(secrets.choice(_usable_streets(ASSETS.version)))
-                token = f"улица {street}, {secrets.randbelow(ASSETS.get().fakes.house_max) + 1}"
+                street = morph_places.to_nominative(_rng.choice(_usable_streets(ASSETS.version)))
+                token = f"улица {street}, {_rng.randbelow(ASSETS.get().fakes.house_max) + 1}"
             # A substitute that shares a WORD with the value it replaces hides
             # nothing about that word. Comparing whole strings is not enough:
             # for `Мария` the token is `Мария Лебедева`, the surname differs,
@@ -4242,7 +4276,7 @@ class Vault:
         forbidden = {value for value in taken | fakes | reals if value}
         low, high = _PLACE_PART_RANGES[role]
         for _ in range(_TOKEN_MINT_ATTEMPTS):
-            candidate = str(low + secrets.randbelow(high - low + 1))
+            candidate = str(low + _rng.randbelow(high - low + 1))
             if candidate in forbidden:
                 continue
             if any(candidate in other or other in candidate for other in forbidden):
@@ -6381,7 +6415,7 @@ class Vault:
             return None
         resolved = gender if gender in ("masc", "femn") else morph_names.detect_gender(short_token)
         if resolved not in ("masc", "femn"):
-            resolved = secrets.choice(("masc", "femn"))
+            resolved = _rng.choice(("masc", "femn"))
         # The short substitute's gender is the REAL short name's, not what
         # morphology re-reads off the fake: a feminine fake surname «уварова»
         # is also the masculine genitive the dictionary prefers, and reading it
@@ -6437,14 +6471,14 @@ class Vault:
                         built.append(next(iter(single)))
                         continue
                     if kind == "patr":
-                        built.append(secrets.choice(patronymics))
+                        built.append(_rng.choice(patronymics))
                     elif kind == "surn":
-                        surname = secrets.choice(ASSETS.get().fakes.last)
+                        surname = _rng.choice(ASSETS.get().fakes.last)
                         built.append(morph_names.feminine_surname(surname) if resolved == "femn" else surname)
                     elif kind == "init":
-                        built.append(secrets.choice(_INITIAL_LETTERS) + ".")
+                        built.append(_rng.choice(_INITIAL_LETTERS) + ".")
                     else:
-                        built.append(secrets.choice(_first_names_by_gender(ASSETS.version)[resolved]))
+                        built.append(_rng.choice(_first_names_by_gender(ASSETS.version)[resolved]))
             candidate = " ".join(built)
             if len(set(w.casefold() for w in built)) != len(built):
                 continue
@@ -6512,7 +6546,7 @@ class Vault:
             return None
         resolved = gender if gender in ("masc", "femn") else morph_names.detect_gender(candidate)
         if resolved not in ("masc", "femn"):
-            resolved = secrets.choice(("masc", "femn"))
+            resolved = _rng.choice(("masc", "femn"))
         if not morph_names.survives_round_trip(candidate, resolved):
             return None
         if not self._is_free_token(

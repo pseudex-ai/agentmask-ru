@@ -96,6 +96,7 @@ from pseudex.detect_all import Detector
 from pseudex.maskcache import MaskCache
 from pseudex.morph_places import strip_leading_city
 from pseudex.redact import StreamDetokenizer, unmask_text
+from pseudex import vault
 from pseudex.vault import Vault
 from testkit import load_dev_bundle
 
@@ -2246,6 +2247,11 @@ def main() -> int:
     parser.add_argument("--dirty-ok", action="store_true",
                         help="прогон нельзя привязать к коммиту; это записано "
                              "в meta.json и в реестре")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="детерминированная чеканка фейков (42 — как у "
+                             "golden/dirty); один и тот же кейс всегда получает "
+                             "тот же фейк, чтобы до/после сравнивалось на "
+                             "одинаковых подменах, а не на случайных улицах/фамилиях")
     parser.add_argument("--provider", default="",
                         help=f"{', '.join(provider.PROVIDERS)}; пусто — {provider.PROVIDER_ENV} "
                              f"или anthropic")
@@ -2503,6 +2509,12 @@ def main() -> int:
         return 2
 
     load_dev_bundle()
+    # DETERMINISTIC TOKENS FOR THE PAID RUN. The mint draws the SAME fake for
+    # the SAME value on every run at one seed, so a before/after comparison is
+    # not confounded by random street/surname draws and a defect reproduces
+    # offline. Production still mints cryptographically (the engine's default),
+    # the benchmark is the one place that asks for a reproducible draw.
+    vault.seed_token_rng(args.seed)
     detector = Detector()
     run_id = str(uuid.uuid4())
     out = Path(args.out) if args.out else (here.parent / "runs" / datetime.now().strftime("%Y-%m-%d")
