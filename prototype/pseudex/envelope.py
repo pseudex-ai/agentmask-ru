@@ -404,6 +404,37 @@ def _string_leaves(node: object) -> tuple[str, ...]:
     return tuple(found)
 
 
+class _VaultOnly:
+    """A `MaskContext` stand-in carrying just the conversation view.
+
+    `_Provenance._index` reads exactly one thing off its context —
+    `context.vault.shown_forms()` — so the UNBOUND leg's evidence is computable
+    from a view without a pass, a detector or a cache. The stand-in is deliberate:
+    a real context would invite the scorer to read more of the pass than the view
+    the two legs actually share, which is the drift this exists to end.
+    """
+
+    __slots__ = ("vault",)
+
+    def __init__(self, vault: object) -> None:
+        self.vault = vault
+
+
+def _recorded_from_index(index: dict[str, _InjectedValue]) -> tuple[_InjectedValue, ...]:
+    """One value per typed identity this dialogue recorded, first rendering wins.
+
+    `_index` is keyed by RENDERING: every rendering of one identity carries the
+    same `real` (the longest literal the dialogue recorded for it) but its OWN
+    `substitute` — the string the model was actually shown. The dedup by
+    `(entity_type, real)` therefore keeps the first row, which is the longest
+    rendering, because `shown_forms` orders by `length(shown) DESC`.
+    """
+    seen: dict[tuple[str, str], _InjectedValue] = {}
+    for value in index.values():
+        seen.setdefault((value.entity_type, value.real), value)
+    return tuple(seen.values())
+
+
 class _Provenance:
     """Typed call-scoped evidence for ONE masking pass.
 
@@ -728,16 +759,34 @@ class _Provenance:
         The frozen index answers what this dialogue handled before the pass, so a
         tool result with no usable call — a refused binding, a missing id, a
         declaration that arrives later — can still recognise a typed echo of a
-        value the dialogue itself restored. The substitute is deliberately NOT
-        used by that leg: when the binding is uncertain the product redacts, it
-        does not guess a person. Nothing customer-wide is consulted here beyond
-        the conversation-scoped view, so a foreign dialogue's value contributes
-        nothing.
+        value the dialogue itself restored. Nothing customer-wide is consulted here
+        beyond the conversation-scoped view, so a foreign dialogue's value
+        contributes nothing.
+
+        THE SUBSTITUTE RIDES ALONG, and the earlier sentence here claimed it was
+        NOT used — that claim was the instrument's whole defect. The leg reads it:
+        a PART of a substitute standing in an external person's data is the
+        forward collision `_replace_echoes` answers with a neutral redaction, and
+        that branch cannot fire without `value.substitute`. See
+        `recorded_values_of`, which is the same computation from a view alone.
         """
-        seen: dict[tuple[str, str], _InjectedValue] = {}
-        for value in self._index().values():
-            seen.setdefault((value.entity_type, value.real), value)
-        return tuple(seen.values())
+        return _recorded_from_index(self._index())
+
+    @classmethod
+    def recorded_values_of(cls, vault: object) -> tuple[_InjectedValue, ...]:
+        """`recorded_values()` from a conversation-scoped vault VIEW alone.
+
+        THE ONE IMPLEMENTATION THE PRIVACY LEG AND ITS INSTRUMENT SHARE. The
+        benchmark's scorer (`bench.agentpii3.score._mask_message`) has to compute
+        exactly what production computed for the last message or it scores text
+        the model never saw, and it holds only the view — no MaskContext, no pass.
+        It therefore calls THIS, not a copy: the copy it used to call left
+        `substitute` empty, so when production grew the forward-collision part leg
+        (`_replace_echoes`, added by the v5-engine sync `58956a3`; the leg reads
+        `value.substitute`) the scorer silently stopped mirroring it and every long
+        case whose result echoed a part of a recorded NAME's substitute diverged.
+        """
+        return _recorded_from_index(cls(_VaultOnly(vault))._index())
 
 
 def _surface_in(rendering: str, text: str) -> str | None:

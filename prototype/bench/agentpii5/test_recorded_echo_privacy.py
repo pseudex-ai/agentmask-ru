@@ -19,6 +19,14 @@ the two disagree. Before the recorded leg was added to the scorer, a lone surnam
 or a truncated phone echoed by a tool result reached the model in the clear while
 production redacted it — ~46 corpus cases excluded. This pins the fix.
 
+The leg has TWO halves and the scorer lost the second one: a PART of a recorded
+NAME's substitute standing in the result is the forward collision, and production
+answers it with the neutral redaction too. The scorer's `_recorded_values` built
+its values with `substitute=""` and so could not see it — `long_order-*`,
+`long_clinic-*`, `long_bank-*`, `long_support-*` all diverged. It now delegates
+to `envelope._Provenance.recorded_values_of`, which is why the part-level case
+below is a pin and not a description.
+
 No model, no network, one in-memory vault per conversation, driven through the
 production path and compared against the scorer.
 """
@@ -150,12 +158,59 @@ def _check_composed_own_name_echo() -> None:
           prod)
 
 
+def _check_part_of_substitute_echo() -> None:
+    """A PART of a recorded NAME's substitute echoed by a result is redacted.
+
+    THE FORWARD COLLISION, and the case that made every long arm diverge. The
+    dialogue recorded «павлова тамара» and was shown a two-word substitute; the
+    CRM result then carries the real surname and given name in separate JSON
+    fields, so `_mask_one` writes the two words of that substitute and the result
+    holds a part of it. Production's `_replace_echoes` reads `value.substitute` to
+    recognise exactly that and answers with the neutral redaction — the byte
+    string stands for the real person AND for our fake, and the owner's policy is
+    redaction, never a person.
+
+    The scorer used to build its `recorded` values with `substitute=""`, so the
+    whole part leg was a no-op there and it left the substitute standing while
+    production redacted: `gateway._push` raised on `long_order-*`, `long_clinic-*`,
+    `long_bank-*` and `long_support-*`. It now delegates to
+    `envelope._Provenance.recorded_values_of`, so the field cannot go missing
+    again. The check is the functional one — agreement is not enough, the
+    redaction must actually be there.
+    """
+    view, context, detector = _session("parts")
+    mask_messages([{"role": "user", "content": "клиент павлова тамара"}],
+                  context, False)
+    result_text = ('{"contacts": [{"id": "c-1", "last_name": "павлова",'
+                   ' "first_name": "тамара"}]}')
+    # THE SCORER READS THE PRE-PASS RECORD, EXACTLY AS `gateway._push` ORDERS IT:
+    # production's `_Provenance.snapshot()` is taken after this call, so the compare
+    # is between the same two readings of the same record. Observing after the
+    # production pass would compare against a record that pass just wrote into.
+    observed = score._mask_message(result_text, detector, view)
+    prod = _prod_tool(view, context, result_text)
+    check(prod == observed.masked,
+          "a part of a recorded substitute is redacted, scorer agrees",
+          f"prod={prod!r} scorer={observed.masked!r}")
+    check(prod.count("REDACTED") == 2,
+          "both words of the substitute are answered with the neutral redaction",
+          prod)
+    parts = [rendering for rendering, literal, entity_type in view.shown_forms()
+             if entity_type == "NAME"]
+    standing = [part for rendering in parts for part in rendering.split()
+                if part in prod]
+    check(not standing,
+          "no word of the substitute survives the conservative leg",
+          f"surviving={standing} prod={prod!r}")
+
+
 def main() -> int:
     load_dev_bundle()
     _check_lone_surname_echo()
     _check_truncated_phone_echo()
     _check_plain_result_untouched()
     _check_composed_own_name_echo()
+    _check_part_of_substitute_echo()
     failures = [name for ok, name, _ in RESULTS if not ok]
     print()
     print("=" * 72)

@@ -101,8 +101,8 @@ from pseudex.detect_all import Detector  # noqa: E402
 from pseudex.envelope import (  # noqa: E402
     MaskContext,
     _InjectedValue,
+    _Provenance,
     _echo_targets,
-    _identity_key,
     _is_own_composition,
     _is_own_rendering,
     _relevant_own_renderings,
@@ -342,22 +342,18 @@ def _model_writes(seen: str, expected: str, argument: str, how: str,
 def _recorded_values(vault: Vault) -> tuple[_InjectedValue, ...]:
     """This conversation's recorded values, as the echo leg consumes them.
 
-    `envelope._Provenance.recorded_values` collapses `shown_forms` to one value
-    per typed identity, keeping the LONGEST literal; the scorer reads the same
-    rows the same way so the shared echo pass (`_replace_echoes`) sees the same
-    input. `substitute` is unused by the conservative leg and left empty — it
-    redacts, it never names a person.
+    DELEGATES TO PRODUCTION. `envelope._Provenance.recorded_values_of` is the
+    engine's own computation of the UNBOUND leg's evidence from a conversation
+    view, and this returns its result unchanged. A local re-derivation is what
+    broke: it dropped `substitute` (the docstring claimed the conservative leg
+    never reads it, which stopped being true when production grew the
+    forward-collision part leg), so production neutral-redacted a word of a
+    recorded NAME's substitute while the scorer substituted it — and the parity
+    gate at `gateway._push` raised on every long case whose result echoed a part
+    of a recorded name. Reuse, not mirroring, is the fix: a field added to the
+    leg's input is then read here the turn it is read there.
     """
-    longest: dict[tuple[str, str], str] = {}
-    for rendering, literal, entity_type in vault.shown_forms():
-        if not rendering or rendering == literal:
-            continue
-        identity = _identity_key(entity_type, literal)
-        if len(literal) > len(longest.get(identity, "")):
-            longest[identity] = literal
-    return tuple(
-        _InjectedValue(real=literal, entity_type=identity[0], substitute="")
-        for identity, literal in longest.items())
+    return _Provenance.recorded_values_of(vault)
 
 
 def _own_renderings(vault: Vault) -> tuple[str, ...]:
