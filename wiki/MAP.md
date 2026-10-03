@@ -199,7 +199,7 @@ vault (`address_key` is the IDENTITY and `street_house_key` is the LINKING key;
 tool argument in the agent's own form, and `field_role` / `field_tokens` /
 `field_prefix` for reading a schema's field names (`street_type`, `streetType`,
 `address.street`).
-- **API:** `looks_like_street`, `to_nominative`, `phrase_to_nominative`, `inflect_place`, `detect_case`, `place_gender`, `generic_forms`, `region_prefix_end`, `address_key`, `key_type`, `generic_full`, `street_house_key`, `strip_flat`, `strip_leading_city`, `place_shape`, `agree_with_generic`, `match_signature`, `signature_parts`, `is_generic_word`, `street_case`, `split_roles`, `role_spans`, `field_role`, `field_tokens`, `field_prefix`, `role_of_field`, `city_case`, `address_from_fields`, `part_in_form_of`, `house_digits`, `in_form_of`, `reduce_address`
+- **API:** `looks_like_street`, `to_nominative`, `phrase_to_nominative`, `inflect_place`, `detect_case`, `place_gender`, `generic_forms`, `region_prefix_end`, `address_key`, `key_type`, `generic_full`, `street_house_key`, `strip_flat`, `strip_leading_city`, `place_shape`, `agree_with_generic`, `match_signature`, `signature_parts`, `is_generic_word`, `street_case`, `split_roles`, `role_spans`, `field_role`, `field_tokens`, `field_prefix`, `role_of_field`, `city_case`, `address_from_fields`, `part_in_form_of`, `house_digits`, `in_form_of`, `reduce_address`, `core_phrase`, `mutable_parts`, `parts_signature`, `place_core_key`, `place_parts_key`, `strip_parts_key`
 - **Uses:** agent_form, assets, morph, spoken · **Used by:** address, assets, envelope, notation, redact, structured, vault
 - **Tests:** test_address_composition, test_hard_cases, test_product, test_unload_scrub; `bench/agentpii4/harness.py`, `bench/agentpii4/microscope.py`
 - **Docs:** `docs/known-issues.md` (§2, Б2, Б10), `research/2026-09-02-agent-form-benchmark.md` · rules: INVARIANTS.md#address, INVARIANTS.md#agent-form
@@ -327,7 +327,7 @@ NUMBER spelled without their leading zeros with the real value WHOLE (class Д,
 never `canon[2:12]`), refuses two owners of one number, and
 `digit_fragment_is_ours` names a substitute one digit from what the agent wrote
 without ever resolving it.
-- **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `name_key`, `fold_key`, `place_key`, `token_re`, `create_tables`, `create_indexes`, `Vault` (+ `VAULT_MIGRATIONS`)
+- **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `name_key`, `fold_key`, `place_key`, `token_re`, `create_tables`, `create_indexes`, `zero_grouped`, `Vault` (+ `VAULT_MIGRATIONS`)
 - **Uses:** assets, credentials, cvc, date_form, fuzzy, morph_names, morph_places, names, normalize, notation, profiling, ru_pii, ru_pii_v6, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, notation, operator, proxy, redact, service, schema (lazy)
 - **Tests:** test_class_g_leaks, vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_digit_truncation, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
 - **Docs:** `docs/tz-vault-encryption.md`, `docs/tz-name-gender-canonical.md`, `docs/how-it-works.md`, `research/2026-09-03-checksum-valid-substitutes.md` · rules: INVARIANTS.md#vault, INVARIANTS.md#collisions, INVARIANTS.md#conversation-scope
@@ -696,6 +696,7 @@ Run from `prototype/`; each loads the dev bundle itself.
 | `test_r1_seed20_f4.py` | R1 — seed20 (D1-N F1) + street-adjacency veto (D1-N F4) on the leased NAME path: twenty lower-case diminutives as seed entries, a street word vetoes the lower-case NAME branch; runs the real detector and prints the two fixed denominators |
 | `test_v6_gaps.py` | G7 follow-up — the two v6 detection gaps (type-label alignment and six real 0%-coverage gaps), each positive with four controls (own register, negative, no fuzzy numerals, typed over bare) |
 | `test_identity_invariant.py` | D-081 — the PIN test: the eight `bench/identity_invariant.py` groups as asserts (NAME case/order collapse, NAME differ control, NAME patronymic collapse, LOC form/dictation/flat/entrance collapse, PHONE notation) plus the key/trap controls (lone-surname gender, to_nominative single-guard) |
+| `test_phase4b.py` | phase 4b — the PIN test for the five owner-approved clusters (W1 build/corpus leaf round-trip, W2 word→digit detokenization, W3/W4 NAME case + initials, W5/W6 VIN/PTS separators + glued cue, W7 leading-zero preservation) + the D-081 core intact (55 assertions) |
 
 Not in `prototype/`: `licensing/test_*.py` (§2), `storefront/test_*.py` (§6),
 `e2e/` gates (§5).
@@ -991,6 +992,7 @@ by `bench/agentpii5/report.py`'s v6 path, `run_provenance`).
 | `bench/run_all.py`, `bench/summarize_run.py` | — | the whole battery in one run; headline numbers of one run into one document |
 | `bench/public_row.py` | — | produces OUR own row in the public benchmark the way anybody else's is made: starts a real sidecar and runs the PUBLIC harness against it over HTTP, so nothing of the engine reaches the benchmark but its endpoint answers. Also prints the corpus-name overlap our leased gazetteers already hold, which the benchmark itself cannot see |
 | `bench/identity_invariant.py` | — | the identity invariant per PII type: one person/address/phone written in several forms (case/order/dictation, flat/entrance, patronymic, +7 vs 8) collapses to ONE substitute; no model, no network |
+| `bench/edge_case_stress.py` | — | the edge-case stress test (66 checks): form transformations, mutable parts, collisions, round-trip robustness across all PII types; 65/66 green, the one remaining (A9) is an instrument reader defect; no model, no network |
 
 ---
 
