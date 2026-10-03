@@ -35,6 +35,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import asdict, replace
 from pathlib import Path
 
+from bench.agentpii4 import schema as v4
 from bench.agentpii4.compare import ArmRun
 from bench.agentpii4.tools import flatten
 from bench.agentpii5 import build_v6, checksum_v6, contracts, gen_v6, metrics, observe, perfect, pii_types
@@ -582,12 +583,24 @@ def dry_run_cost(cases: Sequence[CaseV5], ladder: dict[str, object]) -> dict[str
 
 def regress_section(cases: Sequence[CaseV5], ladder: dict[str, object]) -> dict[str, object]:
     """The baseline (frozen v5 inputs, byte-identical) and the corpus↔ladder
-    identity (re-deriving the digest matches the ladder's record)."""
+    identity (re-deriving the digest matches the ladder's record).
+
+    THE IDENTITY IS CHECKED AGAINST THE DIGEST THE LADDER ACTUALLY HOLDS. The
+    ladder's `corpus_sha256` is v4's digest of the BASES — the one
+    `bench.agentpii4.schema.tier` recomputes before the harness plays a tier
+    (the pinned v5 ladder carries it the same way). This section first compared
+    it to `corpus_digest_v5`, so it reported `identity: true` for a ladder no
+    consumer would accept, and printed that over the v6 dry-run's refusal. Both
+    digests are reported now; the flag is the consumer's comparison.
+    """
     digest = corpus_digest_v5(cases)
+    v4_digest = v4.corpus_digest([case.base for case in cases])
+    recorded = str(ladder.get("corpus_sha256", ""))
     return {
         "corpus_digest": digest,
-        "ladder_corpus_sha256": str(ladder.get("corpus_sha256", "")),
-        "identity": digest == str(ladder.get("corpus_sha256", "")),
+        "corpus_v4_digest": v4_digest,
+        "ladder_corpus_sha256": recorded,
+        "identity": v4_digest == recorded,
         "pinned_v5": {
             "corpus.v5.json": _file_sha256(HERE / "corpus.v5.json"),
             "ladder.json": _file_sha256(HERE / "ladder.json"),

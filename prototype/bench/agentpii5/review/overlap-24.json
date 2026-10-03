@@ -38,7 +38,7 @@
    "pinned_by": "review/v6-integration.json regress.pinned_v5"
   },
   "prototype/bench/agentpii5/v6/ladder.json": {
-   "sha256": "5d1699a214b66fdb76b276fd120df95a0c6a2f9961bb86e89e18f4b12397651a",
+   "sha256": "b7f1d05a9f63d7a327ffbdbc1a35d0bb51b160e4309aacddc810d935e7541600",
    "pinned_by": "review/v6-integration.json regress.pinned_v5"
   }
  },

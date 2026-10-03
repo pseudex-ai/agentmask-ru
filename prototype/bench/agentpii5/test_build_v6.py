@@ -22,6 +22,7 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
+from bench.agentpii4 import schema as v4
 from bench.agentpii5 import build_v6 as b
 from bench.agentpii5.schema import case_v5_from_json, corpus_digest_v5
 from bench.agentpii5.test_schema_v6 import (CLEAN_FULL, CLEAN_PILOT, _TOOLS_BY_INDUSTRY,
@@ -186,8 +187,48 @@ def test_tier_type_table() -> list[str]:
     return problems
 
 
+def test_ladder_survives_the_harness_check() -> list[str]:
+    """The ladder's `corpus_sha256` is the digest ITS CONSUMER recomputes.
+
+    `bench.agentpii4.schema.tier` is the gate the harness runs before it plays
+    any tier (`harness.main` calls `tier([case.base for case in everything], …)`),
+    and it recomputes v4's digest over exactly those bases. `build_ladder_v6`
+    stamped `corpus_digest_v5` instead — a digest no consumer of `ladder.json`
+    reads — so every v6 dry-run refused with «frozen against corpus 18ed…, this
+    corpus is cf1d…», while `corpus.v5.json` read back to its OWN digest: the
+    build was proving itself with the wrong witness. This check drives the real
+    consumer, and its negative half drives a wrongly-stamped ladder through it.
+    """
+    problems: list[str] = []
+    ladder = b.build_ladder_v6(CLEAN_FULL, b.SEED)
+    bases = [case.base for case in CLEAN_FULL]
+    mine = v4.Ladder(version=int(ladder["version"]), seed=int(ladder["seed"]),
+                     corpus_sha256=str(ladder["corpus_sha256"]),
+                     tiers={name: tuple(ids) for name, ids in ladder["tiers"].items()})
+    try:
+        picked = v4.tier(bases, mine, "nano")
+    except v4.InvalidCorpus as refused:
+        problems.append(f"the harness's own check refuses the written ladder: {refused}")
+        picked = []
+    if len(picked) != len(ladder["tiers"]["nano"]):
+        problems.append(f"the harness check returned {len(picked)} of "
+                        f"{len(ladder['tiers']['nano'])} nano cases")
+    # THE NEGATIVE, and it is the frozen check itself: a ladder stamped with the
+    # v5 digest (what the writer used to emit) is still refused. Fixing the
+    # writer must not have widened `tier`.
+    wrong = v4.Ladder(version=mine.version, seed=mine.seed,
+                      corpus_sha256=corpus_digest_v5(CLEAN_FULL), tiers=mine.tiers)
+    try:
+        v4.tier(bases, wrong, "nano")
+        problems.append("a ladder stamped with the v5 digest was accepted by tier()")
+    except v4.InvalidCorpus:
+        pass
+    return problems
+
+
 CHECKS: tuple[Callable[[], list[str]], ...] = (
     test_write_corpus_writes_the_v5_shape,
+    test_ladder_survives_the_harness_check,
     test_ladder_is_miniature,
     test_truncated_tier_refused,
     test_pinned_files_untouched,

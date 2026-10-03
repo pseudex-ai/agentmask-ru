@@ -197,7 +197,21 @@ def draw_holdout_v6(cases: Sequence[CaseV5], seed: int) -> frozenset[str]:
 
 def build_ladder_v6(cases: Sequence[CaseV5], seed: int) -> dict[str, object]:
     """The v6 ladder object: a phase-aware 20% holdout drawn first, then the debug
-    tiers as prefixes of a stratified order over the pool."""
+    tiers as prefixes of a stratified order over the pool.
+
+    `corpus_sha256` IS V4'S DIGEST OF THE BASES, NOT `corpus_digest_v5`, and the
+    difference is the whole point of the field. The ladder is consumed by
+    `bench.agentpii4.schema.tier`, which the harness calls with
+    `[case.base for case in everything]`; `tier` recomputes `v4.corpus_digest`
+    over exactly those bases and refuses a ladder stamped with anything else. The
+    pinned v5 ladder already carries it that way (`build_ladder_v5` ->
+    `RunProvenance.corpus_sha256`, whose SIBLING field `corpus_v5_sha256` is the
+    v5 digest). Stamping the v5 digest here — which the first version did — made
+    every v6 dry-run refuse with «frozen against corpus 18ed…, this corpus is
+    cf1d…» while `corpus.v5.json` read back to its own digest: the build proved
+    itself with a witness no consumer reads. `corpus.v5.json`'s own `digest`
+    field stays `corpus_digest_v5` (`write_corpus`); the two files are pinned to
+    different digests on purpose, as the v5 pair is."""
     held_ids = draw_holdout_v6(cases, seed)
     pool = [case for case in cases if case.base.id not in held_ids]
     order = stratified_order_v6(pool, seed)
@@ -210,7 +224,8 @@ def build_ladder_v6(cases: Sequence[CaseV5], seed: int) -> dict[str, object]:
                 f"усечённый ярус под полным именем не пишется (R6-37)")
         tiers[name] = tuple(sorted(case.base.id for case in order[:size]))
     tiers["max"] = tuple(sorted(case.base.id for case in cases))
-    return {"version": 5, "seed": seed, "corpus_sha256": corpus_digest_v5(cases),
+    return {"version": 5, "seed": seed,
+            "corpus_sha256": v4.corpus_digest([case.base for case in cases]),
             "tiers": tiers, "tier_sha256": {name: _tier_sha256(list(ids))
                                             for name, ids in tiers.items()}}
 
@@ -435,6 +450,14 @@ def main() -> int:
     same self-contained rebuild `integrate_v6` does), then prints the declared /
     proven / unprovable counts and every unprovable crossing by name. Exits 1 when
     anything is unprovable, 0 otherwise.
+
+    IT NEEDED THE ENTRY GUARD. `test_cli` names this file as an instrument «run
+    directly as `python3 -m bench.agentpii5.build_v6 --check`», and until now
+    there was no `if __name__` block here: the documented command imported the
+    module and exited 0 having proved nothing, so the v6 corpus proof could not
+    fail (and was in fact never run by this path — `integrate_v6.l8` is the only
+    other caller). A pass that cannot be red is not evidence; the guard is what
+    makes the printed PASS mean the proof ran.
     """
     args = sys.argv[1:]
     check = "--check" in args
@@ -451,3 +474,7 @@ def main() -> int:
     ok = not proof["unprovable"]
     print("build_v6 --check: PASS" if ok else "build_v6 --check: FAIL")
     return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

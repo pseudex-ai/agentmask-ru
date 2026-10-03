@@ -2,7 +2,7 @@
  "generated_by": "bench.agentpii5.integrate_v6",
  "phase": "full",
  "corpus_sha256": "18ed3a98526dc9360a683b9f8b7fa12f170c9535ee00b23b61dbc7c19c1cf993",
- "ladder_sha256": "5d1699a214b66fdb76b276fd120df95a0c6a2f9961bb86e89e18f4b12397651a",
+ "ladder_sha256": "b7f1d05a9f63d7a327ffbdbc1a35d0bb51b160e4309aacddc810d935e7541600",
  "registry_sha256": "e369e07b743bf66a8548d6f458cfa3c928261323f2515299f5cb7c380064ee0a",
  "l1": {
   "perfect": {
@@ -2484,13 +2484,14 @@
  },
  "regress": {
   "corpus_digest": "18ed3a98526dc9360a683b9f8b7fa12f170c9535ee00b23b61dbc7c19c1cf993",
-  "ladder_corpus_sha256": "18ed3a98526dc9360a683b9f8b7fa12f170c9535ee00b23b61dbc7c19c1cf993",
+  "corpus_v4_digest": "cf1d55d14f9fb5efc700a459eb90ffe3d8e2950d7e816dbb88569113b75089b1",
+  "ladder_corpus_sha256": "cf1d55d14f9fb5efc700a459eb90ffe3d8e2950d7e816dbb88569113b75089b1",
   "identity": true,
   "pinned_v5": {
    "corpus.v5.json": "3ba227908d40911bd6578418b2da9d3b7925a1ffefe88ebbf5cead5ce5115118",
    "ladder.json": "3e088f66334309feedd32f8d860a34d215e3ca94561b2a8d55425c01317708d9",
    "v6/corpus.v5.json": "76b5bffe5a00bf7858212d0280b8d69bf8dfeeaf3c63372fbfd616745da23ad7",
-   "v6/ladder.json": "5d1699a214b66fdb76b276fd120df95a0c6a2f9961bb86e89e18f4b12397651a"
+   "v6/ladder.json": "b7f1d05a9f63d7a327ffbdbc1a35d0bb51b160e4309aacddc810d935e7541600"
   }
  },
  "ladder_stamp": "51da21302e2c3f31ae46813f0ffbd044e996fd52b5b9bdb4a5ae23f22632493d"

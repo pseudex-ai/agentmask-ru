@@ -321,6 +321,14 @@ RESOLVED_IN: dict[str, str] = {
 #   * ladder.json — work/B0/INPUTS.json `ladder_file_sha256`;
 #   * the v6 pair — recorded in the v6 report's `regress.pinned_v5` and
 #     unchanged by every stage of this integration.
+#
+# THE v6 LADDER WAS RE-STAMPED ONCE, DELIBERATELY, AFTER THE INTEGRATION: it
+# carried the v5 corpus digest (`build_ladder_v6` stamped `corpus_digest_v5`)
+# while its only consumer, `bench.agentpii4.schema.tier`, recomputes v4's digest
+# of the bases — so every v6 dry-run refused it. `v6/corpus.v5.json` did not move
+# (76b5bf…, the same bytes), the tiers and the holdout did not move; only the
+# digest field did, and the pin below is that one-line regeneration. The v5
+# ladder, which was always stamped with the v4 digest, is untouched.
 FROZEN_INPUTS: dict[str, tuple[str, str]] = {
     "prototype/bench/agentpii5/corpus.json": (
         "6bc58c5b8d6a3957b604bb67a7ea9a78992882f2c028c837186f57ad11e6e4ec",
@@ -335,7 +343,7 @@ FROZEN_INPUTS: dict[str, tuple[str, str]] = {
         "76b5bffe5a00bf7858212d0280b8d69bf8dfeeaf3c63372fbfd616745da23ad7",
         "review/v6-integration.json regress.pinned_v5"),
     "prototype/bench/agentpii5/v6/ladder.json": (
-        "5d1699a214b66fdb76b276fd120df95a0c6a2f9961bb86e89e18f4b12397651a",
+        "b7f1d05a9f63d7a327ffbdbc1a35d0bb51b160e4309aacddc810d935e7541600",
         "review/v6-integration.json regress.pinned_v5"),
 }
 # The v6 corpus pair is a v6 artifact, not the frozen v5 evidence: freshness
