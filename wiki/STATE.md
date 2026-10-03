@@ -647,6 +647,19 @@ Concretely `Лермонтова 38 кв 7` → `Сиреневая 26, кв 81`
 
 **Related:** `prototype/pseudex/vault.py` (canonicalize, `morph_places.address_key`, `morph_names.to_nominative`) · `prototype/pseudex/morph_places.py` (`split_roles`, `place_parts`) · `prototype/bench/identity_invariant.py` (the free metric) · D-070
 
+### D-082 · 2026-10-02 · Per-agent pseudonym scope + tree-like vault — DEFERRED to post-run
+**Status:** deferred (owner-confirmed order: W8 → full benchmark run → then this as a separate feature).
+
+**Context:** the owner asked whether a configurable admin setting (per-agent traffic separation + `conversation_id`) would protect from edge cases whose cause is the shared SQLite vault, and whether the vault should become more tree-like/configurable. Analysis: the W8 flat-collision is caused by the phase-2 `address_key` (flat dropped from the key), NOT by the shared vault — so scoping does not fix it; W8 (compositional core+parts) is the correct fix at the key level. The full identity (address/name/phone) is GLOBAL per customer by design («one place = one substitute, for ever»), and only the partial-mention LINKING is conversation-scoped (`Vault.for_conversation`, the LINKED row) — which already isolates the highest-risk case (a partial «Ленина 14» resolving into a stranger's full address).
+
+**Decision:** DEFER. Do NOT add a per-agent scope before the full benchmark run. The `conversation` scope already covers the partial-mention isolation; a per-agent scope would isolate cross-agent full-identity sharing but break the deliberate «one place = one substitute» invariant (the same client in two agents would see DIFFERENT fakes and the model could not correlate them). That is a business/deployment trade-off, not a technical fix.
+
+**For later (post-run, separate sprint):** a tree-like vault `customer → agent → conversation` with a configurable `pseudonym_scope` level (customer | agent | conversation) for the FULL identity, so the customer chooses «identity global per customer» vs «per agent». This is a conscious identity-scoping feature with a real cost (cross-agent stability), designed from run data, not guessed now.
+
+**Alternative rejected:** implementing per-agent scope now — it would add risk to the identity stability we just built (D-081) and does not touch the W8 key-level collision.
+
+**Related:** `prototype/pseudex/vault.py` (`for_conversation`, `PSEUDEX_PSEUDONYM_SCOPE`) · D-081 · the phase-4b W8 fix
+
 **D-ID renumbering (V1 merge).** `D-068`/`D-069`/`D-070` were spent twice — once
 on this branch and once by the v6 branch (2026-09-26…28). Both records and both
 bodies stay; the v6 records moved to unused ids and the v5 ids are unchanged:
