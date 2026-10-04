@@ -1126,16 +1126,16 @@ def _check_configurator(client, staff_client, base: str) -> None:
 
     # ОДИН РЕЕСТР НА ДВЕ СТРАНИЦЫ. Сверяется не двумя списками в тесте, а тем,
     # что подписи типов со страницы /detection приезжают из того же модуля.
-    absent = [label for label, _example, _holds in detection_types.FOUND
+    absent = [label for label in detection_types.FOUND
               if label not in body]
     check("страница /detection перечисляет реестр целиком", not absent, str(absent))
     check("и обещание «напишите» ведёт туда, где это можно сделать",
           "#configurator" in body and "СВОЁМ ТЕКСТЕ" not in body)
 
     gap = next(group["code"] for group in detection_types.GROUPS
-               if not group.get("found"))
+               if group.get("missing"))
     other = next(group["code"] for group in detection_types.GROUPS
-                 if not group.get("found") and group["code"] != gap)
+                 if group.get("missing") and group["code"] != gap)
 
     def send(sender, codes):
         return sender.post("/demand", data=_json.dumps({"groups": codes}),
@@ -1214,9 +1214,11 @@ def _check_configurator(client, staff_client, base: str) -> None:
     # ОГРН/ОГРНИП.
     grouped = {label for group in detection_types.GROUPS
                for label in group.get("found", ())}
-    check("каждый найденный тип попал в группу конфигуратора",
-          grouped == {label for label, _e, _h in detection_types.FOUND},
-          str({label for label, _e, _h in detection_types.FOUND} - grouped))
+    core = set(detection_types.CORE)
+    sector_labels = set(detection_types.FOUND) - core
+    check("каждый отраслевой тип попал в группу конфигуратора",
+          grouped == sector_labels,
+          str(sector_labels - grouped))
     # ПРОВЕРЯЕТСЯ ИСХОДНИК ШАБЛОНА, А НЕ ОТРЕНДЕРЕННАЯ СТРАНИЦА: в выводе
     # литерал «18 типов» и вычисленный `{{ found_count }}` неотличимы по
     # построению, пока в реестре ровно восемнадцать. Первая версия этой строки
@@ -1230,7 +1232,8 @@ def _check_configurator(client, staff_client, base: str) -> None:
     check("число типов в шаблонах не литерал, а длина реестра",
           not hardcoded, str(hardcoded))
     check("и страница его действительно печатает",
-          f"{len(detection_types.FOUND)} типов" in body)
+          (f"{len(detection_types.FOUND)} "
+           f"{detection_types.ru_types(len(detection_types.FOUND))}") in body)
 
     # ЭКРАН, РАДИ КОТОРОГО ВСЁ ЭТО ПИШЕТСЯ: очередь работ должна читаться
     # глазами, иначе счётчик существует для себя.

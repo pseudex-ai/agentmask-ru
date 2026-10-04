@@ -101,7 +101,7 @@ def main() -> None:
     sys.path.insert(0, str(_ROOT))
     from storefront_web import detection_types
 
-    gap = next(group for group in detection_types.GROUPS if not group.get("found"))
+    gap = next(group for group in detection_types.GROUPS if group.get("missing"))
     covered = next(group for group in detection_types.GROUPS if group.get("found"))
     medical = next(group for group in detection_types.GROUPS
                    if group["code"] == "medical")

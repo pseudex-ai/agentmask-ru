@@ -251,6 +251,9 @@ def landing(request):
                             + (1 if Plan.objects.filter(code="enterprise").exists() else 0)),
         # Группы конфигуратора — из того же реестра, что и страница /detection.
         "groups": detection_types.groups_for_page(),
+        # Отрасли и ядро — для секции покрытия на лендинге.
+        "industries": detection_types.industries_for_page(),
+        "core": detection_types.core_rows(),
         # ЧИСЛО ТИПОВ СЧИТАЕТСЯ, А НЕ ПИШЕТСЯ. «18» стояло литералом в трёх
         # местах, пока список был разметкой; теперь список — данные, и
         # следующий добавленный тип сделал бы страницу противоречащей
@@ -849,9 +852,12 @@ def detection(request):
     # от этого стала короче, а обещание «отметьте то, чего у вас нет» осталось
     # ровно на той странице, где перечислено, что есть.
     return render(request, "legal/detection.html", _legal_context() | _meta("detection") | {
-        "found": detection_types.found_rows(),
         "missing": detection_types.missing_numbered(),
         "groups": detection_types.groups_for_page(),
+        "core": detection_types.core_rows(),
+        "industries": detection_types.industries_for_page(),
+        "found_label": (f"{len(detection_types.FOUND)} "
+                        f"{detection_types.ru_types(len(detection_types.FOUND))}"),
     })
 
 
