@@ -295,6 +295,48 @@ def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
     return False
 
 
+# Слова-ВЕЩИ перед числом лет: «стаж 15 лет», «опыт 28 лет», «гарантия 3 года».
+# Целыми словами, в отличие от общего DENY (там «ту» подстрокой бьёт «пациенту»).
+_AGE_DENY = re.compile(
+    r"(?i)(?:^|[^а-яёa-z0-9])(?:опыт\w*|стаж\w*|выслуг\w*|гарант\w*|подписк\w*"
+    r"|аренд\w*|срок\w*)\s*$")
+# Дательный падеж местоимений/субъектов ПЕРЕД числом возраста («ему/ей/мне»,
+# «пациенту/клиенту»); «исполнилось» допущено как мостик.
+_AGE_PERSON = re.compile(
+    r"(?i)(?:^|[^а-яёa-z0-9])(?:ему|ей|мне|тебе|им|нам|пациент\w*|клиент\w*"
+    r"|реб[её]н\w*|посетител\w*|получател\w*|заказчик\w*)(?:\s+исполнил\w+)?\s*$")
+
+
+def _age_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
+    """Whether a bare «N лет» is the subject's age or a thing's («опыт/стаж»).
+
+    Возраст — ПД по ассоциации с человеком (152-ФЗ), а не по величине числа:
+    «ему 28 лет» и «Иванов, 28 лет» — про человека, «зданию 92 года» и
+    «опыт 28 лет» — нет. Тот же сигнал, что и у даты: местоимение/субъект
+    прямо перед числом, либо любой идентификатор человека в окне. Сам возраст
+    свидетельством человека не является (иначе «опыт 28 лет» сам себя бы
+    легализовал).
+    """
+    before = text[max(0, span.start - 24):span.start].lower()
+    # A thing-word directly before («опыт/стаж/гарантия») denies the age even
+    # beside a name: «Иванов, стаж 15 лет» is tenure, not the person's age.
+    # WHOLE-WORD, not the shared DENY's substring list («ту» in «пациенту»).
+    lead = text[max(0, span.start - 26):span.start].lower()
+    if _AGE_DENY.search(lead):
+        return False
+    if _AGE_PERSON.search(before):
+        return True
+    for other in spans:
+        if other.entity_type not in _IDENTIFIES_A_PERSON or other.entity_type == "AGE":
+            continue
+        if not (other.start < span.end + 80 and other.end > span.start - 80):
+            continue
+        if other.entity_type == "NAME" and _name_is_personnel(text, other):
+            continue
+        return True
+    return False
+
+
 _SENTENCE_SPLIT = re.compile(r"[.!?\n]")
 
 
@@ -400,6 +442,8 @@ def suppress(text: str, spans: list[Span]) -> list[Span]:
                 span = Span(span.start, span.end, "DOB", span.value)
             else:
                 continue
+        if span.entity_type == "AGE" and not _age_is_personal(text, span, spans):
+            continue
         if span.entity_type == "PASSPORT" and not _passport_is_evidenced(text, span, context):
             continue
         if span.entity_type == "PHONE":

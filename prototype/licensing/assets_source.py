@@ -1135,6 +1135,10 @@ DENY: tuple[str, ...] = (
     # -> DOB by the 80-char association gate and the model booked March instead
     # of September (clinic run). «слот»/«приём»/«запись» govern the date directly.
     "слот", "приём", "прием", "запись", "расписан",
+    # Things a number of YEARS describes without a person: «стаж 15 лет»,
+    # «опыт 28 лет», «гарантия 3 года». They deny an AGE even beside a name
+    # («Иванов, стаж 15 лет» is tenure, not the person's age).
+    "опыт", "стаж", "выслуг", "гарант", "подписк", "аренд",
 )
 # Words that, near a passport-shaped number, mean it really is a passport. The
 # type has no checksum, so context is the only evidence there is.
