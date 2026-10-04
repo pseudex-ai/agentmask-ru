@@ -59,7 +59,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       "operatingSystem": "Docker (Linux)",
       "inLanguage": "ru",
       "publisher": {"@id": "{{ site_url }}/#organization"},
-      "description": "Обратимая токенизация персональных данных перед языковой моделью. Модель получает подмену, инструменты агента — настоящие значения. Находит {{ found_count }} типов ПД, СНИЛС и ИНН проверяет по контрольной сумме. Контейнер работает в контуре клиента.",
+      "description": "Обратимая токенизация персональных данных перед языковой моделью. Модель получает подмену, инструменты агента — настоящие значения. Находит {{ found_count }} {{ found_word }} ПД. Контейнер работает в контуре клиента.",
       "offers": [{% for plan in plans %}
         {
           "@type": "Offer",
@@ -207,7 +207,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       <div class="metric">
         <div class="metric-label">ТИПОВ ПД</div>
         <div class="metric-num" style="font-size:34px;font-weight:900;letter-spacing:-.035em" data-count-to="{{ found_count }}">{{ found_count }}</div>
-        <div class="metric-note">Четыре из них — по контрольной сумме, а не по маске.</div>
+        <div class="metric-note">Включая паспорта, полисы и банковские реквизиты.</div>
       </div>
       <div class="metric">
         <div class="metric-label">ЧАСА АВТОНОМИИ</div>
@@ -236,7 +236,11 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
   <section id="video" style="padding:120px 36px 0">
     <div data-reveal>
       <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.2em;color:var(--dim-2);margin-bottom:26px">ЗАПИСЬ ЭКРАНА · 4 МИНУТЫ</div>
-      <h2 style="margin:0 0 20px;font-size:clamp(28px,3.6vw,46px);font-weight:900;letter-spacing:-.035em;max-width:24ch;text-wrap:balance">Посмотрите, как это работает — от подключения до вызова инструмента</h2>
+      {% comment %}ЗАГОЛОВОК ГОВОРИЛ «Посмотрите, как это работает — от подключения
+      до вызова инструмента»: это надпись над видео, а не мысль. Над ним уже стоит
+      «ЗАПИСЬ ЭКРАНА · 4 МИНУТЫ», а под ним — то же самое словами. Осталось то,
+      что называют один раз.{% endcomment %}
+      <h2 style="margin:0 0 20px;font-size:clamp(28px,3.6vw,46px);font-weight:900;letter-spacing:-.035em;max-width:24ch;text-wrap:balance">От подключения до вызова инструмента</h2>
       <p style="margin:0 0 40px;font-size:17px;line-height:1.6;color:var(--text-2);max-width:62ch">Подключение, проверка, круг с вызовом инструмента. Ничего не ускорено.</p>
       <div style="border:1px solid var(--line);background:#000;padding:10px;border-radius:16px">
         <video controls preload="none" playsinline poster="{% static 'media/setup-poster.jpg' %}"
@@ -253,13 +257,17 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.2em;color:var(--dim-2);margin-bottom:26px">СКОЛЬКО НЕ ДОХОДИТ ДО МОДЕЛИ</div>
       <h2 style="margin:0 0 20px;font-size:clamp(28px,3.6vw,46px);font-weight:900;letter-spacing:-.035em;max-width:26ch;text-wrap:balance">99,7% персональных значений не доходят до модели. Оставшиеся 0,3% мы называем и разбираем.</h2>
       <p style="margin:0 0 16px;font-size:17px;line-height:1.6;color:var(--text-2);max-width:62ch">Меряем на живых чатах и звонках: опечатки, раскладка, числа словами, падежи, имена.</p>
-      <p style="margin:0 0 40px;font-size:16px;line-height:1.6;color:var(--dim);max-width:62ch">На чистом «Иванов Иван Иванович» работает любая библиотека. Живые диалоги так не выглядят.</p>
+      {% comment %}ЗДЕСЬ БЫЛ АБЗАЦ «На чистом «Иванов Иван Иванович» работает любая
+      библиотека. Живые диалоги так не выглядят». Он объяснял не наш продукт, а
+      наши трудности: сначала сообщал, что задача решается чужими средствами,
+      потом — что мы решаем её не так, как они. Первое читается как признание, а
+      второе человек видит по абзацу выше: там сказано, на чём меряем.{% endcomment %}
     </div>
     <div class="cards cards--n4" style="border:1px solid var(--line-3);margin-bottom:56px" data-reveal-stagger>
       <div style="min-width:0;background:var(--panel);padding:28px 26px;">
         <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--accent)">01</div>
         <div style="margin-top:12px;font-size:23px;font-weight:800;letter-spacing:-.03em;color:var(--text)">Живые диалоги</div>
-        <div style="margin-top:10px;font-size:14.5px;line-height:1.6;color:var(--dim)">Формы из настоящих переписок поддержки, а не удобные детектору.</div>
+        <div style="margin-top:10px;font-size:14.5px;line-height:1.6;color:var(--dim)">Формы из настоящих переписок поддержки.</div>
       </div>
       <div style="min-width:0;padding:28px 26px;">
         <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--accent)">02</div>
@@ -269,12 +277,12 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       <div style="min-width:0;padding:28px 26px;">
         <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--accent)">03</div>
         <div style="margin-top:12px;font-size:23px;font-weight:800;letter-spacing:-.03em;color:var(--text)">Документы РФ</div>
-        <div style="margin-top:10px;font-size:14.5px;line-height:1.6;color:var(--dim)">Четыре документа РФ — по контрольной сумме, а не по маске.</div>
+        <div style="margin-top:10px;font-size:14.5px;line-height:1.6;color:var(--dim)">Паспорт, СНИЛС, ИНН, полис ОМС, банковская карта.</div>
       </div>
       <div style="min-width:0;padding:28px 26px;">
         <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--accent)">04</div>
         <div style="margin-top:12px;font-size:23px;font-weight:800;letter-spacing:-.03em;color:var(--text)">Что осталось</div>
-        <div style="margin-top:10px;font-size:14.5px;line-height:1.6;color:var(--dim)">Имена и улицы вне словарей. Их мы называем, а не округляем.</div>
+        <div style="margin-top:10px;font-size:14.5px;line-height:1.6;color:var(--dim)">Имена и улицы вне словарей.</div>
       </div>
     </div>
     <div style="display:flex;align-items:baseline;justify-content:space-between;gap:32px;flex-wrap:wrap;margin-bottom:20px" data-reveal>
@@ -321,7 +329,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       <div style="min-width:0;background:var(--panel);padding:28px 26px 30px;display:flex;flex-direction:column;gap:18px;">
         <div style="display:flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:var(--dim-2)">КЛИЕНТ <span style="color:var(--edge)">→</span> МОДЕЛЬ</div>
         <div style="font-size:24px;line-height:1.15;letter-spacing:-.025em;color:var(--accent-2);font-weight:700">Ставим подмену</div>
-        <p style="margin:0;font-size:15px;line-height:1.65;color:var(--dim);text-wrap:pretty">Находим {{ found_count }} типов данных — ФИО, адрес, СНИЛС, ИНН, паспорт, ОМС. Подмена того же рода, падежа и формата, поэтому модель не пытается её исправить и читает разговор как обычно. <a href="/detection">Полный список →</a></p>
+        <p style="margin:0;font-size:15px;line-height:1.65;color:var(--dim);text-wrap:pretty">Находим {{ found_count }} {{ found_word }} данных — ФИО, адрес, СНИЛС, ИНН, паспорт, ОМС. Подмена того же рода, падежа и формата, поэтому модель не пытается её исправить и читает разговор как обычно. <a href="/detection">Полный список →</a></p>
       </div>
       <div style="min-width:0;background:var(--panel);padding:28px 26px 30px;display:flex;flex-direction:column;gap:18px;">
         <div style="display:flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.16em;color:var(--dim-2)">МОДЕЛЬ <span style="color:var(--edge)">→</span> ВАШ КОД</div>
@@ -571,7 +579,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       <div>
         <div class="eyebrow" style="margin-bottom:18px"><i></i><span>БАЗА ЗНАНИЙ</span></div>
         <h2 style="margin:0;font-size:clamp(22px,2.6vw,32px);font-weight:800;letter-spacing:-.03em;max-width:30ch">Разборы закона: что требуется и что из этого закрывает контейнер</h2>
-        <p style="margin:16px 0 0;font-size:16px;line-height:1.7;color:var(--dim);max-width:62ch">Пишем о том, что спрашивают перед внедрением. Ссылки на первоисточники, без «узнайте больше» и без обещаний полного соответствия.</p>
+        <p style="margin:16px 0 0;font-size:16px;line-height:1.7;color:var(--dim);max-width:62ch">Пишем о том, что спрашивают перед внедрением, со ссылками на первоисточники.</p>
       </div>
       <a href="/baza-znaniy/kak-obezlichit-personalnye-dannye" style="display:block;border:1px solid var(--line-2);background:var(--panel);padding:22px 24px;text-decoration:none" class="hv-row">
         <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--accent)">СТАТЬЯ · 9 МИНУТ</div>
