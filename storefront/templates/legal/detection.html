@@ -10,107 +10,63 @@
 <section>
   <div class="eyebrow"><i></i><span>ДЕТЕКЦИЯ</span></div>
   <h1 class="hero" style="font-size:clamp(30px,4.5vw,52px)">Что мы находим — и чего не находим</h1>
-  <p class="lede" style="margin-top:24px">Полный список, а не цифра. Ниже — каждый тип данных, который движок распознаёт сегодня, чем он подтверждается, и отдельным разделом — то, что он <b>не</b> находит. Второй раздел важнее первого: система распознавания без списка пропусков ничем не отличается от обещания.</p>
+  <p class="lede" style="margin-top:24px">{{ found_label }} персональных данных. Ниже — весь список и то, чего в нём пока нет.</p>
 </section>
 
-<section>
+<section id="coverage">
   <div class="sec-head">
-    <h2>{{ found|length }} типов персональных данных</h2>
-    <div class="sec-meta">ПРОВЕРЕНО ПРОГОНОМ ДВИЖКА</div>
+    <h2>Что мы находим</h2>
+    <div class="sec-meta">ЯДРО И {{ industries|length }} ОТРАСЛЕЙ</div>
   </div>
-  <p class="sub">«Чем держится» — это то, что отделяет настоящее значение от похожего на него номера заказа. Контрольная сумма отвергает выдуманный номер; контекстный фильтр требует, чтобы рядом стояло слово, объясняющее, что это за число.</p>
-
-  <div class="boundary" style="margin-top:28px">
-    <div class="row head"><div>ТИП</div><div>ПРИМЕР</div><div>ЧЕМ ДЕРЖИТСЯ</div></div>
-    {% for t in found %}
-    <div class="row"><div>{{ t.label }}</div><div class="mono">{{ t.example }}</div><div>{{ t.holds }}</div></div>
+  {% comment %}ЯДРО — ПЕРВАЯ ЯЧЕЙКА ТОЙ ЖЕ СЕТКИ, А НЕ ОТДЕЛЬНЫЙ БЛОК НАД НЕЙ.
+     Отдельный блок давал 15 карточек в сетке на четыре колонки — незанятый угол
+     в правом нижнем ряду, который читается как «здесь что-то не поместилось».
+     Шестнадцатая ячейка закрывает ряд ровно, а акцентная обводка отличает ядро
+     без второго заголовка и без разрыва между «ядром» и «отраслями».{% endcomment %}
+  <div class="cards cards--n4" style="border:1px solid var(--line-3);margin-top:28px">
+    <div style="padding:22px 24px;box-shadow:inset 0 0 0 1px var(--accent)">
+      <div style="font-size:14.5px;font-weight:650;color:var(--text-2);letter-spacing:-.01em;margin-bottom:14px">Ядро</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        {% for t in core %}<span style="font-size:12.5px;color:var(--text-2);border:1px solid var(--line);padding:3px 9px;border-radius:2px">{{ t.label }}</span>{% endfor %}
+      </div>
+    </div>
+    {% for ind in industries %}
+    <div style="padding:22px 24px">
+      <div style="font-size:14.5px;font-weight:650;color:var(--text-2);letter-spacing:-.01em;margin-bottom:14px">{{ ind.label }}</div>
+      {% if ind.core_only %}
+      <div style="font-size:13px;line-height:1.5;color:var(--dim)">Закрывается ядром. Трек-номер и номер заказа движок намеренно не трогает: это не персональные данные.</div>
+      {% else %}
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        {% for t in ind.found %}<span style="font-size:12.5px;color:var(--text-3);border:1px solid var(--line);padding:3px 9px;border-radius:2px">{{ t.label }}</span>{% endfor %}
+      </div>
+      {% endif %}
+    </div>
     {% endfor %}
   </div>
-
-  <div style="margin-top:22px;font-size:15px;line-height:1.7;color:var(--dim);max-width:760px">Плюс два <b>квазиидентификатора</b> — сами по себе они человека не называют, но вместе с остальным сужают круг до одного: <b>возраст от 90 лет</b> и <b>медицинские термины</b> в тексте. Они выделены отдельно намеренно: маскировать их всегда — значит ломать смысл там, где речь о медицине по существу, а не о пациенте.</div>
 </section>
 
 <section>
   <div class="sec-head">
     <h2>Чего мы не находим</h2>
-    <div class="sec-meta">ЭТОТ РАЗДЕЛ ВАЖНЕЕ ПРЕДЫДУЩЕГО</div>
   </div>
-  <p class="sub">Список честный и открытый. Если нужного вам типа здесь нет — <a href="#configurator">отметьте его в конфигураторе</a> ниже, это меняет очередь работ: мы делаем то, за что платят, а не то, что красивее выглядит в таблице.</p>
+  <p class="sub">Если нужного вам типа здесь нет — <a href="#configurator">отметьте его в конфигураторе</a> ниже: мы делаем то, за что платят.</p>
 
-  <div class="rows" style="margin-top:36px">
-    <div class="sec-meta">ОБЩИЕ</div>
-    <div>
-      {% for m in missing %}{% if m.kind == 'common' %}
-      <div class="numbered"><div class="n">{{ m.n }}</div><div>
-        <h3>{{ m.title }}</h3>
-        <p>{{ m.text }}</p>
-      </div></div>
-      {% endif %}{% endfor %}
-    </div>
+  {% comment %}`.rows` — сетка «260px + контент»: слева заголовок раздела, справа
+     пункты. Он осмыслен, только когда заголовок есть; с одним ребёнком пункты
+     уезжают в узкую колонку и заголовок переносится по слову. Здесь заголовка
+     нет (все пункты — общие), поэтому `.numbered` стоит сам по себе.{% endcomment %}
+  <div style="margin-top:36px;max-width:980px">
+    {% for m in missing %}
+    <div class="numbered"><div class="n">{{ m.n }}</div><div>
+      <h3>{{ m.title }}</h3>
+      <p>{{ m.text }}</p>
+    </div></div>
+    {% endfor %}
   </div>
-
-  <div class="rows" style="margin-top:40px">
-    <div class="sec-meta">ОТРАСЛЕВЫЕ</div>
-    <div>
-      {% for m in missing %}{% if m.kind == 'sector' %}
-      <div class="numbered"><div class="n">{{ m.n }}</div><div>
-        <h3>{{ m.title }}</h3>
-        <p>{{ m.text }}</p>
-      </div></div>
-      {% endif %}{% endfor %}
-    </div>
-  </div>
-</section>
-
-<section>
-  <div class="split">
-    <div style="min-width:0">
-      <div class="sec-meta" style="margin-bottom:22px">ЧЕМ МЫ ОТЛИЧАЕМСЯ</div>
-      <h2 style="margin:0 0 20px">Проверяемое утверждение вместо лозунга</h2>
-      <p style="margin:0 0 18px;font-size:16px;line-height:1.65;color:var(--dim);max-width:640px">Мы сверились с документацией и исходным кодом девяти мировых решений: Microsoft Presidio, Google Cloud DLP, AWS Comprehend, AWS Macie, Nightfall, Skyflow, Private AI, Protecto, Tonic Textual.</p>
-      <p style="margin:0 0 18px;font-size:16px;line-height:1.65;color:var(--dim);max-width:640px"><b style="color:var(--text-3)">Ни одно из девяти не проверяет контрольную сумму ИНН или СНИЛС.</b> У Google Cloud DLP на всю Россию один тип — номер паспорта, и тот без контекстной логики. Для сравнения: у Испании семь типов, у Кореи шесть, у Германии тринадцать.</p>
-      <p style="margin:0;font-size:16px;line-height:1.65;color:var(--dim);max-width:640px">При этом <b style="color:var(--text-3)">русский язык понимают двое из девяти</b>, и мы не утверждаем обратного. Разница не в языке — она в разборе российских документов и в том, что происходит на обратном пути, когда инструменту нужно настоящее значение.</p>
-    </div>
-    <div>
-      <div class="boundary">
-        <div class="row"><div>Microsoft Presidio</div><div class="no">нет</div><div class="no">нет</div></div>
-        <div class="row"><div>Google Cloud DLP</div><div class="no">нет</div><div class="no">нет</div></div>
-        <div class="row"><div>AWS Comprehend</div><div class="no">нет</div><div class="no">нет</div></div>
-        <div class="row"><div>Nightfall, Skyflow, Protecto</div><div class="no">нет</div><div class="no">нет</div></div>
-        <div class="row"><div>Private AI, Tonic Textual</div><div class="yes">да</div><div class="no">нет</div></div>
-        <div class="row"><div>pseudex</div><div class="yes">да</div><div class="yes">да</div></div>
-        <div class="row head"><div>РЕШЕНИЕ</div><div>РУССКИЙ</div><div>ИНН/СНИЛС</div></div>
-      </div>
-      <div style="margin-top:16px;font-size:13.5px;line-height:1.6;color:var(--dim-2)">Проверено по официальной документации и исходному коду в августе 2026 года. Отсутствие типа означает «не найдено в официальных источниках вендора» — если мы ошиблись, напишите, поправим.</div>
-    </div>
-  </div>
-</section>
-
-<section style="display:flex;align-items:center;justify-content:space-between;gap:40px;flex-wrap:wrap">
-  <div>
-    <h2 style="font-size:clamp(26px,3.6vw,40px);max-width:720px">Нужного типа нет в списке?</h2>
-    <div style="margin-top:16px" class="sec-meta">ОТМЕТЬТЕ — ЭТО МЕНЯЕТ ОЧЕРЕДЬ РАБОТ</div>
-  </div>
-  {% comment %}
-     КНОПКА ВЕДЁТ ТУДА, ГДЕ ОБЕЩАННОЕ МОЖНО СДЕЛАТЬ. Здесь стояла подпись про
-     проверку на собственном тексте со ссылкой на `/#start`, то есть в блок
-     тарифов: своего текста лендинг не принимает НАМЕРЕННО (`views.landing`
-     докстринг — поле ввода означало бы приём чужих персональных данных на наш
-     сервер), а рядом дважды стояло «напишите», притом что адреса для связи нет
-     ни на одной странице сайта. Обещание без канала и кнопка, продающая то,
-     чего у нас принципиально нет.
-
-     `{# #}` ЗДЕСЬ НЕ ГОДИТСЯ: он однострочный, и многострочный вариант
-     отрендерился бы как видимый текст. Поймано проверкой, а не глазами.
-  {% endcomment %}
-  <a class="btn accent lg" href="#configurator">ОТМЕТИТЬ, ЧТО НУЖНО ВАМ</a>
 </section>
 
 {% comment %}
-   КОНФИГУРАТОР — НА ЭТОЙ ЖЕ СТРАНИЦЕ, НИЖЕ КНОПКИ, КОТОРАЯ НА НЕГО ВЕДЁТ.
-   Он стоял на главной четвёртым интерактивным блоком подряд и отвечал на
-   вопрос «чего у вас нет» там, где ещё не сказано, что есть. Здесь он читается
-   как продолжение таблицы: список типов → отметка того, чего не хватает.
+   КОНФИГУРАТОР — НА ЭТОЙ ЖЕ СТРАНИЦЕ, НИЖЕ СПИСКА, НА КОТОРЫЙ ОТВЕЧАЕТ.
    Заголовок набран классами страницы, а не инлайном главной: два словаря
    одного заголовка разъезжаются при первой правке темы.
 {% endcomment %}
@@ -119,7 +75,7 @@
     <h2>Что у вас в переписке</h2>
     <div class="sec-meta">ОТМЕТКА = ЗАЯВКА НА ТИП</div>
   </div>
-  <p class="sub">Отметьте свои группы данных. Скажем, что находим сегодня, что в разработке и чего не планируем — последнее честнее первого. Отметки складываются в счётчик спроса: по нему мы строим очередь работ.</p>
+  <p class="sub">Отметьте свои отрасли. Отметки складываются в счётчик спроса: по нему мы строим очередь работ.</p>
   <div id="cfg" class="cards cards--n12" style="border:1px solid var(--line-3)">
     {% for group in groups %}
       <label class="cfg-item hv-tint" style="display:flex;align-items:center;gap:13px;padding:16px 20px;cursor:pointer;min-width:0;">
@@ -128,7 +84,11 @@
                data-verdict="{{ group.verdict }}"
                style="flex:none;width:15px;height:15px;accent-color:var(--accent)">
         <span class="cfg-label" style="flex:1;font-size:15px;color:var(--text-2);min-width:0">{{ group.label }}</span>
+        {% if group.custom %}
+        <span style="flex:none;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;color:var(--dim-2)">ОПИШИТЕ</span>
+        {% else %}
         <span style="flex:none;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;color:{% if group.covered %}var(--green){% else %}var(--amber){% endif %}">{% if group.covered %}находим{% else %}в разработке{% endif %}</span>
+        {% endif %}
       </label>
     {% endfor %}
   </div>
@@ -141,4 +101,3 @@
 </section>
 {% endblock %}
 {% block script %}<script src="{% static 'landing.js' %}"></script>{% endblock %}
-

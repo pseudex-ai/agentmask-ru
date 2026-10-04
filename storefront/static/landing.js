@@ -817,3 +817,111 @@ document.querySelectorAll("#faq details").forEach((details) => {
   });
 });
 
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * МОБИЛЬНАЯ РЕДАКЦИЯ: ЧТО НА ТЕЛЕФОНЕ СВЁРНУТО, А ЧТО ОСТАВЛЕНО РАЗВЁРНУТЫМ
+ *
+ * ЗАЧЕМ ЭТО, А НЕ ОЧЕРЕДНОЕ СУЖЕНИЕ ПОЛЕЙ. Замерено на 390 px: страница целиком
+ * — 15 113 px, 17.9 экранов, и она весит не шрифтами, а ОБЪЁМОМ: запись экрана
+ * на четыре минуты, шесть метрик, шестнадцать ячеек покрытия, раздел 152-ФЗ,
+ * база знаний, FAQ и пошаговое подключение. На большом экране это архив, по
+ * которому ходят глазами; на телефоне это ровно то, что читатель называет
+ * «перегружено» — потому что путь к кнопке «начать» длиной в восемнадцать
+ * экранов, и на каждом что-то есть.
+ *
+ * ЧТО ОСТАЁТСЯ РАЗВЁРНУТЫМ: первый экран с демонстрацией подмены, доказательство
+ * («99,7%»), ядро покрытия, цены и форма. Всё остальное — под свёрткой с
+ * внятным заголовком: содержание на месте, но его ВИДНО, только если оно нужно.
+ *
+ * ПОЧЕМУ ЭТО НЕ ЛОМАЕТ ДЕСКТОП И НЕ ЛОМАЕТ ПОИСК: свёртка строится скриптом и
+ * только при `max-width: 760px`, поэтому на большом экране в разметке не
+ * появляется ни одного `<details>`, а в HTML для робота контент лежит в
+ * исходном виде — он никуда не девается и при свёртке, `<details>` не скрывает
+ * содержимое от индексации.
+ *
+ * ПОЧЕМУ НЕ В РАЗМЕТКЕ: восемь свёрток руками — это восемь копий одного решения
+ * в шаблоне, и первая же правка секции разойдётся с ними. Здесь список один.
+ */
+const mobileFoldQuery = window.matchMedia("(max-width: 760px)");
+
+/* `move: true` — свёртка ОБОРАЧИВАЕТ сам узел (сетка покрытия, сетка метрик):
+   оставить её внутри сетки значило бы сломать сетку. `move: false` — свёртка
+   встаёт ВНУТРЬ секции на месте её содержимого, поэтому заголовок раздела
+   остаётся на виду и ведёт к содержимому. */
+const mobileFolds = [
+  { sel: "#top .cards--n6", title: "Цифры", move: true },
+  { sel: "#coverage .cards", title: "Все отрасли списком", move: true },
+  { sel: "#video", title: "Запись экрана, 4 минуты", move: false },
+  { sel: "#how", title: "Как это работает", move: false },
+  { sel: "#setup", title: "Подключение, шаг за шагом", move: false },
+  { sel: "#legal", title: "152-ФЗ", move: false },
+  { sel: "#znaniya", title: "База знаний", move: false },
+  { sel: "#faq", title: "Вопросы", move: false }
+];
+
+const builtFolds = [];
+
+function buildFolds() {
+  for (const { sel, title, move } of mobileFolds) {
+    const host = document.querySelector(sel);
+    if (!host || host.closest(".m-fold")) continue;
+    const box = document.createElement("details");
+    box.className = "m-fold";
+    const sum = document.createElement("summary");
+    sum.textContent = title;
+    box.appendChild(sum);
+    if (move) {
+      host.parentNode.insertBefore(box, host);
+      box.appendChild(host);
+    } else {
+      while (host.firstChild) box.appendChild(host.firstChild);
+      host.appendChild(box);
+    }
+    /* РАСКРЫТИЕ ОБЯЗАНО ПОКАЗАТЬ СОДЕРЖИМОЕ, А НЕ ПУСТОЕ МЕСТО. Блоки внутри
+       закрытой свёртки не попадали в кадр, поэтому `IntersectionObserver` не
+       ставил им `is-in` — и человек, раскрыв «Все отрасли списком», видел
+       свёртку и ничего под ней (замерено: `opacity: 0` у содержимого двух
+       свёрток из трёх). Здесь появление ставится явно, при раскрытии: это тот
+       же класс, что ставит наблюдатель, и задержки каскада сохраняются. */
+    box.addEventListener("toggle", () => {
+      if (!box.open) return;
+      box.querySelectorAll("[data-reveal]").forEach((el) => el.classList.add("is-in"));
+      box.querySelectorAll("[data-reveal-stagger]").forEach((group) =>
+        Array.from(group.children).forEach((child) => child.classList.add("is-in")));
+    });
+    builtFolds.push({ host, box, move });
+  }
+}
+
+/* РАЗВОРАЧИВАНИЕ ОБРАТНО, ЕСЛИ ЭКРАН СТАЛ ШИРОКИМ. Планшет, повёрнутый в
+   альбомную, — тот же документ, и оставлять в нём свёртки от узкого вида значит
+   показать большому экрану телефонную редакцию. Узлы возвращаются на свои
+   места, `<details>` исчезает: разметка приходит в исходный вид. */
+function dropFolds() {
+  while (builtFolds.length) {
+    const { host, box, move } = builtFolds.pop();
+    if (move) {
+      box.parentNode.insertBefore(host, box);
+      box.remove();
+    } else {
+      const parent = box.parentNode;
+      while (box.firstChild) {
+        const child = box.firstChild;
+        box.removeChild(child);
+        if (child.nodeName !== "SUMMARY") parent.appendChild(child);
+      }
+      box.remove();
+    }
+  }
+}
+
+function syncFolds() {
+  if (mobileFoldQuery.matches) {
+    if (!builtFolds.length) buildFolds();
+  } else if (builtFolds.length) {
+    dropFolds();
+  }
+}
+
+syncFolds();
+mobileFoldQuery.addEventListener("change", syncFolds);

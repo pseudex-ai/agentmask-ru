@@ -160,6 +160,32 @@ def main() -> int:
 
 
 def run_checks(client, admin_url: str, public_url: str) -> None:
+
+    # СПРАВОЧНИК ТИПОВ ОБЯЗАН НАЗЫВАТЬ КАЖДЫЙ ТИП. Страница заведена ради
+    # поиска: по ней находят ответ «а СНИЛС вы обезличиваете?». Тип, который в
+    # реестре есть, а на странице не назван, — это ровно тот вопрос, на который
+    # сайт не ответит, и заметить пропажу иначе нечем: страница отдаёт 200.
+    # КУКА CSRF СТАВИТСЯ ИМЕННО СТРАНИЦЕЙ С КОНФИГУРАТОРОМ. Здесь она не
+    # проверялась, и декоратор уехал на соседнюю вью при вставке новой функции —
+    # страница отдавала 200, а отправка отметок молча получала 403 (это упало
+    # браузерным тестом, но заметить по странице было нечем).
+    check("страница с конфигуратором ставит csrftoken",
+          "csrftoken" in client.get("/detection").cookies)
+    from storefront_web import detection_types
+    types_page = client.get("/types")
+    check("справочник типов открывается", types_page.status_code == 200,
+          f"/types -> {types_page.status_code}")
+    if types_page.status_code == 200:
+        types_body = types_page.content.decode()
+        lost = [label for label in detection_types.FOUND if label not in types_body]
+        check("справочник называет все типы из реестра", not lost,
+              f"нет на странице: {', '.join(lost[:5])}")
+    _static = Path(__file__).resolve().parent / "static"
+    for sheet in sorted(_static.glob("*.css")):
+        text = sheet.read_text(encoding="utf-8")
+        opens, closes = text.count("{"), text.count("}")
+        check(f"{sheet.name}: скобки блоков сбалансированы",
+              opens == closes, f"{opens} открытых против {closes} закрытых")
     from accounts.models import Organization
     from billing.models import LicenseKey, Plan, Subscription
     from billing import services
@@ -1126,16 +1152,16 @@ def _check_configurator(client, staff_client, base: str) -> None:
 
     # ОДИН РЕЕСТР НА ДВЕ СТРАНИЦЫ. Сверяется не двумя списками в тесте, а тем,
     # что подписи типов со страницы /detection приезжают из того же модуля.
-    absent = [label for label, _example, _holds in detection_types.FOUND
+    absent = [label for label in detection_types.FOUND
               if label not in body]
     check("страница /detection перечисляет реестр целиком", not absent, str(absent))
     check("и обещание «напишите» ведёт туда, где это можно сделать",
           "#configurator" in body and "СВОЁМ ТЕКСТЕ" not in body)
 
     gap = next(group["code"] for group in detection_types.GROUPS
-               if not group.get("found"))
+               if group.get("missing"))
     other = next(group["code"] for group in detection_types.GROUPS
-                 if not group.get("found") and group["code"] != gap)
+                 if group.get("missing") and group["code"] != gap)
 
     def send(sender, codes):
         return sender.post("/demand", data=_json.dumps({"groups": codes}),
@@ -1214,9 +1240,11 @@ def _check_configurator(client, staff_client, base: str) -> None:
     # ОГРН/ОГРНИП.
     grouped = {label for group in detection_types.GROUPS
                for label in group.get("found", ())}
-    check("каждый найденный тип попал в группу конфигуратора",
-          grouped == {label for label, _e, _h in detection_types.FOUND},
-          str({label for label, _e, _h in detection_types.FOUND} - grouped))
+    core = set(detection_types.CORE)
+    sector_labels = set(detection_types.FOUND) - core
+    check("каждый отраслевой тип попал в группу конфигуратора",
+          grouped == sector_labels,
+          str(sector_labels - grouped))
     # ПРОВЕРЯЕТСЯ ИСХОДНИК ШАБЛОНА, А НЕ ОТРЕНДЕРЕННАЯ СТРАНИЦА: в выводе
     # литерал «18 типов» и вычисленный `{{ found_count }}` неотличимы по
     # построению, пока в реестре ровно восемнадцать. Первая версия этой строки
@@ -1230,7 +1258,8 @@ def _check_configurator(client, staff_client, base: str) -> None:
     check("число типов в шаблонах не литерал, а длина реестра",
           not hardcoded, str(hardcoded))
     check("и страница его действительно печатает",
-          f"{len(detection_types.FOUND)} типов" in body)
+          (f"{len(detection_types.FOUND)} "
+           f"{detection_types.ru_types(len(detection_types.FOUND))}") in body)
 
     # ЭКРАН, РАДИ КОТОРОГО ВСЁ ЭТО ПИШЕТСЯ: очередь работ должна читаться
     # глазами, иначе счётчик существует для себя.
@@ -1402,6 +1431,14 @@ def _check_reconciliation(staff_client, base: str, org) -> None:
     check("имя файла выгрузки не несёт свободной строки",
           org.display_name not in csv_response.headers.get("Content-Disposition", ""),
           csv_response.headers.get("Content-Disposition", ""))
+
+    # СКРИНЯЩИЕ СКОБКИ — ЭТО НЕ СТИЛЬ, А РАБОТОСПОСОБНОСТЬ. Лишняя `}` на верхнем
+    # уровне (нашлась 4 октября в `landing.css`: 256 `{` против 257 `}`) не даёт
+    # ошибки и не видна в браузере — она просто выбрасывает часть файла, и всё,
+    # что ниже неё, перестаёт применяться. Именно так три захода на мобильную
+    # шапку «не срабатывали»: правила были верны и не доезжали. Проверка ловит
+    # ровно этот класс: файл обязан быть сбалансирован, а незакрытый блок —
+    # таким же красным, как разбаланс.
 
 if __name__ == "__main__":
     sys.exit(main())
