@@ -679,3 +679,25 @@ planted-break controls. The collided ids also do not survive in the benchmark
 package's code (`prototype/bench/agentpii5/mock_v6.py`,
 `prototype/bench/agentpii5/test_tools_v6.py` now cite `D-078`); the v6 review
 prose keeps the old ids deliberately, under the map above.
+
+### D-083 · 2026-10-04 · Возраст — ПД по ассоциации с человеком, а не по величине числа
+**Status:** accepted (owner-confirmed; replaces the HIPAA value rule).
+
+**Context:** age was masked by the HIPAA «ages over 89 are identifiers» rule — a NUMBER-rarity heuristic, not a «is this about a person» test. So «зданию 92 года» (a building) was masked and «ему 28 лет» / «Иванов, 28 лет» (a person, plainly marked) passed. Under 152-ФЗ age is personal data by ASSOCIATION with an individual.
+
+**Decision:** age is a CANDIDATE (`quasi` emits any «N лет»/«N года», single digits included), and `context.suppress` decides by association — the SAME signal as the DATE→DOB gate: a dative pronoun/subject directly before («ему/ей/мне», «пациенту/клиенту», «исполнилось» allowed), or any person identifier (NAME, phone, СНИЛС…) within 80 chars. A thing-word directly before («опыт/стаж/гарантия/срок/подписка/аренда») denies it, whole-word (the shared DENY's substring «ту» matched «пациенту»).
+
+**Alternative rejected:** the narrow pronoun regex (a symptom fix) and the HIPAA value threshold (masks buildings, passes people).
+
+**Related:** `prototype/pseudex/quasi.py` (`_AGE_RE`), `prototype/pseudex/context.py` (`_age_is_personal`, `_AGE_PERSON`, `_AGE_DENY`) · D-081 · the DATE→DOB gate
+
+### D-084 · 2026-10-04 · Detection stays PER-MESSAGE; cross-message question→answer is a separate track
+**Status:** accepted (owner-confirmed; deferred, not rejected).
+
+**Context:** the owner asked whether a bare answer in the NEXT message («сколько вам лет?» → «28») could be typed as PII via `conversation_id`. Detection is deliberately STATELESS per message — the gateway masks what the message actually says, which is a fail-closed safety property. The `conversation` scope is used for token LINKAGE (a partial «Ленина 14» resolving to a fuller form said earlier), never for DETECTION.
+
+**Decision:** do NOT add cross-message question→answer detection now. Matching a bare «28» to «сколько вам лет» requires understanding the QUESTION's intent («28» also answers «номер заказа», «сколько стоит»), which is a dialogue-understanding task, not a regex. Doing it crudely would over-mask ordinary numbers. The same-message association gate (D-083) covers the corpus cases (age lives in the same message or in a KV-typed field).
+
+**For later (separate track):** a cross-message intent matcher, measured in isolation against its own over-masking benchmark, after the per-message quality is proven.
+
+**Alternative rejected:** bolting a regex «сколько вам лет» → next-number onto the current per-message detector — a stream of false masks without a way to measure them.

@@ -336,7 +336,7 @@ NUMBER spelled without their leading zeros with the real value WHOLE (class Д,
 never `canon[2:12]`), refuses two owners of one number, and
 `digit_fragment_is_ours` names a substitute one digit from what the agent wrote
 without ever resolving it.
-- **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `name_key`, `fold_key`, `place_key`, `token_re`, `create_tables`, `create_indexes`, `zero_grouped`, `Vault` (+ `VAULT_MIGRATIONS`)
+- **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `name_key`, `fold_key`, `place_key`, `token_re`, `create_tables`, `create_indexes`, `zero_grouped`, `seed_token_rng`, `Vault` (+ `VAULT_MIGRATIONS`)
 - **Uses:** assets, credentials, cvc, date_form, fuzzy, morph_names, morph_places, names, normalize, notation, profiling, ru_pii, ru_pii_v6, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, notation, operator, proxy, redact, service, schema (lazy)
 - **Tests:** test_class_g_leaks, vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_digit_truncation, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
 - **Docs:** `docs/tz-vault-encryption.md`, `docs/tz-name-gender-canonical.md`, `docs/how-it-works.md`, `research/2026-09-03-checksum-valid-substitutes.md` · rules: INVARIANTS.md#vault, INVARIANTS.md#collisions, INVARIANTS.md#conversation-scope
