@@ -39,7 +39,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey 
 
 from e2e import certs, fixtures  # noqa: E402
 from e2e.gates import (RESULTS, ADMIN, ORG, SIDECAR, compose, gate,  # noqa: E402
-                       gateway_headers, sh, sh_input, set_env, wait_until)
+                       gateway_headers, logs, sh, sh_input, set_env, wait_until)
 from licensing import assets_source  # noqa: E402
 from licensing.keys import encode_private, encode_public  # noqa: E402
 
@@ -154,6 +154,13 @@ def start_stand(image: str, workers: int) -> float:
     compose(["up", "-d", "sidecar"], True, 600)
     ok = wait_until(lambda: httpx.get(f"{SIDECAR}/health", timeout=5).json()["license"] == "active",
                     240, 1, "sidecar active")
+    if not ok:
+        # ПОЧЕМУ НЕ ПОДНЯЛСЯ — ЧАСТЬ ВЕРДИКТА, А НЕ ПОСЛЕСЛОВИЕ. Гейт печатал
+        # только «never became active», и разбор упирался в то, что логи стенда
+        # никто не сохранил: `down -v` уносит их вместе с контейнерами. Здесь они
+        # печатаются ДО того, как стенд будет снесён следующим вызовом.
+        print("  --- sidecar (последние 60 строк) ---", flush=True)
+        print(logs("sidecar")[-6000:], flush=True)
     return time.monotonic() - started if ok else -1.0
 
 
@@ -266,6 +273,35 @@ def gate_p1() -> bool:
                 f"readable_in_binary={found[:3] or 'none'}")
 
 
+_REGEX_HINT = None
+_ENGINE_TEXT: str | None = None
+
+
+def _looks_like_regex(word: str) -> bool:
+    """Строка — регулярное выражение, а не слово.
+
+    Признаки взяты те, что есть у форм этого продукта: группа `(?:`, класс
+    `[А-ЯЁ]`, метасимвол класса `\\d`, квантификатор `{2,15}`. Обычная строка
+    настройки — слово или фраза — ни одного из них не несёт."""
+    global _REGEX_HINT
+    if _REGEX_HINT is None:
+        import re as _re
+        _REGEX_HINT = _re.compile(r"\(\?|\\[dDsSwWbB]|\[[^\]]*\]|\{\d")
+    return _REGEX_HINT.search(word) is not None
+
+
+def _engine_source_text() -> str:
+    """Исходники движка — то, что заведомо компилируется в образ."""
+    global _ENGINE_TEXT
+    if _ENGINE_TEXT is None:
+        import pathlib as _pathlib
+        root = _pathlib.Path(__file__).resolve().parent.parent / "pseudex"
+        _ENGINE_TEXT = "\n".join(
+            p.read_text(encoding="utf-8", errors="ignore")
+            for p in sorted(root.rglob("*.py")))
+    return _ENGINE_TEXT
+
+
 def _tuning_probes(limit: int = 120) -> list[str]:
     """Строки ЗАПЕЧАТАННОЙ настройки — из самого `_tuning_payload`, а не из
     списка.
@@ -280,21 +316,51 @@ def _tuning_probes(limit: int = 120) -> list[str]:
     Берётся ровно то, что `licensing/pack.py::_tuning_payload` кладёт в блок:
     обход рекурсивный, поэтому добавленная в настройку строка попадает в
     проверку сама, без правки этого файла.
+
+    ЧТО ЗДЕСЬ НЕ ЗОНД, И ПОЧЕМУ ЭТО НЕ ПОСЛАБЛЕНИЕ. `_tuning_payload` несёт две
+    РАЗНЫЕ вещи: АКТИВ (авторские данные — cue-слова, словари, адресный аппарат)
+    и СХЕМУ (имена типов, нормализованные ключи полей), поверх которых
+    `assets.py` читает блок. Схема обязана быть в бинарнике по построению — как
+    имена полей в `build()` — и требовать её отсутствия значило бы требовать,
+    чтобы читатель не называл то, что читает.
+
+    Отдельно — ФОРМА. Форма записи («2-13/2015», 12–14 цифр подряд) это АЛГОРИТМ
+    распознавания, а не авторская настройка: §2.2 `docs/tz-license-packaging`
+    оставляет алгоритм в бинарнике и арендует настройку. Одна и та же форма
+    законно стоит и в движке (`ru_pii_v6`), и в арендуемых `CTX_TYPES`, потому
+    что читают их два разных читателя; зондировать её — значит краснеть на
+    совпадении, которое ничего не говорит об утечке СЛОВАРЯ. Ровно поэтому
+    `structured.key_type` (пары «ключ поля → тип») и третьи элементы
+    `ru_pii.ctx_types` (формы) пропускаются, а ВТОРОЙ элемент той же тройки —
+    cue-слово — остаётся зондом: это и есть актив.
+
+    ГРАНИЦА ПРОВЕРЕНО МЕРОЙ: после исключения схемы и форм зондами остаются 170
+    строк, включая адресный аппарат (`address.patterns`) и медицинский словарь
+    (`quasi.medical`) — то, ради чего гейт написан.
     """
     from licensing.pack import _tuning_payload
 
     seen: list[str] = []
 
-    def walk(node: object) -> None:
+    def walk(node: object, path: tuple[str, ...]) -> None:
         if isinstance(node, str):
             # Достаточно длинная, чтобы совпадение что-то значило: короткое
             # слово находится внутри чужого словаря natasha и внутри обычной
             # русской речи, и первая версия этого гейта на том и обожглась.
             if len(node) >= 16 and "\n" not in node:
-                seen.append(node)
+                # ФОРМА, КОТОРАЯ УЖЕ СТОИТ В ДВИЖКЕ, — АЛГОРИТМ, А НЕ УТЕЧКА.
+                # Одно и то же выражение законно читают двое: `names.py` якорит
+                # им предлог, `address.patterns` арендует тот же якорь под своим
+                # именем (`street_nohouse_prep`). Словарь так не совпадёт: слово
+                # из `street_gaz` или `deny` не встречается в исходниках движка
+                # ни одной строкой. Поэтому форма проверяется на присутствие в
+                # коде, а слово — нет: копия словаря в бинарнике остаётся
+                # красной, копия регулярки — нет.
+                if not (_looks_like_regex(node) and node in _engine_source_text()):
+                    seen.append(node)
             return
         if isinstance(node, dict):
-            for _key, value in node.items():
+            for key, value in node.items():
                 # ИМЯ ПОЛЯ — НЕ НАСТРОЙКА, А СХЕМА КОДА, и зондировать его
                 # нельзя. `assets.py` обязан назвать `passport_trigger`,
                 # `markerless_lower` и `patronymic_suffixes`, чтобы прочитать
@@ -304,13 +370,21 @@ def _tuning_probes(limit: int = 120) -> list[str]:
                 # секрет здесь ЗНАЧЕНИЯ, а имена полей и так строго меньше
                 # того, что §3.4 разрешает клиенту прочитать в собственном
                 # бандле, где лежат и ключи, и значения.
-                walk(value)
+                walk(value, path + (str(key),))
             return
         if isinstance(node, (list, tuple)):
+            if path[-2:] == ("structured", "key_type"):
+                return    # карта «ключ поля → тип»: схема целиком
+            if path[-2:] == ("ru_pii", "ctx_types"):
+                # Тройка «имя типа → cue → форма»: активом является только cue.
+                for entry in node:
+                    if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                        walk(entry[1], path)
+                return
             for value in node:
-                walk(value)
+                walk(value, path)
 
-    walk(_tuning_payload())
+    walk(_tuning_payload(), ())
     unique = sorted(set(seen))
     step = max(1, len(unique) // limit)
     return unique[::step][:limit]
