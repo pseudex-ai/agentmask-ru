@@ -5857,8 +5857,16 @@ class Vault:
             street = roles.get("street_name") or ""
             house = roles.get("house") or ""
             if street and not shape.get("generic"):
-                gender = str(shape.get("gender") or "femn")
-                projected = _compose_head(morph_places.agree_with_generic(street, gender), "улица")
+                # Keep the FULL token's own type AND its already-agreed street
+                # name («переулок Жасминовый», not a hardcoded «улица»): the short
+                # mention named no type, so the row it links to is the only
+                # witness. Re-agreeing with the SHORT mention's inferred gender
+                # turned a masculine «переулок Жасминовый» into «Жасминовая»
+                # (long_order-042). The street name from `split_roles` is already
+                # gendered for its type; the downstream form-composition inflects
+                # the CASE.
+                generic = morph_places.generic_full(roles.get("street_type") or "улица")
+                projected = _compose_head(street, generic)
                 if house:
                     projected = f"{projected} {house}"
         return projected, full
@@ -6024,15 +6032,17 @@ class Vault:
             # mismatch. `core_phrase` strips EVERY mutable part, not just the flat.
             derived = morph_places.core_phrase(derived)
         # The full token carries ITS generic word («ул.» abbreviation) and its
-        # own case; a short oblique mention «на Тверской 7» must get the DEFAULT
-        # «улица» in full form so the downstream form-composition inflects it to
-        # «улицы», not read the abbreviation as nominative (test_hard_cases).
+        # own case; a short oblique mention «на Тверской 7» must get the generic
+        # in FULL form so the downstream form-composition inflects it («улицы»),
+        # not read the abbreviation as nominative (test_hard_cases). Keep the
+        # full token's own type («переулок») — a hardcoded «улица» wrote the
+        # wrong kind (long_order-042).
         roles = morph_places.split_roles(derived)
         street = roles.get("street_name") or ""
         house = roles.get("house") or ""
         if street:
-            gender = str(shape.get("gender") or "femn")
-            derived = _compose_head(morph_places.agree_with_generic(street, gender), "улица")
+            generic = morph_places.generic_full(roles.get("street_type") or "улица")
+            derived = _compose_head(street, generic)
             if house:
                 derived = f"{derived} {house}"
         # A projection identical to the full token is not a projection: the

@@ -478,6 +478,7 @@ _SLOT_ALIASES: dict[str, str] = {
     "дом": "", "дома": "", "д": "", "владение": "", "вл": "",
     "квартира": "кв", "кв": "кв", "офис": "кв", "оф": "кв",
     "помещение": "кв", "пом": "кв", "комната": "кв", "комн": "кв",
+    "кабинет": "кв", "каб": "кв",
     # NO BARE «к» AND NO BARE «с». Both are prepositions before they are
     # «корпус» and «строение», and aliasing them turned «с Ленинского
     # проспекта» into a key that began with a building section.
@@ -1110,7 +1111,7 @@ def _fold_cardinals(tokens: list[str]) -> list[str]:
 
 _FLAT_TAIL = re.compile(
     r"(?i)[\s,]*(?:\b|(?<=\d))(?:кв|квартир\w*|оф|офис\w*|пом|помещени\w*|комн\w*"
-    r"|под[ъь]езд\w*|эт|этаж\w*)\.?\s*\d+[а-яё]?\s*$")
+    r"|каб|кабинет\w*|под[ъь]езд\w*|эт|этаж\w*)\.?\s*\d+[а-яё]?\s*$")
 
 
 def strip_flat(phrase: str) -> str:
@@ -1436,7 +1437,7 @@ _HOUSE_MARKER_TAIL = re.compile(r"(?i)\b(?:дом|д|влад\w*|вл)\.?[\s,.]*
 # диспетчерской речи рядом с «подъезд 3». Обе формы разбирает `role_spans`
 # ниже; маркер тут тот же, что у `_ADDRESS_FIXED` и `_SIGNATURE_NOISE`.
 _PART_MARKERS: tuple[tuple[str, str], ...] = (
-    ("flat", r"кв|кварт\w*|офис\w*|оф"),
+    ("flat", r"кв|кварт\w*|офис\w*|оф|помещени\w*|пом|комн\w*|кабинет\w*|каб"),
     ("entrance", r"под[ъь]езд\w*|под"),
     ("floor", r"этаж\w*"),
     ("building", r"корп\w*|кор|стр|строен\w*|литер\w*|лит|к(?=\.?\s*\d)|с(?=\.?\s*\d)"),
@@ -2140,7 +2141,8 @@ def in_form_of(value: str, surface: str) -> str:
 
 
 _MARKER_BEFORE = re.compile(
-    r"(?i),?\s*\b(?:кв|кварт\w*|офис\w*|оф|под[ъь]езд\w*|под|этаж\w*"
+    r"(?i),?\s*\b(?:кв|кварт\w*|офис\w*|оф|помещени\w*|пом|комн\w*|кабинет\w*|каб"
+    r"|под[ъь]езд\w*|под|этаж\w*"
     r"|корп\w*|кор|стр|строен\w*|литер\w*|лит|дом|д)\.?\s*$")
 
 
@@ -2164,7 +2166,8 @@ def _splice_parts(text: str, spans: list[tuple[int, int, str]]) -> str:
 
 _CITY_LEAD = re.compile(r"^[А-ЯЁ][а-яё-]+,\s+")
 _TAIL_MARKER = re.compile(
-    r"(?i),?\s*\b(?:кв|кварт\w*|офис\w*|оф|под[ъь]езд\w*|под|этаж\w*)\b")
+    r"(?i),?\s*\b(?:кв|кварт\w*|офис\w*|оф|помещени\w*|пом|комн\w*|кабинет\w*|каб"
+    r"|под[ъь]езд\w*|под|этаж\w*)\b")
 
 
 def reduce_address(phrase: str, keep_city: bool, keep_tail: bool) -> str:
@@ -2212,7 +2215,7 @@ PART_SEPARATOR = "\x1f"
 # диспетчерской речи, и без неё `core_phrase` оставлял бы маркер в ядре.
 _MARKER_AFTER = re.compile(
     r"(?i)^[\s,]*\b(?:под[ъь]езд\w*|под|этаж\w*|эт|корп\w*|кор|стр\w*|строен\w*"
-    r"|литер\w*|лит)\.?")
+    r"|литер\w*|лит|кабинет\w*|каб)\.?")
 
 
 def mutable_parts(phrase: str) -> dict[str, str]:
