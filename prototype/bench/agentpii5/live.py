@@ -23,6 +23,7 @@ Engine-free, like `compare`/`hop-report`: it imports `report` (file reader),
 """
 
 import argparse
+import collections
 import json
 import os
 import threading
@@ -34,6 +35,7 @@ from pathlib import Path
 
 from bench.agentpii5 import causal_hops, metrics, report
 from bench.agentpii5.actual_hops import ActualAggregate, actual_events, aggregate
+from bench.agentpii5.artifact_parity import (DURABLE_WRITE_TOOLS, load_arms)
 from bench.agentpii5.causal_hops import CausalAggregate, causal_events
 from bench.agentpii5.hop_report import HISTORICAL_METRICS
 
@@ -61,6 +63,50 @@ def _rate(hits: int, total: int) -> str:
     if not total:
         return "н/п"
     return f"{hits}/{total} ({100 * hits / total:.2f}%)"
+
+
+def _judge_verdicts(run_dir: Path) -> dict[str, dict[str, object]]:
+    """The deterministic judge's per-case verdict, engine-free.
+
+    `bad` — a fake PII survived in a DURABLE write (note/SMS/order/clinic/payment):
+    persistent harm. `warn` — a fake survived in a read-only call. `diverge` — the
+    I arm did more of an action than BOTH controls (the gateway confused the agent)
+    without a leak. Anything else is `good`. Reads the arms files directly, so it
+    never touches the engine and can run while triples are still landing.
+    """
+    arms = load_arms(run_dir)
+    out: dict[str, dict[str, object]] = {}
+    for (case_id, arm), d in arms.items():
+        if arm != "I":
+            continue
+        leaks: list[str] = []
+        for call in d.get("calls", []):
+            residual = call.get("residual") or {}
+            for values in residual.values():
+                for value in values or []:
+                    if str(value).strip() and not str(value).isdigit():
+                        leaks.append(f"{call['name']}:{str(value)[:32]}")
+        durable = any(
+            call.get("residual") and call["name"] in DURABLE_WRITE_TOOLS
+            for call in d.get("calls", []))
+        verdict = "bad" if durable else ("warn" if leaks else "good")
+        out[case_id] = {"verdict": verdict, "leaks": leaks[:4]}
+    # behavioural parity: an I arm that acted MORE than both controls.
+    for case_id in out:
+        i = arms.get((case_id, "I"))
+        c = arms.get((case_id, "C"))
+        c2 = arms.get((case_id, "C2"))
+        if not (i and c and c2):
+            continue
+        ic = collections.Counter(x["name"] for x in i.get("calls", []))
+        cc = collections.Counter(x["name"] for x in c.get("calls", []))
+        c2c = collections.Counter(x["name"] for x in c2.get("calls", []))
+        extra = [tool for tool in ic if ic[tool] > max(cc.get(tool, 0), c2c.get(tool, 0))]
+        if extra and out[case_id]["verdict"] == "good":
+            out[case_id]["verdict"] = "diverge"
+        if extra:
+            out[case_id]["extra"] = [(tool, ic[tool], cc.get(tool, 0), c2c.get(tool, 0)) for tool in extra[:4]]
+    return out
 
 
 def live_snapshot(run_dir: Path) -> dict[str, object]:
@@ -130,6 +176,7 @@ def live_snapshot(run_dir: Path) -> dict[str, object]:
         "actual": asdict(actual),
         "causal": asdict(causal),
         "causal_render": causal_render,
+        "verdicts": _judge_verdicts(run_dir),
     }
 
 
@@ -432,6 +479,32 @@ def _render_main(snapshot: dict[str, object]) -> str:
     if causal:
         out.append('<section><h2>Actual causal<span class="sub">записанная хронология, M03</span></h2>')
         out.append('<pre class="causal">' + "\n".join(str(one) for one in causal) + '</pre></section>')
+
+    verdicts = snapshot.get("verdicts") or {}
+    if isinstance(verdicts, dict) and verdicts:
+        order = {"bad": 0, "warn": 1, "diverge": 2, "good": 3}
+        rows = sorted(verdicts.items(), key=lambda kv: (order.get(str(kv[1].get("verdict")), 9), str(kv[0])))
+        label = {"bad": "ПЛОХО · утечка", "warn": "фейк в чтении", "diverge": "лишний шаг", "good": "хорошо"}
+        out.append('<section><h2>Вердикт судьи по кейсам'
+                   '<span class="sub">детерминированный судья: фейк дошёл до инструмента / агент сделал лишнее</span></h2>')
+        out.append('<table class="grid"><thead><tr><th>Кейс</th><th>Вердикт</th>'
+                   '<th>Что</th></tr></thead><tbody>')
+        for case_id, v in rows:
+            verdict = str(v.get("verdict") or "good")
+            detail = ""
+            leaks = v.get("leaks") or []
+            if leaks:
+                detail = " · ".join(str(x) for x in leaks)
+            extra = v.get("extra") or []
+            if extra:
+                detail += (" · " if detail else "") + "лишнее: " + ", ".join(
+                    f"{t} I={a}/C={b}/C2={c}" for t, a, b, c in extra)
+            if not detail:
+                detail = "—"
+            out.append(f'<tr><td class="name">{case_id}</td>'
+                       f'<td><span class="badge {verdict}">{label.get(verdict, verdict)}</span></td>'
+                       f'<td class="name mut">{detail}</td></tr>')
+        out.append('</tbody></table></section>')
     return "\n".join(out)
 
 
@@ -471,6 +544,11 @@ WEB_SHELL: str = """<!doctype html><html lang="ru"><head><meta charset="utf-8">
   .rate{font-weight:600} .frac{color:var(--mut);margin-left:6px;font-size:11px}
   .mut{color:var(--mut)} .up{color:var(--up);font-weight:600} .dn{color:var(--dn);font-weight:600}
   .num{font-variant-numeric:tabular-nums}
+  .badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600}
+  .badge.good{background:rgba(63,185,80,.15);color:var(--up)}
+  .badge.bad{background:rgba(248,81,73,.15);color:var(--dn)}
+  .badge.warn{background:rgba(210,153,34,.15);color:#d29922}
+  .badge.diverge{background:rgba(219,109,40,.15);color:#db6d28}
   .wait{padding:40px 0;color:var(--mut)}
   pre.causal{background:var(--panel);border:1px solid var(--line);border-radius:8px;
              padding:12px 14px;overflow:auto;font:11.5px/1.45 ui-monospace,Menlo,monospace;
@@ -610,6 +688,14 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8787,
                         help="порт для --web (по умолчанию 8787)")
     args = parser.parse_args()
+
+    # A v6 run names v6 tools (`e_ticket_issue`, …) that the v4 REGISTRY the
+    # metrics reader looks up does not know. Widen it the same way the harness
+    # does, lazily, so a v5 run never pays the v6 import. Engine-free: mock_v6 /
+    # tools_v6 import no pseudex.
+    from bench.agentpii4.tools import REGISTRY as _v4_registry
+    from bench.agentpii5.mock_v6 import V6_SPECS
+    _v4_registry.update({name: spec.base for name, spec in V6_SPECS.items()})
 
     global COMPARE_RUN, BASELINE_INDEX, BASELINE_AUDIT
     COMPARE_RUN = args.compare_run.resolve() if args.compare_run is not None else None
