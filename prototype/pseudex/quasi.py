@@ -144,6 +144,12 @@ def detect_quasi(text: str) -> list[Span]:
     for match in _YEAR_RE.finditer(text):
         if _YEAR_TAIL_OF_DATE.search(text[max(0, match.start() - 6):match.start()]):
             continue
+        # A year that HEADS a full ISO date («2026-09-02») is a slot/operational
+        # date, handled by `_NUM_DATE_RE` (and its birth gate); masking only the
+        # leading year left a half-masked slot and the model booked off a fake
+        # year. «…родился 21.09.1955, слот 2026-09-02» must not yield «2026».
+        if re.match(r"-\d{2}-\d{2}(?!\d)", text[match.end():match.end() + 6]):
+            continue
         window = low[max(0, match.start() - 25): match.end() + 25]
         if any(ctx in window for ctx in quasi.birth_ctx):
             spans.append(Span(match.start(), match.end(), "DOB", match.group()))

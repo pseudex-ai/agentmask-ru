@@ -1129,6 +1129,12 @@ DENY: tuple[str, ...] = (
     # happened to share a sentence with the customer it belongs to.
     "наряд", "договор", "акт", "копия", "справк", "заявк", "обращени", "отчёт",
     "отчет", "квитанц", "смет", "приказ", "протокол",
+    # OPERATIONAL slots next to the SUBJECT — a bare date beside the patient's
+    # name is their appointment, not their date of birth (152-ФЗ: a date alone
+    # identifies nobody). «…родился 21.09.1955, слот 2026-09-02» was retyped DATE
+    # -> DOB by the 80-char association gate and the model booked March instead
+    # of September (clinic run). «слот»/«приём»/«запись» govern the date directly.
+    "слот", "приём", "прием", "запись", "расписан",
 )
 # Words that, near a passport-shaped number, mean it really is a passport. The
 # type has no checksum, so context is the only evidence there is.

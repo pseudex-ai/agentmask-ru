@@ -252,6 +252,17 @@ def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
     if ("http" in prefix or "www." in prefix) and " " not in prefix[-30:]:
         return False
     quasi = ASSETS.get().quasi
+    # A document/operational word DIRECTLY before the date wins over EVERYTHING
+    # else, including a birth cue earlier in the sentence. «…родился 21.09.1955,
+    # слот 2026-09-02» carries both: the slot date is not the owner's birthday,
+    # and «родился» is only nearby because the sentence is about him. Association
+    # alone masked every one of these — 172 of 1296 negatives on AgentPII-RU,
+    # all of this exact shape. The window is SHORT and looks only backwards, for
+    # the same reason the phone cue window is tight: adjacency is evidence,
+    # proximity is not.
+    lead = text[max(0, span.start - 26): span.start].lower()
+    if any(word in lead for word in ASSETS.get().context.deny):
+        return False
     # THE CUE MUST BE IN THE SAME SENTENCE. A host's own instruction says «…пол
     # пациента вычисли сам из даты рождения и имени. Сегодня 2026-09-02.»: the
     # cue belongs to the instruction and the date is TODAY. Masked, it moved the
@@ -262,18 +273,6 @@ def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
     window = quasi_mod.sentence_window(text, span.start, span.end, 60, 60)
     if any(cue in window for cue in quasi.birth_ctx):
         return True
-    # A document word DIRECTLY before the date wins over a person elsewhere in
-    # the sentence. «Запишите на сервис автомобиль А123ВС77, владелец Иванов
-    # Пётр, телефон +7…, заказ-наряд от 10.06.2025» carries both: the naryad's
-    # date is not the owner's birthday, and the owner is only nearby because the
-    # sentence is about him. Association alone masked every one of these —
-    # 172 of 1296 negatives on AgentPII-RU, all of this exact shape.
-    #
-    # The window is SHORT and looks only backwards, for the same reason the phone
-    # cue window is tight: adjacency is evidence, proximity is not.
-    lead = text[max(0, span.start - 26): span.start].lower()
-    if any(word in lead for word in ASSETS.get().context.deny):
-        return False
     # ANY personal identifier nearby makes the date theirs — not just a name.
     # The golden set showed why: «Реквизиты: СНИЛС 647-436-713 22, карта 4090…,
     # дата 21.01.1979» names nobody, yet the date is plainly that person's date
