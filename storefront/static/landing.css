@@ -118,7 +118,11 @@ body.v2 details[open] .faq-a { max-height: none; }
    быть не должно: две сетки разного шага на одной странице и давали ту смену
    языка, которую взгляд читал как ошибку. */
 body.v2 .frame      { max-width: 1600px; overflow-x: clip; }
-body.v2 header.top  { padding: 0 36px; height: 72px; background: var(--header-bg);
+/* `min-height`, А НЕ `height`. Высота 72 px была жёсткой, и на телефоне, где ряд
+   ссылок переезжает на вторую строку, он оказывался ВНЕ коробки шапки — вылезал
+   вниз и наезжал на первый блок страницы. Это правило специфичнее `header.top`
+   (0,2,1 против 0,1,1), поэтому мобильное правило в site.css его не перебивало. */
+body.v2 header.top  { padding: 0 36px; min-height: 72px; background: var(--header-bg);
                       backdrop-filter: blur(14px); z-index: 30; }
 body.v2 .brand svg  { width: 24px; height: 24px; }
 body.v2 .brand b    { font-size: 19px; }
@@ -168,6 +172,33 @@ body.v2 .cfg-mark.no  { color: var(--amber); }
   body.v2 header.top,
   body.v2 footer      { padding-left: 20px; padding-right: 20px; }
   body.v2 .frame      { border-left: 0; border-right: 0; }
+}
+
+/* ШАПКА НА ТЕЛЕФОНЕ. Эти строки обязаны жить ЗДЕСЬ, а не в `site.css`: правила
+   шапки витрины заданы через `body.v2 header.top` (0,2,1) и специфичнее общих
+   (0,1,1), поэтому из `site.css` мобильные правила шапки не доходили вовсе —
+   ни высота, ни перенос строки.
+
+   ДВЕ СТРОКИ, И ШАПКА НЕ ЛИПНЕТ. В одну строку не встают ни знак, ни ряд ссылок,
+   ни три кнопки: на 390 px это 112 + 198 px без навигации. Ссылки убирать
+   нельзя — до этого с телефона нечем было попасть на другую страницу. Поэтому
+   ссылки переезжают на вторую строку, а `position: static` снимает липкость:
+   105 px липкой шапки на 844-px экране — это восьмая часть вьюпорта, отданная
+   под то, что человек уже прочитал. */
+@media (max-width: 760px) {
+  body.v2 header.top { height: auto; min-height: 0; padding: 10px 20px 0;
+                       flex-wrap: wrap; position: static; }
+  body.v2 header.top nav { flex: 1 1 100%; width: 100%; }
+}
+
+/* ПАНЕЛЬ ДЕМО: СЛУЖЕБНАЯ СТРОКА ВЛЕЗАЕТ В ДВЕ. Заголовок «один заказ, целиком»
+   и счётчик шага с кнопками делили 352 px и упирались друг в друга без зазора.
+   Пусть переносятся: это подпись, а не содержание диалога. */
+@media (max-width: 760px) {
+  #hero-panel > div:first-child { flex-wrap: wrap; gap: 6px 14px; padding: 8px 14px; }
+  #hero-panel > div:first-child > div:first-child,
+  #hero-phase { font-size: 9.5px; letter-spacing: .14em; }
+  .hero-ctl button { width: 34px; height: 30px; }
 }
 
 /* ── герой: узлы создаёт landing.js, поэтому их оформление живёт здесь ───── */
@@ -566,8 +597,20 @@ body.v2 .cfg-mark.no  { color: var(--amber); }
      тарифы — в 2 843 px: горизонтальная сетка — это способ показать МНОГО
      ЗА ОДИН ВЗГЛЯД, и на телефоне он не перестаёт работать, просто колонок
      две. */
-  .cards--n4, .cards--n6 { grid-template-columns: repeat(2, 1fr); }
-  .cards--n12 { grid-template-columns: repeat(2, 1fr); }
+  /* ДВЕ КОЛОНКИ — ТОЛЬКО ТАМ, ГДЕ ЯЧЕЙКА ЕСТЬ СПИСОК ЧИПОВ.
+     В покрытии и конфигураторе ячейка — набор коротких подписей, и две колонки
+     работают: в одну колонку 16 ячеек давали 3 000 px ленты. В демо ячейка
+     содержит фразу на шестьдесят знаков: в колонке 185 px она рвётся на четыре
+     строки и читается ХУЖЕ, чем в полную ширину. Одинаковое число колонок для
+     обоих случаев — это и есть «сделать 1:1», только сбоку. */
+  #coverage .cards, #configurator .cards { grid-template-columns: repeat(2, 1fr); }
+
+  /* МЕТРИКИ — ТОЖЕ ЧИПЫ: подпись, число и одна строка пояснения. Шесть метрик в
+     одну колонку — 975 px внутри первого экрана; две колонки делят это надвое,
+     а пояснение ужимается кеглем, а не переносом в четыре строки. */
+  #top .cards--n6 { grid-template-columns: repeat(2, 1fr); }
+  #top .metric-note { font-size: 12px !important; line-height: 1.45 !important; }
+  #top .metric-num { font-size: 26px !important; }
 
   /* КАРТОЧКА НА ТЕЛЕФОНЕ — ЧИТАЕМАЯ, А НЕ ВОЗДУШНАЯ. Поля 22–28 px съедали
      половину ширины колонки под пустоту. */

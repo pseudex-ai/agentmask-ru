@@ -254,8 +254,11 @@ header.top nav a { flex: none; white-space: nowrap; }
    строку целиком и прокручивается там, а шапка перестаёт быть фиксированной
    высоты: 76 px в две строки не влезают, и текст вылезал за границу. */
 @media (max-width: 760px) {
-  header.top { height: auto; min-height: 64px; flex-wrap: wrap;
-               padding: 12px 20px; gap: 10px 12px; }
+  header.top { height: auto; min-height: 0; flex-wrap: wrap;
+               padding: 10px 20px 0; gap: 10px 12px;
+               /* НЕ ЛИПНЕТ: две строки — это 83–111 px, восьмая часть экрана.
+                  Всё, что человек уже прочитал, не должно занимать вьюпорт. */
+               position: static; }
   header.top nav { order: 3; flex: 1 1 100%; width: 100%; gap: 16px;
                    font-size: 11px; padding-bottom: 8px; }
   header.top .brand b { font-size: 18px; }
@@ -743,6 +746,16 @@ html[data-theme-direction="to-dark"]::view-transition-old(root) {
 @media (max-width: 760px) {
   .boundary, .gap-table { overflow-x: auto; }
   .boundary .row, .gap-table .row { min-width: 480px; }
+
+  /* РАМКИ `frame` НА ТЕЛЕФОНЕ СНИМАЮТСЯ. Это 1 px слева и 1 px справа на всю
+     ширину документа: на 320 px они давали 322 и горизонтальную прокрутку.
+     Витрина снимала их через `body.v2`, остальные страницы — нет. */
+  .frame { border-left: 0; border-right: 0;
+           /* И ОБРЕЗКА: `background-position: 36px` с повтором и отрицательные
+              отступы панели демо дают документу лишние 2 px на 320-px экране —
+              этого хватает на горизонтальную прокрутку всей страницы. Витрина
+              обрезала их через `body.v2 .frame`, остальные страницы — нет. */
+           overflow-x: clip; }
 }
 
 /* НУМЕРОВАННЫЙ ПУНКТ — НОМЕР УЗКИМ, ТЕКСТ ПЕРЕНОСИМЫМ. `.numbered` держит
