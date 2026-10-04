@@ -1,0 +1,12 @@
+vault: encrypted with a key generated BESIDE THE DATA (/Users/igor/Projects/Obscura-agent-integrity/prototype/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+tenants OK — issued sk-ps-GoZa-G1p…, resolves to acme; bad key -> None
+STREAM -> 'Перезвоню вам на +7 999 123-45-67 завтра'
+stream detok OK — split token restored to real value
+audit OK — org counts {'EMAIL': 1, 'NAME': 1, 'PHONE': 1}; ag1 counts {'NAME': 1, 'PHONE': 1}; preview '+79991234567' -> '+••••••••••7'
+Traceback (most recent call last):
+  File "/Users/igor/Projects/Obscura-agent-integrity/prototype/test_product.py", line 1162, in <module>
+    test_token_shapes()
+  File "/Users/igor/Projects/Obscura-agent-integrity/prototype/test_product.py", line 85, in test_token_shapes
+    assert token_re().fullmatch(token), f"{entity_type} token {token!r} escapes TOKEN_RE"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: AGE token '' escapes TOKEN_RE

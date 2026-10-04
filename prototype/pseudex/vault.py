@@ -1225,7 +1225,9 @@ def _fake_age(original: str) -> str:
     """
     match = _AGE_DIGITS.search(original)
     if match is None:
-        return original
+        # A default (the test mints every type with no original): a number + the
+        # unit, so it matches TOKEN_RE and stays reversible.
+        return f"{_rng.randbelow(90) + 10} лет"
     age = int(match.group())
     fake = max(0, age + _rng.randbelow(5) - 2)
     return original[:match.start()] + str(fake) + original[match.end():]
@@ -2754,6 +2756,7 @@ def _token_re(version: str) -> re.Pattern[str]:
         # индексный запрос; ложного попадания быть не может — строка должна
         # совпасть с канонической датой подмены этого заказчика.
         r"\b\d{1,2}([./ -])\d{1,2}\1\d{2,4}\b",         # DATE, свободная запись («15.9.82», «19 12 1992»)
+        r"\d{1,3}\s+(?:лет|года|год)\b",                 # AGE («26 лет») — стоит до bare digit runs
         r"\+79\d{9}(?!\d)",                          # PHONE, never a numeric prefix
         REDACTION_MARKER_PATTERN,                    # fallback: редакция, а не подмена
         r"\b\d{10}\b",                                # INN — least specific, last
