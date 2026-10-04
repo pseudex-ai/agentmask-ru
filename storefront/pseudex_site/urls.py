@@ -56,6 +56,7 @@ urlpatterns = [
     path("requisites", views.requisites, name="requisites"),
     path("architecture", views.architecture, name="architecture"),
     path("detection", views.detection, name="detection"),
+    path("types", views.types, name="types"),
     path("how", views.how, name="how"),
     path("faq", views.faq, name="faq"),
     # Раздел «База знаний»: страницы под поисковые запросы, а не под продукт.

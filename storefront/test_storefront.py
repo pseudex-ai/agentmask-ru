@@ -160,6 +160,32 @@ def main() -> int:
 
 
 def run_checks(client, admin_url: str, public_url: str) -> None:
+
+    # СПРАВОЧНИК ТИПОВ ОБЯЗАН НАЗЫВАТЬ КАЖДЫЙ ТИП. Страница заведена ради
+    # поиска: по ней находят ответ «а СНИЛС вы обезличиваете?». Тип, который в
+    # реестре есть, а на странице не назван, — это ровно тот вопрос, на который
+    # сайт не ответит, и заметить пропажу иначе нечем: страница отдаёт 200.
+    # КУКА CSRF СТАВИТСЯ ИМЕННО СТРАНИЦЕЙ С КОНФИГУРАТОРОМ. Здесь она не
+    # проверялась, и декоратор уехал на соседнюю вью при вставке новой функции —
+    # страница отдавала 200, а отправка отметок молча получала 403 (это упало
+    # браузерным тестом, но заметить по странице было нечем).
+    check("страница с конфигуратором ставит csrftoken",
+          "csrftoken" in client.get("/detection").cookies)
+    from storefront_web import detection_types
+    types_page = client.get("/types")
+    check("справочник типов открывается", types_page.status_code == 200,
+          f"/types -> {types_page.status_code}")
+    if types_page.status_code == 200:
+        types_body = types_page.content.decode()
+        lost = [label for label in detection_types.FOUND if label not in types_body]
+        check("справочник называет все типы из реестра", not lost,
+              f"нет на странице: {', '.join(lost[:5])}")
+    _static = Path(__file__).resolve().parent / "static"
+    for sheet in sorted(_static.glob("*.css")):
+        text = sheet.read_text(encoding="utf-8")
+        opens, closes = text.count("{"), text.count("}")
+        check(f"{sheet.name}: скобки блоков сбалансированы",
+              opens == closes, f"{opens} открытых против {closes} закрытых")
     from accounts.models import Organization
     from billing.models import LicenseKey, Plan, Subscription
     from billing import services
@@ -1413,12 +1439,6 @@ def _check_reconciliation(staff_client, base: str, org) -> None:
     # шапку «не срабатывали»: правила были верны и не доезжали. Проверка ловит
     # ровно этот класс: файл обязан быть сбалансирован, а незакрытый блок —
     # таким же красным, как разбаланс.
-    _static = Path(__file__).resolve().parent / "static"
-    for sheet in sorted(_static.glob("*.css")):
-        text = sheet.read_text(encoding="utf-8")
-        opens, closes = text.count("{"), text.count("}")
-        check(f"{sheet.name}: скобки блоков сбалансированы",
-              opens == closes, f"{opens} открытых против {closes} закрытых")
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}{{ page_title }}{% endblock %}
+{% comment %}СПРАВОЧНИК ТИПОВ — ОТДЕЛЬНО ОТ «ЧТО МЫ НАХОДИМ». На той странице список
+   ведёт к конфигуратору и отвечает «чего у вас нет»; здесь он разложен как
+   справочник, куда приходят с вопросом «а СНИЛС вы обезличиваете?». Второй
+   экземпляр списка не заводится: и ядро, и отрасли приезжают из реестра
+   типов, поэтому страница не может разойтись с конфигуратором.{% endcomment %}
+{% block head %}<link rel="stylesheet" href="{% static 'landing.css' %}">{% endblock %}
+{% block content %}
+<section>
+  <div class="eyebrow"><i></i><span>СПРАВОЧНИК</span></div>
+  <h1 class="hero" style="font-size:clamp(30px,4.5vw,52px)">{{ total }} {{ total_word }} персональных данных</h1>
+  <p class="lede" style="margin-top:24px">Список целиком: пять типов, которые движок находит в любой переписке, и пятнадцать отраслей сверх них.</p>
+</section>
+
+<section id="coverage">
+  <div class="sec-head">
+    <h2>Ядро</h2>
+    <div class="sec-meta">В КАЖДОЙ ПЕРЕПИСКЕ</div>
+  </div>
+  {% comment %}БЕЗ СЕТКИ: у ядра на этой странице одна ячейка, и `.cards--n4`
+     отдавал ей четверть ширины, оставляя справа пустую панель в три четверти —
+     читалось как незагрузившийся блок. Сетка нужна там, где ячеек много.{% endcomment %}
+  <div style="border:1px solid var(--line-3);margin-top:28px">
+    <div style="padding:22px 24px;box-shadow:inset 0 0 0 1px var(--accent)">
+      <div style="font-size:14.5px;font-weight:650;color:var(--text-2);letter-spacing:-.01em;margin-bottom:14px">В любой переписке</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        {% for t in core %}<span style="font-size:12.5px;color:var(--text-2);border:1px solid var(--line);padding:3px 9px;border-radius:2px">{{ t.label }}</span>{% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="industries">
+  <div class="sec-head">
+    <h2>По отраслям</h2>
+    <div class="sec-meta">{{ industries|length }} ОТРАСЛЕЙ</div>
+  </div>
+
+  {% comment %}ОДИН БЛОК НА ОТРАСЛЬ, СЛЕВА НАЗВАНИЕ, СПРАВА СПИСОК. Строка о
+     практике стоит здесь не для красоты: по ней человек узнаёт свою отрасль, а
+     страница получает слова, которыми её ищут.{% endcomment %}
+  {% for ind in industries %}
+  <div class="rows" style="margin-top:44px" id="ind-{{ ind.code }}">
+    <div class="sec-meta">{{ ind.label }}</div>
+    <div>
+      <p style="margin:0 0 18px;font-size:15px;line-height:1.6;color:var(--dim);max-width:62ch">{{ ind.gloss }}</p>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        {% for t in ind.found %}<span style="font-size:12.5px;color:var(--text-3);border:1px solid var(--line);padding:3px 9px;border-radius:2px">{{ t.label }}</span>{% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+  <div style="margin-top:56px;display:flex;gap:12px;flex-wrap:wrap">
+    <a class="btn accent lg" href="/detection">ЧЕГО НЕ НАХОДИМ</a>
+    <a class="btn lg" href="/#start">НАЧАТЬ ЗА 15 МИНУТ</a>
+  </div>
+</section>
+{% endblock %}
+{% block script %}{% endblock %}
