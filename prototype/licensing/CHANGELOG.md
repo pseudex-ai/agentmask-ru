@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.25](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.24...platform/v0.3.25) (2026-10-04)
+
+
+### Исправления
+
+* **agent-pii:** repair agent-hop integrity — address/name/datetype/harness + objective judge ([a4e3ca3](https://github.com/Isk4R1oT/Obscura/commit/a4e3ca376e09ccd964539e0660d8c88c1302be3c))
+* **agent-pii:** одна сущность — один фейк + дата/возраст + судьи + v6 ([334a89d](https://github.com/Isk4R1oT/Obscura/commit/334a89d879c2034e6c890ab8bab2d03bcaa93bc4))
+* **agent-pii:** одна сущность — один фейк + дата/возраст + судьи + v6 ([334a89d](https://github.com/Isk4R1oT/Obscura/commit/334a89d879c2034e6c890ab8bab2d03bcaa93bc4))
+* **detect:** an operational slot date is not a date of birth (152-ФЗ) ([7a7057f](https://github.com/Isk4R1oT/Obscura/commit/7a7057f1b08c85dbf31994356bb5dbfd4f30672b))
+
 ## [0.3.24](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.23...platform/v0.3.24) (2026-10-03)
 
 
