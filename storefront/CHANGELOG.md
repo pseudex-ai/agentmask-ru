@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.3.25](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.24...platform/v0.3.25) (2026-10-04)
+
+
+### Новое
+
+* **storefront:** /types — справочник всех 61 типа, и фраза про «мы одни такие» ([4c080a1](https://github.com/Isk4R1oT/Obscura/commit/4c080a11912802f0feec8dfaf941a7e1bde55fad))
+* **storefront:** мобильная редакция — второстепенное свёрнуто, путь к кнопке открыт ([3371abe](https://github.com/Isk4R1oT/Obscura/commit/3371abef99bf80cbf072e4a17f23c83004923570))
+* **storefront:** покрытие по 15 отраслям вместо 18 типов ([9243fa6](https://github.com/Isk4R1oT/Obscura/commit/9243fa6ce052745eeb160ab4d5278fdf6893f351))
+* **storefront:** покрытие по 15 отраслям, ядро первым блоком, мобильная композиция ([98d332a](https://github.com/Isk4R1oT/Obscura/commit/98d332aa61bdb0cf34377d612fc4ecc5d1e0041f))
+* **storefront:** разгружен первый экран + мобильный адаптив ([b91628d](https://github.com/Isk4R1oT/Obscura/commit/b91628dc9ad13548ca907127c1391a5d62ad3c26))
+
+
+### Исправления
+
+* **storefront:** «61 тип», и убраны два абзаца, пересказывавшие собственный заголовок ([2182a27](https://github.com/Isk4R1oT/Obscura/commit/2182a277dd8dc6a9e6f7298bf38f97e2ed710ef6))
+* **storefront:** «мы единственные» — сказано прямо, а не намёком ([becd00d](https://github.com/Isk4R1oT/Obscura/commit/becd00d83560104691bf58675b22c4407d4ae286))
+* **storefront:** «мы одни такие» без неправды про «нет решения» ([6410527](https://github.com/Isk4R1oT/Obscura/commit/6410527631bae9248a2bb0623aa104813d936055))
+* **storefront:** «чего не находим» — пункты в узкой колонке сетки ([5b8fcd1](https://github.com/Isk4R1oT/Obscura/commit/5b8fcd13ca22bb96fdb5f6e374dce501836d6600))
+* **storefront:** агент не звонит, и телефон — не десктоп в столбик ([dfcb180](https://github.com/Isk4R1oT/Obscura/commit/dfcb18061d525f6580095badc5836f8f0a4210f8))
+* **storefront:** воздух под двухэтажной шапкой на телефоне ([1bcc5a2](https://github.com/Isk4R1oT/Obscura/commit/1bcc5a22bd5fca68b161552d3dea3cdc82c535f0))
+* **storefront:** проход по тексту — убраны обороты, объясняющие устройство и чужие средства ([7e2dcf1](https://github.com/Isk4R1oT/Obscura/commit/7e2dcf12ea9021f2d09ef9ab9cd35f7999084185))
+* **storefront:** телефон — цели касания и читаемость, а не уменьшенный десктоп ([cc709ef](https://github.com/Isk4R1oT/Obscura/commit/cc709ef9ca305e568e50ac53773e9723f2dea4fe))
+* **storefront:** шапка наезжала на страницу, заголовок был оборван, колонки не те ([fbb11f8](https://github.com/Isk4R1oT/Obscura/commit/fbb11f8e305b69dfb33564b8d1ea2c3c0a17ddf2))
+* **storefront:** ядро — первая ячейка сетки, а не блок над ней ([7d44d6e](https://github.com/Isk4R1oT/Obscura/commit/7d44d6ecef498620a36c2541455cc934d558b426))
+
 ## [0.3.24](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.23...platform/v0.3.24) (2026-10-03)
 
 
