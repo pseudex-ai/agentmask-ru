@@ -236,8 +236,47 @@ header.top nav a { flex: none; white-space: nowrap; }
 }
 @media (max-width: 900px) {
   header.top { gap: 16px; }
-  header.top nav { gap: 16px; overflow-x: auto; scrollbar-width: none; }
+  /* `min-width: 0` ОБЯЗАТЕЛЕН, И БЕЗ НЕГО `overflow-x` НЕ РАБОТАЕТ. Флекс-элемент
+     по умолчанию имеет `min-width: auto`, то есть не сжимается ниже своего
+     содержимого: ряд ссылок не прокручивался, а выдавливал шапку шире вьюпорта —
+     и горизонтальный скролл появлялся у ВСЕЙ страницы (на 375 px замерено 443).
+     `flex: 1 1 auto` отдаёт навигации остаток ширины, и дальше она скроллится. */
+  header.top nav { gap: 16px; overflow-x: auto; scrollbar-width: none;
+                   min-width: 0; flex: 1 1 auto; }
   header.top nav::-webkit-scrollbar { display: none; }
+}
+
+/* ШАПКА НА ТЕЛЕФОНЕ — ДВЕ СТРОКИ, А НЕ СКРЫТАЯ НАВИГАЦИЯ.
+   В одну строку не помещаются ни знак, ни ряд ссылок, ни три кнопки действий:
+   на 375 px это 112 + 198 px без навигации вовсе. Ссылки убирать нельзя — они и
+   так исчезали до ≤900 px, и попасть на другую страницу с телефона было нечем
+   (см. комментарий у `header.top nav`). Поэтому навигация переезжает на вторую
+   строку целиком и прокручивается там, а шапка перестаёт быть фиксированной
+   высоты: 76 px в две строки не влезают, и текст вылезал за границу. */
+@media (max-width: 760px) {
+  header.top { height: auto; min-height: 64px; flex-wrap: wrap;
+               padding: 12px 20px; gap: 10px 12px; }
+  header.top nav { order: 3; flex: 1 1 100%; width: 100%; gap: 16px;
+                   font-size: 11px; padding-bottom: 8px; }
+  header.top .brand b { font-size: 18px; }
+  header.top .head-cta { gap: 8px; margin-left: auto; }
+  header.top .head-cta .btn,
+  header.top .head-cta .theme-toggle { padding: 9px 12px; font-size: 11px; }
+}
+
+/* САМЫЕ УЗКИЕ ЭКРАНЫ (320–420 px): строка «знак + три кнопки» не помещается —
+   на 320 px замерено 341 px, то есть 21 px за вьюпорт и горизонтальный скролл у
+   всей страницы. Ужимается всё, что можно ужать без потери действий: знак и имя
+   остаются (имя — узнаваемость, а не украшение), поля кнопок и трекинг — нет. */
+@media (max-width: 420px) {
+  header.top { padding: 10px 14px; gap: 8px 10px; }
+  header.top .brand { gap: 8px; }
+  header.top .brand b { font-size: 16px; }
+  header.top .head-cta { gap: 6px; }
+  header.top .head-cta .btn,
+  header.top .head-cta .theme-toggle {
+    padding: 8px 10px; font-size: 10.5px; letter-spacing: .08em;
+  }
 }
 header.top nav a { color: var(--dim); }
 header.top nav a:hover { color: var(--text); }
@@ -676,4 +715,43 @@ html[data-theme-direction="to-dark"]::view-transition-old(root) {
 }
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ДВУХКОЛОНОЧНЫЕ СЕТКИ, У КОТОРЫХ КОЛОНКА ШИРЕ ЭКРАНА
+   ═══════════════════════════════════════════════════════════════════════════
+
+   ЗАМЕРЕНО НА 320 px: `.rows` — это «260px + текст» с зазором 56 px, то есть
+   одна левая колонка уже шире вьюпорта; `.split` — `minmax(440px, 1fr)`, и такая
+   колонка не сожмётся НИКОГДА, сколько бы узким ни был экран. Обе дают
+   горизонтальный скролл у всей страницы, а не у себя.
+
+   `!important` здесь потому, что часть таких сеток задана инлайном в разметке:
+   инлайновое значение сильнее селектора, и без пометки правило молча не
+   срабатывает — именно так и остался незакрытым первый заход. */
+@media (max-width: 760px) {
+  .rows { grid-template-columns: minmax(0, 1fr) !important; gap: 0; }
+  .split, .gap-row { grid-template-columns: minmax(0, 1fr) !important; gap: 28px; }
+  .split > * { min-width: 0; }
+}
+
+/* ТАБЛИЦЫ-РЕШЁТКИ НА ТЕЛЕФОНЕ. `.boundary`/`.gap-table` — сетка из трёх колонок
+   с минимумами 120/70/80 px плюс паддинги: уже 270 px, то есть шире 320-px
+   вьюпорта. Разложить их в одну колонку нельзя — заголовки столбцов стоят одной
+   строкой сверху, и без них ячейка теряет, к какому столбцу относится. Поэтому
+   прокручивается САМ блок, а не страница. */
+@media (max-width: 760px) {
+  .boundary, .gap-table { overflow-x: auto; }
+  .boundary .row, .gap-table .row { min-width: 480px; }
+}
+
+/* НУМЕРОВАННЫЙ ПУНКТ — НОМЕР УЗКИМ, ТЕКСТ ПЕРЕНОСИМЫМ. `.numbered` держит
+   колонку номера в 64 px плюс зазор 24 px: на 320-px экране под текст остаётся
+   158 px, и длинное слово (адрес, идентификатор) вылезает за карточку на 58 px —
+   замерено. Номеру хватает 40 px, а тексту нужен `overflow-wrap`, иначе он
+   переносится только по пробелам. */
+@media (max-width: 760px) {
+  .numbered { grid-template-columns: 40px minmax(0, 1fr) !important; gap: 14px; }
+  .numbered > * { min-width: 0; }
+  .numbered h3, .numbered p, .numbered pre { overflow-wrap: anywhere; }
 }

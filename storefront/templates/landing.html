@@ -123,7 +123,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
         <rect x="3" y="11" width="18" height="18" rx="5" fill="none" stroke="var(--accent)" stroke-width="2.4" style="animation:markPulse 5.5s ease-in-out infinite"></rect>
         <rect x="11" y="3" width="18" height="18" rx="5" fill="var(--bg)" stroke="var(--accent)" stroke-width="2.4"></rect>
       </svg>
-      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;color:var(--accent)">ОБЕЗЛИЧИВАНИЕ ПЕРСОНАЛЬНЫХ ДАННЫХ ДЛЯ ИИ-АГЕНТОВ · 152-ФЗ</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.22em;color:var(--accent)">ШЛЮЗ ПЕРСОНАЛЬНЫХ ДАННЫХ ДЛЯ LLM-АГЕНТОВ</span>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:clamp(32px,4vw,64px);align-items:start">
       <div>
@@ -133,12 +133,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
           <a href="#start" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:14px 24px;border:1px solid var(--accent);color:var(--accent-2)" class="hv-btn">НАЧАТЬ ЗА 15 МИНУТ</a>
           <a href="#video" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:14px 24px;border:1px solid var(--line);color:var(--dim)" class="hv-btn-ghost">ПОСМОТРЕТЬ КАК РАБОТАЕТ</a>
         </div>
-        <div style="display:flex;border:1px solid var(--line);max-width:620px;margin-top:22px">
-          <code data-copy="docker run -d -p 8000:8000 -p 127.0.0.1:8081:8081 {{ image }}"
-                style="flex:1;padding:12px 18px;font-size:12.5px;color:var(--text-3);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-family:'JetBrains Mono',monospace"><span style="color:var(--accent)">$</span><span class="caret" aria-hidden="true"></span> docker run -d -p 8000:8000 {{ image }}</code>
-          <button type="button" data-copy-btn style="border:0;border-left:1px solid var(--line);background:transparent;color:var(--dim-2);font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.16em;padding:0 18px;cursor:pointer" class="hv-text">КОПИРОВАТЬ</button>
-        </div>
-        <div style="margin-top:16px;font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--dim-3);letter-spacing:.04em;line-height:1.9">{{ trial_days }} ДНЕЙ ПРОБЫ · КАРТА НЕ НУЖНА · КОНТЕЙНЕР В ВАШЕМ ПЕРИМЕТРЕ · ХОСТИНГ В РФ</div>
+        <div style="margin-top:22px;font-family:'JetBrains Mono',monospace;font-size:12.5px;color:var(--dim-2);letter-spacing:.06em">{{ trial_days }} дней бесплатно · карта не нужна</div>
       </div>
       <div id="hero-panel" style="border:1px solid var(--line);background:var(--panel);min-height:456px;margin-right:-14px;display:flex;flex-direction:column">
         <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 18px;border-bottom:1px solid var(--line-3)">
@@ -157,10 +152,12 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       </div>
     </div>
     <div class="hero-why" style="margin-top:80px;border-top:1px solid var(--line);padding-top:32px;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,340px);gap:clamp(28px,4vw,64px);align-items:start" data-reveal>
+      {% comment %}ОДИН ТЕЗИС, А НЕ ТРИ. Здесь стояла стена из трёх абзацев по 19 px —
+         первый экран читался как манифест, а не как продукт. Тезис про половину
+         задачи остаётся: он единственный, который читатель не выведет сам из
+         карточки справа.{% endcomment %}
       <div style="display:grid;gap:14px">
-        <div style="font-size:19px;line-height:1.6;max-width:54ch;color:var(--text-2)">Чат-боту достаточно спрятать данные. Агенту — нет: инструментам нужны настоящий номер и настоящий адрес.</div>
         <div style="font-size:19px;line-height:1.6;max-width:54ch;color:var(--text);border-left:1px solid var(--accent);padding-left:16px">Маскирование — половина задачи. Вторая — вернуть настоящие значения в вызов инструмента, не сломав работу агента.</div>
-        <div style="font-size:17px;line-height:1.6;max-width:54ch;color:var(--dim)">Мы искали такое решение как покупатели. Не нашли — сделали сами.</div>
       </div>
       {% comment %}
       КАРТОЧКА ЗАНИМАЕТ ПУСТОТУ СМЫСЛОМ, А НЕ ДЕКОРАЦИЕЙ. Здесь было две
