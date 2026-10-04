@@ -12,6 +12,7 @@ from pseudex.fuzzy import within_one_typo
 from pseudex.assets import ASSETS, ContextAssets
 from pseudex import quasi as quasi_mod
 from pseudex.detect import Span
+from pseudex.json_fields import StringLeaf, string_leaves
 
 # The deny list, the phone cues, the region set and the address/place vocabulary
 # are LEASED (pseudex/assets.py). This module holds the rules that read them.
@@ -196,6 +197,38 @@ def _passport_cue_in(window: str, triggers: tuple[str, ...]) -> bool:
     return False
 
 
+_PERSONNEL_HEAD: int = 40
+# Words that introduce the SUBJECT — the person the record is about — not staff.
+# A subject word anywhere in the window before a name beats a role word further
+# back: «врач принял пациента Иванова» — Иванова is the subject even though
+# «врач» sits earlier in the same sentence. Published subject words, kept in the
+# engine like `quasi._PERSON_BEFORE_DATE_RE`, not leased tuning.
+_SUBJECT_CUE = re.compile(
+    r"(?<![а-яёa-z0-9])(?:пациент\w*|клиент\w*|ребён\w*|ребен\w*|"
+    r"получател\w*|заказчик\w*|посетител\w*)(?![а-яёa-z0-9])",
+    re.IGNORECASE)
+
+
+def _name_is_personnel(text: str, span: Span) -> bool:
+    """Whether a NAME is framed as STAFF (врач/специалист/должность), not the subject.
+
+    A role word introducing the name — prose «врач Лапина Вера», or a JSON key
+    `"doctor": {"name": "Лапина Вера"}` a few characters back — demotes it: the
+    person is the one PROVIDING the service, so a date beside them is a meeting
+    or slot date, not their date of birth. Only a role word in the SHORT window
+    before the name counts, matched on whole words («врач» does not match
+    «врачебный»). A subject word in the same window wins over the role word, so a
+    patient named after a doctor is not demoted («врач принял пациента Иванова»).
+    """
+    head = text[max(0, span.start - _PERSONNEL_HEAD): span.start].lower()
+    if _SUBJECT_CUE.search(head):
+        return False
+    for cue in ASSETS.get().context.personnel_cue:
+        if re.search(r"(?<![а-яёa-z0-9])" + re.escape(cue) + r"(?![а-яёa-z0-9])", head):
+            return True
+    return False
+
+
 def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
     """Whether a bare numeric date is a quasi-identifier or just a date.
 
@@ -219,6 +252,17 @@ def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
     if ("http" in prefix or "www." in prefix) and " " not in prefix[-30:]:
         return False
     quasi = ASSETS.get().quasi
+    # A document/operational word DIRECTLY before the date wins over EVERYTHING
+    # else, including a birth cue earlier in the sentence. «…родился 21.09.1955,
+    # слот 2026-09-02» carries both: the slot date is not the owner's birthday,
+    # and «родился» is only nearby because the sentence is about him. Association
+    # alone masked every one of these — 172 of 1296 negatives on AgentPII-RU,
+    # all of this exact shape. The window is SHORT and looks only backwards, for
+    # the same reason the phone cue window is tight: adjacency is evidence,
+    # proximity is not.
+    lead = text[max(0, span.start - 26): span.start].lower()
+    if any(word in lead for word in ASSETS.get().context.deny):
+        return False
     # THE CUE MUST BE IN THE SAME SENTENCE. A host's own instruction says «…пол
     # пациента вычисли сам из даты рождения и имени. Сегодня 2026-09-02.»: the
     # cue belongs to the instruction and the date is TODAY. Masked, it moved the
@@ -229,27 +273,78 @@ def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
     window = quasi_mod.sentence_window(text, span.start, span.end, 60, 60)
     if any(cue in window for cue in quasi.birth_ctx):
         return True
-    # A document word DIRECTLY before the date wins over a person elsewhere in
-    # the sentence. «Запишите на сервис автомобиль А123ВС77, владелец Иванов
-    # Пётр, телефон +7…, заказ-наряд от 10.06.2025» carries both: the naryad's
-    # date is not the owner's birthday, and the owner is only nearby because the
-    # sentence is about him. Association alone masked every one of these —
-    # 172 of 1296 negatives on AgentPII-RU, all of this exact shape.
-    #
-    # The window is SHORT and looks only backwards, for the same reason the phone
-    # cue window is tight: adjacency is evidence, proximity is not.
-    lead = text[max(0, span.start - 26): span.start].lower()
-    if any(word in lead for word in ASSETS.get().context.deny):
-        return False
     # ANY personal identifier nearby makes the date theirs — not just a name.
     # The golden set showed why: «Реквизиты: СНИЛС 647-436-713 22, карта 4090…,
     # дата 21.01.1979» names nobody, yet the date is plainly that person's date
     # of birth. Gating on NAME alone dropped date recall to 48% on exactly those.
     # A document date has no identifier beside it — that is what separates them.
-    return any(other.entity_type in _IDENTIFIES_A_PERSON
-               and other.start < span.end + 80
-               and other.end > span.start - 80
-               for other in spans)
+    #
+    # A NAME is not evidence when it is STAFF: the doctor in a clinic-slot result
+    # sits within 80 characters of every slot's datetime, and reading the doctor's
+    # name as the subject made a meeting date read as a birth date — the slot got
+    # a fake date and the model booked March instead of September (live run).
+    # The subject is named by nothing or by a subject word; a role word demotes.
+    for other in spans:
+        if other.entity_type not in _IDENTIFIES_A_PERSON:
+            continue
+        if not (other.start < span.end + 80 and other.end > span.start - 80):
+            continue
+        if other.entity_type == "NAME" and _name_is_personnel(text, other):
+            continue
+        return True
+    return False
+
+
+# Слова-ВЕЩИ перед числом лет: «стаж 15 лет», «опыт 28 лет», «гарантия 3 года».
+# Целыми словами, в отличие от общего DENY (там «ту» подстрокой бьёт «пациенту»).
+_AGE_DENY = re.compile(
+    r"(?i)(?:^|[^а-яёa-z0-9])(?:опыт\w*|стаж\w*|выслуг\w*|гарант\w*|подписк\w*"
+    r"|аренд\w*|срок\w*|более|менее|спустя|через)\s*$")
+# Сравнительное слово ПОСЛЕ числа: «на 10 лет моложе Зюганова» — это СРАВНЕНИЕ,
+# не возраст. Без него «Зюганова» (имя в 80 знаках) легализует «10 лет» как его
+# возраст (NEREL precision: «10 лет моложе»).
+_AGE_COMPARE_TAIL = re.compile(
+    r"(?i)^\s*(?:моложе|старше|младше|раньше|позже|меньше|больше)\b")
+# Дательный падеж местоимений/субъектов ПЕРЕД числом возраста («ему/ей/мне»,
+# «пациенту/клиенту»); «исполнилось» допущено как мостик.
+_AGE_PERSON = re.compile(
+    r"(?i)(?:^|[^а-яёa-z0-9])(?:ему|ей|мне|тебе|им|нам|пациент\w*|клиент\w*"
+    r"|реб[её]н\w*|посетител\w*|получател\w*|заказчик\w*)(?:\s+исполнил\w+)?\s*$")
+
+
+def _age_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
+    """Whether a bare «N лет» is the subject's age or a thing's («опыт/стаж»).
+
+    Возраст — ПД по ассоциации с человеком (152-ФЗ), а не по величине числа:
+    «ему 28 лет» и «Иванов, 28 лет» — про человека, «зданию 92 года» и
+    «опыт 28 лет» — нет. Тот же сигнал, что и у даты: местоимение/субъект
+    прямо перед числом, либо любой идентификатор человека в окне. Сам возраст
+    свидетельством человека не является (иначе «опыт 28 лет» сам себя бы
+    легализовал).
+    """
+    before = text[max(0, span.start - 24):span.start].lower()
+    # A thing-word directly before («опыт/стаж/гарантия») denies the age even
+    # beside a name: «Иванов, стаж 15 лет» is tenure, not the person's age.
+    # WHOLE-WORD, not the shared DENY's substring list («ту» in «пациенту»).
+    lead = text[max(0, span.start - 26):span.start].lower()
+    if _AGE_DENY.search(lead):
+        return False
+    # A comparative word right AFTER («на 10 лет моложе») is a comparison, not
+    # the person's age — deny before the name association below fires.
+    tail = text[span.end:span.end + 16].lower()
+    if _AGE_COMPARE_TAIL.search(tail):
+        return False
+    if _AGE_PERSON.search(before):
+        return True
+    for other in spans:
+        if other.entity_type not in _IDENTIFIES_A_PERSON or other.entity_type == "AGE":
+            continue
+        if not (other.start < span.end + 80 and other.end > span.start - 80):
+            continue
+        if other.entity_type == "NAME" and _name_is_personnel(text, other):
+            continue
+        return True
+    return False
 
 
 _SENTENCE_SPLIT = re.compile(r"[.!?\n]")
@@ -293,13 +388,71 @@ def _sentence_around(text: str, span: Span) -> str:
     return text[start:end]
 
 
+def _date_in_own_field(text: str, span: Span, spans: list[Span],
+                       leaf: StringLeaf) -> bool:
+    """A JSON date's evidence belongs to its own value or a typed ancestor.
+
+    A patient's name in a SIBLING field cannot make an appointment slot their
+    birthday. Equally, `dob: ["..."]` carries explicit evidence via its path,
+    and a free-text note may carry a birth cue inside its own value.
+    """
+    from pseudex.structured import key_type
+    if any(isinstance(key, str) and key_type(key) == "DOB" for key in leaf.path):
+        return True
+    local = Span(span.start - leaf.start, span.end - leaf.start,
+                 span.entity_type, span.value)
+    local_text = text[leaf.start:leaf.end]
+    # Re-evaluate the original birth recognizer INSIDE this leaf. Its typo,
+    # abbreviation and pronoun evidence is stronger than the generic DATE
+    # association rule and must not be lost by enforcing field isolation.
+    # Reusing it also avoids a second, inevitably drifting birth-cue dialect.
+    if any(birth.entity_type == "DOB" and birth.start <= local.start
+           and local.end <= birth.end for birth in quasi_mod.detect_quasi(local_text)):
+        return True
+    neighbours = [Span(other.start - leaf.start, other.end - leaf.start,
+                       other.entity_type, other.value)
+                  for other in spans
+                  if leaf.start <= other.start and other.end <= leaf.end]
+    return _date_is_personal(local_text, local, neighbours)
+
+
 def suppress(text: str, spans: list[Span]) -> list[Span]:
     context = ASSETS.get().context
     kept: list[Span] = []
+    # This is context attribution AFTER all recognizers ran, never a PII
+    # pre-filter. Parse once per payload, not once per date or adjacent person.
+    leaves = string_leaves(text) if any(s.entity_type in ("DATE", "DOB") for s in spans) else ()
     for span in spans:
+        if span.entity_type in ("DATE", "DOB"):
+            leaf = next((field for field in leaves
+                         if field.start <= span.start and span.end <= field.end), None)
+            if leaf is not None:
+                if not _date_in_own_field(text, span, spans, leaf):
+                    continue
+                if span.entity_type == "DATE":
+                    span = Span(span.start, span.end, "DOB", span.value)
         if span.entity_type == "IP" and _is_version_string(text, span.start, context):
             continue
-        if span.entity_type == "DATE" and not _date_is_personal(text, span, spans):
+        if span.entity_type == "DATE":
+            # A DATE THE DENY LAYER KEEPS IS PERSONAL, AND PERSONAL MEANS DOB.
+            # `_date_is_personal` answers «is this date a person's date or a
+            # document date» — by a birth cue or by association with a subject
+            # identifier — and it is the ONE signal, not a new heuristic. A
+            # personal date kept as `DATE` leaked through the envelope's neutral
+            # echo leg, which excludes `DATE` on purpose (a meeting/invoice date
+            # must stay real): «Реквизиты: СНИЛС …, карта …, дата 21.01.1979»
+            # typed the date `DATE`, so an unbound tool result echoing it reached
+            # the model in the clear. Retyping the kept span to `DOB` makes the
+            # vault mint a DOB fake and the echo leg redact its echo, while the
+            # meeting date — which `_date_is_personal` rejects — still falls into
+            # the `continue` below and stays real. `quasi` already emits `DOB`
+            # for the birth-cue case; a duplicate DOB of the same span is dropped
+            # by overlap resolution, so no new evidence path is opened.
+            if _date_is_personal(text, span, spans):
+                span = Span(span.start, span.end, "DOB", span.value)
+            else:
+                continue
+        if span.entity_type == "AGE" and not _age_is_personal(text, span, spans):
             continue
         if span.entity_type == "PASSPORT" and not _passport_is_evidenced(text, span, context):
             continue

@@ -1,0 +1,4 @@
+summary written: /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/D0/perf-isolated/summary.json
+  frozen inputs consistent: True   meta/raw recompute clean: True
+  FULL: median-across-runs p50=4.7678 p95=17.299 p99=22.1755 ms | p50 spread 4.7585..4.8229 | p95 spread 17.2238..17.3322 | runs=3
+  NER_ONLY: median-across-runs p50=0.642 p95=1.4079 p99=1.5733 ms | p50 spread 0.6205..0.6626 | p95 spread 1.3897..1.4483 | runs=3

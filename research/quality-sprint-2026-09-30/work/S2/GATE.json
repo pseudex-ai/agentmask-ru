@@ -1,0 +1,128 @@
+{
+  "task": "S2",
+  "title": "Semantic PII gap inventory (subject -> attribute), research only",
+  "stage": "ResearchOnly",
+  "gate": "G0 (evidence and gap map for semantic PII)",
+  "gate_meaning": "This gate says the S2 map, episodes, measured current capability and owner forks exist with reproducible evidence. It is NOT a product-quality gate, NOT G3/G7, NOT an implementation approval.",
+  "status": "PASS_RESEARCH_ONLY",
+  "is_product_gate": false,
+  "source_pin": {
+    "evidence_commit": "890c50849a326f882eac336ba4e38c91171de473",
+    "product_source_revision": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "engine_files_verified_against_b0": "7/7",
+    "engine_pin_mismatches": []
+  },
+  "prerequisite_gate": {
+    "task": "B0",
+    "gate": "G1",
+    "status": "PASS",
+    "scope": "local/design only",
+    "production_artifact_gate": "NOT_MEASURED",
+    "review": "work/B0/REVIEW.md durable, read before this task"
+  },
+  "artifacts": [
+    "INPUTS.json",
+    "SPEC.md",
+    "GAP-MATRIX.json",
+    "EPISODES.jsonl",
+    "OWNER-DISPOSITION.md",
+    "DELTA.json",
+    "GATE.json",
+    "probes/semantic_probe.py",
+    "probes/build_inputs.py",
+    "probes/build_matrix.py",
+    "probes/verify_outputs.py",
+    "probes/semantic_probe.json",
+    "logs/semantic_probe.log",
+    "logs/build_inputs.log",
+    "logs/build_matrix.log",
+    "logs/verify_outputs.log",
+    "logs/OUTPUT-HASHES.txt"
+  ],
+  "checks": {
+    "episodes_total": 26,
+    "episodes_semantic_positive": 15,
+    "episodes_existing_capability_control": 4,
+    "episodes_negative": 7,
+    "episodes_with_any_span": 13,
+    "episodes_masked_changed": 13,
+    "roundtrip_identical": "26/26",
+    "semantic_positive_relation_closed": 1,
+    "semantic_positive_relation_disclosed_by_leftover_attribute": 6,
+    "semantic_positive_subject_not_detected": 8,
+    "negative_over_masked": 1,
+    "negative_correctly_untouched": 6,
+    "read_inventory_facts": 7,
+    "owner_forks": 6,
+    "probe_exit": 0,
+    "build_inputs_exit": 0,
+    "build_matrix_exit": 0,
+    "verify_exit": 0
+  },
+  "expected_failing_properties": [
+    {
+      "property": "relation closed for a salary/income positive with a detected subject",
+      "observed_failures": ["SAL-01 (185000 in clear)", "SAL-05 (90000, 210000 in clear)"],
+      "state": "EXPECTED_FAILING_ON_UNCHANGED_ENGINE",
+      "meaning": "Observation on the pinned engine for a future RED; not a suite PASS and not an engine regression introduced here."
+    },
+    {
+      "property": "relation closed for a debt positive with a detected subject",
+      "observed_failures": ["DEB-01 (450000 in clear)"],
+      "state": "EXPECTED_FAILING_ON_UNCHANGED_ENGINE"
+    },
+    {
+      "property": "relation closed for a conviction positive with a detected subject",
+      "observed_failures": ["CON-01 (осуждён and 159 in clear)"],
+      "state": "EXPECTED_FAILING_ON_UNCHANGED_ENGINE"
+    },
+    {
+      "property": "the whole written attribute phrase is replaced, not its stem",
+      "observed_failures": ["DX-01 (сахарный left)", "DX-03 (сахарный left)", "CTL-04 (сахарный left)", "DX-02 (инфекцию left)"],
+      "state": "EXPECTED_FAILING_ON_UNCHANGED_ENGINE"
+    },
+    {
+      "property": "a semantic word without a subject is not masked (association rule)",
+      "observed_failures": ["DX-04 (population statistic masked)"],
+      "state": "EXPECTED_FAILING_ON_UNCHANGED_ENGINE",
+      "note": "This is an over-masking observation, the opposite direction from the others."
+    }
+  ],
+  "known_unknowns": [
+    "Host-side re-association of a leftover attribute with the real subject is not measured.",
+    "MEDICAL gazetteer recall over real Russian medical vocabulary is not measured (4 conditions, 2 lexical negatives).",
+    "Behaviour of these classes under the v6 corpus is out of the S2 scope (V0 task).",
+    "Whether any customer-facing contract promises semantic coverage was not checked."
+  ],
+  "owner_forks": [
+    {"id": "O-SEMANTIC", "status": "OWNER_PENDING", "questions": ["Q-S1", "Q-S2", "Q-S3", "Q-S4", "Q-S5", "Q-S6"],
+     "file": "OWNER-DISPOSITION.md", "implementation_allowed": false}
+  ],
+  "not_claimed": [
+    "all personal-data types of the Russian Federation are covered",
+    "product quality passed or G7 acceptance",
+    "semantic implementation approved or started",
+    "legal compliance or certification",
+    "production artifact verified",
+    "release / merge / deploy",
+    "paid or provider benchmark runs",
+    "holdout or corpus quality measured"
+  ],
+  "allowed_next": [
+    "use S2 map as a Q1 input",
+    "owner answers O-SEMANTIC (Q-S1..Q-S6)",
+    "a future scoped design/RED could be proposed after those answers"
+  ],
+  "blocked_by_this": [
+    "Z1 remains blocked while the semantic gap map is absent (SPRINT-PLAN.md#L167); this task removes that specific absence, nothing more"
+  ],
+  "write_scope": "research/quality-sprint-2026-09-30/work/S2/",
+  "out_of_scope_confirmed": [
+    "no engine/licensing/scorer/benchmark edit",
+    "no git reset/stash/revert, no commit",
+    "no EXECUTION.json or usage-journal write",
+    "no production/provider call",
+    "no install or model download",
+    "no broad secret-path search"
+  ]
+}

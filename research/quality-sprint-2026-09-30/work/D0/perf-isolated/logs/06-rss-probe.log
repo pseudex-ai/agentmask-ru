@@ -1,0 +1,8 @@
+after bundle      cur=210.7 peak=211.3
+after Detector()  cur=433.5 peak=460.5
+after warmup      cur=370.8 peak=461.5
+after  500 calls   cur=276.3 peak=461.5
+after 1000 calls   cur=255.1 peak=461.5
+after 2000 calls   cur=235.3 peak=461.5
++2s settle        cur=165.4 peak=461.5
++7s settle        cur=76.5 peak=461.5

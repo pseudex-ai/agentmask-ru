@@ -34,8 +34,8 @@ from bench.agentpii4.scenarios.common import (  # noqa: F401 - re-exported on pu
     ctx_for, dob, draw, email, full_name_canonical, inn, is_rare_stratum, name,
     noisy_word, opener, order_number, passport, phone, snils, time_of_day)
 from bench.agentpii4.schema import InvalidCase, Locus, Message, PiiItem
-from bench.agentpii5.contracts import (BranchSpec, CaseV5, DocumentSpec, ForcedError, Hop,
-                                       LoopSpec, MemorySpec, PickSpec, RagSpec,
+from bench.agentpii5.contracts import (GENERIC_PIECE_ROLES, BranchSpec, CaseV5, DocumentSpec,
+                                       ForcedError, Hop, LoopSpec, MemorySpec, PickSpec, RagSpec,
                                        ReturnExpectation, hop_owner_of_leaf)
 from bench.agentpii5.contracts import (
     V4_KIND_FOR_BEHAVIOUR as contracts_v4_kind_for_behaviour)
@@ -446,10 +446,20 @@ def arg_hop(item_id: str, index: int, turn: int, tool: str, ordinal: int, path: 
     answers whether the leaf is a plain argument, a template slot a human will
     read, or a summary the agent writes for another agent — the owner decides
     which `form_hOUT` line the hop counts in, and a family that chose it by hand
-    would move hops between lines case by case. `optional` is `not
-    FieldSpec.required` for the same reason: the tool's own schema already says
-    whether a call can legitimately omit the leaf, and a second opinion here
-    would be a second definition of the same fact.
+    would move hops between lines case by case.
+
+    REACHABILITY IS A PROPERTY OF THE CORPUS, NOT OF THE INSTRUMENT (SPIKE-Е,
+    Е-4). `optional` is `(not spec.required) or spec.role in
+    GENERIC_PIECE_ROLES`: the tool's schema says whether a call may omit the
+    leaf, and the PRODUCT decides which leaves it never masks. A city inside an
+    address is one of them (`pseudex/vault.py::_settlement_of` keeps the
+    settlement real — «what the law does not protect stays true»), so
+    `courier_book.address.locality` and `delivery_create_order.to_location.city`
+    are `required=True, role='city'` and a REQUIRED hop there is a promise no
+    correct gateway can keep: it can never become `observed`, and every such
+    leaf read as a miss BY CONSTRUCTION (g07, g01, g03, g04, g14). The
+    alternative — narrowing the headline denominator — is the defect this
+    class exists to avoid.
 
     A path the registry does not know RAISES rather than defaulting to
     `tool_arg`: it is a typo in a family, and a hop on a leaf no call can carry
@@ -462,7 +472,7 @@ def arg_hop(item_id: str, index: int, turn: int, tool: str, ordinal: int, path: 
     return Hop(kind="OUT", owner=hop_owner_of_leaf(tool, path), item_id=item_id,
                hop_index=index, turn=turn, tool_name=tool, call_ordinal=ordinal,
                parallel_group=group, source_hop=source_hop, path=path,
-               optional=not spec.required)
+               optional=(not spec.required) or spec.role in GENERIC_PIECE_ROLES)
 
 
 def answer_hop(item_id: str, index: int, turn: int, source_hop: int, optional: bool) -> Hop:

@@ -1,0 +1,86 @@
+{
+  "task": "S1",
+  "revision": "revision-2",
+  "supersedes": "the STATUS/gate wording of work/S1/GATE.json; the revision-1 file stays authoritative for what it measured",
+  "gate": "G3",
+  "status": "REVISED_NOT_PASS",
+  "full_g3_pass": false,
+  "status_meaning": "Evidence is accepted for the specific probes and predicates listed below. G3 is NOT passed: the disputed choices are mapped to existing decisions rather than approved, and full G3 also requires a reproducible RED with causal mechanism where input/state are restored — which is not met for the unreproduced historical episodes. No full-package PASS may be recorded before independent re-review of these frozen revision-2 artifacts.",
+  "revision_identity": {
+    "product_source": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "git_head": "8a808ca70a13b3b19b28d60c6746c443bec01ea0",
+    "branch": "research/hop-format-audit",
+    "fixture_spec_sha256_revision2": "6178608ff3b2edc0c910edf914e0844cc4b73f2f14615e6f32aceafff8f70e2a",
+    "fixture_spec_sha256_revision1_preserved": "438f318669d66b7bdcacfcec0141646dca5d446878a88a74226ee10f5e444fec"
+  },
+  "commands": [
+    {
+      "command": "PYTHONDONTWRITEBYTECODE=1 prototype/.venv/bin/python work/S1/revision-2/s1_probes_v2.py",
+      "cwd": "prototype",
+      "exit": 4,
+      "expected_red": 4,
+      "what": "11 in-memory probes on the unchanged engine; exit = number of VIOLATED properties"
+    }
+  ],
+  "output_hashes_sha256": {
+    "s1_probes_v2.py": "a36542596a0f4a2f782ad77ff07a1c71a33adc772c7fb784c553cd95bad6cd00",
+    "tmp/probes_v2.stdout": "908d8e13a3a815ce6fa6c8333d6ffd822450ec331bba65d0be423424216c24f6"
+  },
+  "preserved_original_hashes_sha256": {
+    "work/S1/s1_probes.py": "9c36571ae8d2b18b533784e1ae8fec7e0745b47b13bbb7d192f7cd0999b44301",
+    "work/S1/SPEC.md": "ca186727ebd6f9fc51e0ed38b60d4788fb5f699ad1ef213db5d8cd6477406a21",
+    "work/S1/GATE.json": "2ea9dbc345f09a7228850a569cc77740fe046e995e2d30badca75c5a9f756594",
+    "work/S1/OWNER-QUESTIONS.md": "9a28a6c450d2cbeaa405c372c9844392792041b099bf2f058fbeeaef4c424944"
+  },
+  "checks": {
+    "probes": 11,
+    "properties_violated": 4,
+    "violated_probes": ["A2", "B", "C", "D1"],
+    "properties_holding": 5,
+    "other_statuses": {"D2": "NOT_MEASURED", "E2": "CONTRACT_EXPECTED"},
+    "exit_code": 4,
+    "expected_red": 4,
+    "provider_calls": 0,
+    "corpus_cases_run": 0,
+    "product_files_written": 0,
+    "git_mutations": 0,
+    "installs_or_downloads": 0
+  },
+  "evidence_accepted_for": {
+    "A2": "3/3 ISOLATED variants construct the tool-result collision; harms separated (surname in clear, reverse wrong person, given-name merge); indistinguishability NOT claimed",
+    "B": "instrumented recognizer -> suppress -> resolve: NAME candidate is born and then outranked by ADDR at resolve; replication matches public detector output",
+    "C": "nonempty, exactly identified substitutes for full name and lone surname; same real person, different surnames; C2 control holds",
+    "D1": "synthetic invented-prefix mutation is VIOLATED; approved notations keep their form; explicitly separate from archived P4",
+    "P": "clean round trip exact and repeat-stable",
+    "A1": "plain-message foreign-conversation path holds; second-person round trip verified",
+    "A3": "foreign namesake stays masked",
+    "E1": "in-process chunked equality holds for the fixture; historical episode NOT reproduced and NOT explained by transport",
+    "E2": "documented carry contract; not an engine RED",
+    "D2": "not reproduced on 375 checks (NOT_MEASURED for the class)"
+  },
+  "not_measured_for_reproduction": ["D2 recorded rewrite", "historical E1 long_clinic-006 episode"],
+  "not_measured_meaning": "the fixture checks WERE executed; what is missing is the historical vault/provenance state, not the raw text and not the transport",
+  "owner_questions_opened": 0,
+  "decision_coverage": {
+    "O-CORE-S1-1": ["REMAINING-DECISIONS Блок2 Происхождение", "OWNER-DECISIONS Опрос2 Forward collision", "SPRINT-PLAN §7"],
+    "O-CORE-S1-2": ["OWNER-DECISIONS Опрос2 части имени", "wiki INVARIANTS #conversation-scope"],
+    "O-CORE-S1-3": ["REMAINING-DECISIONS Блок2 явная форма агента", "REMAINING-DECISIONS Блок2 непереносимая опечатка", "wiki INVARIANTS #swap"]
+  },
+  "decision_coverage_note": "covered_by_decision_ids constrains the solution; it does not approve a patch. Concrete algorithms still need technical evidence, RED->GREEN, a mutation check and independent review.",
+  "not_claimed": [
+    "full package G3 PASS",
+    "entire quality sprint green",
+    "recall/precision/whole-coverage/PPV targets met",
+    "production behaviour or installed-artifact verification",
+    "original trace causality for N2/N3/P4/D1/D2",
+    "non-PII rewrite class closed",
+    "stream-vs-whole class closed",
+    "any product patch, merge, release or paid benchmark GO"
+  ],
+  "production_artifact_gate": {"status": "NOT_MEASURED", "reason": "inherited from B0; no production access in S1"},
+  "allowed_next": [
+    "independent re-review of the frozen revision-2 artifacts",
+    "K1 design only after M1c and after the needed design decisions are accepted"
+  ],
+  "forbidden_next_without_new_go": ["product patch", "engine/scorer edit", "PR/merge/release", "paid benchmark calls", "production change"]
+}

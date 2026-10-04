@@ -1,0 +1,2 @@
+FAIL test_masked_card_shape_restores_head_and_tail AssertionError ('0864 **** **** 9799', '0864 **** **** 5692')
+Failures: 1 ['test_masked_card_shape_restores_head_and_tail']

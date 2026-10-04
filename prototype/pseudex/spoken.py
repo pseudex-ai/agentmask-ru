@@ -33,6 +33,7 @@ import re
 import time
 
 from pseudex.assets import ASSETS
+from pseudex.agent_form import cased_like
 from pseudex.fuzzy import within_one_typo
 from pseudex.detect import Span
 from pseudex.ru_pii import validate_inn, validate_luhn, validate_snils
@@ -327,6 +328,26 @@ def _ordinal_gen(value: int) -> str:
     return f"{_TENS_CARD[tens]} {_ORDINAL_GEN[unit]}"
 
 
+def _day_ordinal_like(day: int, like: str) -> str:
+    """Preserve the neuter nominative day in dates such as 'fourth of August'.
+
+    Only the ordinal immediately before the month supplies case evidence;
+    the year's genitive ordinal must not override it. Compound days inflect
+    their final word only. This is rendering, never a new date recognizer.
+    """
+    words: list[str] = _WORD_RE.findall(like.lower())
+    month_index: int | None = next(
+        (index for index, word in enumerate(words) if _month_value(word) is not None), None)
+    rendered: str = _ordinal_gen(day)
+    if month_index is None or month_index == 0:
+        return rendered
+    sample: str = words[month_index - 1]
+    if _ordinal_value(sample) is None or not sample.endswith(("ое", "ье", "ее")):
+        return rendered
+    # The soft ordinal is 'третьего' -> 'третье'; hard ordinals use -ое.
+    return rendered[:-2] if rendered.endswith("третьего") else rendered[:-3] + "ое"
+
+
 def date_to_words(canonical: str, like: str) -> str:
     """«dd.mm.yyyy» (or «dd.mm») said the way `like` says its own date: the
     century spelled out when `like` spells it («тысяча девятьсот …»), two
@@ -339,7 +360,7 @@ def date_to_words(canonical: str, like: str) -> str:
     day, month = int(match.group(1)), int(match.group(2))
     if not (1 <= day <= 31 and 1 <= month <= 12):
         return ""
-    words = [_ordinal_gen(day), _MONTH_GEN[month]]
+    words = [_day_ordinal_like(day, like), _MONTH_GEN[month]]
     if match.group(3):
         year = int(match.group(3))
         century, short = divmod(year, 100)
@@ -388,6 +409,152 @@ def run_to_digits(words: list[str]) -> str:
         value, index = _group(words, index)
         out.append(str(value))
     return "".join(out)
+
+
+def _spell_identifier_group(digits: str) -> str:
+    """Spell up to three digits, retaining every leading zero as a digit."""
+    zeroes: int = len(digits) - len(digits.lstrip("0"))
+    words: list[str] = ["ноль"] * zeroes
+    remaining: int = int(digits)
+    for table in (_HUNDREDS, _TEENS, _TENS, _UNITS):
+        if table is _TEENS and remaining >= 20:
+            continue
+        values: list[int] = sorted(set(table.values()), reverse=True)
+        for value in values:
+            if value and remaining >= value:
+                words.append(next(word for word, number in table.items() if number == value))
+                remaining -= value
+                break
+    return " ".join(words)
+
+
+def _rendered_words(target: str, value: int, spoken: list[str]) -> list[str]:
+    """The canonical words one dictated group renders to: the sender's own
+    while the digits are unchanged, the spelled-out target otherwise."""
+    return list(spoken) if target == str(value) else _spell_identifier_group(target).split()
+
+
+def _absorbs(closing: str, opening: str) -> bool:
+    """Whether the greedy parse reads two neighboring groups as ONE number.
+
+    `_group` extends a hundreds word with a teen, a tens or a unit, and a tens
+    word with a unit; a unit, a teen or «ноль» closes a group outright. So an
+    open boundary is exactly a hundreds/tens word before a word it can still
+    take — and it fails SILENTLY: the words stay numerals, only the digits
+    become somebody else's number. This is the one place the grammar is
+    consulted; leaving it to the readback guard alone can see that a layout
+    broke but not which boundary to repair.
+    """
+    if closing in _HUNDREDS:
+        return ((opening in _UNITS and _UNITS[opening] != 0)
+                or opening in _TEENS or opening in _TENS)
+    if closing in _TENS:
+        return opening in _UNITS and _UNITS[opening] != 0
+    return False
+
+
+def _slices_like_model(digits: str, values: list[int],
+                       spoken: list[list[str]]) -> list[str] | None:
+    """Split `digits` at the model's group widths, lending the group before an
+    open boundary one digit to the group after it.
+
+    The sender's grouping stands wherever it can. Where it cannot — a target
+    group whose spelling ends in «двадцать» before a one-digit group — the
+    boundary moves one digit LEFT: «220» + «2» becomes «22» + «02». The borrowed
+    digit leads the next group, which closes it, because a group opening with a
+    tens/teen/unit word is exactly what a preceding hundreds word swallows and
+    «ноль» is what it cannot. Only a boundary that is open moves, so a run whose
+    digits did not change keeps the sender's words group for group; the
+    regrouped tail is the smallest repair that reads back. None when no
+    regrouping of these widths represents the digits.
+
+    Each move carries exactly one digit one group to the right, so the number of
+    moves is bounded by (digits × groups) and the loop cannot run away; the
+    readback guard in `digits_in_words_like` still decides what is returned.
+    """
+    slices: list[str] = []
+    at: int = 0
+    for value in values:
+        width: int = len(str(value))
+        slices.append(digits[at:at + width])
+        at += width
+    if at != len(digits):
+        return None
+    for _ in range(len(digits) * len(slices) + 1):
+        spelled: list[list[str]] = [_rendered_words(slices[index], values[index], spoken[index])
+                                    for index in range(len(slices))]
+        open_at: int | None = next(
+            (index for index in range(len(slices) - 1)
+             if _absorbs(spelled[index][-1], spelled[index + 1][0])), None)
+        if open_at is None:
+            return slices
+        # A one-digit group has nothing to lend, and a three-digit group always
+        # OPENS closed (a hundreds word or «ноль»), so neither can be the far
+        # side of an open boundary. The guards keep a later grammar change from
+        # turning this into a silent infinite loop rather than a refusal.
+        if len(slices[open_at]) < 2 or len(slices[open_at + 1]) > 2:
+            return None
+        slices[open_at], slices[open_at + 1] = (
+            slices[open_at][:-1], slices[open_at][-1] + slices[open_at + 1])
+    return None
+
+
+def digits_in_words_like(digits: str, model: str) -> str | None:
+    """Render known digits in a whole dictated run's grouping and letter case.
+
+    This is presentation only: it never recognizes an identifier or chooses
+    its owner. Group widths come from the existing numeral grammar, not from
+    a phone-specific 1/3/3/2/2 layout. An unrepresentable layout returns None;
+    in particular, neighboring groups must not merge into a different number.
+    """
+    lexical: list[re.Match[str]] = list(_WORD_RE.finditer(model))
+    if not digits.isascii() or not digits.isdigit() or not lexical or any(char.isdigit() for char in model):
+        return None
+    matches: list[re.Match[str]] = []
+    words: list[str] = []
+    for match in lexical:
+        canonical: str | None = _canonical(match.group())
+        if canonical is None:
+            if match.group().lower() in _FILLER:
+                continue
+            return None
+        matches.append(match)
+        words.append(canonical)
+    if len(run_to_digits(words)) != len(digits):
+        return None
+    # The digit split is decided for the WHOLE run before a word is written: a
+    # boundary that has to move moves into the group after it, and a repair
+    # chosen group by group could not see that.
+    spans: list[tuple[int, int, int]] = []
+    index: int = 0
+    while index < len(words):
+        value, end = _group(words, index)
+        spans.append((index, end, value))
+        index = end
+    slices: list[str] | None = _slices_like_model(
+        digits, [value for _, _, value in spans], [words[start:end] for start, end, _ in spans])
+    if slices is None:
+        return None
+    rendered: list[str] = []
+    text_at: int = 0
+    for (start, end, value), target in zip(spans, slices, strict=True):
+        low, high = matches[start].start(), matches[end - 1].end()
+        surface: str = model[low:high]
+        # Inter-group hesitations remain in the untouched gaps. An internal
+        # hesitation cannot be relocated into a differently sized word group
+        # without a separate alignment rule; do not silently erase it.
+        if target != str(value) and any(
+                word.group().lower() in _FILLER for word in _WORD_RE.finditer(surface)):
+            return None
+        replacement: str = surface if target == str(value) else cased_like(
+            _spell_identifier_group(target), surface)
+        rendered.extend((model[text_at:low], replacement))
+        text_at = high
+    rendered.append(model[text_at:])
+    result: str = "".join(rendered)
+    readback: list[str] = [word for match in _WORD_RE.finditer(result)
+                           if (word := _canonical(match.group())) is not None]
+    return result if run_to_digits(readback) == digits else None
 
 
 def numeral_runs(text: str) -> list[tuple[int, int, list[str]]]:
@@ -441,6 +608,54 @@ def _cue_near(before: str, cues: tuple[str, ...]) -> bool:
     return False
 
 
+# THE STRETCH-ABSORBING COLLAPSE ABOVE EATS A CUE THAT IS MADE OF A DOUBLED
+# LETTER. `_cue_near` folds «паспоорт» back to «паспорт» by deleting the repeat —
+# and the initialism «инн» is nothing BUT a repeat, so it collapsed to «ин», no
+# cue started with that, and the INN branch below could never fire however the
+# customer spelled it. Measured on the pristine bytes: «инн <twelve dictated
+# digits, one misheard>» reached the model in the clear.
+#
+# The digit path has always read this token exactly (`_INN_CUE_RE` is `\bинн\b`),
+# so the spoken path reads the same token the same way: the word as written, not
+# its de-stretched residue. The fold stays for every cue that needs it — a
+# misspelt or held key still matches through `_cue_near`.
+def _cue_exact_near(before: str, cue: str) -> bool:
+    """A cue word in the last few words before the run, spelled as itself."""
+    return any(word == cue for word in _WORD_RE.findall(before.lower())[-4:])
+
+
+# THE CARD CUE IS THE DIGIT PATH'S, WORD FOR WORD. `ru_pii._CARD_CUE` types the
+# run behind «карта» with NO checksum — a mistyped card the customer named is
+# still their card — and the spoken path had no such branch at all: a card
+# dictated with one digit misheard failed Luhn and went out in the clear, while
+# the same card TYPED with one digit wrong was masked. The vocabulary and the
+# refusals are copied rather than re-invented: «картина», «картон» and
+# «картотека» share the first letters and are refused by the digit path, so they
+# are refused here; the stem «карточ-» is admitted because «карточка» is the
+# diminutive the digit path admits.
+_CARD_CUE_WORDS = frozenset((
+    "карт", "карта", "карты", "карте", "карту", "картой", "картою", "картам",
+    "картами", "картах", "card", "cards",
+))
+_CARD_CUE_STEM = "карточ"
+# A HYPHEN JOINED TO A LETTER IS A COMPOUND, NOT A SEPARATOR — the digit path's
+# cue is `\bкарт\b(?!-[а-яё])` for exactly this reason: «карт-бланш» contains the
+# word «карт» and is nobody's card. `_WORD_RE` splits at the hyphen, so the cue
+# reader tokenizes compounds whole.
+_CUE_WORD_RE = re.compile(r"[а-яё]+(?:-[а-яё]+)*")
+
+
+def _card_cue_near(before: str) -> bool:
+    """The card cue in the last few words before the run, the digit path's forms."""
+    for word in _CUE_WORD_RE.findall(before.lower())[-4:]:
+        if word in _CARD_CUE_WORDS or word.startswith(_CARD_CUE_STEM):
+            return True
+    for word in re.findall(r"[a-z]+", before.lower())[-4:]:
+        if word in _CARD_CUE_WORDS:
+            return True
+    return False
+
+
 def _classify(digits: str, before: str) -> str | None:
     """Which identifier this digit string is, decided by the SAME rules the
     digit path uses and in the order of how much each one proves.
@@ -460,7 +675,14 @@ def _classify(digits: str, before: str) -> str | None:
         return "PASSPORT"
     if length == 11 and _cue_near(before, ("снилс",)):
         return "SNILS"
-    if length == 12 and _cue_near(before, ("инн",)):
+    # «инн» IS READ AS THE TOKEN, not through the collapse — see `_cue_exact_near`.
+    # Ten digits as well as twelve, because the SPEAKER'S WORD is the evidence in
+    # both: the digit path demands the checksum too for a ten-digit ИНН, but the
+    # spoken path's own rule is the one written above for СНИЛС — behind the word
+    # the evidence is the word — and P05 protects a wrong personal number as the
+    # number that was said. The digit leg is left as it is: that is a cross-leg
+    # policy call, not this file's.
+    if length in (10, 12) and _cue_exact_near(before, "инн"):
         return "INN"
     # …BUT THE CUE THE CUSTOMER SAID OUTRANKS A CHECKSUM THAT HAPPENS TO
     # HOLD. «телефон восемь девятьсот пятьдесят сто шестьдесят двадцать
@@ -475,6 +697,12 @@ def _classify(digits: str, before: str) -> str | None:
     if length in (10, 12) and validate_inn(digits):
         return "INN"
     if 13 <= length <= 19 and validate_luhn(digits):
+        return "CARD"
+    # A CARD THE SPEAKER NAMED NEEDS NO CHECKSUM — the digit path's rule, and the
+    # branch the spoken path was missing. Placed AFTER a passing Luhn so a valid
+    # card keeps the checksum's own reading; it can only add the number the
+    # customer called a card and the arithmetic could not confirm.
+    if 13 <= length <= 19 and _card_cue_near(before):
         return "CARD"
     if length == 11 and digits[0] in "78" and digits[1] == "9":
         return "PHONE"
@@ -595,6 +823,49 @@ _PLATE_LETTER_SOUND: dict[str, str] = {
     "а": "А", "вэ": "В", "ве": "В", "е": "Е", "ка": "К", "эм": "М", "эн": "Н",
     "о": "О", "эр": "Р", "эс": "С", "тэ": "Т", "у": "У", "ха": "Х",
 }
+
+
+# Имя буквы, которым её НАЗЫВАЮТ. Обратная к `_PLATE_LETTER_SOUND`, и таблица
+# отдельная намеренно: у «В» два произношения («вэ» и «ве»), а писать нужно
+# одно — то, которое читает обратно тот же `_PLATE_LETTER_SOUND`.
+_PLATE_LETTER_WORD: dict[str, str] = {
+    "А": "а", "В": "вэ", "Е": "е", "К": "ка", "М": "эм", "Н": "эн",
+    "О": "о", "Р": "эр", "С": "эс", "Т": "тэ", "У": "у", "Х": "ха",
+}
+_PLATE_CONTENT = re.compile(r"^([A-Za-zА-Яа-яЁё])(\d{3})([A-Za-zА-Яа-яЁё]{2})(\d{2,3})$")
+_PLATE_LATIN_TO_CYR = str.maketrans("ABEKMHOPCTYXabekmhopctyx", "АВЕКМНОРСТУХавекмнорстух")
+
+
+def plate_in_words_like(plate: str, model: str) -> str | None:
+    """Госномер, ПРОИЗНЕСЁННЫЙ так, как произносят его в `model`.
+
+    ОБРАТНАЯ К `plate_from_words`, и это требование обратимости, а не удобство:
+    подмена, наследующая диктовку источника, должна читаться обратно, иначе она
+    перестаёт разрешаться. Числа пишет `_spell_identifier_group` — та же
+    функция, которой чеканятся цифровые группы в диктовке телефона, а буквы
+    называет `_PLATE_LETTER_WORD`.
+
+    ЧТЕНИЕ ПРОВЕРЯЕТСЯ ЗДЕСЬ ЖЕ. `plate_from_words` — единственный читатель этой
+    формы, и если он не возвращает исходный номер, рендер отказывается: лучше
+    письменная форма, чем фраза, которую никто не прочитает.
+    """
+    content = re.sub(r"[^0-9A-Za-zА-Яа-яЁё]", "", plate)
+    match = _PLATE_CONTENT.fullmatch(content)
+    if match is None:
+        return None
+    head, digits, pair, region = match.groups()
+    head, pair = head.upper(), pair.upper()
+    if any(letter.upper() not in _PLATE_LETTER_WORD for letter in (head, pair[0], pair[1])):
+        return None
+    words = [_PLATE_LETTER_WORD[head], _spell_identifier_group(digits),
+             _PLATE_LETTER_WORD[pair[0]], _PLATE_LETTER_WORD[pair[1]]]
+    if re.search(r"(?i)\bрегион", model):
+        words.append("регион")
+    words.append(_spell_identifier_group(region))
+    text = " ".join(words)
+    if plate_from_words(text) != content.upper().translate(_PLATE_LATIN_TO_CYR):
+        return None
+    return cased_like(text, model)
 
 
 def plate_from_words(phrase: str) -> str:

@@ -61,7 +61,8 @@ from bench.agentpii4 import stats
 from bench.agentpii4.autopsy import _load_run
 from bench.agentpii4.report import Scored
 from bench.agentpii4.schema import EXCLUDED_TERMINATIONS, Case
-from bench.agentpii5 import build, contracts, records, runinfo
+from bench.agentpii5 import (
+    build, checksum_v6, contracts, frozen_oracle, payload_canaries, pii_types, records, runinfo)
 from bench.agentpii5.contracts import (
     CalibrationStamp,
     CaseV5,
@@ -74,9 +75,11 @@ from bench.agentpii5.contracts import (
     RunObservation,
     SideBySide,
 )
-from bench.agentpii5.fixtures import FIXTURES
+from bench.agentpii5.fixtures import FIXTURES, V6_FIXTURES
 from bench.agentpii5 import metrics as metric_bodies
-from bench.agentpii5.metrics import AXIS_NOTE, METRIC_FUNCTIONS, by_axis, prints_on_axis
+from bench.agentpii5.metrics import (
+    AXIS_NOTE, METRIC_FUNCTIONS, V6_AXES, V6_METRIC_FUNCTIONS, by_axis, prints_on_axis,
+    survival_excluded)
 from bench.agentpii5.schema import case_v5_from_json
 
 # The v4 half is fenced so a reader — and `test_no_effect_claims_outside_v4_
@@ -118,7 +121,37 @@ _LEVEL_LINE = re.compile(
 # J1.1 is that second pair: `answer_optional_only` counts the answers
 # `answer_real` stopped judging (720 of 1357 oblige nothing), and read four
 # sections apart the reader cannot tell which denominator the rate belongs to.
-BESIDE: dict[str, str] = {"form_hOUT": "out_absent", "answer_real": "answer_optional_only"}
+BESIDE: dict[str, str] = {"form_hOUT": "out_absent", "answer_real": "answer_optional_only",
+                          "end_to_end": "end_to_end_written",
+                          "multi_all_out": "multi_all_out_written",
+                          "chain_value": "chain_value_written",
+                          "chain_form": "chain_form_written"}
+# ONE-TO-MANY, AND IN A SECOND TABLE FOR A REASON THAT IS NOT TASTE. The class Е
+# split turned the OUT funnel into four statuses plus the population they were
+# carved out of, and all five counts belong UNDER the line they explain; a
+# mapping of one companion each cannot carry them. `BESIDE`'s VALUE TYPE is a
+# plain `str` because `test_report` pins it (`BESIDE.get("form_hOUT") ==
+# "out_absent"`), and widening it would break the test of the rule instead of
+# the rule — so the primary companion (the line whose denominator the strict
+# headline leaves out) stays in `BESIDE` and the rest ride here. `beside_of` is
+# the ONE reader; the renderer and the tests never walk the two tables
+# themselves, so the pair cannot drift.
+BESIDE_MORE: dict[str, tuple[str, ...]] = {
+    # `out_absent` is `form_hOUT`'s complement; the four statuses the split
+    # created are the funnel, and a reader who cannot see them cannot tell a
+    # gateway that kept every form from one whose leaves were never written.
+    "form_hOUT": ("out_written", "out_no_mint", "out_engine_kept", "out_not_masked",
+                  "out_leaf_foreign"),
+}
+
+
+def beside_of(name: str) -> tuple[str, ...]:
+    """Every line printed UNDER `name`, in order: the primary companion of
+    `BESIDE` first (the one whose count is the denominator the strict line left
+    out), then the one-to-many companions of `BESIDE_MORE`."""
+    first = BESIDE.get(name)
+    rest = BESIDE_MORE.get(name, ())
+    return ((first,) if first else ()) + rest
 
 
 class ReportError(ValueError):
@@ -646,20 +679,101 @@ class ReportParts:
     # themselves (`assemble`, `render`, `reportjson.build`) are why one report
     # could name two different agents for one run.
     meta: dict[str, object]
+    # THE FROZEN SCORE (M04). The v5 lines the report prints are produced HERE,
+    # from the saved rows, behind `frozen_oracle.forbid_engine()`, with the
+    # run's captured `RepairTable` passed as DATA. `assemble` reads
+    # `frozen.lines` instead of calling the metric functions again: a second
+    # route to the same number is a second oracle, and the one that reached the
+    # engine is the one that can be moved by an engine edit.
+    frozen: frozen_oracle.FrozenScore
+    # THE PAYLOAD CANARIES (S02), scanned against the SAVED bytes of this run.
+    # Recomputed in this process rather than trusted from the run's writer: the
+    # question «did the real value reach the model» is asked of the bytes on
+    # disk, by an instrument the run cannot fill in.
+    canaries: payload_canaries.CanaryReport
+
+
+@dataclass(frozen=True)
+class FrozenParts:
+    """The engine-free half of a report: the frozen score and the observations
+    it was computed from, plus the corpus and rows the digest was taken over.
+
+    It is its own object because it must be producible WITHOUT touching v4's
+    blocks, the canaries or the judge — that is what lets
+    `poisoned_register_spelling_leaves_the_score_bytes_identical` (and the
+    M04 acceptance sentence) ask for it in a process where the engine raises on
+    any attribute read."""
+
+    corpus: tuple[CaseV5, ...]
+    rows: tuple[dict[str, object], ...]
+    frozen: frozen_oracle.FrozenScore
+    half: V5Half
+
+
+def frozen_score_and_observations(v5_run_dir: Path) -> FrozenParts:
+    """The v5 score of a saved run, from its rows, with the engine never asked.
+
+    THREE RULES, AND ALL THREE ARE STRUCTURAL.
+
+      1. The repair verdicts are DATA read off the run (`repairs.json`), never a
+         live `register_spelling` call: a saved number must not move when the
+         engine is edited, or «the gateway improved» and «the scorer changed its
+         mind» are one number.
+      2. `scored=()`, so no `ic`/`cc` comes from v4's taxonomy. Passing v4's
+         engine-scored triples here (the shape this used to have) made the axis
+         slices depend on the mutable engine even though the top-level lines did
+         not: the report would then certify one number from frozen data and slice
+         it with another from the engine. No v5 metric reads `ic`/`cc`, so this
+         drops a dependency and moves no value.
+      3. THE PUBLISHED LINES AND THEIR SLICES SCORE THE SAME SAVED POPULATION
+         (OBS). The lines are produced by `frozen_oracle.score_observations`
+         over THIS half's observations — the hops read back off the run — and
+         not by `score_artifacts`, which RE-DERIVES every hop with
+         `observe.observe`. Re-deriving was a second population: `assemble`
+         slices `half.observations`, so on a saved run with one case's hops
+         missing the totals counted a case the slices could not, and the
+         versioned digest (then over corpus ids and rows alone) did not even
+         name the hops it had scored. A hole still marks the report НЕПОЛНЫЙ
+         (`V5Half.hopless` → `assemble.incomplete`): scoring the saved half
+         must never read as scoring the whole corpus. On a COMPLETE run the
+         two paths produce the same observations and the same numbers.
+
+    NOTHING IS UNLOADED. An earlier draft ran this behind
+    `forbid_engine(remove_loaded=True)`, which popped the caller's `pseudex`
+    modules out of `sys.modules` and never put them back — at the end of a live
+    harness process that already holds the engine, a report that does that leaves
+    its caller with stale module objects and builds a second copy on the next
+    lazy import. Engine-free means the score NEEDS no engine, never that the
+    process may not have one; the firewall stays a test instrument
+    (`frozen_oracle.forbid_engine`), where it belongs."""
+    corpus = v5_corpus(v5_run_dir)
+    cases = {case.base.id: case for case in corpus}
+    rows = records.merged_v5_records(v5_run_dir)
+    repairs = frozen_oracle.read_repairs(v5_run_dir)
+    half = observations_of(v5_run_dir, (), cases)
+    frozen = frozen_oracle.score_observations(half.observations, corpus, rows, repairs)
+    return FrozenParts(corpus=corpus, rows=rows, frozen=frozen, half=half)
 
 
 def read_parts(v5_run_dir: Path, v4_run_dir: Path) -> ReportParts:
-    """Both run directories, read once, in the order a reader would."""
+    """Both run directories, read once, in the order a reader would.
+
+    THE FROZEN SCORE COMES FIRST, before any v4 reader runs. `v4_half` walks
+    v4's taxonomy, which reaches `pseudex.address.register_spelling` LAZILY the
+    first time a LOC breaks; the v5 score is therefore produced by
+    `frozen_score_and_observations` BEFORE that, from rows that cannot reach the
+    engine. The v4 half is v4's own instrument — its block, its levels and its
+    taxonomy are the baseline and are not part of the frozen claim."""
+    scored = frozen_score_and_observations(v5_run_dir)
+    canaries = payload_canaries.check_run(v5_run_dir)
     v5 = v4_half(v5_run_dir, f"v5 run {run_id_of(v5_run_dir)}")
     v4 = v4_half(v4_run_dir, f"v4 baseline {run_id_of(v4_run_dir)}")
-    corpus = v5_corpus(v5_run_dir)
-    cases = {case.base.id: case for case in corpus}
-    half = observations_of(v5_run_dir, v5.scored, cases)
-    return ReportParts(v5_dir=v5_run_dir, v4_dir=v4_run_dir, v5=v5, v4=v4, half=half,
-                       corpus=corpus, meta=meta_of(v5_run_dir, run_id_of(v5_run_dir)),
+    return ReportParts(v5_dir=v5_run_dir, v4_dir=v4_run_dir, v5=v5, v4=v4, half=scored.half,
+                       corpus=scored.corpus,
+                       meta=meta_of(v5_run_dir, run_id_of(v5_run_dir)),
                        judge=judge_half(v5_run_dir),
-                       behaviour_of={case_id: case.behaviour for case_id, case in cases.items()},
-                       cost=cost_lines(v5_run_dir))
+                       behaviour_of={case.base.id: case.behaviour for case in scored.corpus},
+                       cost=cost_lines(v5_run_dir), frozen=scored.frozen, canaries=canaries)
 
 
 def _holes(excluded: Sequence[str]) -> tuple[str, ...]:
@@ -681,6 +795,22 @@ def _stopped(excluded: Sequence[str]) -> tuple[str, ...]:
     return tuple(row for row in excluded if not row.endswith(mark))
 
 
+def axis_cells(observations: Sequence[RunObservation], functions: dict[str, Metric],
+               names: Iterable[str]) -> dict[str, dict[str, dict[str, Line]]]:
+    """Every metric's slices, restricted to the axes `prints_on_axis` allows.
+
+    Its own function because the produced report slices the SAME observations it
+    scores: `assemble` calls it over `parts.half` for the PRINTED lines, and
+    `test_report_frozen.poisoned_register_spelling_leaves_the_score_bytes_identical`
+    calls it over the engine-free half to show the slices cannot move with the
+    engine either. A second copy of this comprehension inside that test would be
+    a second definition of the slices it is trying to protect."""
+    return {name: {axis: {bucket: functions[name](rows)
+                          for bucket, rows in sorted(by_axis(observations, axis).items())}
+                   for axis in contracts.AXES if prints_on_axis(name, axis)}
+            for name in sorted(names)}
+
+
 def assemble(parts: ReportParts, functions: dict[str, Metric]) -> SideBySide:
     """The `SideBySide` of parts already read.
 
@@ -694,10 +824,20 @@ def assemble(parts: ReportParts, functions: dict[str, Metric]) -> SideBySide:
     lines: dict[str, Line] = {}
     refused: dict[str, str] = {}
     for name, verdict in verdicts.items():
-        if verdict.printable:
-            lines[name] = functions[name](observations)
-        else:
+        if not verdict.printable:
             refused[name] = verdict.why
+            continue
+        # THE PRODUCED PATH IS THE FROZEN ONE. When the caller passes the real
+        # registry, the line is the one `frozen_oracle` already computed behind
+        # the engine firewall; recomputing it here would leave two producers of
+        # one number, and only one of them is protected. A caller that passes a
+        # REPLACEMENT for a name (the gate's own test) gets its replacement, so
+        # the refusal path stays observable.
+        frozen_line = parts.frozen.lines.get(name)
+        if frozen_line is not None and functions.get(name) is METRIC_FUNCTIONS.get(name):
+            lines[name] = frozen_line
+        else:
+            lines[name] = functions[name](observations)
     # ONLY the axes a line may be printed on (F2.10). An observation-level line
     # sliced by a HOP axis counts the same answer once per bucket, so the
     # buckets add up to more units than the corpus holds; `metrics.
@@ -705,11 +845,7 @@ def assemble(parts: ReportParts, functions: dict[str, Metric]) -> SideBySide:
     # of restating it. Computing the cells anyway and hiding them at render
     # time would leave a number in the `SideBySide` that nobody may print —
     # and a number that exists gets printed eventually.
-    axes: dict[str, dict[str, dict[str, Line]]] = {}
-    for name in sorted(lines):
-        axes[name] = {axis: {bucket: functions[name](rows)
-                             for bucket, rows in sorted(by_axis(observations, axis).items())}
-                      for axis in contracts.AXES if prints_on_axis(name, axis)}
+    axes = axis_cells(observations, functions, lines)
     blocked = [name for name in refused if name not in contracts.DIAGNOSTIC_METRIC_NAMES]
     stamp = parts.judge.stamp
     empty_stamp = CalibrationStamp(judge_model="—", prompt_sha256="", n=0, raw_agreement=0.0,
@@ -801,7 +937,22 @@ def render(side: SideBySide, parts: ReportParts, dump: int) -> list[str]:
         f"метка: {meta.get('label') or '—'} · заметка: {meta.get('note') or '—'}",
         f"дерево: {meta.get('worktree') or 'неизвестно'}",
         f"корпус v5 {side.corpus_digest_v5[:12] or '—'} · корпус v4 {side.corpus_digest_v4[:12] or '—'}",
+        # WHICH ORACLE PRODUCED THESE LINES, AND FROM WHICH BYTES (M04). A rate
+        # with no oracle version cannot be re-checked after the scorer moves, and
+        # a digest is what tells two runs apart when the file names are the same.
+        # The repair half is a COUNT and never a silence: a run with no captured
+        # witnesses prints «не измерено», because «no witness» is not «not
+        # repaired».
+        f"оракул {parts.frozen.oracle_version} · артефакт "
+        f"{parts.frozen.digest[:12] or '—'} · пар LOC {parts.frozen.repairs_measured} измерено/"
+        f"{parts.frozen.repairs_unmeasured} не измерено",
         ""]
+    # §6.5: the header names which NEW types the calibration stamp saw — printed
+    # only on a v6 run, so an old-corpus header keeps its exact bytes (F7).
+    if has_v6_case(parts.half.observations):
+        new_seen = _calibration_new_types(parts.judge.stamp)
+        out.append("   калибровка видела новые типы: " + (", ".join(new_seen) or "—"))
+        out.append("")
     out += list(parts.cost)
     # §3.3: МУСОР КОРПУСА — В ОТЧЁТЕ, А НЕ ТОЛЬКО В СБОРКЕ. `build --check`
     # видит корпус в дереве; отчёт видит тот, по которому ПРОГНАЛИ, и это
@@ -825,18 +976,58 @@ def render(side: SideBySide, parts: ReportParts, dump: int) -> list[str]:
     out += behaviour_blocks(parts.v5, parts.behaviour_of)
     out += ["", V4_BLOCK_END, ""]
 
+    # §1bis: THE REAL BYTES, BY BOUNDARY (S02). Printed HERE rather than only in
+    # the run's own log because this is the one section a reader of the finished
+    # report can check without trusting the harness's writer. A leak on one
+    # boundary is named with its class; the neighbours are not printed because
+    # this scan reads the corpus's own declared values, and an ordinary word is
+    # not among them.
+    #
+    # THE STATUS IS PRINTED FIRST AND IS NEVER OMITTED. `CanaryReport` with no
+    # manifest has `boundaries=()`, so `by_boundary()` is `{}` and the loop below
+    # printed NOTHING — the section rendered as a heading with no rows, which is
+    # indistinguishable from «measured, zero leaks». A run without a
+    # construction-time manifest therefore says NOT_MEASURED, says why, and says
+    # in words that absence is not a clean measurement.
+    out += ["1bis. КАНАРЕЙКИ ПЕЙЛОАДА — байты этого прогона, по границам (S02)"]
+    out.append(f"   СТАТУС: {parts.canaries.status}")
+    if parts.canaries.coverage_known:
+        out.append(f"   ЗАХВАТЫ: {parts.canaries.capture_rows}/"
+                   f"{parts.canaries.intervention_rows} выполненных плеч I; "
+                   f"выбранных троек {parts.canaries.selected_rows}")
+    if parts.canaries.status != payload_canaries.STATUS_MEASURED:
+        out.append("   НЕ ИЗМЕРЕНО — это НЕ означает «утечек нет»: "
+                   "манифест, байты или полный знаменатель недоступны")
+        if parts.canaries.reason:
+            out.append(f"   ПРИЧИНА: {parts.canaries.reason}")
+    for _name, _counts in sorted(parts.canaries.by_boundary().items()):
+        out.append(f"   {_name:14} скрыто {_counts['hidden']:4}  утечек {_counts['leaked']:4}")
+    for leak in parts.canaries.leaks[:8]:
+        out.append(f"      {leak.boundary}: {leak.canary_id} [{leak.miss_class}] {leak.why}")
+    if parts.canaries.unclassified:
+        out.append(f"   БЕЗ КЛАССА: {list(parts.canaries.unclassified)}")
+    if parts.canaries.neighbour_damage:
+        out.append(f"   СОСЕДИ ЗАТРОНУТЫ: {list(parts.canaries.neighbour_damage)}")
+    if parts.canaries.unreached:
+        out.append(f"   ГРАНИЦЫ НЕ ДОСТИГНУТЫ: {list(parts.canaries.unreached)}")
+    out += [""]
+
     out += ["2. ЛИНИИ v5 — абсолютные доли, интервал Клоппера–Пирсона, «сертифицирует ≥» вместо 100%"]
     # A diagnostic named in `BESIDE` is printed under the line it qualifies and
     # NOT again in the diagnostics block: `out_absent` under `form_hOUT` (F2.10).
     beside_printed: set[str] = set()
     for name in _printing_order(side.v5_lines):
-        if name in contracts.DIAGNOSTIC_METRIC_NAMES:
+        if name in contracts.DIAGNOSTIC_METRIC_NAMES or name in beside_printed:
+            # A NON-diagnostic companion (the honest share) is printed HERE, and
+            # the guard keeps it from being printed a second time as its own
+            # top-level line further down the registry order — one number, one
+            # line, and the strict headline above it.
             continue
         out.append("   " + render_line(side.v5_lines[name]))
-        companion = BESIDE.get(name)
-        if companion is not None and companion in side.v5_lines:
-            out.append("   " + render_line(side.v5_lines[companion]))
-            beside_printed.add(companion)
+        for companion in beside_of(name):
+            if companion in side.v5_lines and companion not in beside_printed:
+                out.append("   " + render_line(side.v5_lines[companion]))
+                beside_printed.add(companion)
     out += ["", "   диагностика — печатается, но не является критерием успеха"]
     for name in _printing_order(side.v5_lines):
         if name in contracts.DIAGNOSTIC_METRIC_NAMES and name not in beside_printed:
@@ -851,6 +1042,15 @@ def render(side: SideBySide, parts: ReportParts, dump: int) -> list[str]:
         if counts:
             out.append(f"   расхождения {pii_type}: " + " · ".join(
                 f"{name} {count}" for name, count in sorted(counts.items(), key=lambda row: -row[1])))
+    # §6.5: the v6 axes and the per-type extras, printed ONLY on a v6 run. The
+    # block is gated so an old-corpus report never gains a single line (F7).
+    if has_v6_case(parts.half.observations):
+        out += ["", "3bis. СРЕЗЫ v6 — отрасль, происхождение, класс типа (§6.5)"]
+        out += v6_axis_rows(parts.half.observations)
+        out += [""]
+        out += v6_type_slice_lines(parts.half.observations)
+        out += [""]
+        out += v6_new_row_lines(parts.half.observations)
 
     out += ["", "4. ЧУВСТВИТЕЛЬНОСТЬ ПО ПОВЕДЕНИЮ — какой эффект семья вообще способна увидеть"]
     for behaviour, rows in sorted(by_axis(parts.half.observations, "behaviour").items()):
@@ -919,6 +1119,112 @@ def _axis_rows(side: SideBySide) -> list[str]:
     return out
 
 
+# --- §6.5 the v6 report block (printed ONLY on a run with a v6 case, F7) --------------
+
+_V6_SPECS: dict[str, pii_types.TypeSpec] = {t.id: t for t in pii_types.TYPE_REGISTRY}
+
+
+def has_v6_case(observations: Sequence[RunObservation]) -> bool:
+    """Does any observation of this run carry a v6 case (`CaseV5.v6` set)?"""
+    return any(one.case.v6 is not None for one in observations)
+
+
+def v6_axis_rows(observations: Sequence[RunObservation]) -> list[str]:
+    """The V6_AXES (`industry`/`provenance`/`type_class`) slices, in the shape
+    `_axis_rows` prints the v5 axes. `contracts.AXES` is untouched; these three
+    are printed only here, only on a v6 run, so an old-corpus report has no new
+    line (F7)."""
+    out: list[str] = []
+    for axis in V6_AXES:
+        buckets = by_axis(observations, axis)
+        for name in _printing_order(METRIC_FUNCTIONS):
+            if not prints_on_axis(name, axis):
+                out.append(f"   {name}/{axis}: {AXIS_NOTE}")
+                continue
+            cells = {bucket: METRIC_FUNCTIONS[name](rows)
+                     for bucket, rows in sorted(buckets.items())}
+            out.append(f"   {name}/{axis}: " + (" · ".join(
+                f"{bucket} {line.hits}/{line.total}"
+                for bucket, line in sorted(cells.items())) or "н/п"))
+    return out
+
+
+def _vin_checksum_split(observations: Sequence[RunObservation]) -> tuple[int, int]:
+    """VIN elements by their published checksum: the «КС верна / неверна» split
+    §6.5 prints for VIN alone (OD-62: the Russian-WMI half is deliberately
+    non-ISO-3779, so the split is a real statement, never a constant)."""
+    ok = bad = 0
+    for one in observations:
+        seen: set[str] = set()
+        for item in one.case.base.pii:
+            if item.type != "VIN" or item.id in seen:
+                continue
+            seen.add(item.id)
+            value = item.canonical or item.value
+            try:
+                valid = checksum_v6.validate_vin(value) if value else False
+            except ValueError:
+                valid = False
+            ok += 1 if valid else 0
+            bad += 0 if valid else 1
+    return ok, bad
+
+
+def v6_type_slice_lines(observations: Sequence[RunObservation]) -> list[str]:
+    """Beside every NEW type that crossed a hop in this run: its grammar status,
+    the cases/elements/hops behind its `pii_type` slice, the R-58 survival
+    exclusion, and — for VIN — the «КС верна / неверна» split (TZ §6.5)."""
+    seen: dict[str, dict[str, object]] = {}
+    for one in observations:
+        for hop in one.hops:
+            spec = _V6_SPECS.get(hop.pii_type)
+            if spec is None or spec.origin != pii_types.ORIGIN_V6:
+                continue
+            row = seen.setdefault(hop.pii_type,
+                                  {"cases": set(), "elements": set(), "hops": 0})
+            row["cases"].add(one.case.base.id)           # type: ignore[union-attr]
+            row["elements"].add(hop.hop.item_id)         # type: ignore[union-attr]
+            row["hops"] += 1                             # type: ignore[union-attr]
+    out: list[str] = []
+    for pii_type in sorted(seen):
+        spec = _V6_SPECS[pii_type]
+        row = seen[pii_type]
+        line = (f"   {pii_type}: грамматика {spec.grammar_status} · "
+                f"случаев {len(row['cases'])} · элементов {len(row['elements'])} · "
+                f"хопов {row['hops']} · не оценивается по выживанию: "
+                f"{survival_excluded(observations, pii_type)}")
+        if pii_type == "VIN":
+            valid, invalid = _vin_checksum_split(observations)
+            line += f" · КС верна {valid} / неверна {invalid}"
+        out.append(line)
+    return out
+
+
+def v6_new_row_lines(observations: Sequence[RunObservation]) -> list[str]:
+    """The three OD-54 rows, each gated by its own three fixtures (§6.3: a row
+    without its zero/one/adversarial is NOT printed). `gate` is the same
+    function the v5 lines go through, so the sanction is the same shape."""
+    out: list[str] = []
+    for name in sorted(V6_METRIC_FUNCTIONS):
+        fixtures = V6_FIXTURES.get(name)
+        verdict = (gate(V6_METRIC_FUNCTIONS[name], fixtures) if fixtures
+                   else GateVerdict(name, False, "нет фикстур"))
+        if not verdict.printable:
+            out.append(f"   {name}: НЕ ПЕЧАТАЕТСЯ — {verdict.why}")
+            continue
+        out.append("   " + render_line(V6_METRIC_FUNCTIONS[name](observations)))
+    return out
+
+
+def _calibration_new_types(stamp: CalibrationStamp | None) -> tuple[str, ...]:
+    """The NEW types the calibration stamp computed κ for — the header line
+    «какие новые типы видела калибровка» (§6.5, §9.4)."""
+    if stamp is None:
+        return ()
+    new = frozenset(pii_types.NEW_ITEM_TYPES)
+    return tuple(sorted(t for t in stamp.per_type_kappa if t in new))
+
+
 def _printing_order(named: Iterable[str]) -> list[str]:
     """`contracts.METRIC_NAMES` order first, then whatever else the registry
     carried, alphabetically.
@@ -965,6 +1271,29 @@ def report_lines(v5_run_dir: Path, v4_run_dir: Path,
         {name: {"printable": verdict.printable, "why": verdict.why}
          for name, verdict in sorted(gate_all(functions).items())},
         ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    # WHICH ORACLE PRODUCED THIS RUN'S LINES, AND FROM WHICH BYTES (M04), written
+    # BESIDE the report and not into it: a sidecar is ADDITIVE, so every report
+    # version already on disk keeps reading, and a reader that does not know this
+    # file is not made to. The report's own header prints the same two facts, so
+    # the paper and the file cannot disagree about the oracle.
+    (v5_run_dir / f"{run_id}.oracle.json").write_text(json.dumps(
+        {"frozen_oracle_version": parts.frozen.oracle_version,
+         "artifact_digest": parts.frozen.digest,
+         "cases": parts.frozen.cases, "rows": parts.frozen.rows,
+         "repairs_measured": parts.frozen.repairs_measured,
+         "repairs_unmeasured": parts.frozen.repairs_unmeasured,
+         # S02: THE STATUS RIDES BESIDE THE COUNTS AND IS NEVER OMITTED. An
+         # empty `canaries` object with no status read as «measured, zero leaks»
+         # for every saved run, because no saved run carries a manifest. A
+         # machine reader must be able to tell «не измерено» from «измерено,
+         # утечек нет» without reading the prose report.
+         "canary_status": parts.canaries.status,
+         "canary_reason": parts.canaries.reason,
+         "canary_neighbour_damage": list(parts.canaries.neighbour_damage),
+         "canary_unreached": list(parts.canaries.unreached),
+         "canaries": {name: counts
+                      for name, counts in sorted(parts.canaries.by_boundary().items())}},
+        ensure_ascii=False, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return lines
 
 
@@ -994,8 +1323,10 @@ def render_side_by_side(v5_run_dir: Path, v4_run_dir: Path) -> list[str]:
 
 
 def _mutant_end_to_end(observations: Sequence[RunObservation]) -> Line:
-    """`unmasked` counted as a hit — the reading `end_to_end`'s own docstring
-    asked for before F1.3 («a passthrough scores 100% here»)."""
+    """A leaf the gateway never masked counted as a hit — the reading
+    `end_to_end`'s own docstring asked for before F1.3 («a passthrough scores
+    100% here»). The status it reads is `not_masked`, which is what the split
+    renamed that fact to when `unmasked` became three statuses."""
     hits = 0
     total = 0
     for one, hop in metric_bodies._owned(observations, "OUT", ("tool_arg",)):
@@ -1003,7 +1334,7 @@ def _mutant_end_to_end(observations: Sequence[RunObservation]) -> Line:
             continue
         total += 1
         item = metric_bodies._item_of(one, hop.hop.item_id)
-        hits += 1 if (hop.status == "unmasked"
+        hits += 1 if (hop.status in ("not_masked", "engine_kept")
                       or (hop.status == "observed" and item is not None
                           and metric_bodies._item_value_ok(hop, item))) else 0
     return Line("end_to_end", hits, total)
@@ -1086,7 +1417,8 @@ def _mutant_answer_real(observations: Sequence[RunObservation]) -> Line:
 
 
 MUTANTS: tuple[tuple[str, str, Metric], ...] = (
-    ("end_to_end", "`unmasked` leaf is a HIT (the pre-F1.3 reading)", _mutant_end_to_end),
+    ("end_to_end", "a leaf the engine never masked is a HIT (the pre-F1.3 reading)",
+     _mutant_end_to_end),
     ("answer_real", "a case that obliges nothing is still in the denominator (all() over an "
                     "empty list)", _mutant_answer_real),
     ("out_absent", "optional hops dropped from the denominator", _mutant_out_absent),

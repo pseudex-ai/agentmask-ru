@@ -1,0 +1,28 @@
+C1 overlap recomputed=24 declared=24 identical=True
+C2 v5_changed_vs_base=418 v6_changed_vs_base=77 v6_only=53 v5_only=394
+C3 product-source diff 0bfda23..890c508 prototype/ files=0 (expect 0)
+C4 CLAUDE.md v5+133/-14 v6+193/-0 both_removed=0
+C4 prototype/bench/agentpii5/contracts.py v5+14/-0 v6+9/-0 both_removed=0
+C4 prototype/bench/agentpii5/fixtures.py v5+16/-0 v6+6/-0 both_removed=0
+C4 prototype/bench/agentpii5/form.py v5+1/-0 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/harness.py v5+13/-1 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/judge.py v5+2/-0 v6+4/-0 both_removed=0
+C4 prototype/bench/agentpii5/metrics.py v5+12/-0 v6+19/-0 both_removed=0
+C4 prototype/bench/agentpii5/observe.py v5+16/-0 v6+13/-0 both_removed=0
+C4 prototype/bench/agentpii5/perfect.py v5+1/-0 v6+8/-0 both_removed=0
+C4 prototype/bench/agentpii5/records.py v5+5/-0 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/report.py v5+5/-0 v6+7/-0 both_removed=0
+C4 prototype/bench/agentpii5/revise.py v5+1/-1 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/scenarios5/common.py v5+0/-0 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/schema.py v5+1/-0 v6+1/-0 both_removed=0
+C4 prototype/bench/agentpii5/test_cli.py v5+0/-0 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/test_contracts.py v5+0/-0 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/test_form.py v5+0/-0 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/test_judge.py v5+0/-0 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/test_observe.py v5+1/-0 v6+1/-0 both_removed=0
+C4 prototype/bench/agentpii5/test_schema.py v5+4/-0 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/test_spec_form.py v5+0/-0 v6+1/-0 both_removed=0
+C4 wiki/INDEX.md v5+2/-0 v6+0/-0 both_removed=0
+C4 wiki/MAP.md v5+134/-14 v6+193/-0 both_removed=0
+C4 wiki/STATE.md v5+74/-0 v6+3/-0 both_removed=0
+C5 wrote evidence/compat_raw.json rows=24

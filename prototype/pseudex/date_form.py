@@ -89,7 +89,12 @@ def render_like(canonical: str, like: str) -> str:
     if worded and spoken._month_value(worded.group(2).lower().replace("ё", "е")) is not None:
         sample_month = worded.group(2)
         table = _MONTH_NOM if sample_month.lower().replace("ё", "е") in _MONTH_NOM.values() else _MONTH_GEN
-        parts = [_pad_like(day, worded.group(1), False), table[month]]
+        month_text: str = table[month]
+        if sample_month.isupper():
+            month_text = month_text.upper()
+        elif sample_month[:1].isupper():
+            month_text = month_text.capitalize()
+        parts = [_pad_like(day, worded.group(1), False), month_text]
         if worded.group(3):
             parts.append(year)
         text = " ".join(parts)

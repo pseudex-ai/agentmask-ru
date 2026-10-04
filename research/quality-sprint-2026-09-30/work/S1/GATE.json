@@ -1,0 +1,76 @@
+{
+  "task": "S1",
+  "gate": "G3",
+  "status": "PASS",
+  "status_scope": "design/RED evidence for the S1 critical classes on the pinned unchanged engine; NOT a product-quality, container, production or release gate",
+  "revision": "product source 0bfda2363ef1a1d552e2ac093129b1026a86ad68 at evidence HEAD 890c50849a326f882eac336ba4e38c91171de473",
+  "wave": "quality-sprint-design-red-1",
+  "reviewer_required_next": "independent reviewer (gpt-6-astra per plan) before any dependent K1 design decision; S1 author cannot accept its own patch because no patch was written",
+  "evidence": [
+    "INPUTS.json",
+    "SPEC.md",
+    "s1_probes.py",
+    "run-s1.sh",
+    "RED.log",
+    "determinism-run2.log",
+    "determinism-run3.log",
+    "HASHES.txt",
+    "DELTA.json",
+    "OWNER-QUESTIONS.md"
+  ],
+  "checks": {
+    "probes": 11,
+    "properties_violated": 4,
+    "violated_probes": ["A2", "B", "C", "D1"],
+    "properties_holding": 5,
+    "not_measured": ["C_nonpii_id_rewrite (D2)", "D_stream_vs_whole_original_episode"],
+    "contract_gap": ["E2"],
+    "exit_code": 4,
+    "expected_red": 4,
+    "runs": 3,
+    "deterministic_violated_set": true,
+    "fixture_spec_sha256": "438f318669d66b7bdcacfcec0141646dca5d446878a88a74226ee10f5e444fec",
+    "observations": {"non_pii_checks": 375, "non_pii_mutations": 0, "stream_comparisons": 130, "stream_mismatches": 0},
+    "product_files_written": 0,
+    "corpus_cases_run": 0,
+    "provider_calls": 0,
+    "installs_or_downloads": 0,
+    "git_mutations": 0
+  },
+  "class_status": {
+    "A_name_collision_backward_and_forward": "PARTIALLY_REPRODUCED: plain-message and foreign-namesake halves HOLD (A1/A3); the tool-result leg VIOLATED (A2)",
+    "B_partial_name_given_left_real": "REPRODUCED (detection leg, reconstructed surface)",
+    "C_whole_parts_consistency": "REPRODUCED (state-dependent; clean control C2 holds)",
+    "C_numeric_prose_restore": "REPRODUCED for the invented-prefix sub-class (D1)",
+    "C_nonpii_id_rewrite": "NOT_MEASURED (recorded rewrite not reproduced; class stays open)",
+    "D_stream_vs_whole_original_episode": "NOT_MEASURED (in-process equality holds; original episode not reproduced; proxy leg not measured; E2 documents the flush contract gap)"
+  },
+  "gate_requirement_fit": {
+    "reproducible_red_on_pinned_unchanged_build": "yes (exit 4, three identical runs)",
+    "causal_mechanism_where_state_restored": "mechanism traced by execution and source pointers for A2/B/C/D1/E2; original trace causality explicitly NOT claimed",
+    "common_measure_and_counterexample": "yes: each RED has a property, x/n and the executed counterexample; A1/A3/C2/P/E1 are the counter-controls",
+    "disputed_choice_approved": "NOT_APPLICABLE_YET — the disputed choices are collected as O-CORE-S1-1/2/3 and remain OWNER_PENDING"
+  },
+  "owner_pending": [
+    {"id": "O-CORE-S1-1", "topic": "tool-result collision between an issued substitute and another person's real value", "status": "OWNER_PENDING", "blocks": "K1 identity/collision mechanism for the tool-result leg", "options": "SPEC.md §Mechanism options O-CORE-S1-1 (refuse / disambiguate from available inputs with no new API fields / re-mask)"},
+    {"id": "O-CORE-S1-2", "topic": "lone surname or given-name fragment of a known person in the same conversation", "status": "OWNER_PENDING", "blocks": "K1 whole/parts linking", "options": "SPEC.md §O-CORE-S1-2"},
+    {"id": "O-CORE-S1-3", "topic": "phone country-prefix authority on the restore leg when the model invents one", "status": "OWNER_PENDING", "blocks": "K1 numeric fidelity mechanism", "options": "SPEC.md §O-CORE-S1-3"}
+  ],
+  "not_claimed": [
+    "entire quality sprint green",
+    "recall/precision/whole-coverage/PPV targets met",
+    "production behaviour or installed-artifact verification",
+    "original trace causality for N2/N3/P4/D1/D2",
+    "non-PII rewrite class closed (D2 NOT_MEASURED)",
+    "stream-vs-whole class closed (E1 in-process holds, E2 contract gap, proxy leg not measured)",
+    "any product patch, merge, release or paid benchmark GO",
+    "that the recorded synthetic surfaces are customer data (they are benchmark surfaces)"
+  ],
+  "production_artifact_gate": {"status": "NOT_MEASURED", "reason": "inherited from B0; no production access in S1"},
+  "allowed_next": [
+    "owner picks O-CORE-S1-1/2/3",
+    "independent reviewer verifies S1 evidence",
+    "K1 design only after O-CORE and M1c, per SPRINT-PLAN §11"
+  ],
+  "forbidden_next_without_new_go": ["product patch", "engine/scorer edit", "PR/merge/release", "paid benchmark calls", "production change"]
+}

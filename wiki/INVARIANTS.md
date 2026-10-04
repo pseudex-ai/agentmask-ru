@@ -96,6 +96,20 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 - **Checksum-gated, and the checksums stay in the binary.** СНИЛС mod 101, ИНН
   weight vectors, Luhn, ОГРН — they are the algorithm, not the tuned data; cue
   words and priority are leased. Pins: `test_coverage_152fz`, `test_product`.
+- **A CHECKSUM COMPUTED ON A SUB-RUN DOES NOT DECIDE HOW LONG THE SUPER-SPAN
+  IS** (класс Г, вектор 5). `+79628863588` passes the СНИЛС mod-101 (about one
+  random eleven-digit number in a hundred) and `\b\d{11}\b` runs five
+  characters shorter than the span libphonenumber reads; SNILS (6) outranks
+  PHONE (5), and length is only a tiebreak, so the checksum of the SHORTER span
+  rewrote the BOUNDARY: the substitute stood on eleven digits, the «+» stayed a
+  literal, and the leaf received a СНИЛС notation instead of a phone
+  (g07 `rag-008`, `form OUT/tool_arg 0/1`). `_boundary_beats_checksum` drops a
+  checksum span that is a STRICT sub-run of one wider span of another type when
+  the BOUNDARY CHARACTER — the wider span's character just outside the sub-run —
+  is not a digit. The priority table is untouched, so at EQUAL boundaries a
+  valid СНИЛС/ИНН/card still outranks a bare phone, and a real eleven-digit
+  СНИЛС written `79628863588` does not move. Pins: `test_class_g_leaks.py`
+  (5a-5d), `test_coverage_152fz`, `test_hard_cases`.
 - **A passport needs a cue, and the window after it is sixteen characters.**
   «Паспортные данные: 4518123456» needed nine and the pattern allowed eight.
   UNPINNED.
@@ -107,6 +121,17 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   `xxxx`, AWS's own EXAMPLE key) must not mask. Pins: `test_credentials`.
 
 ## Structured KV
+
+- **Evidence in one JSON value does not type another value.** A patient NAME
+  or PHONE in a sibling field cannot make a booking/delivery date a DOB.
+  Source-offset JSON paths retain birth-key ancestry and birth cues inside a
+  free-text leaf. Invalid JSON falls back to prose, never bypasses detection.
+  Pins: `test_hop_integrity` (`test_operational_json_dates_ignore_adjacent_person_fields`,
+  `test_json_value_context_preserves_source_offsets`).
+- **Formatting of a field label is not part of its value.** Markdown delimiters
+  surrounding a NAME label stay outside the NAME span; issued pseudonyms remain
+  their own identity, but new real names under that label remain detectable.
+  Pins: `test_hop_integrity` (`test_markdown_name_caption_is_not_part_of_identity`).
 
 - **A `KEY_TYPE` entry types the WHOLE value with no shape check, so an
   ambiguous business word may never be one.** «счёт» is an invoice more often
@@ -120,6 +145,23 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   `{"a": "д. 12, кв. 5"}` was not found at all — 189 of 267 leaked LOC tails on
   AgentPII v3; coverage 70.0% → 80.4%. Pins: `test_product`.
 
+- **A PARENT KEY TYPES ITS CHILDREN — FOR ANY TYPED OBJECT, NOT ONLY FOR
+  `address`** (класс Г, вектор 3). The rule was written once, hard-wired to LOC
+  (roles city/street/house/flat with street+house required), so in ONE payload
+  the `address` object was closed whole while `{"passport": {"series": "4608",
+  "number": "246256"}}` went out open: four and six digits carry no checksum, no
+  shape recogniser claims them, and `_JSON_KV` matches only STRING values — the
+  parent key was invisible. 24 leaks in g09 `document-027…-048`, the only zero
+  cell of the form table (`PASSPORT 0/22`). `structured._object_key` reads the
+  key that opens the object backwards from its brace, `_key_type` types it, and
+  the LEASED map `COMPOSITE_TYPES` names the roles, their order (identity, not
+  formatting) and the digit length of each — so the substitute is split by the
+  same lengths on the way back and the tool receives the real series and the real
+  number of ONE person. The address half is unchanged and no longer needs a
+  typed parent: leaf NAMES are still the evidence. FAIL-CLOSED: an object whose
+  parent types it but whose parts do not read is masked by the key-typed path,
+  never left open. Pins: `test_class_g_leaks.py` (3a-3g), `test_product`,
+  `test_address_composition`.
 ## Dates
 
 - **A bare date is not personal data; it becomes personal by ASSOCIATION** —
@@ -233,6 +275,37 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   among them) to buy two fewer false masks on MASSIVE. Measure the price of any
   veto on MASSIVE before accepting it. UNPINNED — `bench/eval_massive_ru.py`.
 
+- **THE SCRIPT IS A PROPERTY OF THE INDEX, NOT A SEPARATE BRANCH** (класс Г,
+  вектор 1). Latin names were produced by ONE positional rule over
+  `_LATIN_PAIR_RE`, accepted only when a word of a 641-entry seed stood in the
+  first slot — while the surname itself sat in `dict_surnames` (196 800),
+  Cyrillic. The engine «knew» «Кукушкин» and did not know `Kukushkin`:
+  `Kukushkin Valeriy` masked only `Valeriy`, and the model read a hybrid
+  (`Kukushkin Родион`), concluded «другой человек» and stopped working (g06
+  `tracker-004`, 5 of 8 IN/tool hops with a Latin name leaked). `assets` now
+  derives `latin_first`/`latin_surnames` from the SAME dictionaries through the
+  leased translit table, and `names._latin_dictionary_hit` judges every Latin
+  word on its own — so word order stops being evidence, and `_merge_adjacent`
+  joins the words into one span. The gates are narrowed, not widened: a capital
+  or a naming cue, and a word inside an e-mail/URL/path/`snake_case` token is
+  never a person (`_plain_ascii_token`). Pins: `test_class_g_leaks.py` (1a-1d),
+  `test_overmasking`, `test_derived_forms`.
+- **A LATIN WORD IS NOT JUDGED BY THE RUSSIAN DICTIONARY** (класс Г, вектор 1,
+  следствие). `is_stretched_filler` asked pymorphy about the LATIN string, got
+  «unknown», and — because `anna` has two distinct letters — called it a filler;
+  the join that keeps fillers OUT of a name then deleted the given half before
+  any rule could judge the surname beside it. Unknown is not filler. Pins:
+  `test_class_g_leaks.py` (1a).
+- **A BARE LOWERCASE SURNAME MAY BE NAMED BY ITS ANCHOR, NOT ONLY BY A CAPITAL**
+  (класс Г, вектор 2). `_lowercase_dictionary_ok` refuses «репина» (an ordinary
+  NOUN reading), and a word in no dictionary at all («аленчиев») had no second
+  signal: only `_is_surname_shaped` and a predicate. `_anchored_surname` reads
+  the anchor the module already had — the leased prepositions that introduce a
+  PERSON (от/к/у/для …, `assets_source.NAME_ANCHOR_PREPS`) and the naming cues —
+  and accepts a case-ending-stripped surname shape that pymorphy does NOT know
+  as an ordinary word. So «от аленчиев» / «к аленчиеву» are people while «от
+  клиентов», «для сотрудников», «у поставщиков» (NOUN, genitive plural) stay
+  prose. Pins: `test_class_g_leaks.py` (2a), `test_overmasking`.
 ## Name morphology
 
 - **A name part with no dictionary NAME reading is not thereby indeclinable,
@@ -272,6 +345,24 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 
 ## Address
 
+- **THE ANCHOR MAY GRANT A SPAN, NOT ONLY FORBID ONE** (класс Г, вектор 2).
+  A lowercase word with no house number belonged to NO branch: the marked arms
+  want a type word, the marker-less ones want a capital or a digit, and
+  `markerless_lower` is held by the number. «адрес репина», «на бибиревская» —
+  the real street of the customer — went to the model and then into an e-mail
+  body (g08 `mailfind-000`, `mailfind-003`, `IN/tool leaked` twice each). The
+  anchor in front of the word already existed (`names._street_reference` reads
+  «на/по» + the ГАР register + no number) but could only TAKE a span away from
+  names. `street_nohouse_bare` + `street_nohouse_prep` (both leased) plus two
+  gates in the engine: the register (ГАР) AND a morphological reading of a NAME
+  OF A PLACE — a surname reading on top (репина, ленина, гагарина) or a feminine
+  nominative adjective (бибиревская, заречная, школьная). That rejects «правды»,
+  «труда», «строителей» (ordinary genitives in ГАР) and «на московский» («…вокзал»,
+  a masculine adjective agreeing with an omitted noun); a settlement reading
+  (Geox) is NOT accepted, because ГАР also holds city names and a bare toponym
+  is not a street. The intent anchor is the EXACT one — `_intent_before`'s fuzzy
+  half answers «yes» to «поставь будильник». Pins: `test_class_g_leaks.py`
+  (2a-2b), `test_overmasking` (99.5%, identical false positives), `test_product`.
 - **An address span drops its leading CUE words.** «адрес ленинский проспект
   55» sent «адрес» to the tool inside the street name, «мой адрес …» sent two.
   Trimmed with `addr_ctx` for the cue vocabulary and the `Apro` grammeme for
@@ -417,8 +508,53 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 - **A settlement inside an address is REAL and stays.** The substitute keeps the
   customer's city (Одоев stays Одоев); only street and house are fake — the city
   identifies nobody and the directory lookup needs it. Pins: `test_hard_cases`.
+- **The street TYPE word is CONTENT, and its presence and word come from the
+  RECORD — the marker's form, position, case and letter-case belong to whoever
+  writes.** A leading type word is the writer's own notation and travels verbatim
+  (abbreviation included); a type word written AFTER the name takes the RECORD's
+  word, because «название первым» is the order the substitute itself is minted
+  in. Nothing is added when the customer wrote no type word. One renderer
+  (`morph_places._street_like`) serves the masking leg, prose and a schema field,
+  so «переулок Пушкина» and «улица Пушкина» stop being interchangeable in a CRM.
+  Owner's decision (type = identity); witnesses g02/m-074, m-112. Pins:
+  `test_address_composition`.
+- **The street type is part of the ADDRESS IDENTITY, and the LINKING key is a
+  different key.** `address_key` carries the type as its own slot — LAST, and
+  normalised («ул» and «улица» are one «улица») — so two types named on one name
+  are two rows and two substitutes, while the same place written WITHOUT the type
+  is a PREFIX of it. That prefix relation is what links the pair:
+  `Vault._same_place_written_differently` inside a conversation (by the indexed
+  tolerant key) and `Vault._place_family_owner` by the key itself — two indexed
+  readings, so «one place, one substitute, for ever and across conversations»
+  holds even with no conversation named. The type is compared when BOTH writings
+  name one, and a different type on the same base refuses the link.
+  `key_type` reads that slot. Pins: `test_address_composition`,
+  `bench/agentpii5/test_loc_acceptance.py` (A2),
+  `bench/agentpii5/test_mint_consistency.py`.
+- **One real street is one fake street, whatever the house — and the house LITERA
+  is part of the house's identity.** The reuse key is the street stem WITHOUT the
+  house (`street_house_key` deliberately drops the litera) and the reuse rule may
+  not skip the row whose tolerant key matches, which is exactly what «9а» does to
+  «9» (`Vault._same_street_in_conversation`); «34 в» and «34» are two houses
+  (`address_key` glues a spaced litera and never strips a letter that follows a
+  number), and two different houses of one street get two different fake numbers
+  (`_shares_a_house_in_conversation`). Witnesses g06 P3 (four substitutes for one
+  street) and P4 (the courier to 34 instead of 34в). Pins:
+  `test_address_composition`.
+- **A fragment of a substitute resolves WHOLE or is named loudly — never as a
+  hybrid.** The record's settlement is REAL by construction and is not indexed as
+  a piece of the fake, so `place_owner` asks with the city taken out and
+  `_settlement_of(found)` decides whether the phrase can be claimed whole at all;
+  a phrase naming a city the fake does not carry is left to the shorter window,
+  so the agent's own city is not deleted. A fake number that stays standing in
+  the output, belonging to the substitute whose street stands beside it, is added
+  to `surviving_substitutes` as a residual (`_address_numbers_left`) — the «дом
+  22 остался подстановкой, residual {}» of g08/single-005. Pins:
+  `test_address_composition`.
 
 ## Spoken
+
+- **A recognized whole dictated substitute resolves through the same indexed digit identity on both OUT legs; residual diagnostics must also recognize it.** Supporting a new spoken surface without its residual signal would hide a fake reaching the consumer. Exact copied spoken forms retain their recorded literal: leading zeroes can split a numeral group irreversibly. Renderer readback must preserve all target digits; unsupported layouts are not certified form support. Pins: `test_spoken_identifier_form`.
 
 - **An identifier dictated aloud has NO digit, and every recognizer waited for
   one** — 281 phones, cards, СНИЛС, ИНН and passports spoken as words, none
@@ -442,6 +578,24 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 
 ## Swap
 
+- **Candidate provenance constrains restoration.** A PLACE-only framing may not
+  borrow a NAME fragment and swallow the time/count next to a name. A complete
+  key/alignment-bound NAME can outrank an unrelated contained token, but guessed
+  residual fragments cannot obtain that priority. Every plain NAME fragment must
+  align all source words; synthetic initials-index hits do not license ordinary
+  words. Latin and Cyrillic complete names have the same1–4word window capacity.
+  Pins: `test_hop_integrity` (`test_name_fragment_does_not_claim_adjacent_time_or_quantity`,
+  `test_coherent_latin_name_outranks_colliding_single_token`,
+  `test_full_transliterated_name_keeps_all_roles_and_script`,
+  `test_initials_index_does_not_rewrite_ordinary_words`).
+
+- **Numeric address projections are not global literal tokens.** A shown house
+  or flat digit only restores under role evidence (typed address object or
+  licensed cue). Matching it inside an ID/count/list number/phone prefix may
+  neither rewrite that value nor preempt the full PHONE restoration.
+  Pins: `test_hop_integrity` (`test_short_numeric_components_do_not_rewrite_business_values`,
+  `test_complete_phone_outranks_unrelated_house_literal`).
+
 - **A DIGIT FRAGMENT COMES BACK REAL ONLY IN THE ROLE IT WAS NAMED IN** (Б29).
   «Ровно одна наша подмена НОСИТ эти цифры» — утверждение о наших строках, а
   не о том, чьё число написал агент, и его вероятность растёт с трафиком
@@ -459,6 +613,39 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   прибором `bench/fragments`: порча чужих чисел 206 → 15, ложные тревоги
   66 → 5. Pins: `test_prose_fragments.py`, `test_argument_form.py`,
   `test_collisions.py`.
+- **THE NUMBER DECIDES, NOT THE POSITION OF ITS DIGITS** (класс Д). Подмена
+  чеканится из НЕВОЗМОЖНОГО диапазона — регион «00» у ИНН, MII 0 у карты, серия
+  «00YY» у паспорта, — и модель, «чиня формат», снимает ведущие нули:
+  «Я убрал ведущие нули (это единственная правка формата, которая была возможна
+  без изменения самих данных)» (g03 `retry_same_tool`). Численно она права, по
+  идентичности — нет: `008499949700` и `8499949700` разные ИНН. Ведущий ноль НЕ
+  НЕСЁТ МЕСТА, поэтому переносить смещение на канон нечем: прогон, равный
+  цифрам подмены как ЧИСЛО (отличаются только ведущие нули), получает настоящее
+  значение ЦЕЛИКОМ, а не `canon[2:12]` — 10 из 12 настоящих цифр, порча данных
+  при пустом остатке, невидимая ни одному публичному счётчику (`leak`,
+  `coverage` и `residual` зелены одновременно, пока огрызок не опознаёт ни один
+  распознаватель). Смещение остаётся ответом на вопрос о ДРУГОМ числе — серия
+  паспорта, номер, последние четыре цифры, — то есть там, где место называет
+  подсказка или поле. Подпись подмены однозначна только ПОСЛЕ снятия нулей: два
+  владельца одного числа — отказ, а не выбор, и отказ НАЗЫВАЕТСЯ в остатке.
+  Pins: `test_digit_truncation.py` (Д-1, Д-2, Д-3).
+- **A REFUSAL IS NAMED: A SUBSTITUTE ONE DIGIT FROM WHAT THE AGENT WROTE IS A
+  RESIDUAL** (класс Д, Д-4). Подмена, переписанная агентом на одну цифру — та же
+  длина, ровно одна заменённая цифра, — не разрешается (нечёткая подстановка
+  чисел запрещена прямо (`prototype/pseudex/spoken.py`: «fuzzy matching on numerals is
+  forbidden»)
+  и не молчит: она попадает в `surviving_substitutes` / `residual_tokens`.
+  Свидетели g12 `long_clinic-005` («+79693604666» при минтированном
+  «89693604066»), g12 `long_clinic-043`, g08 `single-039` (модель разобрала
+  диктовку на одну цифру иначе, чем движок): инструмент исполнялся на ФЕЙКЕ при
+  200 и пустом остатке. Знак страны (ведущая 7↔8) — нотация, а не цифра номера,
+  и складывается до сравнения; порог — шесть цифр (`_NEAR_MISS_DIGIT_FLOOR`,
+  своя константа, а не `_WHOLE_SIGNATURE_MIN`, чьё значение менять нельзя:
+  у неё свой вопрос, вето «уже написано целиком»), иначе количество в одной
+  правке от подмены читалось бы как «почти наша подмена». Порядок тяжести —
+  `prototype/pseudex/vault.py`:
+  «порча данных хуже молчаливой потери, молчаливая потеря хуже названной,
+  названная хуже ложной тревоги». Pins: `test_digit_truncation.py` (Д-4).
 - **CONTENT FROM THE VAULT, FORM FROM THE AGENT — FOR EVERY TYPE, ON BOTH
   LEGS, WITH NO EXCEPTION FOR NAMES.** On the way in the substitute mirrors
   the form the CUSTOMER wrote (a name's grammatical case, letter case and
@@ -491,6 +678,13 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   fixed in tests and dead in production. Pins: `test_argument_form`,
   `test_collisions`; UNPINNED at the HTTP surface — `test_perf_masking` should
   send `conversation_id` on `/unmask_arguments` and expect the literal.
+- **A shown form with conflicting owners must not pick a last writer or a
+  minted owner through reformatting.** Within the retained conversation evidence,
+  conflict is sticky across replay and reopening. Select replacement ranges
+  before vetoing a conflicting identity, so a refused whole cannot fall through
+  to smaller restored parts. Self-mappings are conflict markers, not real spelling
+  evidence; residual diagnostics must remain visible. Same-value case/yo NAME
+  variants are not different owners. Pins: `test_shown_form_ambiguity`.
 - **DETECTION WITHOUT A MATCHING SUBSTITUTE IS A NET LOSS on the tool axis.**
   Hearing spoken identifiers raised detection and LOWERED the tool axis five
   points, because values that used to pass through went through a lossy restore.
@@ -552,24 +746,111 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 
 ## Agent form
 
+- **Conflicting address roles do not authorize a hybrid.** When a changed
+  composite mention names parts of different known addresses, retain that
+  unresolved mention and expose residuals; do not combine their real parts to
+  improve a restoration score. Exact whole-token evidence remains stronger
+  than independently matched leaves. Pins: `test_location_form_adversarial`.
+- **A numeric address projection keeps its declared role.** A known fake
+  house under a flat cue cannot borrow the real flat, and a lone flat cannot
+  expand into the whole real address. Bare `д` additionally needs grammatical
+  or field-boundary evidence; an initial/category label is not a house.
+  Pins: `test_location_form_adversarial`.
+
 - **THE FORM BELONGS TO THE AGENT, THE CONTENT TO THE VAULT.** The vault stores
   lower case and `_pick_value` handed it straight into the argument: «ким
   виктор» in the CRM — 262 field divergences, the largest class. `cased_like`
-  carries the case word by word and the rule is SYMMETRIC. PROSE is untouched.
+  carries the case word by word and the rule is SYMMETRIC. This name rule does
+  not change prose grammar. PHONE notation belongs to the current sender on
+  BOTH tool and answer legs (D-070); a dictated original must not override a
+  numeric argument, and an earlier user prefix must not override the answer.
   Pins: `test_argument_form`, `test_hard_cases` (`test_the_form_belongs_to_the_agent`).
+  PHONE pins: `test_phone_hop_form.py`, `test_product.py`.
 - **The agent's GENERIC word survives even when ours is absent.** `_street_like`
   had «we have no street type — return our name» and the agent's «ул.» fell on
   the floor. The type word is a marker of the same class as «д.» and «кв.»,
   which `in_form_of` already takes from the agent verbatim. UNPINNED.
 
+## Notation
+
+- **ONE INTERFACE DECIDES NOTATION — there are not seven decisions.** Every restore
+  seam (verbatim, token, reformatted, spoken, cue-gated, case, fragment) and every
+  mint asks `notation.render_like(value, surface, kind, target, for_tool)`; a seam
+  that renders on its own is the class А defect returning, and it returns silently
+  because the symptoms of two seams disagreeing look like a model's mistake. The
+  per-type renderers (`_phone_in_form_of`, `_digits_in_form_of`, `_same_shape`,
+  `plate_in_form_of`, `morph_places.in_form_of`, `date_form.render_like`,
+  `agent_form`, `translit`) stay implementations BEHIND the interface and are not
+  called around it. Pins: `test_notation_symmetry.py`.
+- **THE SUBSTITUTE INHERITS THE SOURCE'S NOTATION, AND AT THE MINT IS WHEN IT IS
+  DECIDED.** Dictation, letter case, separators (including the position of a
+  plate's region), the script (Latin source → Latin substitute) and the numeric
+  notation are all the customer's; a canonical-looking substitute where the
+  customer dictated or typed something else is the defect, not a tidier form.
+  A later renderer cannot put back a notation the mint threw away. Pins:
+  `test_notation_symmetry.py`, `test_hard_cases.py`.
+- **THE ARGUMENT CARRIES THE AGENT'S NOTATION; WHERE THE TOOL CANNOT EXECUTE A
+  PHRASE, THE REGISTER'S.** A dictated rendering (a word-plate, an address said
+  aloud) is a sentence no validator accepts, so on the tool leg it yields to the
+  written form — ГОСТ for a plate, a digit address for a LOC — while the letter
+  case and the alphabet stay the agent's. A WRITTEN value is not re-notated: it
+  goes to the tool as it stands (`test_location_hop_form` §4.2 two addresses),
+  because rendering it into the case of our own substitute would change what the
+  customer wrote. Pins: `test_notation_symmetry.py`, `test_location_hop_form.py`,
+  `test_atomic_form_adversarial.py`.
+- **A SUBSTITUTE RESOLVES BY ITS CONTENT, NOT BY ITS SPELLING.** A plate gets a
+  content signature (letters AND digits, both Latin readings folded) and is
+  indexed by it, so spacing, case, alphabet and «the agent spelled it out» all
+  resolve; the mint's written mirror changes PRESENTATION ONLY and never a letter
+  or a digit, or the signature stops finding the row and a fake reaches the
+  validator. Pins: `test_notation_symmetry.py`, `test_hard_cases.py`.
+- **THE LEAK GUARD COMPARES WHOLE VALUES, NOT WORD SETS.** `_mirror_leaks_nothing`
+  reads both strings back as address ROLES with numbers folded to digits; a
+  dictated mirror is legitimate (the notation rewrites its own digits as words)
+  and a surviving real word or real number is not — it flips a role and the safe
+  canonical is shown instead. A word-set comparison refused the flawless dictated
+  mirror while a real house could still slip through the digits it compared by
+  membership. Pins: `test_notation_symmetry.py`, `test_location_form_adversarial.py`.
+
 ## Vault
 
+- **Address family lookup changes only the generic-type slot, never an
+  arbitrary canonical prefix.** A city is not the owner of its full address.
+  Pins: `test_hop_integrity` (`test_city_family_cannot_steal_full_address_owner`,
+  `test_explicit_street_types_remain_distinct`).
+- **A compositional projection reuses its full core's part namespace but stays
+  conversation-scoped.** City omission with a retained apartment must not mint
+  another house/flat; another apartment stays distinct; two city owners remain
+  ambiguous and projections from another conversation do not answer this one.
+  Pins: `test_hop_integrity` (`test_city_omission_keeps_core_and_apartment`,
+  `test_projected_parts_restore_without_city_or_other_flat`,
+  `test_missing_city_projection_is_conversation_scoped`,
+  `test_ambiguous_cityless_address_never_picks_a_city_owner`).
+
 - **Canonicalization collapses spellings to one key → one token**: `+7 999…` /
-  `8 999…` / `89991234567`; detokenization returns the canonical form. Pins:
-  `vault_test`.
-- **Substitutes are format-preserving and checksum-INVALID.** A fake СНИЛС / ИНН /
-  card deliberately fails its own checksum, so a token can never collide with a
-  real person's ID. Pins: `test_loop`, `test_product`.
+  `8 999…` / `89991234567`. Canonical identity is not a universal output
+  notation: PHONE restoration renders the real digits in the current sender's
+  supported form on both legs. Pins: `vault_test`, `test_phone_hop_form.py`.
+- **The identity is a STABLE CORE + MUTABLE PARTS, keyed on the core only** (D-081).
+  One identity must mint ONE substitute across every surface change: a name with
+  and without the patronymic (`Иванов Пётр` / `Иванов Пётр Сергеевич`) is one
+  person; an address dictated (`дом тридцать восемь`) and typed (`дом 38`) is
+  one place; a changed flat or entrance (`кв 7` → `кв 42`, `подъезд 1` → `3`)
+  keeps the SAME street+house fake and only the mutable part changes. The stable
+  core per type: LOC = street + house (flat/entrance/floor/building are
+  `place_parts`); NAME = surname + given (patronymic/initials are not in the
+  key); PHONE = the digits (notation is presentation). The mutable parts are
+  PRESERVED as separate fake parts, never dropped — dropping them collapses two
+  different people in one house into one fake (a collision). A `differ` negative
+  control (`Иванов Пётр` vs `Иванов Николай`) keeps «one fake» from being
+  achieved by over-collapsing. Measured by `bench/identity_invariant.py`.
+  UNPINNED — the pin test lands with the identity phase 2 fix.
+- **Substitutes are format-preserving and checksum-VALID from impossible ranges.** A fake
+  СНИЛС / ИНН / card deliberately passes its own checksum (so a checksum-checking
+  agent still calls the tool) but is minted from ranges that cannot belong to a
+  person (ИНН region «00», card MII 0, СНИЛС never ≤ 001-001-998), and
+  `_unique_token` refuses a mint equal to a value the customer already holds.
+  Pins: `test_loop`, `test_product`, `test_other_hop_forms`.
 - **`unmask_text` reindexes by digit signature**, so a numeric token the model
   reformatted (`+7…` → `8…`, separators stripped) still detokenizes. Pins:
   `test_product`.
@@ -600,6 +881,26 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   assistant messages carry REAL values; «assistant means echo, do not mask» would
   hand the model every value it ever mentioned. Demonstrated, not argued. Pins:
   `test_perf_masking`, `test_product`.
+
+- **A SUBSTITUTE MAY NOT CARRY A WHOLE WORD THAT IS ANOTHER PERSON'S REAL
+  VALUE IN THE SAME CONVERSATION** (класс Г, вектор 4; решение владельца,
+  [DECISIONS-SPRINT.md](../research/hop-format-audit/DECISIONS-SPRINT.md) §Класс Г). `_shares_a_word` compares a candidate with
+  only the value it replaces, and `_is_free_token`'s three point queries compare
+  WHOLE strings — so when the transcript was re-detected and the engine re-minted
+  its own echo, the draw produced a substitute carrying the customer's real
+  surname: `Отправитель — Лебедева Ч. Д.` stood in front of the model for eight
+  more requests while the real client was `Лебедева Екатерина Петровна` (g04
+  `long_order-027`; g12 `fanout_pick-020` shares «валерий»). `_spent_name_words`
+  indexes the conversation's real canonicals AND its issued substitutes as whole
+  words, and `_is_free_token` refuses any candidate that repeats one of them.
+  STRICT on both halves of the mint loop: when a dialogue names more distinct
+  people than the surname pool (36), the mint FAILS CLOSED — a 5xx, never a
+  substitute that spells out a real surname — and the pool is named in the
+  error. A shared STEM is not a leak and keeps its soft second half
+  (`_shares_a_stem_in_conversation`). The same person's OWN words are exempt
+  (`carry`), or growth («Букин Сергей» → «Букин Сергей Иванович») and initials
+  would mint a second identity. Pins: `test_class_g_leaks.py` (4a-4e),
+  `test_product`, `test_collisions`.
 
 ## Conversation scope
 
@@ -635,6 +936,32 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   counts the leak, not the broken tool call — so a host with memory declares
   `pseudonym_scope` / `PSEUDEX_PSEUDONYM_SCOPE`. Pins: `test_collisions` (BOTH
   halves of the trade).
+- **A DERIVED FORM OF THIS DIALOGUE'S OWN SUBSTITUTE IS OURS, WHATEVER TYPE THE
+  SPAN CARRIES.** Class В: the model writes our substitute back as a part
+  («Котов Владислав»), one surname, initials («Котов В. О.»), an oblique case
+  («Котову Владиславу Олеговичу»), the other script — and `cardholder`
+  prefix-matches `card`, so `structured.detect_structured_kv` demotes the leaf
+  to OPAQUE and the span's TYPE stops saying NAME, which is how the dialogue's
+  own substitute became a second person («три личности», g04/g13) and a
+  paragraph of `REDACTED…` where a substitute stood (g07). The question is asked
+  of the SURFACE and answered by the vault
+  (`Vault.name_rendering_is_ours`, a sibling of `place_fragment_is_ours` /
+  `digit_fragment_is_ours` / `date_reading_is_ours`), and the rule lives in
+  `redact.is_own_substitute` so that `mask_text`, the envelope and the frozen
+  scorer `bench/agentpii3/score.py` answer one text the same way. Bounds: the
+  substitute must be one this CONVERSATION was shown (`token_uses`/`minted_in`),
+  ONE owner only, and the surface must carry the SURNAME slot — a bare given
+  name or patronymic is a word many people share. LOC keeps its own identity
+  machinery. Deliberately NOT gated on the caller's own-rendering evidence, so
+  the rule holds on the evidence-free reading a plain chat and `/mask` take.
+  Pins: `test_own_substitute_fixed_point`.
+- **THE ENGINE'S OWN REDACTION MARKER IS A FIXED POINT, NOT DATA.**
+  `REDACTED<6 hex>` is a redaction (`vault._render_token`'s fallback,
+  `envelope._neutral_redaction`), and its hex digits read as a NUMBER to the next
+  pass: under a numeric field key the engine minted a fake card over its own
+  redaction, so the one inert string became a new value on every request and the
+  model never saw the substitute it was given (g07). Pins:
+  `test_own_substitute_fixed_point`.
 
 ## Cache
 
@@ -1158,6 +1485,7 @@ named next to it.
   entrance; noun genitive; genitive plural door; two-word city.
 - Spoken: no fuzzy on numerals.
 - Swap: both-axes measurement; pool floor; hyphen-glued substitutes.
+- Vault: identity stable-core/mutable-parts (D-081).
 - Agent form: the agent's generic word.
 - Local UI: header not cookie; sign-in token from entrypoint.
 - Process: root logger.

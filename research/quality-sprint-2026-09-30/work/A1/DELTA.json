@@ -1,0 +1,94 @@
+{
+  "task": "A1",
+  "wave": "quality-sprint-design-red-1",
+  "generated_utc": "2026-09-30T20:12:22Z",
+  "status": "OWNER_PENDING",
+  "before": {
+    "acceptance_manifest": "did not exist as an exact proposal; SPRINT-PLAN.md#L159 named the fields O-DATA must accept",
+    "units_and_clusters": "not fixed; occurrences and identity clusters were never separated",
+    "ppv_vs_specificity": "owner principle stated, no sampling design",
+    "blind_acceptance_protocol": "not defined; prior label work existed as an AI proposal only",
+    "support_inventory": "no per-type independent-unit count existed outside the corpora themselves"
+  },
+  "after": {
+    "acceptance_manifest": "ACCEPTANCE-PROPOSAL.json 1.0.0-draft (OWNER_PENDING) with units, slices, CI, PPV, specificity, clusters, known-vs-blind, access log, cost in review items",
+    "support_inventory": "INVENTORY.json + DATA-GAPS.csv (511 rows) + DATA-GAPS-SUMMARY.json, all counted from frozen sources",
+    "gap_arithmetic": "5 of 10 native types under 300 independent identities; v6 projects to ~25-34 units/type at 500 cases",
+    "owner_questions": "10 explicit O-DATA questions in OWNER-QUESTIONS.md"
+  },
+  "changed_files": [
+    "research/quality-sprint-2026-09-30/work/A1/INPUTS.json",
+    "research/quality-sprint-2026-09-30/work/A1/INPUTS.log",
+    "research/quality-sprint-2026-09-30/work/A1/SPEC.md",
+    "research/quality-sprint-2026-09-30/work/A1/inventory_sources.py",
+    "research/quality-sprint-2026-09-30/work/A1/INVENTORY.json",
+    "research/quality-sprint-2026-09-30/work/A1/INVENTORY.log",
+    "research/quality-sprint-2026-09-30/work/A1/derive_gaps.py",
+    "research/quality-sprint-2026-09-30/work/A1/DATA-GAPS.csv",
+    "research/quality-sprint-2026-09-30/work/A1/DATA-GAPS-SUMMARY.json",
+    "research/quality-sprint-2026-09-30/work/A1/DERIVE.log",
+    "research/quality-sprint-2026-09-30/work/A1/make_inputs.py",
+    "research/quality-sprint-2026-09-30/work/A1/make_proposal.py",
+    "research/quality-sprint-2026-09-30/work/A1/PROPOSAL.log",
+    "research/quality-sprint-2026-09-30/work/A1/ACCEPTANCE-PROPOSAL.json",
+    "research/quality-sprint-2026-09-30/work/A1/OWNER-QUESTIONS.md",
+    "research/quality-sprint-2026-09-30/work/A1/validate_outputs.py",
+    "research/quality-sprint-2026-09-30/work/A1/VALIDATION.log",
+    "research/quality-sprint-2026-09-30/work/A1/DELTA.json",
+    "research/quality-sprint-2026-09-30/work/A1/GATE.json"
+  ],
+  "source_changes": {
+    "engine": 0,
+    "licensing": 0,
+    "scorer": 0,
+    "benchmark": 0,
+    "corpus": 0,
+    "git_mutations": 0,
+    "note": "A1 wrote only inside work/A1. No reset/stash/revert, no install, no download, no provider call."
+  },
+  "population_delta": {
+    "datasets_generated": 0,
+    "datasets_modified": 0,
+    "datasets_read": 20,
+    "labels_created": 0,
+    "final_gold_produced": false,
+    "exclusions_analyzed": 0,
+    "exclusions_note": "the 11 excluded cases of run cc3a551f are B0/M1b scope; A1 did not read run outcome artifacts"
+  },
+  "per_slice_counts_added": {
+    "native_types_with_ge_300_independent_identities_in_v5_corpus": 5,
+    "native_types_under_300": 5,
+    "under_300_detail": {
+      "PASSPORT": {"independent": 63, "gap": 237},
+      "SNILS": {"independent": 128, "gap": 172},
+      "INN": {"independent": 144, "gap": 156},
+      "CARD": {"independent": 123, "gap": 177},
+      "PLATE": {"independent": 154, "gap": 146}
+    },
+    "v6_new_types_with_zero_generated_units": 55,
+    "temporary_secret_types_with_zero_generated_units": 6
+  },
+  "mechanism_vs_measurement": {
+    "mechanism": "read-only counting of frozen case definitions and external annotations; two independent derivations (inventory -> CSV/summary) so the CSV is reproducible from the JSON",
+    "measurement": "counts describe the SOURCES as of git HEAD 890c508 and the hashes in INPUTS.json; they are NOT a measurement of engine quality and contain no detector output"
+  },
+  "new_unknowns": [
+    "v6 generated corpus does not exist on this host: 0 units for all 55 new types",
+    "ru_prose.jsonl is 0 bytes: over-masking volume corpus currently unavailable",
+    "gate instrument: 587 durable labels vs 600 claimed in README (13 absent)",
+    "no independent support exists for temporary secrets outside synthetic fixtures",
+    "provenance.shape is empty in the authored v5 corpus, so template-level independence cannot be derived from it today",
+    "prior name-label proposal (1215 MASSIVE person slots) remains an unverified proposal"
+  ],
+  "self_found_defects_fixed": [
+    "ACCEPTANCE-PROPOSAL.json revision.bundle was injected from a non-existent key and came out empty; now injected from INPUTS.json and asserted in validation",
+    "cost_estimate_human_review_items double-counted v6 and temporary-secret units; recomputed from one formula, asserted in validation (units_full_scope=8320)"
+  ],
+  "not_claimed": [
+    "no O-DATA acceptance",
+    "no engine quality result",
+    "no production verification",
+    "no G7/G11 implication",
+    "no final gold"
+  ]
+}

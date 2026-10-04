@@ -208,7 +208,15 @@ _SNILS_NODASH_RE = re.compile(r"\b\d{11}\b")
 _INN_RE = re.compile(r"\b\d{12}\b|\b\d{10}\b")
 # A REPEATED SEPARATOR is what copy-paste out of a table produces, and the
 # single optional one refused it: «4276  3800 1234 5679» is the same card.
-_CARD_RE = re.compile(r"\b(?:\d[ -]{0,2}){15,18}\d\b")
+#
+# THE RUN IS READ WHOLE; THE CARD GRAMMAR BELOW DECIDES WHAT IS INSIDE IT. The
+# shape used to be «16..19 digits between word boundaries», which bit sixteen
+# digits out of the MIDDLE of a longer run — «1234 5678 9012 3456 7890», an order
+# number, was masked as its first sixteen. Refusing every run longer than a card
+# then swung the other way and lost BOTH cards of «<card> <card>». Consuming the
+# run whole is what stops a second match from starting inside it; how many cards
+# it holds is decided once, in `_card_pieces`.
+_CARD_RE = re.compile(r"(?<!\d)\d(?:[ -]{0,2}\d)*\b")
 # Passport requires a separator (серия номер) — bare 10 digits collides with
 # everything (phone/INN/order), so we trade a little recall for precision.
 _PASSPORT_RE = re.compile(r"\b\d{2}\s+\d{2}\s+\d{6}\b|\b\d{4}\s+\d{6}\b")
@@ -230,8 +238,341 @@ _PASSPORT_RE = re.compile(r"\b\d{2}\s+\d{2}\s+\d{6}\b|\b\d{4}\s+\d{6}\b")
 _SNILS_CUE_RE = re.compile(
     r"(?i:с\s?н\s?и\s?л\s?с|силс|снилз|снилсс|снил\b)\D{0,12}?(\d{3}[ -]?\d{3}[ -]?\d{3}[ -]?\d{2})(?!\d)")
 _INN_CUE_RE = re.compile(r"(?i:\bинн\b)\D{0,12}?(\d{12})(?!\d)")
-_CARD_CUE_RE = re.compile(
-    r"(?i:карт\w*|card)\D{0,16}?(\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4})(?!\d)")
+# THE CUE NAMES A CARD, NOT ANY WORD THAT CONTAINS ONE. `карт\w*` typed
+# «картина», «картотека», «картон», «картошка» — the number after them was masked
+# because the WORD matched — and `card\b` did the same to «postcard» and
+# «discard», which END in it. Both are word boundaries rather than a longer word
+# list: the noun in its own forms (with the diminutive) takes `\b` on BOTH sides,
+# and a hyphen followed by a LETTER is a compound («карт-бланш»), never the
+# separator a form prints. «карт» alone stays, because that is how a form field
+# abbreviates it, and «карта-4012» still matches — a hyphen before a DIGIT is a
+# separator.
+_CARD_CUE = (r"(?i:\bкарт(?:а|ы|е|у|ой|ою|ам|ами|ах)?\b(?!-[а-яё])"
+             r"|\bкарточ\w*|\bcard\b)")
+# THE CUE OPENS A WHOLE RUN, NOT FOUR GROUPS OF FOUR. Capturing exactly sixteen
+# digits masked an eighteen-digit card as its first sixteen and left the tail —
+# « 02» — in the clear, and the lookahead that was meant to stop that treated a
+# SECOND card as a continuation and refused both. The regex only says where the
+# run begins and ends; `_card_pieces` says where the cards in it do.
+_CARD_CUE_RE = re.compile(rf"{_CARD_CUE}\D{{0,16}}?(\d(?:[ -]{{0,2}}\d)*)")
+
+
+# --------------------------------------------------------------- card grammar
+#
+# A CARD IS 13..19 DIGITS, A RUN MAY HOLD SEVERAL OF THEM, AND THE GROUPING IS THE
+# ONLY EVIDENCE THERE IS. So the grammar is a segmentation over the run, with an
+# explicit score and a refusal policy, and it reads in a fixed order:
+#
+#   * THE RUN IS ONE NUMBER written in one grouping that TILES EXACTLY into 13..19
+#     -digit pieces. «<16> <16>» is two cards; an eighteen-digit card written
+#     fours-plus-two is ONE; a twenty-nine-digit run whose last separator was lost
+#     is a sixteen and a thirteen once the merged group is cut in the width the
+#     sender's OTHER groups established. A run that does not tile is not a card
+#     however long it is, which is what keeps a twenty-digit СЧЁТ whole.
+#   * THE RUN IS ONE CARD AND ONE NEIGHBOUR. The card is at one END — a card in the
+#     middle leaves two residues and no reading for them — and the residue must be
+#     a number in its own right: one whole group, or several of one width that
+#     differs from the card's. «<7-digit order> <card>» and «<card> <7-digit
+#     order>» both read, and so does «<5> <5> <card>», because the two fives are
+#     ONE number and their boundary with the fours is a change of grouping.
+#
+# A 1..3-DIGIT GROUP GLUED TO A CARD IS THE SAME STRING as a longer card
+# («…1239 12» is also an eighteen-digit card), and the longer-card reading wins,
+# because a separate number there is exactly the tail leak this grammar exists to
+# remove. That is the FIRST reading, not a special case: the run tiles as one card.
+#
+# THE ONE PLACE A CUE DOES NOT OUTRANK THE CHECKSUM. A residue written in the
+# card's OWN width is not evidence — a uniform twenty-digit run is either «card +
+# one group» or «one group + card» and the string cannot say which — so the
+# checksum decides: the window that passes Luhn is the card. With NEITHER passing
+# the run is refused whole; with BOTH (one coincidence in a hundred) `_one_span`
+# breaks the tie toward the card the cue introduces.
+#
+# WHAT IS DELIBERATELY NOT READ, because the string does not carry the evidence:
+#   * Reading 2 trusts the sender's OWN boundaries and never a cut the step made;
+#     only the exact cover uses those. A card-shaped window bitten out of a longer
+#     number is the whole defect this grammar replaced.
+#   * A CARD-SHAPED group wider than the sender's width is a card whose separator
+#     was lost or the end of one number and the start of another, and only a cover
+#     tells them apart. With no cover the run is refused WHOLE, because either
+#     partial reading leaves some of those digits in the model's hands.
+#   * A run whose groups are uniform and whose card-shaped windows fail Luhn is
+#     refused. It costs an unmasked card; biting would hand the model a card carved
+#     out of a number that is not one. Written down because a policy nobody wrote
+#     down is indistinguishable from a bug.
+_CARD_LENGTHS = range(13, 20)
+_CARD_MIN = min(_CARD_LENGTHS)
+_CARD_MAX = max(_CARD_LENGTHS)
+# A run longer than this many digits is refused whole rather than truncated, so the
+# cap can never leave a card half-masked. It also bounds the work below.
+_CARD_RUN_CAP = _CARD_MAX * 8
+
+
+def _digit_groups(chunk: str, base: int) -> list[tuple[int, int]]:
+    """(start, end) of every digit group of `chunk`, offset into the whole text."""
+    return [(base + match.start(), base + match.end())
+            for match in re.finditer(r"\d+", chunk)]
+
+
+def _grouping_step(groups: list[tuple[int, int]]) -> int | None:
+    """The width the sender grouped in: the commonest width a card may have.
+
+    TWO occurrences, not one. A single group is a number, not a convention, and
+    letting a lone short group set the step is how a card got re-cut at a width
+    nobody wrote — «<16> <2>» cut the sixteen in twos, the run «tiled», and the
+    neighbour was swallowed into an eighteen-digit card.
+    """
+    counts: dict[int, int] = {}
+    for start, end in groups:
+        width = end - start
+        if width <= _CARD_MAX:
+            counts[width] = counts.get(width, 0) + 1
+    if not counts:
+        return None
+    best = max(counts.values())
+    return (min(width for width, count in counts.items() if count == best)
+            if best >= 2 else None)
+
+
+def _card_atoms(groups: list[tuple[int, int]], cut_wide: bool,
+                ) -> list[tuple[int, int, int, bool]]:
+    """(start, end, group index, whole group?) — every boundary a card may use.
+
+    A group the sender separated is a boundary already. A group WIDER than the
+    width the sender's OTHER groups established has lost a separator, and is cut
+    in that width («4012 3456 7890 1239…» continues in fours), because that is how
+    the digits either side of the missing separator were meant to be grouped.
+    These cuts are licensed ONLY by the exact-cover reading, which uses them while
+    covering the whole run and so leaves no digit behind; the card-and-neighbour
+    reading never uses one, which is what stops a card-shaped window being bitten
+    out of a long number. `cut_wide` is False on the bare path, which has no cue to
+    license even that.
+    """
+    step = _grouping_step(groups) if cut_wide else None
+    atoms: list[tuple[int, int, int, bool]] = []
+    for index, (start, end) in enumerate(groups):
+        width = end - start
+        if step is not None and step < width:
+            at = start
+            while at < end:
+                stop = min(at + step, end)
+                atoms.append((at, stop, index, stop - at == width))
+                at = stop
+        else:
+            atoms.append((start, end, index, True))
+    return atoms
+
+
+def _uniform(atoms: list[tuple[int, int, int, bool]], first: int, last: int,
+             step: int | None) -> bool:
+    """Whether one number's worth of atoms is written in ONE grouping.
+
+    The sender's own step is the reference, not the piece's own commonest width:
+    every group at that width, or those groups and ONE short trailing remainder —
+    «4012 3456 7890 1234 565» is a nineteen-digit card, and «4012 3456 7890 1234 5»
+    a seventeen-digit one. A short group in the MIDDLE means two widths the sender
+    did not write as one number, and a piece that spans one is not that number —
+    «12345 67890 4012 3456 7890 1239» once read its first three groups as a
+    fourteen-digit card and left the real card in the clear. A range inside a single
+    group is uniform by construction: the cut came from the step the surrounding
+    groups established, not from a guess about the digits.
+    """
+    if len({atoms[index][2] for index in range(first, last)}) == 1:
+        return True
+    widths = [atoms[index][1] - atoms[index][0] for index in range(first, last)]
+    if step is None:
+        return len(set(widths)) == 1
+    if all(width == step for width in widths):
+        return True
+    return (len(widths) >= 2 and all(width == step for width in widths[:-1])
+            and widths[-1] < step)
+
+
+def _lost_separator(groups: list[tuple[int, int]], step: int | None) -> bool:
+    """Whether a CARD-SHAPED group is wider than the sender's own width.
+
+    Such a group is either a card whose separator was lost or the end of one
+    number and the start of another, and only an exact cover can tell them apart.
+    When there is no cover, using part of it either way leaves some of the
+    customer's digits in the model's hands, so the run is refused whole — the
+    deliberate cost recorded in the grammar comment.
+    """
+    return step is not None and any(
+        step < end - start <= _CARD_MAX for start, end in groups)
+
+
+def _dominant_width(groups: list[tuple[int, int]],
+                    atoms: list[tuple[int, int, int, bool]],
+                    first: int, last: int) -> int:
+    """The width of the groups a card piece is written in, commonest first."""
+    counts: dict[int, int] = {}
+    for index in {atoms[position][2] for position in range(first, last)}:
+        width = groups[index][1] - groups[index][0]
+        counts[width] = counts.get(width, 0) + 1
+    best = max(counts.values())
+    return min(width for width, count in counts.items() if count == best)
+
+
+def _residue_kind(groups: list[tuple[int, int]],
+                  atoms: list[tuple[int, int, int, bool]],
+                  first: int, last: int, card_width: int) -> str | None:
+    """What a residue proves about the number beside the card.
+
+    None = not a number and the reading is refused; «grouping» = its width is
+    evidence on its own; «same» = it is written in the card's own width, so only a
+    checksum can separate the two readings. Every atom here is a whole group — the
+    card-and-neighbour reading works on the sender's own boundaries, never on a
+    cut the step made — so a residue is a count of the groups the sender wrote.
+    """
+    width = sum(atoms[index][1] - atoms[index][0] for index in range(first, last))
+    if width >= _CARD_MIN:
+        return None
+    taken = {atoms[index][2] for index in range(first, last)}
+    widths = [groups[group][1] - groups[group][0] for group in taken]
+    if len(widths) == 1:
+        return "same" if widths[0] == card_width else "grouping"
+    if len(set(widths)) == 1 and widths[0] != card_width:
+        return "grouping"
+    return None
+
+
+def _card_cover(atoms: list[tuple[int, int, int, bool]], step: int | None,
+                ) -> list[tuple[int, int]]:
+    """Reading 1: the run tiles EXACTLY into 13..19-digit pieces, or nothing.
+
+    NOT GREEDY, and the difference is reachable: a thirty-two-digit run of fours
+    covers as 16+16, and a twenty-nine-digit one whose last separator was lost
+    covers as 16+13 or as 13+16 — taking the shortest chunk first would strand the
+    other. `reachable[i]` is «the first i atoms are coverable», filled left to
+    right; the sizes are then read back from the END, each step taking the SHORTEST
+    feasible chunk, so the result is deterministic rather than dependent on which
+    cover happened to be found first.
+    """
+    span = len(atoms)
+    reachable = [False] * (span + 1)
+    reachable[0] = True
+    for first in range(span):
+        if not reachable[first]:
+            continue
+        width = 0
+        for last in range(first, span):
+            width += atoms[last][1] - atoms[last][0]
+            if width > _CARD_MAX:
+                break
+            if width >= _CARD_MIN and _uniform(atoms, first, last + 1, step):
+                reachable[last + 1] = True
+    if not reachable[span]:
+        return []
+    pieces: list[tuple[int, int]] = []
+    at = span
+    while at:
+        width = 0
+        for first in range(at - 1, -1, -1):
+            width += atoms[first][1] - atoms[first][0]
+            if width > _CARD_MAX:
+                break
+            if (width >= _CARD_MIN and reachable[first]
+                    and _uniform(atoms, first, at, step)):
+                pieces.append((atoms[first][0], atoms[at - 1][1]))
+                at = first
+                break
+        else:
+            return []
+    pieces.reverse()
+    return pieces
+
+
+def _one_span(pool: list[tuple[bool, int, int]]) -> list[tuple[int, int]]:
+    """The span the pool agrees on, or the one the cue introduces.
+
+    One candidate in the winning class is the answer. Two mean the string carries
+    two readings of the same evidence, and the tie-break is explicit rather than
+    arbitrary: the card the customer named is the one that STARTS where the cue's
+    run starts, so the leftmost window wins; a tie on the start takes the longer
+    one. «карта 4012 3456 7890 1239 2024» is the case that forces this — the
+    shifted window «3456 7890 1239 2024» passes Luhn too (one coincidence in a
+    hundred), and only the cue's adjacency says which of the two was named.
+    """
+    if not pool:
+        return []
+    anchored = [item for item in pool if item[0]] or pool
+    best = min(anchored, key=lambda item: (item[1], item[1] - item[2]))
+    start, end = best[1], best[2]
+    return [(start, end)]
+
+
+def _card_with_neighbour(groups: list[tuple[int, int]],
+                         atoms: list[tuple[int, int, int, bool]],
+                         chunk: str, base: int, step: int | None,
+                         ) -> list[tuple[int, int]]:
+    """Reading 2: one card at one end and one number beside it, or nothing.
+
+    The evidence is ORDERED, which is the explicit score: a residue whose width
+    differs from the card's proves a boundary by itself, and only a residue in the
+    card's own width needs the checksum. The class with the stronger evidence wins
+    outright; inside it `_one_span` resolves the remaining ties and refuses a run
+    that leaves none of its candidates standing.
+    """
+    span = len(atoms)
+    evidence: list[tuple[bool, int, int]] = []
+    checksum: list[tuple[bool, int, int]] = []
+    for first in range(span):
+        width = 0
+        for last in range(first, span):
+            width += atoms[last][1] - atoms[last][0]
+            if width > _CARD_MAX:
+                break
+            if width < _CARD_MIN:
+                continue
+            if (first == 0) == (last + 1 == span):
+                continue  # a whole run is `_card_cover`'s; two residues have no reading
+            if not _uniform(atoms, first, last + 1, step):
+                continue
+            res_first, res_last = (last + 1, span) if first == 0 else (0, first)
+            kind = _residue_kind(groups, atoms, res_first, res_last,
+                                 _dominant_width(groups, atoms, first, last + 1))
+            if kind is None:
+                continue
+            start, end = atoms[first][0], atoms[last][1]
+            anchored = first == 0 or atoms[first][3]
+            if kind == "grouping":
+                evidence.append((anchored, start, end))
+            elif validate_luhn(chunk[start - base:end - base]):
+                checksum.append((anchored, start, end))
+    return _one_span(evidence) if evidence else _one_span(checksum)
+
+
+def _card_pieces(chunk: str, base: int, cut_wide: bool) -> list[tuple[int, int]]:
+    """The card numbers inside ONE maximal digit run, as (start, end) spans.
+
+    `chunk` is the run as written (separators and all) and `base` its offset in the
+    whole text, so a piece's digits can be re-read for the checksum. `cut_wide`
+    allows a card-shaped group with a lost separator to be cut; the bare path must
+    not have it, because with no cue a long run is an order number and the cut is
+    what would bite a card out of it.
+    """
+    if sum(1 for char in chunk if char.isdigit()) > _CARD_RUN_CAP:
+        return []
+    groups = _digit_groups(chunk, base)
+    if not groups:
+        return []
+    # READING 1 FIRST, and on the cue path with the step's cuts available: a run
+    # that tiles exactly is safe by construction, every digit of it covered. The
+    # bare path has no cuts, so its tiling is the sender's own groups.
+    step = _grouping_step(groups)
+    atoms = _card_atoms(groups, cut_wide)
+    covered = _card_cover(atoms, step)
+    if covered:
+        return covered
+    if cut_wide and _lost_separator(groups, step):
+        # A card-shaped group was cut and no tiling used it, so its digits cannot
+        # be split without leaving some of them behind. Nothing in this run is read.
+        return []
+    # READING 2 on the sender's own boundaries only — a cut the step made is
+    # licensed by a whole-run tiling, never by a card-and-neighbour guess.
+    return _card_with_neighbour(groups, _card_atoms(groups, False), chunk, base, step)
+
+
 _PASSPORT_SHAPE_RE = re.compile(r"\b\d{2}[\s-]?\d{2}[\s-]?\d{6}\b")
 _SNILS_SHAPE_RE = re.compile(r"\b\d{3}[\s-]?\d{3}[\s-]?\d{3}[\s-]?\d{2}\b")
 _CUE_TAIL_RE = re.compile(r"([а-яё]+)\W{0,12}$")
@@ -247,10 +588,47 @@ def _damaged_cue_before(text: str, start: int, cues: tuple[str, ...]) -> bool:
 
 
 _PASSPORT_CTX_RE = re.compile(
-    r"(?i:пас{1,2}п{1,2}орт\w*)\D{0,16}?(\d{2}[\s-]?\d{2}[\s-]?\d{6})\b")
+    r"(?i:(пас{1,2}п{1,2}орт\w*))\D{0,40}?(\d{2}[\s-]?\d{2}[\s-]?\d{6})\b")
+# СКОЛЬКО СИМВОЛОВ МЕЖДУ ПОДСКАЗКОЙ И ЧИСЛОМ БЫЛО РАЗРЕШЕНО РАНЬШЕ. Окно
+# подсказки выросло, чтобы находить слитные формы, о которых клиент пишет
+# «паспортные данные арендатора: 4607238914», — но выросло оно вместе с ценой,
+# и цена измерена: «паспортный стол закрыт, счёт 5301456789» стало паспортом,
+# то есть ЧУЖОЙ СЧЁТ уехал в инструмент подменой. Различает эти два случая не
+# расстояние, а слово, которым число ВВЕДЕНО.
+_PASSPORT_TIGHT_GAP = 16
+_LAST_WORD_BEFORE = re.compile(r"([а-яёa-z]+)[\s№:.\-]*$")
+
+
+def _denied_intro(text: str, at: int) -> bool:
+    """Слово ПРЯМО перед числом называет ЧУЖОЙ тип — значит, это не паспорт.
+
+    Тот же вопрос и тот же арендованный список, что задаёт `context.suppress`
+    своей ветке PASSPORT, только заданный РАНЬШЕ: несозданный спан нечего
+    снимать, и сторожу не приходится спасать его окном подсказки. «счёт»,
+    «заказ», «трек» перед десятком цифр — это их тип, а не паспортный.
+
+    Только для ШИРОКОГО окна. Узкое (`_PASSPORT_RE`, `_PASSPORT_SHAPE_RE`)
+    требует подсказку вплотную, и там поведение не меняется ни на байт.
+    """
+    match = _LAST_WORD_BEFORE.search(text[:at].lower())
+    if match is None:
+        return False
+    word = match.group(1)
+    return any(word.startswith(term) or within_one_typo(word, term)
+               for term in ASSETS.get().context.deny)
 # «серия 4607 номер 238914» — the two halves named separately, with words
 # between them, so neither the plain shape nor the cue pattern above can see it.
-# Both numbers are masked; the words are not, being nobody's data.
+#
+# ОДИН СПАН НА ВСЮ ФРАЗУ, А НЕ ДВА НА ЧИСЛА. Покрытие PII-Bench требует накрыть
+# и слова («серия», «номер»), а спан, включающий слово, чеканит подмену ФОРМЫ
+# ФРАЗЫ: `_digits_laid_like` кладёт цифры подмены в СЛОТЫ ИСХОДНОЙ строки, и
+# «серия 4607 номер 238914» становится «серия 0023 номер 237431». Раньше здесь
+# стояли ДВА спана именно поэтому: паспортная половина `vault._token_re` знала
+# только цифровую форму «00 23 237431», фразовая подмена не была кандидатом
+# вовсе, восстановитель возвращал её же — и в инструмент уезжал фейк.
+# Теперь `_token_re` знает обе формы (см. её паспортную ветку), и круг
+# закрывается: измерено 8 значений PASSPORT на PII-Bench, покрытие 83.3% ->
+# 90.0%, круг держится (test_addr_passport_tail, вектор 4).
 _PASSPORT_PARTS_RE = re.compile(
     r"(?i)сери\w*\s*:?\s*(\d{4})\D{1,12}?(\d{6})\b")
 _DATE_RE = re.compile(r"\b\d{2}[.\-/]\d{2}[.\-/]\d{4}\b")
@@ -293,8 +671,18 @@ def _reads_as_date(day: str, month: str, year: str) -> bool:
             and 1900 <= int(year) <= 2026)
 
 
-def detect_structured(text: str) -> list[Span]:
-    """Detect RU structured IDs, gated by checksum where one exists."""
+def detect_structured(text: str, raw: str = "") -> list[Span]:
+    """Detect RU structured IDs, gated by checksum where one exists.
+
+    `raw` is the UNNORMALIZED text, and exactly one recognizer needs it: the v6
+    telecom/device family, whose values are HEX. `normalize()` folds digit
+    look-alikes inside any run holding five or more real digits, and a UUID is
+    such a run — its `B` becomes `8` INSIDE the value, so the customer's real
+    `…AE5B…` could never come back from the string the model was shown. Every
+    other recognizer here reads `text` and is unaffected; the default keeps the
+    function usable when no raw text is at hand (the family then simply falls back
+    to the normalized reading, which is what it had before). `normalize()` is 1:1,
+    so the two strings share one coordinate system and the spans can be mixed."""
     ru_pii = ASSETS.get().ru_pii
     spans: list[Span] = []
     for match in _SNILS_RE.finditer(text):
@@ -304,8 +692,14 @@ def detect_structured(text: str) -> list[Span]:
         if validate_snils(match.group()):
             spans.append(Span(match.start(), match.end(), "SNILS", match.group()))
     for match in _CARD_RE.finditer(text):
-        if validate_luhn(match.group()) and len(_digits(match.group())) in (16,):
-            spans.append(Span(match.start(), match.end(), "CARD", match.group()))
+        # THE BARE POLICY IS UNCHANGED — sixteen digits and a valid checksum —
+        # and the pieces are what make it survive a run that holds more than one
+        # of them. A run that is not a card sequence yields no pieces, so a
+        # twenty-digit account is still refused whole.
+        for start, end in _card_pieces(match.group(), match.start(), cut_wide=False):
+            run = text[start:end]
+            if len(_digits(run)) == 16 and validate_luhn(run):
+                spans.append(Span(start, end, "CARD", run))
     for match in _INN_RE.finditer(text):
         if not validate_inn(match.group()):
             continue
@@ -318,9 +712,15 @@ def detect_structured(text: str) -> list[Span]:
             if not any(w in window for w in ru_pii.inn_context):
                 continue
         spans.append(Span(match.start(), match.end(), "INN", match.group()))
-    for entity_type, pattern in (("SNILS", _SNILS_CUE_RE), ("INN", _INN_CUE_RE), ("CARD", _CARD_CUE_RE)):
+    for entity_type, pattern in (("SNILS", _SNILS_CUE_RE), ("INN", _INN_CUE_RE)):
         for match in pattern.finditer(text):
             spans.append(Span(match.start(1), match.end(1), entity_type, match.group(1)))
+    # A CUE CAN TYPE SEVERAL CARDS. The run after it is read once and split by
+    # the card grammar; the cue is the evidence, so no checksum is asked for here
+    # — a mistyped card the customer named is still their card.
+    for match in _CARD_CUE_RE.finditer(text):
+        for start, end in _card_pieces(match.group(1), match.start(1), cut_wide=True):
+            spans.append(Span(start, end, "CARD", text[start:end]))
     # THE CUE ITSELF MAY BE DAMAGED — «паспрот 0312943300», «сннилс 40621994460»,
     # «паспоот 4119424336» — and the shape alone is refused on purpose (a bare
     # ten-digit number collides with everything). One typo or a stretched
@@ -335,11 +735,17 @@ def detect_structured(text: str) -> list[Span]:
         spans.append(Span(match.start(), match.end(), "PASSPORT", match.group()))
     # No-separator passport is ambiguous alone; trust it when "паспорт" precedes.
     for match in _PASSPORT_CTX_RE.finditer(text):
-        spans.append(Span(match.start(1), match.end(1), "PASSPORT", match.group(1)))
+        wide = match.start(2) - match.end(1) > _PASSPORT_TIGHT_GAP
+        if wide and _denied_intro(text, match.start(2)):
+            continue
+        spans.append(Span(match.start(2), match.end(2), "PASSPORT", match.group(2)))
     for match in _PASSPORT_PARTS_RE.finditer(text):
-        for group in (1, 2):
-            spans.append(Span(match.start(group), match.end(group),
-                              "PASSPORT", match.group(group)))
+        # ВСЯ ФРАЗА, А НЕ ДВА ЧИСЛА: иначе слова «серия»/«номер» уходят к
+        # модели открытым текстом внутри спана, который колонка полноты уже
+        # считает найденным. Круг закрыт правкой `_token_re` — см. комментарий
+        # у `_PASSPORT_PARTS_RE`.
+        spans.append(Span(match.start(), match.end(),
+                          "PASSPORT", match.group()))
     for match in _DATE_RE.finditer(text):
         spans.append(Span(match.start(), match.end(), "DATE", match.group()))
     for match in _ISO_DATE_RE.finditer(text):
@@ -347,9 +753,37 @@ def detect_structured(text: str) -> list[Span]:
     for match in _GLUED_DATE_RE.finditer(text):
         if _reads_as_date(*match.groups()):
             spans.append(Span(match.start(), match.end(), "DATE", match.group()))
+    # THE v6 TYPED PATH WINS OVER A BARE SHAPE. A cue or a field key names the
+    # type; a bare 15/16-digit run is an order number. The leased `CTX_TYPES`
+    # carries the cues of the eleven checksum-carrying v6 types, and the bare
+    # forms whose anchor is a CLOSED source list (an IBAN's country registry, a
+    # УИД's UUID+control) are added from `ru_pii_v6`. A bare span that merely
+    # sits INSIDE a typed one is a sub-reading of the same characters — the
+    # IMEI inside «IMEI …» is an IMEI, not the ОГРН its mod-13 accidentally
+    # satisfies — so it goes, exactly as `_resolve` lets a typed key beat a
+    # shape. `bare_typed=False` on every v6 record is why nothing else here
+    # stands without a cue.
+    from pseudex import ru_pii_v6  # local: ru_pii_v6 imports this module
+    v6 = ru_pii_v6
+
+    typed: list[Span] = []
     for entity_type, pattern in ru_pii.ctx_patterns:
         for match in pattern.finditer(text):
-            spans.append(Span(match.start(1), match.end(1), entity_type, match.group(1)))
+            value = match.group(1)
+            # A LEGAL ENTITY'S ACCOUNT IS NOT A DATA SUBJECT'S. The v6 negative
+            # families name correspondent, legal and treasury accounts; masking
+            # them broke the customer's own payment flow.
+            if entity_type == "ACCOUNT" and v6.is_business_account(value):
+                continue
+            typed.append(Span(match.start(1), match.end(1), entity_type, value))
+    typed.extend(v6.detect_checksum_anchored(text))
+    spans.extend(typed)
+    if typed:
+        typed_ids = {id(span) for span in typed}
+        spans = [span for span in spans
+                 if id(span) in typed_ids
+                 or not any(span.start >= other.start and span.end <= other.end
+                            for other in typed)]
     for match in _OGRNIP_RE.finditer(text):
         if validate_ogrn(match.group()):
             spans.append(Span(match.start(), match.end(), "OGRN", match.group()))
@@ -357,6 +791,44 @@ def detect_structured(text: str) -> list[Span]:
         spans.append(Span(match.start(), match.end(), "IP", match.group()))
     for match in _BIRTH_CERT_RE.finditer(text):
         spans.append(Span(match.start(), match.end(), "BIRTH_CERT", match.group()))
+    # THE v6 TELECOM/DEVICE FAMILY, ON THE RAW TEXT. A UUID is a run of digits,
+    # look-alike glyphs and separators holding more than five real digits, so
+    # `normalize()` folds its `B` to `8` INSIDE the value and the customer's real
+    # `…AE5B…` could never come back from the string the model was shown. The
+    # family's cue path therefore runs on the raw text, exactly as
+    # `detect_vehicle_ids` and `detect_plates` above do and for the same reason:
+    # a value whose identity is HEX must not be read through a fold meant for
+    # digits. The INVARIANT that makes it safe is `normalize()`'s — it is 1:1, so
+    # offsets from the raw text index identically into every layer below.
+    #
+    # AND IT SUPERSEDES THE NORMALIZED READING OF THE SAME CHARACTERS. The loop
+    # above already added a span from the `CTX_TYPES` pattern over the NORMALIZED
+    # text, whose `value` carries the fold; that span stands on the same
+    # characters as the raw one, so the arbiter would pick by `(priority, length)`
+    # alone and hand the model a corrupted value half the time. The two are one
+    # reading of one thing, so the raw one replaces it here — exactly as `typed`
+    # above displaces a bare sub-reading — and every other span is untouched.
+    #
+    # THE FILTER KEYS ON EVERY FAMILY THE RAW PATH ANSWERS FOR, NOT ONLY TELECOM.
+    # `detect_telecom` is the ONE entry point and it serves the UTILITY family
+    # too (a ЕЛС series, a login's `O`, an RFID UID's `B`, a mixed account's `О`),
+    # so keying the supersede rule on `TELECOM_LABELS` alone left the utility
+    # family's normalized (folded) span standing beside the raw one — the same
+    # corruption, one family over. Measured on the cue path before the widening:
+    # «customer id 6D92078A-…-AE5B-…» and «логин lO12345» came back FOLDED on a
+    # rewritten substitute. The set is derived from the two label frozensets, so a
+    # family the entry point learns to answer for cannot be forgotten here.
+    raw_cued = v6.TELECOM_LABELS | v6.UTILITY_LABELS
+    telecom_raw = ru_pii_v6.detect_telecom(raw or text)
+    if telecom_raw:
+        telecom_ids = {id(span) for span in telecom_raw}
+        spans = [span for span in spans
+                 if id(span) in telecom_ids
+                 or not (span.entity_type in raw_cued
+                         and any(span.start >= other.start
+                                 and span.end <= other.end
+                                 for other in telecom_raw))]
+        spans.extend(telecom_raw)
     return spans
 
 

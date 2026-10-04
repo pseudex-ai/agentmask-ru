@@ -33,7 +33,7 @@ _NUM_DATE_RE = re.compile(
 # предложении, — иначе год документной даты уезжает в маску отдельным спаном и
 # ломает реквизит договора (публичный бенчмарк, DOB '2026' из «от 25.07.2026»).
 _YEAR_TAIL_OF_DATE = re.compile(r"\d{1,2}[.\-/ ]\d{1,2}[.\-/ ]$")
-_AGE_RE = re.compile(r"\b(\d{2,3})\s*(?:лет|года|год)\b")
+_AGE_RE = re.compile(r"\b(\d{1,3})\s*(?:лет|года|год)\b")
 # A stretched pronoun («оон», «онаа») is the same pronoun: the voice register
 # holds a vowel, and a date of birth was lost to it.
 _PERSON_BEFORE_DATE_RE = re.compile(r"(?:^|[^а-яё])(?:о+н|о+на+|ему+|ей|его|её|пациент\w*|клиент\w*|ребён\w*|ребен\w*)\s*(?:-\s*)?$")
@@ -144,6 +144,12 @@ def detect_quasi(text: str) -> list[Span]:
     for match in _YEAR_RE.finditer(text):
         if _YEAR_TAIL_OF_DATE.search(text[max(0, match.start() - 6):match.start()]):
             continue
+        # A year that HEADS a full ISO date («2026-09-02») is a slot/operational
+        # date, handled by `_NUM_DATE_RE` (and its birth gate); masking only the
+        # leading year left a half-masked slot and the model booked off a fake
+        # year. «…родился 21.09.1955, слот 2026-09-02» must not yield «2026».
+        if re.match(r"-\d{2}-\d{2}(?!\d)", text[match.end():match.end() + 6]):
+            continue
         window = low[max(0, match.start() - 25): match.end() + 25]
         if any(ctx in window for ctx in quasi.birth_ctx):
             spans.append(Span(match.start(), match.end(), "DOB", match.group()))
@@ -162,8 +168,12 @@ def detect_quasi(text: str) -> list[Span]:
                 or _PERSON_BEFORE_DATE_RE.search(low[max(0, match.start() - 24):match.start()])):
             spans.append(Span(match.start(), match.end(), "DOB", match.group()))
     for match in _AGE_RE.finditer(text):
-        if int(match.group(1)) >= 90:  # HIPAA: ages over 89 are identifiers
-            spans.append(Span(match.start(), match.end(), "AGE", match.group()))
+        # Возраст — КАНДИДАТ. Персональным он становится по ассоциации с
+        # человеком, и это решает `context.suppress` (там есть имена): «ему 28
+        # лет» и «Иванов, 28 лет» — ПД, «опыт 28 лет» и «зданию 92 года» — нет.
+        # Здесь не фильтруем ни по числу, ни по местоимению — то правило HIPAA
+        # «90+» резало здание и пропускало человека.
+        spans.append(Span(match.start(), match.end(), "AGE", match.group()))
     for match in quasi.medical.finditer(text):
         spans.append(Span(match.start(), match.end(), "MEDICAL", match.group()))
     return spans

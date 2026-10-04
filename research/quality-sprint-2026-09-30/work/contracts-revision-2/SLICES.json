@@ -1,0 +1,71 @@
+{
+  "artifact": "SLICES",
+  "revision": "contracts-revision-2",
+  "owner_checkpoint": "O-DATA",
+  "status": "OWNER_PENDING",
+  "headline_rule": "(type, register, surface) slice gets a recall/whole/PPV headline only with >=300 INDEPENDENT positive units; below that DESCRIPTIVE_INSUFFICIENT_SUPPORT, and the slice stays visible in the table",
+  "independence_status_vocabulary": {
+    "INDEPENDENT": "distinct source documents/conversations and template families, re-derived, not asserted",
+    "INDEPENDENCE_NOT_MEASURED": "template provenance/shape unknown; cannot count toward 300",
+    "DESCRIPTIVE_INSUFFICIENT_SUPPORT": "n < 300 independent positive units",
+    "NOT_MEASURED": "empty denominator",
+    "SYNTHETIC_ONLY": "synthetic isolated path; evidentiary weight published separately from product text"
+  },
+  "axes": [
+    {"axis": "pii_type", "values": "10 native item types + DATE (separate line) + 55 v6 registry types + temporary-secret family (additional, own allocation)"},
+    {"axis": "register", "values": ["clean", "chat", "sloppy", "voice_raw", "voice_itn"]},
+    {"axis": "surface", "values": "22 frozen case kinds as a PROXY only; free_prose, typed_kv, nested_json, document, rag_chunk, tool_error must be mapped explicitly before a slice is called covered"},
+    {"axis": "hop_direction", "values": ["IN/user", "IN/tool", "IN/document", "IN/memory", "OUT/tool_arg", "OUT/answer", "OUT/summary", "OUT/template"]},
+    {"axis": "transport", "values": ["non-stream", "stream", "chunk-boundary"]},
+    {"axis": "document_form", "values": ["free_prose", "typed_kv", "nested_json", "document", "rag_chunk", "tool_error"]}
+  ],
+  "required_slice_manifest_fields": [
+    "slice_id",
+    "pii_type",
+    "register",
+    "surface",
+    "hop_direction",
+    "transport",
+    "document_form",
+    "n_occurrences",
+    "n_identity_clusters",
+    "n_source_documents",
+    "n_template_families",
+    "independence_status",
+    "source_provenance",
+    "positive_units_status",
+    "ppv_sample_status",
+    "specificity_frame_status",
+    "claim_status"
+  ],
+  "known_underpowered_native_types_frozen_1800_case_corpus": {
+    "note": "measured deficit, not an oversight; the count is independent identities from the frozen v5 corpus",
+    "PASSPORT": 63,
+    "CARD": 123,
+    "SNILS": 128,
+    "INN": 144,
+    "PLATE": 154,
+    "gap_to_300": {"PASSPORT": 237, "CARD": 177, "SNILS": 172, "INN": 156, "PLATE": 146}
+  },
+  "v6_projection": {
+    "planned_cases": 500,
+    "new_types": 55,
+    "projected_independent_units_per_new_type": [25, 34],
+    "cases_needed_for_300_per_type_projection": [4400, 6100],
+    "status": "arithmetic_from_a_third_party_TZ_not_a_measurement_no_v6_corpus_on_host"
+  },
+  "synthetic_isolated_axis": {
+    "types": ["CVC family", "ISSUER_OTP", "plus the Q4 subclass scope if the owner includes it"],
+    "support_status": "SYNTHETIC_ONLY, kept in a separate column from product-text support",
+    "real_payment_values": "none; production enablement/retention not approved"
+  },
+  "unacceptable": [
+    "counting occurrences as independent support",
+    "counting a repeated template family twice",
+    "filling a hard register with easy registers",
+    "using authored gold as the PPV frame",
+    "calling clean-negative specificity precision",
+    "dropping an unsupported type from the table",
+    "declaring a slice covered by the 22-case-kind proxy alone"
+  ]
+}

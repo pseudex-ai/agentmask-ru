@@ -1,0 +1,60 @@
+{
+ "file": "corpus.jsonl",
+ "sha256": "3c59140f6a586d588ee4494a4757b6769d0d4ffa4ddf0a15d26ccd4abd4822a0",
+ "bytes": 114187,
+ "messages": 500,
+ "seed": 20260930,
+ "negative_prose_messages": 40,
+ "registers": {
+  "prose": {
+   "count": 150,
+   "chars": 28592,
+   "mean_chars": 190.6
+  },
+  "chat": {
+   "count": 125,
+   "chars": 7206,
+   "mean_chars": 57.6
+  },
+  "kv": {
+   "count": 125,
+   "chars": 16551,
+   "mean_chars": 132.4
+  },
+  "sloppy": {
+   "count": 100,
+   "chars": 7537,
+   "mean_chars": 75.4
+  }
+ },
+ "chars": {
+  "min": 37,
+  "p50": 124,
+  "mean": 119.8,
+  "max": 261
+ },
+ "provenance": "fully synthetic, generated from the templates in gen_corpus.py; no real-speech utterance, no transcript, no prototype/*.json dataset, no paid corpus and no holdout was read or copied",
+ "purpose": "COST input for the O-DETECT isolated perf run; carries no gold labels and supports no quality claim",
+ "engine_validator_cross_check": {
+  "snils": {
+   "n": 200,
+   "engine_validator_pass": 200
+  },
+  "inn10": {
+   "n": 200,
+   "engine_validator_pass": 200
+  },
+  "inn12": {
+   "n": 200,
+   "engine_validator_pass": 200
+  },
+  "card": {
+   "n": 200,
+   "engine_validator_pass": 200
+  },
+  "ogrn": {
+   "n": 200,
+   "engine_validator_pass": 200
+  }
+ }
+}

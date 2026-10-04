@@ -1,0 +1,39 @@
+{
+  "python": "3.12.12 | packaged by conda-forge | (main, Oct 22 2025, 23:34:53) [Clang 19.1.7 ]",
+  "bundle_version": "2a07cebae2b050ec",
+  "bundle_sha256": "01c19f4689450b54694b7aaa4070cbaf695efc3e98f0b59471486392a0348206",
+  "bundle_bytes": 1524582,
+  "bundle_written_to_disk": false,
+  "libraries": {
+    "natasha": "1.6.0",
+    "pymorphy3": "2.0.6",
+    "phonenumbers": "9.0.40",
+    "sqlcipher3": "0.6.2",
+    "numpy": "2.5.3",
+    "openai": "3.19.2",
+    "openai-agents": "0.22.3"
+  },
+  "dictionary_files": [
+    {
+      "path": "licensing/data/first_names.txt",
+      "bytes": 415777,
+      "sha256": "af36a608c08fd3005c4c59325261fed13465d526fb66ab15d4dd82097d453d12"
+    },
+    {
+      "path": "licensing/data/gar_streets.tsv",
+      "bytes": 4606010,
+      "sha256": "66ba875f6d1595e008440f515b15f8e639fc99b35863f1057e2ec87469b10852"
+    },
+    {
+      "path": "licensing/data/gar_types.json",
+      "bytes": 125042,
+      "sha256": "e63225c35d36743745863f7bfab294f431311377f0d5e02f45ddb4fe4d4426d3"
+    },
+    {
+      "path": "licensing/data/surnames.txt",
+      "bytes": 3384288,
+      "sha256": "03256d70bc9422b619ca64c84274b1fac951f3f9c491c0dc88468322516a4a1a"
+    }
+  ],
+  "runtime": "development bundle built in-process; NOT deployed artifact"
+}

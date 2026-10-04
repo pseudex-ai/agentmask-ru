@@ -1,0 +1,119 @@
+{
+  "task": "S1",
+  "sprint": "quality-sprint-2026-09-30",
+  "wave": "quality-sprint-design-red-1",
+  "kind": "executed deterministic RED/probes on unchanged engine (design/RED, NOT product implementation)",
+  "scope": "research/quality-sprint-2026-09-30/work/S1/",
+  "requested_routing": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "override": "explicit, per SPRINT-PLAN.md §5 and FIRST-WAVE-SCOPES.md",
+    "effective_routing_metadata": "NOT_AVAILABLE to this process; no effective model claimed",
+    "self_identity_attestation": false
+  },
+  "requirements_read": [
+    "work/B0/GATE.json",
+    "work/B0/REVIEW.md",
+    "GOAL-BRIEF.md",
+    "OWNER-DECISIONS.md",
+    "REMAINING-DECISIONS.md",
+    "SPRINT-PLAN.md",
+    "work/FIRST-WAVE-SCOPES.md",
+    "work/FIRST-WAVE-TASKS.json#id=S1"
+  ],
+  "revisions": {
+    "git_head": "890c50849a326f882eac336ba4e38c91171de473",
+    "product_source_pin": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "product_diff_pin_to_head": "empty for prototype licensing storefront deploy wiki (verified in RED.log; 890c508 is research-only)",
+    "v6_snapshot_ref": "fad9c7466ea1221282214e6c747ca373ee7e6a55",
+    "branch": "research/hop-format-audit"
+  },
+  "upstream_gate": {
+    "gate": "G1 local/design",
+    "status": "PASS",
+    "durable_review": "work/B0/REVIEW.md",
+    "production_artifact": "NOT_VERIFIED",
+    "consequence_for_s1": "design/RED work authorized; no production comparison, container or release claim made here",
+    "b0_bundle_identity_not_remeasured": {
+      "version": "2a07cebae2b050ec",
+      "sha256": "01c19f4689450b54694b7aaa4070cbaf695efc3e98f0b59471486392a0348206",
+      "note": "quoted from work/B0/GATE.json; S1 did not rebuild or re-hash the bundle"
+    }
+  },
+  "runtime": {
+    "interpreter": "/Users/igor/Projects/Obscura-hop-audit/prototype/.venv/bin/python",
+    "python": "3.12.12",
+    "cwd_for_execution": "prototype",
+    "env": {"PYTHONDONTWRITEBYTECODE": "1"},
+    "bundle_load": "testkit.load_dev_bundle() before any detect (in-memory, development path)",
+    "vault": "Vault(':memory:', 's1-probe') only; no persistent store touched",
+    "cpu_scope": "11 probes, 3 full runs; 25 in-memory vaults × 15 surfaces for the non-PII fuzz; no corpus re-run, no model download, no provider call"
+  },
+  "source_hashes_sha256": {
+    "prototype/pseudex/detect_all.py": "e2e458de6e9bbc16c5c3d91307a0076a647115c9fa7e39fd1ce667a0e5e32e69",
+    "prototype/pseudex/names.py": "40b3cdb71ca2a75b93965db00193e3533a1d3b11d1d1ecf46472da508c711eab",
+    "prototype/pseudex/vault.py": "e10630e377febdefe0205ee1f733efdc8c24a3c5288816b43ede12a1f180163e",
+    "prototype/pseudex/redact.py": "a5d80fe5ab9c2a1cb63eb5af2b648abc10e9fb650d05b56a755ecba4bf8f9f91",
+    "prototype/pseudex/envelope.py": "76bbc441fe44eef4fb381f7b19805bd77305a41698efee66674d30d11f16a585",
+    "prototype/pseudex/maskcache.py": "6e6085b86437bb5dd5f1c3eac79b630fe57af2b7b8d393981347aa8fff59796b",
+    "prototype/pseudex/audit.py": "23e1793df117db22823fe6c10d6def751f0814f2c2dedaf71629141a7de57ea1",
+    "prototype/pseudex/proxy.py": "0e65191f2d9a49406d1edbf63c35a57d63184a93e21f6d120a5949c0d522e60c",
+    "prototype/pseudex/service.py": "bfdce23a5de31904d9e118361453161d7e7d55157a138acb4616eb4bf74f164c",
+    "prototype/pseudex/detect.py": "5d51d926cc88c01accc98af4c098a878472a6bd5116115f41bb70ba778fabf7a",
+    "prototype/pseudex/normalize.py": "5f2ab7726715957c79017eb9cd9ee309722ae0ca03520ba7d32019b89c464b2e",
+    "prototype/pseudex/morph_names.py": "96abc06df58b7d39a699b2070afe2062a6e10166004a81c011d25fded09c28f3",
+    "prototype/testkit.py": "ee3e1cc254839f2514741a026d6444eca62bc556c324231b8518ca7f1622d03d",
+    "prototype/test_collisions.py": "8d15c4e93cf18970d8af47c709adafbe2a9e39bbda3b3fa1bb5dc8a9355e6f67"
+  },
+  "evidence_hashes_sha256": {
+    "research/hop-format-audit/final-analysis-2026-09-30/traces/TRACE-ANALYSIS.md": "24290db9c8c352d4a83e2074ace4c9d2e1a73fdcd3a696c43aa206e89ad59b65",
+    "research/hop-format-audit/final-analysis-2026-09-30/REPORT.md": "dd24d45f3f9462d7e8133be75c2a87a87718ec9e110667637a29217ed1de0e81",
+    "work/FIRST-WAVE-TASKS.json": "d8d48891b8e66777df6943eff8b87a43ad74b7371733073ab87e12f087a685a5",
+    "work/FIRST-WAVE-SCOPES.md": "3327ba6639997238e6cb515f5aab9c27b426d7cc9f567193caca8909eb3cb725",
+    "work/B0/GATE.json": "ed2b5d12fe78889b09871030b9645a6994a1ff773b046e7098c2878f1db7ce03",
+    "work/B0/REVIEW.md": "9056702644e907e8665b7ccd45314a4569af3a9af38b3e48f9d7b7ae31a62c87",
+    "SPRINT-PLAN.md": "4d0a5a60e0ee603820ae87b094c50c40930d83de3a416a0eb2b334a4094618ec",
+    "OWNER-DECISIONS.md": "d36927f51527862624666f66328c9547a1302e2cd466d00323e0ebb36b310090",
+    "REMAINING-DECISIONS.md": "364982c8bf623f53f705afea4a0a2cea7a788db4c961406654df31c4bd9cd3ef",
+    "GOAL-BRIEF.md": "f7f7a2e2a31f54e3737c71a8dc4556aba0f7ca3b198d4430810b45b8607cfa77"
+  },
+  "recorded_trace_episodes_reused_as_surface_shapes": {
+    "N2_partial_name_given_left_real": "trace TRACE-ANALYSIS.md §N2 (real source `битюкова зинаида` → `… на светлогорск зинаида …`)",
+    "N3_substitute_equals_other_person_real_surname": "trace §N3 document:office-005 (`тарасова` → restored `битюкова`)",
+    "P4_answer_phone_prefix_corruption": "trace §P4 long_clinic-001 (`+79295422319` → answer `+7 929 542-23-19` → restored `+3 929 542-23-19`)",
+    "D1_stream_vs_whole_dob": "trace §D1 long_clinic-006 (whole restores real DOB, streamed reply keeps fake)",
+    "D2_non_pii_rewrite": "trace §D2 fanout_pick-017 (`c-3` → `c-8`, `3.` → `8.`, `127.10.1965`)"
+  },
+  "forbidden_operations_observed": {
+    "product_source_writes": "none (git status for prototype/ and licensing/ identical before and after; see RED.log tail)",
+    "reset/stash/revert": "none",
+    "installs_or_model_downloads": "none",
+    "provider_or_production_calls": "none",
+    "broad_secret_path_search": "none",
+    "monkeypatch_used_as_gold": "none (engine not patched; controlled precondition = second value built from the observed mint, documented)",
+    "writes_outside_work_S1": "none"
+  },
+  "outputs": {
+    "s1_probes.py": "self-contained executed probe harness (562 lines)",
+    "run-s1.sh": "runner: real logs + exit code + 3-run determinism + hashes",
+    "RED.log": "executed log, exit 4 = EXPECTED_RED for 4 violated properties",
+    "determinism-run2.log": "independent repeat, same violated set",
+    "determinism-run3.log": "independent repeat, same violated set",
+    "HASHES.txt": "fixture spec hash and log digests",
+    "INPUTS.json": "this file",
+    "SPEC.md": "mechanism options, owner contracts, exact new forks, NOT_MEASURED manifest",
+    "DELTA.json": "per-probe before/after facts and separation of mechanism vs measurement",
+    "GATE.json": "G3-scoped S1 status and OWNER_PENDING forks",
+    "OWNER-QUESTIONS.md": "concrete owner forks O-CORE-S1-* with options"
+  },
+  "state_fixture": {
+    "fixture_spec_sha256": "438f318669d66b7bdcacfcec0141646dca5d446878a88a74226ee10f5e444fec",
+    "observed_state_capture": "RED.log (observed mints for the logged run)",
+    "note": "engine mints substitutes with `secrets`; property verdicts are invariant across 3 runs, the concrete substitute strings are not"
+  },
+  "unknowns": [
+    "original raw input bytes/state behind episodes N2, P4, D1, D2 were not preserved; their recorded masked outputs are shapes, not reconstructible replay state",
+    "effective model/provider routing metadata unavailable; the requested override is recorded, not attested",
+    "production installed artifact digest still NOT_VERIFIED (B0 scope); no production comparison performed"
+  ]
+}

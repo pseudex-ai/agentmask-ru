@@ -1,0 +1,13 @@
+rows=511 -> /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/A1/DATA-GAPS.csv
+  NAME      v5_unique_identities= 1188 run813_unique_identities=  667 gap_to_300=    0
+  LOC       v5_unique_identities=  985 run813_unique_identities=  506 gap_to_300=    0
+  PHONE     v5_unique_identities=  883 run813_unique_identities=  467 gap_to_300=    0
+  EMAIL     v5_unique_identities=  459 run813_unique_identities=  269 gap_to_300=    0
+  PASSPORT  v5_unique_identities=   63 run813_unique_identities=   29 gap_to_300=  237
+  SNILS     v5_unique_identities=  128 run813_unique_identities=   60 gap_to_300=  172
+  INN       v5_unique_identities=  144 run813_unique_identities=   53 gap_to_300=  156
+  CARD      v5_unique_identities=  123 run813_unique_identities=   67 gap_to_300=  177
+  PLATE     v5_unique_identities=  154 run813_unique_identities=   45 gap_to_300=  146
+  DOB       v5_unique_identities=  544 run813_unique_identities=  318 gap_to_300=    0
+v6 new types with 0 generated units: 55
+temporary-secret types with 0 generated units: 6

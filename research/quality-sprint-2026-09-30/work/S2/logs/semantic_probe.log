@@ -1,0 +1,106 @@
+[DX-01] Иванову Петру Сергеевичу диагностировали сахарный диабет второго типа.
+    spans: NAME='Иванову Петру Сергеевичу', MEDICAL='диабет'
+    masked->'Тихонову Илье Геннадьевичу диагностировали сахарный REDACTEDcc880a второго типа.'
+    roundtrip_identical=True digits_survive=False marker=True
+[DX-02] У него нашли ВИЧ-инфекцию, терапию начнём в понедельник.
+    spans: MEDICAL='ВИЧ'
+    masked->'У него нашли REDACTED54d640-инфекцию, терапию начнём в понедельник.'
+    roundtrip_identical=True digits_survive=False marker=True
+[DX-03] {"patient": "Петров П.С.", "diagnosis": "сахарный диабет"}
+    spans: NAME='Петров П.С.', MEDICAL='диабет'
+    masked->'{"patient": "Якушев Э. Д.", "diagnosis": "сахарный REDACTEDcc880a"}'
+    roundtrip_identical=True digits_survive=False marker=True
+[DX-04] В регионе выросла заболеваемость диабетом среди взрослых.
+    spans: MEDICAL='диабетом'
+    masked->'В регионе выросла заболеваемость REDACTEDebeb53 среди взрослых.'
+    roundtrip_identical=True digits_survive=False marker=True
+[DX-05] Петрову поставили диагноз астма, а Сидорову — гипертония.
+    spans: NAME='Петрову', MEDICAL='астма', NAME='Сидорову', MEDICAL='гипертония'
+    masked->'Белых поставили диагноз REDACTEDf96b24, а Уварову — REDACTED0d3659.'
+    roundtrip_identical=True digits_survive=False marker=True
+[DX-06] Ракета-носитель стартовала по расписанию, гипертекст документа открылся.
+    spans: -
+    masked->'Ракета-носитель стартовала по расписанию, гипертекст документа открылся.'
+    roundtrip_identical=True digits_survive=False marker=False
+[SAL-01] Смирновой Ольге начислили зарплату 185 000 рублей за август.
+    spans: NAME='Смирновой Ольге'
+    masked->'Рыбаковой Стелле начислили зарплату 185 000 рублей за август.'
+    roundtrip_identical=True digits_survive=True marker=False
+[SAL-02] доход: 185000 руб/мес
+    spans: -
+    masked->'доход: 185000 руб/мес'
+    roundtrip_identical=True digits_survive=True marker=False
+[SAL-03] Средняя зарплата в отрасли — 185 000 рублей.
+    spans: -
+    masked->'Средняя зарплата в отрасли — 185 000 рублей.'
+    roundtrip_identical=True digits_survive=True marker=False
+[SAL-04] Сумма заказа 185 000 рублей, оплата по счёту.
+    spans: -
+    masked->'Сумма заказа 185 000 рублей, оплата по счёту.'
+    roundtrip_identical=True digits_survive=True marker=False
+[SAL-05] Петров получает 90 000, а Сидорова — 210 000 рублей в месяц.
+    spans: NAME='Петров', NAME='Сидорова'
+    masked->'Мкртчян получает 90 000, а Гончарук — 210 000 рублей в месяц.'
+    roundtrip_identical=True digits_survive=True marker=False
+[SAL-06] Ей задержали выплату за июль.
+    spans: -
+    masked->'Ей задержали выплату за июль.'
+    roundtrip_identical=True digits_survive=False marker=False
+[SAL-07] Справка 2-НДФЛ: доход за год 2 220 000 руб.
+    spans: -
+    masked->'Справка 2-НДФЛ: доход за год 2 220 000 руб.'
+    roundtrip_identical=True digits_survive=True marker=False
+[CON-01] Сидоров осуждён по статье 159 УК РФ на три года условно.
+    spans: NAME='Сидоров'
+    masked->'Фролов осуждён по статье 159 УК РФ на три года условно.'
+    roundtrip_identical=True digits_survive=True marker=False
+[CON-02] судимость: имеется, ст. 159 ч. 2 УК РФ
+    spans: -
+    masked->'судимость: имеется, ст. 159 ч. 2 УК РФ'
+    roundtrip_identical=True digits_survive=True marker=False
+[CON-03] Суд рассмотрел дело по статье 159 УК РФ.
+    spans: -
+    masked->'Суд рассмотрел дело по статье 159 УК РФ.'
+    roundtrip_identical=True digits_survive=True marker=False
+[CON-04] Его судимость погашена в прошлом году.
+    spans: -
+    masked->'Его судимость погашена в прошлом году.'
+    roundtrip_identical=True digits_survive=False marker=False
+[DEB-01] Иванов должен банку 450 000 рублей по кредиту.
+    spans: NAME='Иванов'
+    masked->'Савченко должен банку 450 000 рублей по кредиту.'
+    roundtrip_identical=True digits_survive=True marker=False
+[DEB-02] задолженность: 450000 руб.
+    spans: -
+    masked->'задолженность: 450000 руб.'
+    roundtrip_identical=True digits_survive=True marker=False
+[DEB-03] Задолженность ООО «Заря» перед поставщиком 450 000 рублей.
+    spans: -
+    masked->'Задолженность ООО «Заря» перед поставщиком 450 000 рублей.'
+    roundtrip_identical=True digits_survive=True marker=False
+[DEB-04] Общий долг домохозяйств вырос на 3%.
+    spans: -
+    masked->'Общий долг домохозяйств вырос на 3%.'
+    roundtrip_identical=True digits_survive=True marker=False
+[DEB-05] У неё просрочка по трём займам.
+    spans: -
+    masked->'У неё просрочка по трём займам.'
+    roundtrip_identical=True digits_survive=False marker=False
+[CTL-01] Букина Сергея Ивановича, он 19.12.1992, запишите к неврологу.
+    spans: NAME='Букина Сергея Ивановича', DOB='19.12.1992'
+    masked->'Юдина Святослава Андреевича, он 01.12.1992, запишите к неврологу.'
+    roundtrip_identical=True digits_survive=False marker=False
+[CTL-02] мой телефон +7 999 123-45-67
+    spans: PHONE='+7 999 123-45-67'
+    masked->'мой телефон +7 979 910-33-34'
+    roundtrip_identical=True digits_survive=False marker=False
+[CTL-03] клиенту 95 лет
+    spans: AGE='95 лет'
+    masked->'клиенту REDACTED8ed57c'
+    roundtrip_identical=True digits_survive=False marker=True
+[CTL-04] диагноз сахарный диабет
+    spans: MEDICAL='диабет'
+    masked->'диагноз сахарный REDACTEDcc880a'
+    roundtrip_identical=True digits_survive=False marker=True
+COUNTS {"any_span": 13, "episodes": 26, "masked_changed": 13, "no_span": 13, "redaction_marker_visible": 7, "roundtrip_identical": 26}
+WROTE /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/S2/probes/semantic_probe.json

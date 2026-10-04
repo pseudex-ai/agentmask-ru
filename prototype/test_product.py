@@ -343,7 +343,8 @@ def test_unmask_reformatted_phone() -> None:
     token = vault.tokenize("+7 999 123-45-67", "PHONE")
     rewritten = "8" + token[2:]  # +79021384756 -> 89021384756
     restored = unmask_text(f"Звоню на {rewritten}", vault)
-    assert "+7 999 123-45-67" in restored, f"reformatted token not restored: {restored!r}"
+    # Current-hop form belongs to the agent, including the domestic prefix.
+    assert "8 999 123-45-67" in restored, f"reformatted token not restored: {restored!r}"
     print(f"reformatted-token detok OK — {rewritten} -> {restored!r}")
 
 
@@ -429,14 +430,21 @@ def test_short_address_resolves_to_the_full_one() -> None:
     delivery) means neither links. That is Fellegi-Sunter's middle outcome with
     no human to refer it to, so it collapses to «do not guess».
     """
+    from pseudex.morph_places import is_generic_word
     with tempfile.TemporaryDirectory() as directory:
         path = os.path.join(directory, "vault.db")
         talk = Vault(path, "acme").for_conversation("dialog-1")
         full = talk.tokenize("г. Москва, ул. Ленина, д. 14", "LOC")
         short = talk.tokenize("Ленина 14", "LOC")
         assert short and short != full, "a short mention is not the full address"
-        assert short in full, f"{short!r} must be the street and house of {full!r}"
-        assert not any(char.isdigit() for char in full[:full.index(short)]), \
+        # The projection keeps the STREET+HOUSE fake; the generic word may be
+        # re-composed — a short mention gets the inflectable default «улица» (so
+        # «на Тверской 7» inflects to «улицы»), while the full token keeps its
+        # own «ул.». The literal substring no longer holds across that generic.
+        short_core = " ".join(w for w in short.split() if not is_generic_word(w))
+        assert short_core and short_core in full, \
+            f"{short_core!r} must be the street and house of {full!r}"
+        assert not any(char.isdigit() for char in full[:full.index(short_core)]), \
             "what the projection drops must be the CITY, not part of the street"
         assert unmask_text(f"адрес {short}", talk) == "адрес Ленина 14", \
             "the tool receives what the customer wrote, not the fuller form"
@@ -599,8 +607,16 @@ def test_directory_record_is_the_customers_address() -> None:
     register = "Самарская область, г Самара, ул Луговая, д 10"
     assert address_key(register) == address_key("г. Самара, ул. Луговая, д. 10")
     assert address_key("Санкт-Петербург, г Колпино, ул Полевая, д 160в") == address_key("Колпино, ул Полевая, 160в")
-    assert split_roles(register) == {"city": "Самара", "street": "ул Луговая", "house": "10"}
-    assert split_roles("г Пермь, ул Добролюбова, д 154б") == {"city": "Пермь", "street": "ул Добролюбова", "house": "154б"}
+    # РОДОВОЕ СЛОВО — СВОЯ РОЛЬ ЧИТАЛКИ (решение владельца: тип — часть
+    # тождества адреса). `street` остаётся ЦЕЛОЙ фразой, поэтому старые
+    # потребители не двигаются, а `street_type`/`street_name` — её половины,
+    # которыми схема инструмента спрашивает тип отдельным полем.
+    assert split_roles(register) == {"city": "Самара", "street": "ул Луговая",
+                                     "street_type": "ул", "street_name": "Луговая",
+                                     "house": "10"}
+    assert split_roles("г Пермь, ул Добролюбова, д 154б") == {
+        "city": "Пермь", "street": "ул Добролюбова", "street_type": "ул",
+        "street_name": "Добролюбова", "house": "154б"}
     assert street_house_key("ул Полевая, д 160в") == street_house_key("полевая 160 в") == "полевой 160"
     assert address_key("ул Полевая, д 160в") != address_key("ул Полевая, д 160"), "the litera is part of the house"
 
@@ -703,7 +719,9 @@ def test_directory_record_links_to_the_short_mention() -> None:
     assert street_house_key("можга проезд пушкина 89") == "пушкин 89", "a city before a street is still skipped"
     assert detect_case("г Глазов, ул Кирова, д 79") == "nomn"
     assert detect_case("Офис на проспекте Жасминовом 176, корп. 9") != "nomn", "a tail abbreviation pins nothing"
-    assert split_roles("г Самара, ул Пушкина, д 65 к 1") == {"city": "Самара", "street": "ул Пушкина", "house": "65", "building": "1"}
+    assert split_roles("г Самара, ул Пушкина, д 65 к 1") == {
+        "city": "Самара", "street": "ул Пушкина", "street_type": "ул",
+        "street_name": "Пушкина", "house": "65", "building": "1"}
     assert split_roles("ул Пушкина 65 с 2")["building"] == "2" and split_roles("садовая 89 а")["house"] == "89 а"
 
     detector = Detector()
@@ -873,7 +891,9 @@ def test_fresh_seed_shapes() -> None:
                  "букина сергея ивановича он 19 12 1992 телефон",
                  "букина сергея ивановича оон четырнадцатое марта восемьдесят седьмого года телефон"):
         assert [s.entity_type for s in detector.detect(said)] == ["NAME", "DOB"], detector.detect(said)
-    assert split_roles("зеленоградская 8 бкв150") == {"street": "зеленоградская", "house": "8 б", "flat": "150"}
+    assert split_roles("зеленоградская 8 бкв150") == {
+        "street": "зеленоградская", "street_name": "зеленоградская",
+        "house": "8 б", "flat": "150"}
     # THE GENERIC WORD DECIDES THE CASE. «на улице Ленина 1 кв 11» — the
     # commonest address form in the language — was read as the genitive
     # («Ленина» out-voted «улице»), minted «улицы Пихтовой» and restored

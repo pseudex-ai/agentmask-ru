@@ -1,0 +1,37 @@
+== identity ==
+  PASS  harness sha256 matches the retained run
+  PASS  GATE harness sha256 matches the retained run
+  PASS  bundle sha256 equals B0 RUNTIME identity
+  PASS  bundle cross-check vs B0
+  PASS  63/63 module pins match B0 with no drift
+== gold population ==
+  PASS  golden: 100 cases, 0 unresolved gold values
+  PASS  dirty: 150 cases, 0 unresolved gold values
+  PASS  gatectx: 587 unique labelled rows (47 duplicates dropped, 2420 unlabelled)
+  PASS  gatectx label counts = 295 must-mask + 292 must-not
+  PASS  holdout not read and not present
+== controls ==
+  PASS  positive control passed with 2 spans
+  PASS  negative control passed
+== headline counters ==
+  PASS  FULL golden: 298 gold, 0 miss
+  PASS  FULL golden: 266 exact + 20 whole = 286/298
+  PASS  FULL gatectx: 295 gold / 292 labelled negatives
+  PASS  RULES_ONLY golden: 18 LOC misses
+  PASS  RULES_ONLY gatectx totals identical to FULL (per-text spec)
+  PASS  RAW_NER gatectx: 295/295 miss
+  PASS  ablation flags correct (FULL is the only product arm)
+  PASS  791 unique texts per arm
+== gate/inputs/delta consistency ==
+  PASS  GATE gold units match the run
+  PASS  GATE arm/text counts match the run
+  PASS  O-DETECT OWNER_PENDING and production NOT_MEASURED
+  PASS  DELTA owner gate consistent
+  PASS  INPUTS.json artifact hashes match files on disk ([])
+  PASS  DELTA.json artifact hashes match files on disk ([])
+  PASS  MODEL-INVENTORY bundle flag consistent
+  PASS  source-hashes.json model digests are full sha256
+== log ==
+  PASS  smoke.log shows EXIT=0
+
+SELF-CHECK PASSED: all assertions hold

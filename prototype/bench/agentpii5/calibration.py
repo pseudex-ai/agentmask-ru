@@ -62,6 +62,7 @@ from pathlib import Path
 from typing import Protocol
 
 from bench.agentpii5 import records as r
+from bench.agentpii5 import pii_types
 from bench.agentpii5.contracts import (
     CALIBRATION, JUDGE_LABELS, QUERY_CAP_USD, RETRIES, CalibrationRecord, CalibrationStamp,
     CalibrationThresholds, JudgeInput, JudgeVerdict, RunObservation)
@@ -112,6 +113,18 @@ def answer_types(observation: RunObservation) -> tuple[str, ...]:
 def stratum_of(observation: RunObservation) -> tuple[str, str, str]:
     return ("+".join(answer_types(observation)), observation.case.behaviour,
             observation.case.base.register)
+
+
+def new_types_seen(records: Sequence[CalibrationRecord]) -> tuple[str, ...]:
+    """The NEW item types (origin == "v6") a calibration sample recorded in its
+    `pii_types` — what the report header prints (TZ §6.5: «какие новые типы
+    видела калибровка», §9.4).
+
+    Read off the records' own `pii_types`, never re-derived from the corpus: the
+    sheet is the ONE place a calibration states which answer types it drew, and
+    `answer_types` already carried the v6 ids through `hop.pii_type`."""
+    new = frozenset(pii_types.NEW_ITEM_TYPES)
+    return tuple(sorted({pt for one in records for pt in one.pii_types if pt in new}))
 
 
 def draw_sample(observations: Sequence[RunObservation], thresholds: CalibrationThresholds,

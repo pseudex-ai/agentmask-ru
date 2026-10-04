@@ -1,0 +1,1 @@
+{"name": "clinic_book", "arguments": {"patient": {"last_name": "Устинова", "first_name": "Юлия", "middle_name": "Семёновна", "birth_date": "1997-10-17", "age": 28, "gender": "F"}, "phone": "+79184403785", "speciality": "офтальмолог", "slot": "2026-09-03T10:00:00+03:00"}}

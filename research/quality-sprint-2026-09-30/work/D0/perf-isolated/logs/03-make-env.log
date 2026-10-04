@@ -1,0 +1,5 @@
+isolation [isolation-start]: NOT_ISOLATED loadavg=['4.25', '4.75', '5.23']
+  heavy: pid=31169 cpu=99.8% etime=16:34:27 .venv/bin/python -m bench.agentpii5.live bench/runs/2026-09-30/v5-sprint-v2-813 --web --host 127.0.0.1 --port 8099 --bas
+env.json: HEAD=b81cbfd6d96c modules=65 manifest=ce441ebbdd306984 bundle=2a07cebae2b050ec (1524582 B, 01c19f4689450b54)
+corpus: 500 msgs sha256=3c59140f6a586d588ee4494a4757b6769d0d4ffa4ddf0a15d26ccd4abd4822a0
+model bytes: 29020160

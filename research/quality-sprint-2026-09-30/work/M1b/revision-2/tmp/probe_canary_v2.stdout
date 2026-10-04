@@ -1,0 +1,143 @@
+{
+  "run_dir": "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/runs/2026-09-30/v5-sprint-v2-813",
+  "engine_limits": {
+    "capture_version": 1,
+    "manifest_version": 1,
+    "row_bound_bytes": 4194304,
+    "run_bound_bytes": 268435456
+  },
+  "proposed_legacy_limits": {
+    "max_payload_utf8_bytes": 1048576,
+    "max_payloads": 4096,
+    "max_row_utf8_bytes": 8388608,
+    "max_run_bytes": 268435456,
+    "read_chunk_bytes": 1048576
+  },
+  "capture_artifacts": [
+    "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl"
+  ],
+  "geometry": {
+    "path": "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl",
+    "sha256": "3c42892960088ad08a8cded1b5dc987563cfe4af810d7b8ae283b501e2ceabb7",
+    "rows": 810,
+    "total_bytes": 95241454,
+    "total_chars": 81514019,
+    "max_row_bytes": 5531229,
+    "engine_row_bound_bytes": 4194304,
+    "engine_run_bound_bytes": 268435456,
+    "over_engine_row_bound": [
+      {
+        "line": 806,
+        "bytes_including_newline": 5531229
+      },
+      {
+        "line": 810,
+        "bytes_including_newline": 5470734
+      }
+    ],
+    "rows_at_or_under_engine_bound": 808
+  },
+  "sizes": {
+    "rows_sized": 810,
+    "refused_rows_expanded": 2,
+    "payloads_in_refused_rows": 760,
+    "max_payload_count": 380,
+    "max_payload_utf8_bytes": 36592,
+    "max_payload_chars": 35718,
+    "refused_row_details": [
+      {
+        "line": 806,
+        "row_bytes_including_newline": 5531229,
+        "version": 1,
+        "case_id": "sequential_chain:mail-006",
+        "payload_count": 380,
+        "max_payload_text_utf8_bytes": 36574,
+        "max_payload_real_utf8_bytes": 36592,
+        "total_payload_text_utf8_bytes": 2272799,
+        "total_payload_real_utf8_bytes": 2274078
+      },
+      {
+        "line": 810,
+        "row_bytes_including_newline": 5470734,
+        "version": 1,
+        "case_id": "sequential_chain:mail-007",
+        "payload_count": 380,
+        "max_payload_text_utf8_bytes": 35851,
+        "max_payload_real_utf8_bytes": 35852,
+        "total_payload_text_utf8_bytes": 2252174,
+        "total_payload_real_utf8_bytes": 2252666
+      }
+    ]
+  },
+  "engine_check_run": {
+    "status": "NOT_MEASURED",
+    "ok": false,
+    "reason": "the delivered bytes could not be read: cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl:806: capture row is over the 4194304 byte bound",
+    "coverage_known": false,
+    "capture_rows": 0,
+    "intervention_rows": 0,
+    "selected_rows": 0
+  },
+  "legacy_diagnostic": {
+    "measured_rows": 810,
+    "skipped_rows": 0,
+    "skipped": [],
+    "refused_rows": 0,
+    "refused": [],
+    "payloads": 20201,
+    "distinct_keys": 810,
+    "note": "DIAGNOSTIC ONLY. The global reader verdict above stays NOT_MEASURED; this read is a design path that must be accepted and implemented in M1c before it can feed any gate. It never admits a skipped/refused row as measured."
+  },
+  "synthetic_controls": {
+    "run_dir": "/Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/revision-2/tmp/synthetic-legacy-controls",
+    "artifact": "/Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/revision-2/tmp/synthetic-legacy-controls/m1b-rev2.canary.jsonl",
+    "hostile_row": "/Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/revision-2/tmp/synthetic-legacy-controls-hostile.canary.jsonl",
+    "v2_lying_row": "/Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/M1b/revision-2/tmp/synthetic-v2-lying.canary.jsonl",
+    "ok_rows": 2,
+    "big_payload_utf8_bytes": 2950000
+  },
+  "synthetic_legacy_read": {
+    "ok_and_big_payload": {
+      "measured_rows": 2,
+      "skipped_rows": 1,
+      "skipped": [
+        {
+          "line": 3,
+          "reason": "payload over the 1048576 byte bound"
+        }
+      ],
+      "refused_rows": 0,
+      "refused": [],
+      "payloads": 2,
+      "distinct_keys": 2
+    },
+    "hostile_row": {
+      "measured_rows": 0,
+      "skipped_rows": 1,
+      "skipped": [
+        {
+          "line": 1,
+          "reason": "row over the 8388608 byte hard ceiling"
+        }
+      ],
+      "refused_rows": 0,
+      "refused": [],
+      "payloads": 0,
+      "distinct_keys": 0
+    }
+  },
+  "v2_declared_vs_actual": {
+    "declared": {
+      "payload_count": 1,
+      "max_payload_bytes": 10,
+      "total_text_bytes": 10,
+      "row_bytes": 10
+    },
+    "declared_payload_count": 1,
+    "actual_payload_count": 0,
+    "declared_total_text_bytes": 10,
+    "actual_total_text_bytes": 0,
+    "agrees": false,
+    "verdict": "REFUSED"
+  }
+}

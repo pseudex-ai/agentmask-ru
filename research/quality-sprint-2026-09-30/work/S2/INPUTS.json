@@ -1,0 +1,243 @@
+{
+  "created_utc": "2026-09-30T20:12:44.999688+00:00",
+  "environment": {
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "bundle": "load_dev_bundle() in-process; no bundle file written",
+    "cwd_for_probe": "prototype",
+    "interpreter": "/Users/igor/Projects/Obscura-hop-audit/prototype/.venv/bin/python",
+    "network": "no provider, no production, no install, no model download",
+    "python": "3.12.12",
+    "vault": "Vault(':memory:', 's2-synthetic'); no on-disk store"
+  },
+  "fixture": {
+    "episodes": 26,
+    "path": "research/quality-sprint-2026-09-30/work/S2/EPISODES.jsonl",
+    "sha256": "90ab4987538d503cc2b580a2b95edfd7bd7f225e7d3381735b322a0edaab5ea7",
+    "source": "approved semantic scope: GOAL-BRIEF.md L68, SPRINT-PLAN.md L16, REMAINING-DECISIONS.md L38",
+    "synthetic": true
+  },
+  "gate_source": {
+    "gate": "G1",
+    "path": "research/quality-sprint-2026-09-30/work/B0/GATE.json",
+    "production_artifact_gate": "NOT_MEASURED",
+    "scope": "local/design only",
+    "sha256": "ed2b5d12fe78889b09871030b9645a6994a1ff773b046e7098c2878f1db7ce03",
+    "status": "PASS"
+  },
+  "inputs_read": [
+    {
+      "bytes": 1444,
+      "path": "research/quality-sprint-2026-09-30/work/B0/GATE.json",
+      "purpose": "G1 local/design PASS, production NOT_VERIFIED, allowed_next includes S2",
+      "sha256": "ed2b5d12fe78889b09871030b9645a6994a1ff773b046e7098c2878f1db7ce03"
+    },
+    {
+      "bytes": 10599,
+      "path": "research/quality-sprint-2026-09-30/work/B0/REVIEW.md",
+      "purpose": "independent B0 review; limits and production gate",
+      "sha256": "9056702644e907e8665b7ccd45314a4569af3a9af38b3e48f9d7b7ae31a62c87"
+    },
+    {
+      "bytes": 66641,
+      "path": "research/quality-sprint-2026-09-30/GOAL-BRIEF.md",
+      "purpose": "semantic-PII clause L68; S2 deliverable L216; gate discipline L337",
+      "sha256": "f7f7a2e2a31f54e3737c71a8dc4556aba0f7ca3b198d4430810b45b8607cfa77"
+    },
+    {
+      "bytes": 11997,
+      "path": "research/quality-sprint-2026-09-30/OWNER-DECISIONS.md",
+      "purpose": "binding owner answers Q1-Q4, lexical ambiguity rule",
+      "sha256": "d36927f51527862624666f66328c9547a1302e2cd466d00323e0ebb36b310090"
+    },
+    {
+      "bytes": 14709,
+      "path": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md",
+      "purpose": "Block 5 semantic-PII scope; Block 1/2 name+identity rules",
+      "sha256": "364982c8bf623f53f705afea4a0a2cea7a788db4c961406654df31c4bd9cd3ef"
+    },
+    {
+      "bytes": 48373,
+      "path": "research/quality-sprint-2026-09-30/SPRINT-PLAN.md",
+      "purpose": "S2 work package L124, G0/G3 gate text L144-L147, G7 L157",
+      "sha256": "4d0a5a60e0ee603820ae87b094c50c40930d83de3a416a0eb2b334a4094618ec"
+    },
+    {
+      "bytes": 3412,
+      "path": "research/quality-sprint-2026-09-30/work/FIRST-WAVE-SCOPES.md",
+      "purpose": "wave write scopes and synthetic-fixture limits",
+      "sha256": "3327ba6639997238e6cb515f5aab9c27b426d7cc9f567193caca8909eb3cb725"
+    },
+    {
+      "bytes": 8230,
+      "path": "research/quality-sprint-2026-09-30/work/FIRST-WAVE-TASKS.json",
+      "purpose": "exact task entry id=S2",
+      "sha256": "d8d48891b8e66777df6943eff8b87a43ad74b7371733073ab87e12f087a685a5"
+    },
+    {
+      "bytes": 102383,
+      "path": "wiki/INVARIANTS.md",
+      "purpose": "Dates association rule L156; context rules; engine-wide fail-closed",
+      "sha256": "14bf5e7df2005f18737bea77a0673ac166eea70d6c23f6c5396e8898061ae97f"
+    },
+    {
+      "bytes": 38515,
+      "path": "research/2026-08-16-vertical-pii-registry.md",
+      "purpose": "prior registry gap table (salary/conviction are values, not patterns) L346-L371",
+      "sha256": "9fd51ad0bd22238631938e5bb57002cb96c11114007831dc6f5b40b6ab1cfc3b"
+    },
+    {
+      "bytes": 45726,
+      "path": "research/2026-08-16-industry-pii-hr-insurance-legal.md",
+      "purpose": "HR/legal vertical inventory; vendor gap",
+      "sha256": "ca4a574d06e0dabb844a0cccd571c52f50d5b5f576c82625c4180341d127e34a"
+    },
+    {
+      "bytes": 15677,
+      "path": "research/dd4-C-quasi-identifiers.md",
+      "purpose": "prior quasi-identifier design (diagnosis as sensitive attribute)",
+      "sha256": "bdab1ecf3f5df623a09f17e1722ea552dcbe1b28a794bbadce939ddc9a7f49de"
+    },
+    {
+      "bytes": 5595,
+      "path": "prototype/test_coverage_152fz.py",
+      "purpose": "current must-catch list incl. isolated MEDICAL L48 and legal-person negative",
+      "sha256": "ea0fe70e9661ef1eb1b0b8a3ac1f6610369d2ea6f0717d5ba2d8c938c5d21290"
+    },
+    {
+      "bytes": 6341,
+      "path": "prototype/testkit.py",
+      "purpose": "load_dev_bundle development path contract",
+      "sha256": "ee3e1cc254839f2514741a026d6444eca62bc556c324231b8518ca7f1622d03d"
+    },
+    {
+      "bytes": 10453,
+      "path": "prototype/pseudex/quasi.py",
+      "purpose": "DOB/AGE/MEDICAL recognizer implementation",
+      "sha256": "c8e59f62a7a1364d5900fbee29652c1b517a6a6091677eae6b323c6d0fe8d458"
+    },
+    {
+      "bytes": 20267,
+      "path": "prototype/pseudex/detect_all.py",
+      "purpose": "single composition point; stage order; priority",
+      "sha256": "e2e458de6e9bbc16c5c3d91307a0076a647115c9fa7e39fd1ce667a0e5e32e69"
+    },
+    {
+      "bytes": 24627,
+      "path": "prototype/pseudex/context.py",
+      "purpose": "suppress(); _IDENTIFIES_A_PERSON includes AGE/MEDICAL",
+      "sha256": "1a8e826ce749ee383226e7f2f7be8b86dccda9da0004371acef93138d8cfdb22"
+    },
+    {
+      "bytes": 366016,
+      "path": "prototype/pseudex/vault.py",
+      "purpose": "no-renderer fallback REDACTED<digest> L1920-L1929",
+      "sha256": "e10630e377febdefe0205ee1f733efdc8c24a3c5288816b43ede12a1f180163e"
+    },
+    {
+      "bytes": 118372,
+      "path": "prototype/licensing/assets_source.py",
+      "purpose": "MEDICAL_PATTERN L1032-L1042; KEY_TYPE/CTX_TYPES contain no semantic keys",
+      "sha256": "2e61b814f0a40a3ecbe3d93a9b98673348e215952d6143580e9168f4e0d5cfd5"
+    }
+  ],
+  "legal_sources_fetched": [
+    {
+      "article": "152-ФЗ ст. 3 п. 1",
+      "claim": "Personal data is any information relating to a directly or indirectly identified or identifiable natural person.",
+      "limits": "Text fetched 2026-10-01 from a secondary legal mirror (ConsultantPlus), not from the official publication portal; wording of the current redaction (26.07.2026) is quoted, not the original 2006 text.",
+      "url": "https://www.consultant.ru/document/cons_doc_LAW_61801/4f41fe599ce341751e4e34dc50a4b676674c1416/",
+      "used_for": "Why the SUBJECT->ATTRIBUTE relation, not the isolated word, is the unit of protection."
+    },
+    {
+      "article": "152-ФЗ ст. 10 ч. 1",
+      "claim": "Special categories requiring the ch. 2 conditions include 'state of health'; processing them is generally prohibited without a listed ground.",
+      "limits": "Same mirror/redaction caveat; ch. 2 grounds are broad and this document makes no compliance determination for any operator.",
+      "url": "https://www.consultant.ru/document/cons_doc_LAW_61801/26edb2934b899bf9c74c3a8f7e574651c6565e6d/",
+      "used_for": "Diagnosis/health attribute belongs to the special-category class."
+    },
+    {
+      "article": "152-ФЗ ст. 10 ч. 3",
+      "claim": "Conviction data is processed by state/municipal bodies within their powers, and by other persons in the cases and order determined by federal laws.",
+      "limits": "Same mirror caveat; the parent document explicitly rejects re-classifying conviction as a health-like special category.",
+      "url": "https://www.consultant.ru/document/cons_doc_LAW_61801/26edb2934b899bf9c74c3a8f7e574651c6565e6d/",
+      "used_for": "Conviction is NOT in the ch. 1 special-category list; it has its own narrower regime."
+    }
+  ],
+  "out_of_scope_confirmed": [
+    "no engine/licensing/scorer/benchmark source changed",
+    "no product implementation or semantic type added",
+    "no git reset/stash/revert, no commit",
+    "no EXECUTION.json or usage-journal write",
+    "no paid/provider benchmark call",
+    "no broad secret-path search"
+  ],
+  "root": "/Users/igor/Projects/Obscura-hop-audit",
+  "source_pins": {
+    "engine_files_verified_against_b0": [
+      {
+        "match": true,
+        "path": "prototype/pseudex/quasi.py",
+        "sha256_b0_pin": "c8e59f62a7a1364d5900fbee29652c1b517a6a6091677eae6b323c6d0fe8d458",
+        "sha256_now": "c8e59f62a7a1364d5900fbee29652c1b517a6a6091677eae6b323c6d0fe8d458"
+      },
+      {
+        "match": true,
+        "path": "prototype/pseudex/context.py",
+        "sha256_b0_pin": "1a8e826ce749ee383226e7f2f7be8b86dccda9da0004371acef93138d8cfdb22",
+        "sha256_now": "1a8e826ce749ee383226e7f2f7be8b86dccda9da0004371acef93138d8cfdb22"
+      },
+      {
+        "match": true,
+        "path": "prototype/pseudex/detect_all.py",
+        "sha256_b0_pin": "e2e458de6e9bbc16c5c3d91307a0076a647115c9fa7e39fd1ce667a0e5e32e69",
+        "sha256_now": "e2e458de6e9bbc16c5c3d91307a0076a647115c9fa7e39fd1ce667a0e5e32e69"
+      },
+      {
+        "match": true,
+        "path": "prototype/pseudex/vault.py",
+        "sha256_b0_pin": "e10630e377febdefe0205ee1f733efdc8c24a3c5288816b43ede12a1f180163e",
+        "sha256_now": "e10630e377febdefe0205ee1f733efdc8c24a3c5288816b43ede12a1f180163e"
+      },
+      {
+        "match": true,
+        "path": "prototype/pseudex/redact.py",
+        "sha256_b0_pin": "a5d80fe5ab9c2a1cb63eb5af2b648abc10e9fb650d05b56a755ecba4bf8f9f91",
+        "sha256_now": "a5d80fe5ab9c2a1cb63eb5af2b648abc10e9fb650d05b56a755ecba4bf8f9f91"
+      },
+      {
+        "match": true,
+        "path": "prototype/licensing/assets_source.py",
+        "sha256_b0_pin": "2e61b814f0a40a3ecbe3d93a9b98673348e215952d6143580e9168f4e0d5cfd5",
+        "sha256_now": "2e61b814f0a40a3ecbe3d93a9b98673348e215952d6143580e9168f4e0d5cfd5"
+      },
+      {
+        "match": true,
+        "path": "prototype/licensing/pack.py",
+        "sha256_b0_pin": "7eedcd8b70c8407b13b633b8e719c3e6716dc73215af756d1b70186f93730d9b",
+        "sha256_now": "7eedcd8b70c8407b13b633b8e719c3e6716dc73215af756d1b70186f93730d9b"
+      }
+    ],
+    "engine_pin_mismatches": [],
+    "git_head_evidence_commit": "890c50849a326f882eac336ba4e38c91171de473",
+    "product_source_note": "B0 pinned this revision; S2 ran read-only against the working tree, which B0 G1 verified as that source plus preserved WIP.",
+    "product_source_revision": "0bfda2363ef1a1d552e2ac093129b1026a86ad68"
+  },
+  "stage": "ResearchOnly",
+  "task": "S2",
+  "task_contract": {
+    "deliverables": [
+      "INPUTS.json",
+      "SPEC.md",
+      "GAP-MATRIX.json",
+      "EPISODES.jsonl",
+      "OWNER-DISPOSITION.md",
+      "GATE.json",
+      "DELTA.json",
+      "logs"
+    ],
+    "entry_id": "S2",
+    "file": "research/quality-sprint-2026-09-30/work/FIRST-WAVE-TASKS.json"
+  },
+  "title": "Semantic PII gap inventory (subject -> attribute relations)",
+  "write_scope": "research/quality-sprint-2026-09-30/work/S2/"
+}

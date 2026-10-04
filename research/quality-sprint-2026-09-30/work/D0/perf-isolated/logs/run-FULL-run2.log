@@ -1,0 +1,27 @@
+[FULL run2] n=1000 corpus=500 msgs (500 unique timed)
+  cold_start_ms=1285.084 (parent_recorded_before_subprocess_run) in_process=32.865 ms interpreter_startup=8.31 ms
+  p50=4.7678 p95=17.3322 p99=21.7694 mean=6.9996 stdev=5.5175 ms
+  rss modules/import/load/warmup/after_n = 87.6/208.6/463.7/463.7/463.7 MiB
+  warmup (discarded, spread: every 10-th corpus message): max=1465.1974 mean=45.7516 ms  time_to_warm=3616.309 ms
+  current rss modules/import/load/warmup/after_n = 87.6/208.6/436.7/347.3/111.9 MiB  (peak column above)
+  throughput=142.85 msg/s  model_bytes=29020160  bundle=2a07cebae2b050ec
+  controls: positive=2 spans ['NAME', 'PHONE'] negative=0
+  -> /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/D0/perf-isolated/raw/FULL-run2.tsv
+       10.80 real        10.37 user         0.28 sys
+           486178816  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               81084  page reclaims
+                  78  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                 609  voluntary context switches
+                5514  involuntary context switches
+           545532680  instructions retired
+           198575025  cycles elapsed
+            16597496  peak memory footprint

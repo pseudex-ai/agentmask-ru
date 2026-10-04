@@ -1,0 +1,1290 @@
+{
+ "task": "V0",
+ "v6_ref": "fad9c7466ea1221282214e6c747ca373ee7e6a55",
+ "count_recomputed": 55,
+ "count_declared": 55,
+ "grammar_uncertain_recomputed": [
+  "BIRTH_CERT",
+  "CIVIL_ACT_CERT",
+  "EXEC_DOC_NO",
+  "E_TICKET_NUMBER",
+  "OSAGO_POLICY",
+  "PNR",
+  "REFERRAL_NUMBER",
+  "RESIDENCE_PERMIT",
+  "STUDENT_ID_NUMBER"
+ ],
+ "grammar_uncertain_declared": 9,
+ "v5_item_types": [
+  "CARD",
+  "DATE",
+  "DOB",
+  "EMAIL",
+  "INN",
+  "LOC",
+  "NAME",
+  "PASSPORT",
+  "PHONE",
+  "PLATE",
+  "SNILS"
+ ],
+ "claim_boundary": "These are REGISTRY records, not engine support. No type here is claimed detected, substituted or restored by the product; native support is proven per type after V1/N1.",
+ "types": [
+  {
+   "type": "INTL_PASSPORT",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "banks_mfo_collectors",
+    "insurance",
+    "hospitality",
+    "hr"
+   ],
+   "industries_registry_md": [
+    "banks_mfo_collectors",
+    "insurance",
+    "hospitality",
+    "hr"
+   ],
+   "generated_checksum": "",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "BIRTH_CERT",
+   "type_class": "K",
+   "grammar_status": "ГРАММАТИКА?",
+   "grammar_uncertain": true,
+   "industries": [
+    "banks_mfo_collectors",
+    "insurance",
+    "medicine",
+    "education",
+    "government_services"
+   ],
+   "industries_registry_md": [
+    "banks_mfo_collectors",
+    "insurance",
+    "medicine",
+    "education",
+    "government_services"
+   ],
+   "generated_checksum": "",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "id_alnum",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "CIVIL_ACT_CERT",
+   "type_class": "K",
+   "grammar_status": "ГРАММАТИКА?",
+   "grammar_uncertain": true,
+   "industries": [
+    "banks_mfo_collectors",
+    "insurance",
+    "legal"
+   ],
+   "industries_registry_md": [
+    "banks_mfo_collectors",
+    "insurance",
+    "legal"
+   ],
+   "generated_checksum": "",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "id_alnum",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "RESIDENCE_PERMIT",
+   "type_class": "K",
+   "grammar_status": "ГРАММАТИКА?",
+   "grammar_uncertain": true,
+   "industries": [
+    "banks_mfo_collectors",
+    "insurance",
+    "hr",
+    "hospitality"
+   ],
+   "industries_registry_md": [
+    "banks_mfo_collectors",
+    "insurance",
+    "hr",
+    "hospitality"
+   ],
+   "generated_checksum": "",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "MILITARY_ID",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "banks_mfo_collectors",
+    "hr",
+    "insurance",
+    "government_services"
+   ],
+   "industries_registry_md": [
+    "banks_mfo_collectors",
+    "hr",
+    "insurance",
+    "government_services"
+   ],
+   "generated_checksum": "",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "id_alnum",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "BANK_ACCOUNT",
+   "type_class": "KC",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "banks_mfo_collectors",
+    "retail",
+    "hr",
+    "insurance",
+    "internal_bi"
+   ],
+   "industries_registry_md": [
+    "banks_mfo_collectors",
+    "retail",
+    "hr",
+    "insurance",
+    "internal_bi"
+   ],
+   "generated_checksum": "cbr515",
+   "value_notation": "digits",
+   "engine_labels": [
+    "ACCOUNT"
+   ],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "IBAN",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "banks_mfo_collectors",
+    "retail",
+    "hr",
+    "insurance"
+   ],
+   "industries_registry_md": [
+    "banks_mfo_collectors",
+    "retail",
+    "hr",
+    "insurance"
+   ],
+   "generated_checksum": "mod97",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "id_alnum",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "LOAN_CONTRACT_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "banks_mfo_collectors",
+    "retail",
+    "internal_bi"
+   ],
+   "industries_registry_md": [
+    "banks_mfo_collectors",
+    "retail",
+    "internal_bi"
+   ],
+   "generated_checksum": "",
+   "value_notation": "",
+   "engine_labels": [],
+   "mint": "",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "LOAN_UID",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "banks_mfo_collectors",
+    "internal_bi"
+   ],
+   "industries_registry_md": [
+    "banks_mfo_collectors",
+    "internal_bi"
+   ],
+   "generated_checksum": "uid",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "hex",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "OGRNIP",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "retail",
+    "banks_mfo_collectors",
+    "logistics",
+    "internal_bi",
+    "legal"
+   ],
+   "industries_registry_md": [
+    "retail",
+    "banks_mfo_collectors",
+    "logistics",
+    "internal_bi",
+    "legal"
+   ],
+   "generated_checksum": "ogrnip",
+   "value_notation": "digits",
+   "engine_labels": [
+    "OGRN"
+   ],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "CREDIT_SUBJECT_CODE",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "banks_mfo_collectors"
+   ],
+   "industries_registry_md": [
+    "banks_mfo_collectors"
+   ],
+   "generated_checksum": "",
+   "value_notation": "",
+   "engine_labels": [],
+   "mint": "",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "OMS_ENP",
+   "type_class": "KC",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "medicine",
+    "insurance",
+    "hr",
+    "government_services"
+   ],
+   "industries_registry_md": [
+    "medicine",
+    "insurance",
+    "hr",
+    "government_services"
+   ],
+   "generated_checksum": "luhn",
+   "value_notation": "digits",
+   "engine_labels": [
+    "OMS"
+   ],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "DMS_POLICY",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "medicine",
+    "insurance",
+    "hr"
+   ],
+   "industries_registry_md": [
+    "medicine",
+    "insurance",
+    "hr"
+   ],
+   "generated_checksum": "",
+   "value_notation": "",
+   "engine_labels": [],
+   "mint": "",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "OSAGO_POLICY",
+   "type_class": "K",
+   "grammar_status": "ГРАММАТИКА?",
+   "grammar_uncertain": true,
+   "industries": [
+    "insurance",
+    "auto",
+    "banks_mfo_collectors"
+   ],
+   "industries_registry_md": [
+    "insurance",
+    "auto",
+    "banks_mfo_collectors"
+   ],
+   "generated_checksum": "",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "id_alnum",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "KASKO_POLICY",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "insurance",
+    "auto",
+    "banks_mfo_collectors"
+   ],
+   "industries_registry_md": [
+    "insurance",
+    "auto",
+    "banks_mfo_collectors"
+   ],
+   "generated_checksum": "",
+   "value_notation": "",
+   "engine_labels": [],
+   "mint": "",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "INSURANCE_CLAIM_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "insurance",
+    "auto",
+    "medicine"
+   ],
+   "industries_registry_md": [
+    "insurance",
+    "auto",
+    "medicine"
+   ],
+   "generated_checksum": "",
+   "value_notation": "",
+   "engine_labels": [],
+   "mint": "",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "VIN",
+   "type_class": "KC",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "auto",
+    "insurance",
+    "banks_mfo_collectors",
+    "logistics",
+    "government_services"
+   ],
+   "industries_registry_md": [
+    "auto",
+    "insurance",
+    "banks_mfo_collectors",
+    "logistics",
+    "government_services"
+   ],
+   "generated_checksum": "iso3779",
+   "value_notation": "glyph_fold",
+   "engine_labels": [],
+   "mint": "id_alnum",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "EPTS_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "auto",
+    "banks_mfo_collectors",
+    "insurance",
+    "logistics"
+   ],
+   "industries_registry_md": [
+    "auto",
+    "banks_mfo_collectors",
+    "insurance",
+    "logistics"
+   ],
+   "generated_checksum": "epts",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "UIN",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "government_services",
+    "auto",
+    "banks_mfo_collectors",
+    "internal_bi"
+   ],
+   "industries_registry_md": [
+    "government_services",
+    "auto",
+    "banks_mfo_collectors",
+    "internal_bi"
+   ],
+   "generated_checksum": "uin",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "COURT_CASE_UID",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "legal",
+    "banks_mfo_collectors",
+    "government_services",
+    "hr"
+   ],
+   "industries_registry_md": [
+    "legal",
+    "banks_mfo_collectors",
+    "government_services",
+    "hr"
+   ],
+   "generated_checksum": "",
+   "value_notation": "glyph_fold",
+   "engine_labels": [],
+   "mint": "id_alnum",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "ARBITRAZH_CASE_NO",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "legal",
+    "banks_mfo_collectors",
+    "real_estate",
+    "internal_bi"
+   ],
+   "industries_registry_md": [
+    "legal",
+    "banks_mfo_collectors",
+    "real_estate",
+    "internal_bi"
+   ],
+   "generated_checksum": "",
+   "value_notation": "glyph_fold",
+   "engine_labels": [],
+   "mint": "id_alnum",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "COURT_CASE_NO_SOU",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "legal",
+    "banks_mfo_collectors",
+    "government_services",
+    "hr"
+   ],
+   "industries_registry_md": [
+    "legal",
+    "banks_mfo_collectors",
+    "government_services",
+    "hr"
+   ],
+   "generated_checksum": "",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "id_alnum",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "FSSP_IP_NO",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "government_services",
+    "banks_mfo_collectors",
+    "hr"
+   ],
+   "industries_registry_md": [
+    "government_services",
+    "banks_mfo_collectors",
+    "hr"
+   ],
+   "generated_checksum": "",
+   "value_notation": "glyph_fold",
+   "engine_labels": [],
+   "mint": "id_alnum",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "EXEC_DOC_NO",
+   "type_class": "K",
+   "grammar_status": "ГРАММАТИКА?",
+   "grammar_uncertain": true,
+   "industries": [
+    "government_services",
+    "banks_mfo_collectors",
+    "legal"
+   ],
+   "industries_registry_md": [
+    "government_services",
+    "banks_mfo_collectors",
+    "legal"
+   ],
+   "generated_checksum": "",
+   "value_notation": "glyph_fold",
+   "engine_labels": [],
+   "mint": "id_alnum",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "STS_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "auto",
+    "insurance",
+    "banks_mfo_collectors",
+    "government_services",
+    "logistics"
+   ],
+   "industries_registry_md": [
+    "auto",
+    "insurance",
+    "banks_mfo_collectors",
+    "government_services",
+    "logistics"
+   ],
+   "generated_checksum": "",
+   "value_notation": "digits",
+   "engine_labels": [
+    "VEHICLE_DOC"
+   ],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "PTS_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "auto",
+    "banks_mfo_collectors",
+    "insurance"
+   ],
+   "industries_registry_md": [
+    "auto",
+    "banks_mfo_collectors",
+    "insurance"
+   ],
+   "generated_checksum": "",
+   "value_notation": "glyph_fold",
+   "engine_labels": [
+    "VEHICLE_DOC"
+   ],
+   "mint": "id_alnum",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "DRIVER_LICENSE",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "auto",
+    "insurance",
+    "logistics",
+    "hr",
+    "retail"
+   ],
+   "industries_registry_md": [
+    "auto",
+    "insurance",
+    "logistics",
+    "hr",
+    "retail"
+   ],
+   "generated_checksum": "",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "CADASTRAL_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "real_estate",
+    "banks_mfo_collectors",
+    "insurance",
+    "government_services",
+    "legal"
+   ],
+   "industries_registry_md": [
+    "real_estate",
+    "banks_mfo_collectors",
+    "insurance",
+    "government_services",
+    "legal"
+   ],
+   "generated_checksum": "",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "GIS_ZHKH_ELS",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "government_services",
+    "banks_mfo_collectors",
+    "real_estate",
+    "internal_bi"
+   ],
+   "industries_registry_md": [
+    "government_services",
+    "banks_mfo_collectors",
+    "real_estate",
+    "internal_bi"
+   ],
+   "generated_checksum": "",
+   "value_notation": "glyph_fold",
+   "engine_labels": [],
+   "mint": "id_alnum",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "UTILITY_ACCOUNT",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "government_services",
+    "retail",
+    "banks_mfo_collectors"
+   ],
+   "industries_registry_md": [
+    "government_services",
+    "retail",
+    "banks_mfo_collectors"
+   ],
+   "generated_checksum": "",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "ESIA_OID",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "banks_mfo_collectors",
+    "government_services",
+    "education",
+    "insurance"
+   ],
+   "industries_registry_md": [
+    "banks_mfo_collectors",
+    "government_services",
+    "education",
+    "insurance"
+   ],
+   "generated_checksum": "",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "IMEI",
+   "type_class": "C",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "telecom",
+    "retail",
+    "insurance",
+    "logistics"
+   ],
+   "industries_registry_md": [
+    "telecom",
+    "retail",
+    "insurance",
+    "logistics"
+   ],
+   "generated_checksum": "luhn",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "ICCID",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "telecom",
+    "retail",
+    "logistics"
+   ],
+   "industries_registry_md": [
+    "telecom",
+    "retail",
+    "logistics"
+   ],
+   "generated_checksum": "luhn",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "IMSI",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "telecom"
+   ],
+   "industries_registry_md": [
+    "telecom"
+   ],
+   "generated_checksum": "",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "MAC",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "telecom",
+    "internal_bi",
+    "hospitality"
+   ],
+   "industries_registry_md": [
+    "telecom",
+    "internal_bi",
+    "hospitality"
+   ],
+   "generated_checksum": "",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "hex",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "IP_ADDRESS",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "telecom",
+    "retail",
+    "marketing_cdp",
+    "internal_bi"
+   ],
+   "industries_registry_md": [
+    "telecom",
+    "retail",
+    "marketing_cdp",
+    "internal_bi"
+   ],
+   "generated_checksum": "",
+   "value_notation": "ip_strict",
+   "engine_labels": [
+    "IP"
+   ],
+   "mint": "",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "SUBSCRIBER_ACCOUNT",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "telecom"
+   ],
+   "industries_registry_md": [
+    "telecom"
+   ],
+   "generated_checksum": "",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "MEDCARD_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "medicine"
+   ],
+   "industries_registry_md": [
+    "medicine"
+   ],
+   "generated_checksum": "",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "ELN_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "medicine",
+    "hr"
+   ],
+   "industries_registry_md": [
+    "medicine",
+    "hr"
+   ],
+   "generated_checksum": "",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "PRESCRIPTION_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "medicine",
+    "retail"
+   ],
+   "industries_registry_md": [
+    "medicine",
+    "retail"
+   ],
+   "generated_checksum": "",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "REFERRAL_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГРАММАТИКА?",
+   "grammar_uncertain": true,
+   "industries": [
+    "medicine",
+    "insurance"
+   ],
+   "industries_registry_md": [
+    "medicine",
+    "insurance"
+   ],
+   "generated_checksum": "",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "DIPLOMA_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "education",
+    "hr"
+   ],
+   "industries_registry_md": [
+    "education",
+    "hr"
+   ],
+   "generated_checksum": "",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "SCHOOL_CERT_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "education",
+    "hr"
+   ],
+   "industries_registry_md": [
+    "education",
+    "hr"
+   ],
+   "generated_checksum": "",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "STUDENT_ID_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГРАММАТИКА?",
+   "grammar_uncertain": true,
+   "industries": [
+    "education",
+    "retail",
+    "hospitality"
+   ],
+   "industries_registry_md": [
+    "education",
+    "retail",
+    "hospitality"
+   ],
+   "generated_checksum": "",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "EMPLOYEE_TAB_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "hr",
+    "internal_bi",
+    "retail",
+    "logistics"
+   ],
+   "industries_registry_md": [
+    "hr",
+    "internal_bi",
+    "retail",
+    "logistics"
+   ],
+   "generated_checksum": "",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "EMPLOYMENT_CONTRACT_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "hr",
+    "legal"
+   ],
+   "industries_registry_md": [
+    "hr",
+    "legal"
+   ],
+   "generated_checksum": "",
+   "value_notation": "glyph_fold",
+   "engine_labels": [],
+   "mint": "",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "ACCESS_PASS_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "hr",
+    "internal_bi",
+    "hospitality",
+    "real_estate"
+   ],
+   "industries_registry_md": [
+    "hr",
+    "internal_bi",
+    "hospitality",
+    "real_estate"
+   ],
+   "generated_checksum": "",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "PNR",
+   "type_class": "K",
+   "grammar_status": "ГРАММАТИКА?",
+   "grammar_uncertain": true,
+   "industries": [
+    "hospitality",
+    "logistics"
+   ],
+   "industries_registry_md": [
+    "hospitality",
+    "logistics"
+   ],
+   "generated_checksum": "",
+   "value_notation": "glyph_fold",
+   "engine_labels": [],
+   "mint": "id_alnum",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "E_TICKET_NUMBER",
+   "type_class": "K",
+   "grammar_status": "ГРАММАТИКА?",
+   "grammar_uncertain": true,
+   "industries": [
+    "hospitality",
+    "logistics"
+   ],
+   "industries_registry_md": [
+    "hospitality",
+    "logistics"
+   ],
+   "generated_checksum": "",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "LOYALTY_CARD_NUMBER",
+   "type_class": "KC",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "retail",
+    "hospitality",
+    "marketing_cdp",
+    "medicine"
+   ],
+   "industries_registry_md": [
+    "retail",
+    "hospitality",
+    "marketing_cdp",
+    "medicine"
+   ],
+   "generated_checksum": "gs1",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "MOBILE_AD_ID",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "marketing_cdp",
+    "retail",
+    "internal_bi"
+   ],
+   "industries_registry_md": [
+    "marketing_cdp",
+    "retail",
+    "internal_bi"
+   ],
+   "generated_checksum": "",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "hex",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "APP_DEVICE_ID",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "marketing_cdp",
+    "internal_bi",
+    "retail"
+   ],
+   "industries_registry_md": [
+    "marketing_cdp",
+    "internal_bi",
+    "retail"
+   ],
+   "generated_checksum": "",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "hex",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "METRICA_CLIENT_ID",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "marketing_cdp",
+    "retail",
+    "internal_bi"
+   ],
+   "industries_registry_md": [
+    "marketing_cdp",
+    "retail",
+    "internal_bi"
+   ],
+   "generated_checksum": "",
+   "value_notation": "digits",
+   "engine_labels": [],
+   "mint": "id_digits",
+   "hunt": "by_shape",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "CDP_CUSTOMER_ID",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "marketing_cdp",
+    "internal_bi",
+    "retail",
+    "logistics"
+   ],
+   "industries_registry_md": [
+    "marketing_cdp",
+    "internal_bi",
+    "retail",
+    "logistics"
+   ],
+   "generated_checksum": "",
+   "value_notation": "squeezed",
+   "engine_labels": [],
+   "mint": "",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  },
+  {
+   "type": "LOGIN",
+   "type_class": "K",
+   "grammar_status": "ГОТОВ",
+   "grammar_uncertain": false,
+   "industries": [
+    "telecom",
+    "retail",
+    "internal_bi",
+    "education",
+    "marketing_cdp"
+   ],
+   "industries_registry_md": [
+    "telecom",
+    "retail",
+    "internal_bi",
+    "education",
+    "marketing_cdp"
+   ],
+   "generated_checksum": "",
+   "value_notation": "",
+   "engine_labels": [],
+   "mint": "",
+   "hunt": "covered",
+   "source_pointer": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6-registry.md + pii_types.py (blob ee0544665b8aeab4f421eb8fadf62697306f3a4a)"
+  }
+ ]
+}

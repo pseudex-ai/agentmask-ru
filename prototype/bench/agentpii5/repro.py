@@ -254,6 +254,8 @@ def plan(record: RunRecord, corpus: Path, ladder: Path, version_file: Path,
         parts += ['--connector-max-tokens', str(connectors['max_tokens']),
                   '--agent-turn-limit', str(connectors['agent_turn_limit']),
                   '--judge-request-limit', str(connectors['judge_request_limit'])]
+        if 'max_calls' in connectors:
+            parts += ['--max-calls', str(connectors['max_calls'])]
         if connectors.get('agent') == 'deepseek':
             parts += ['--provider', 'deepseek']
         if not record.judge_model:

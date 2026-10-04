@@ -1,0 +1,5 @@
+SENT TO MODEL: Найди заказ по телефону +7 950 735-68-30 и почте ggpnmcyt@example.ru
+MODEL TOOL CALL (tokens): {"phone": "+7 950 735-68-30", "email": "ggpnmcyt@example.ru"}
+TOOL EXECUTES WITH: {"phone": "+7 999 123-45-67", "email": "ivan@mail.ru"}
+
+PASS — model saw only tokens; tool received real values.

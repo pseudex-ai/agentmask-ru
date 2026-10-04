@@ -1,0 +1,173 @@
+# Pre-run closure — полный реестр открытых пробелов спринта
+
+Собран после того, как повторный прогон вскрыл класс багов (random-mint /
+call-scoped provenance), которые спринт пометил «19/19 accepted», но финальный
+чекпойнт `PROGRESS.md` сам опроверг («this checkpoint does not close the
+sprint»). Цель: закрыть ПОЛНЫЙ список до итогового прогона; каждый пункт —
+через методологическое решение владельца, фиксируемое здесь. Итог этого файла —
+ТЗ на правки и приёмку перед прогоном.
+
+## Мета-находка
+
+Заголовок `PROGRESS.md` «19/19 accepted; final integration regression GREEN»
+не соответствует финальному чекпойнту, который дословно перечисляет:
+«S01 remains RED … LOC, whole-loop acceptance, full error-payload coverage,
+random-mint failures and performance acceptance remain open; this checkpoint
+does not close the sprint». Ниже — развёртка этого списка + результаты аудита
+чеканки (`test_mint_consistency.py`).
+
+---
+
+## A. Класс «чеканка» (random-mint) — реальные рассинхроны
+
+Один реальный объект канонизируется в разные ключи → чеканится дважды →
+разные подмены. Подтверждено RED-тестом `bench/agentpii5/test_mint_consistency.py`.
+
+| # | Тип | Симптом (два входа → разные токены) | Статус | Решение (ТЗ) |
+|---|---|---|---|---|
+| A1 | NAME инициалы | `Ващенко Таисия Савельевна` vs `Ващенко Т. С.` → разные фамилии | 🔴 болен | — |
+| A2 | LOC родовое слово улицы | `переулок Мончегорская 10` vs `Мончегорская 10` → разные улицы (city-less даже в одной беседе; city-bearing через беседы) | 🔴 болен | — |
+| A3 | PLATE разделители | `А123ВС777` vs `А 123 ВС 777` → разные номера | 🔴 болен | — |
+
+Здоровы (проверено фактами): PHONE, CARD, SNILS, INN, PASSPORT, DOB/DATE,
+EMAIL; NAME полное↔части (починено `5ebc4b2`); LOC раздельные-поля↔полная-строка
+и дом/регистр; нейтральная редакция (детерминирована sha256).
+
+## B. Call-scoped provenance (S0/S01)
+
+| # | Что | Статус | Решение (ТЗ) |
+|---|---|---|---|
+| B1 | S01 имя в normal tool-result | ✅ починено `5ebc4b2` | — |
+| B2 | S0 error echo — реальное значение в **ошибке** тула (`long_support-013`) | 🔴 open (12/13, truncated echo RED) | — |
+
+## C. Приёмка движка
+
+| # | Что | Статус | Решение (ТЗ) |
+|---|---|---|---|
+| C1 | LOC — шире A2: составной LOC, две адресные сущности, «без real/fake гибрида» | 🔴 open | — |
+| C2 | full error-payload coverage | 🔴 open | — |
+| C3 | performance acceptance | 🔴 open | — |
+
+## D. Приёмка измерения (не баг движка, но без неё цифра нечестна)
+
+| # | Что | Статус | Решение (ТЗ) |
+|---|---|---|---|
+| D1 | whole-loop acceptance (полный цикл) | 🔴 open | — |
+
+## E. Производственный слой (отдельная граница rollout'а)
+
+| # | Что | Статус | Решение (ТЗ) |
+|---|---|---|---|
+| E1 | C06 — production endpoints, persistence, tenant scope, cache, isolation, resource threshold | 🔴 open | — |
+
+## F. E07 non-blocking (гигиена тестов)
+
+| # | Что | Статус | Решение (ТЗ) |
+|---|---|---|---|
+| F1 | чек без своего `load_dev_bundle()` — падает вне `main()` | ⚠️ non-blocking | — |
+| F2 | `correction`/`repeat` — необходимое, но не уникальное условие (удали блок — тест зелёный) | ⚠️ non-blocking | — |
+
+---
+
+## Решения владельца (приняты по пунктам, по очереди)
+
+- **A1 NAME инициалы** → инициалы — производная полного имени: если в беседе есть
+  полное имя, «Ващенко Т. С.» выводится из ТОГО ЖЕ подмена (та же фамилия,
+  инициалы от тех же имени/отчества); полного нет — свежий подмен.
+- **A2 LOC родовое слово** → родовое слово («переулок»/«улица») — презентация, не
+  сущность: канонический ключ улицы без него, слово накладывается по форме.
+  «переулок Мончегорская 10» ≡ «Мончегорская 10» → один подмен (в беседе и между).
+- **A3 PLATE разделители** → пробелы/дефисы — презентация: канонизация снимает их.
+  «А123ВС777» ≡ «А 123 ВС 777» → один номер → один подмен.
+- **B2 S0 error echo** → ошибка = тот же tool-result: значение из вызова → тот же
+  подмен; чужое реальное значение → нейтральная редакция (без идентичности);
+  обычные числа/величины не трогаем. Модель не видит реальных данных ни в
+  результате, ни в ошибке.
+- **C1 LOC приёмка** → TDD-тест на бенчмарк-LOC (составной, две сущности, без
+  real/fake-гибрида) + offline реплей; плюс перепроверка после фикса A2.
+- **C2 error-payload coverage** → полный набор тестов на все формы ошибки
+  (scripted error, parse refusal, error_with_value) + фикс B2.
+- **C3 performance** → регресс-проверка perf после правок (test_perf_masking +
+  профилировка, число до/после; регресса нет — закрыто).
+- **D1 whole-loop** → offline replay полной тройки (mock-коннектор, без модели/сети):
+  хопы, форма и метрики сходятся от сообщения до финального ответа.
+- **E1 C06 production** → отдельный rollout, этот прогон НЕ блокирует.
+- **F1 E07(A)** → закрыть сейчас: добавить load_dev_bundle() в сам чек.
+- **F2 E07(B)** → закрыть сейчас: сделать correction/repeat уникальным pin.
+
+---
+
+## Итоговое ТЗ (план правок и приёмки до прогона)
+
+### Движок (правки)
+
+| # | Где | Что сделать |
+|---|---|---|
+| A1 | `vault.py` / `morph_names.py` | инициалы → вывод из подмена полного имени той же персоны (по фамилии + инициалам в беседе); нет полного → свежий подмен |
+| A2 | `vault.py::address_key`/`street_house_key` | канон улицы БЕЗ родового слова; слово — презентация, накладывается по форме |
+| A3 | `vault.py::canonicalize` (PLATE) | снимать пробелы/дефисы в номере |
+| B2 | `envelope.py::_mask_content`/error path | error-payload маскировать как normal result (call-scoped + privacy leg) |
+
+### Тесты (TDD: сначала RED, потом зелёный)
+
+| # | Тест | Ожидание |
+|---|---|---|
+| A1–A3 | `bench/agentpii5/test_mint_consistency.py` (уже RED 4/4) | зелёный |
+| B2 | error echo (S0, `long_support-013`) | зелёный |
+| C1 | составной LOC / две сущности / no-hybrid + offline реплей | зелёный |
+| C2 | все формы error-payload | зелёный |
+| D1 | offline replay полной тройки | зелёный |
+| C3 | perf до/после (test_perf_masking + профилировка) | без регресса |
+| F1 | E07-чек с load_dev_bundle() | standalone PASS |
+| F2 | correction/repeat уникальный pin | удаление блока → RED |
+
+### Гарды (после всех правок, до прогона)
+
+`test_overmasking` 99.5% · `wiki/check` 0 · `test_loop`/`test_product`/
+`test_argument_form`/`test_collisions`/`vault_test`/`test_derived_forms`/
+`test_names_morphology`/`test_harness`/`test_harness_stream` — все зелёные.
+
+### Не в этом прогоне
+
+- **E1 (C06)** — production endpoints/tenant/cache/isolation/resource threshold → отдельный rollout.
+
+### После приёмки
+
+Финальный прогон 363 (не-холдаут), DeepSeek Flash, $30, concurrency 10, без судьи,
+`live --web` — ссылка владельцу.
+
+---
+
+## Статус закрытия (обновляется по мере работы)
+
+| Пункт | Статус | Доказательство / коммит |
+|---|---|---|
+| A1 NAME инициалы | ✅ закрыт | `test_mint_consistency` 4/4 · `2f4a73c` |
+| A2 LOC родовое слово | ✅ закрыт | `test_mint_consistency` + `test_loc_acceptance` · `2f4a73c` |
+| A3 PLATE разделители | ✅ закрыт | `test_mint_consistency` · `2f4a73c` |
+| B1 S01 имя tool-result | ✅ закрыт | `test_call_scoped_name_consistency` · `5ebc4b2` |
+| B2 S0 error echo | ✅ закрыт | `test_error_echo_privacy` 311/311 + `test_error_payload_coverage` 21/21 |
+| F1 E07 load_dev_bundle | ✅ закрыт | `test_harness_stream` standalone · `2f4a73c` |
+| F2 E07 уникальный pin | ✅ закрыт | мутации дают RED · `2f4a73c` |
+| C1 LOC приёмка | ✅ закрыт | `test_loc_acceptance` 20/20 + offline реплей 105 кейсов · `5e46183` |
+| C2 error-payload coverage | ✅ закрыт | `test_error_payload_coverage` 21/21 · `5e46183` |
+| C3 performance | ✅ закрыт (baseline) | `test_perf_masking` + `profile_latency` part1 exit 0, регресса нет |
+| D1 whole-loop | ✅ закрыт | `test_harness_stream` full-triple PASS · `5e46183` |
+| E1 C06 production | ⏭️ отдельный rollout | не блокирует прогон |
+
+### Регрессия (найдена и починена в цикле)
+
+`5ebc4b2` положил распознавание композиции имени в evidence-независимый
+`is_own_substitute`, из-за чего публичный evidence-free `mask_one` перестал
+пере-чеканить перерегистренное собственное имя (cache-key политика,
+`test_error_echo_privacy` 309/311). Перенесено в evidence-зависимый
+`envelope._is_own_composition`; имя и cache-key оба зелёные (`2f4a73c`).
+
+### Находки, НЕ чинимые в этом цикле (пре-существующие флейки, зафиксированы)
+
+1. `test_error_echo_privacy` флейк: при случайно отчеканенной фейк-фамилии
+   длиннее 7 символов (реальная «Битюков»=7) `_project_echo` режет её до длины
+   реального → 309/311 вместо 311/311. Потенциально реальный дефект проекции
+   длинного фейка в error echo — требует отдельного решения.
+2. `test_derived_forms` флейк: вероятностный поиск «colliding initials» в 9000
+   вытяжках изредка не находит. Тест-флейк, не движок.

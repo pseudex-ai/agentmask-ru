@@ -1,0 +1,39 @@
+vault: encrypted with a key generated BESIDE THE DATA (/Users/igor/Projects/Obscura-agent-integrity/prototype/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex_echo_23rcw_zy/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmp_ryc98bi/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmptn4onz27/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmp3x6bcmic/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmp16_tqjre/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmp_nhqbs9v/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmp_h0wyl65/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmpo0cucfuz/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmplceg2ohi/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.
+tenants OK — issued sk-ps-4Pgc-1p-…, resolves to acme; bad key -> None
+STREAM -> 'Перезвоню вам на +7 999 123-45-67 завтра'
+stream detok OK — split token restored to real value
+audit OK — org counts {'EMAIL': 1, 'NAME': 1, 'PHONE': 1}; ag1 counts {'NAME': 1, 'PHONE': 1}; preview '+79991234567' -> '+••••••••••7'
+token shapes OK — 22 types x200 samples all matched by TOKEN_RE
+unmask OK on a 2001-token vault — 'Ваш номер +7 999 123-45-67, перезвоним.'
+surface form OK — user wrote '+7 999 123-45-67', tool receives '+7 999 123-45-67'
+fake-name pool OK — 174x36=6264 combinations, all gazetteer-visible
+token pool OK — NAME/LOC/IP each mint 300 distinct tokens, no exhaustion
+token stability OK — 'Клиент Вениамин Ершов просит перезвонить, телефон +7 997 821-44-28, адрес улица Мятная 9, кв 800' survives re-masking and round-trips
+reformatted-token detok OK — 8 909 932-31-05 -> 'Звоню на 8 999 123-45-67'
+reformatted document tokens OK — 5 types survive separator stripping
+person-span offsets OK — trimmed value is always a slice of the source
+echoed-token accounting OK — re-detecting our own token bills nothing
+token/document collisions OK — 5000 PHONE samples, none a valid СНИЛС
+lookalike table OK — Greek small omicron folds to a digit
+conversation scope OK — isolated in the cache, shared in the vault
+short-address linking OK — same place, own shape, one conversation
+fuller-mention reuse OK — one place and one person, in either order
+real settlement OK — the city stays true, the street and house are fake
+directory record OK — the register's form, its leaves and the model's composition are one place
+directory link OK — a surname-street keys with its street, the record reads nominative, the корпус stays
+card leaves OK — linked by position across 60 draws, the surname the dictionary does not know included
+spoken birth date OK — a spoken substitute, rebuilt component-wise into ISO, dotted and slashed forms
+fresh-seed shapes OK — every span the two unseen corpora found, exact
+restored ranges OK — one splice, exact tokens protected, 125 round trips in one vault
+four-word token OK — whole window wins over a fake surname two people share
+names OK — one reading of the phrase, the sentence breaks the tie
+tool schemas OK — описания на любой глубине, три формы, enum и имена целы

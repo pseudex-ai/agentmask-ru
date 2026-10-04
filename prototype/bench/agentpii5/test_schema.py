@@ -480,6 +480,87 @@ def test_r21_the_other_way() -> list[str]:
     return _expect(replace(VALID, hops=tuple(broken)), "R21")
 
 
+def _address_case() -> tuple[CaseV5, str]:
+    """One `single` case whose customer states an address and the acting call is
+    `courier_book`; the address item id rides back for the R22 mutation."""
+    ctx = common.ctx_for("single", 5, 0, "chat")
+    drawn = common.draw(ctx, city="Самара", with_flat=True, with_entrance=False,
+                        with_type=True, foreign=False)
+    builder = common.new_builder(
+        ctx, "delivery", tools=("courier_book", "crm_upsert_contact"),
+        reachable=("courier_book",), primary_identity="p1",
+        cluster="LOC:fixture", note="фикстура R22", extras=(common.MEMORY_CLAUSE,))
+    draft = builder.draft()
+    draft.say("курьера на адрес ")
+    draft.value("a", common.address(ctx, drawn.address))
+    turn = builder.user(draft, {"a": ("LOC", "p1.home", "required", False)})
+    said = [item for item in builder.v4.pii if item.where.kind == "message"][0]
+    builder.declare_hop(Hop("IN", "user", said.id, 0, turn, "", -1, "", -1, "", False))
+    builder.declare_hop(Hop("OUT", "tool_arg", said.id, 1, turn, "courier_book", 0, "",
+                            0, "address.street", False))
+    return builder.build("single"), said.id
+
+
+def _correction_case() -> tuple[CaseV5, str]:
+    """One `single` case whose customer states an address and then corrects it:
+    two message LOC items of one identity in one message, the first cancelled by
+    the second — `_superseded_ids`'s shape. Both items are `stale=False` so v4's
+    own validator does not refuse «a stale item outside a correction case»; the
+    supersession R23 reads is the STRUCTURAL fact, not the author's flag."""
+    ctx = common.ctx_for("single", 5, 0, "chat")
+    drawn = common.draw(ctx, city="Самара", with_flat=True, with_entrance=False,
+                        with_type=True, foreign=False)
+    wrong = replace(drawn.address, house=drawn.address.house + 27)
+    builder = common.new_builder(ctx, "delivery", tools=("courier_book",),
+                                 reachable=("courier_book",), primary_identity="p1",
+                                 cluster="LOC:fixture", note="фикстура R23",
+                                 extras=(common.MEMORY_CLAUSE,))
+    draft = builder.draft()
+    draft.say("курьера на адрес ")
+    draft.value("a_old", common.address(ctx, wrong))
+    draft.say(" ой нет ")
+    draft.value("a_new", common.address(ctx, drawn.address))
+    turn = builder.user(draft, {"a_old": ("LOC", "p1.addr", "required", False),
+                                "a_new": ("LOC", "p1.addr", "required", False)})
+    message_items = [item for item in builder.v4.pii if item.where.kind == "message"]
+    cancelled = message_items[0].id
+    current = message_items[1].id
+    builder.declare_hop(Hop("IN", "user", cancelled, 0, turn, "", -1, "", -1, "", False))
+    builder.declare_hop(Hop("IN", "user", current, 1, turn, "", -1, "", -1, "", False))
+    builder.declare_hop(Hop("OUT", "tool_arg", current, 2, turn, "courier_book", 0, "",
+                            1, "address.street", False))
+    return builder.build("single"), cancelled
+
+
+def test_r22() -> list[str]:
+    """Two DIFFERENT leaves of one semantic class on one (turn, item) — the
+    corpus's own builders keep only the canonical one (`revise._arguments`), so
+    the validator must refuse the case that names both (SPIKE-Е, Е-6)."""
+    case, item = _address_case()
+    if s.validate_v5(case):
+        return ["the address fixture itself is not quiet:\n    "
+                + "\n    ".join(s.validate_v5(case)[:5])]
+    hops = list(case.hops)
+    hops.append(Hop("OUT", "tool_arg", item, 2, hops[1].turn, "crm_upsert_contact", 0, "",
+                    hops[1].source_hop, "contact.address.street", False))
+    return _expect(replace(case, hops=tuple(hops)), "R22")
+
+
+def test_r23() -> list[str]:
+    """A REQUIRED OUT hop on a message item a later word of the customer
+    cancelled: the correct agent writes the corrected value, so the hop on the
+    cancelled one can never become `observed` (SPIKE-Е, Е-4)."""
+    case, cancelled = _correction_case()
+    if s._superseded_ids(case.base) != {cancelled}:
+        return [f"the fixture supersedes {s._superseded_ids(case.base)}, want {{{cancelled}}}"]
+    if s.validate_v5(case):
+        return ["the correction fixture itself is not quiet:\n    "
+                + "\n    ".join(s.validate_v5(case)[:5])]
+    hops = list(case.hops)
+    hops[2] = replace(hops[2], item_id=cancelled)
+    return _expect(replace(case, hops=tuple(hops)), "R23")
+
+
 # --- the synthetic corpus -------------------------------------------------------
 
 def _fake_item(item_id: str, kind: str, identity: str, seeded: bool) -> PiiItem:
@@ -606,7 +687,7 @@ def _synthetic_corpus() -> list[CaseV5]:
                 memory=memory, pick=None, branch=None, loop=None, rag=None, document=document,
                 has_result=with_result,
                 streaming=index % len(SYNTHETIC_REGISTERS) == 0,
-                revised_from_v4=revised))
+                revised_from_v4=revised, v6=None))
             index += 1
     return cases
 
@@ -1226,6 +1307,7 @@ CHECKS: tuple[object, ...] = (
     test_r18_records_are_seed_records, test_r18_extracted_items_belong_to_those_records,
     test_r18_extracted_item_has_somewhere_to_go, test_r19,
     test_r19_reads_the_registry_when_it_exists, test_r20, test_r21, test_r21_the_other_way,
+    test_r22, test_r23,
     test_synthetic_corpus_is_quiet, test_k01, test_k02_floor_not_ceiling, test_k03, test_k04,
     test_k05, test_k06, test_k07, test_k08, test_k09, test_k10, test_k11, test_k13,
     test_k13_one_behaviour, test_k14, test_k14_long_memory, test_k15,

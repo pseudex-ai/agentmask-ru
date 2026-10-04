@@ -1,0 +1,104 @@
+[
+  {
+    "seed": 0,
+    "engine": "before",
+    "exit_code": 0,
+    "failures": []
+  },
+  {
+    "seed": 0,
+    "engine": "after",
+    "exit_code": 0,
+    "failures": []
+  },
+  {
+    "seed": 1,
+    "engine": "before",
+    "exit_code": 0,
+    "failures": []
+  },
+  {
+    "seed": 1,
+    "engine": "after",
+    "exit_code": 0,
+    "failures": []
+  },
+  {
+    "seed": 2,
+    "engine": "before",
+    "exit_code": 1,
+    "failures": [
+      "FAIL  the REAL person comes back from every sentence  wrong=[('Записать Никиту Гущина на 15:00', 'Записать Льва Юдина на 15:00', 'Записать Никиты Никиту Гущина:00')]",
+      "FAILED: 1 — ['the REAL person comes back from every sentence']"
+    ]
+  },
+  {
+    "seed": 2,
+    "engine": "after",
+    "exit_code": 1,
+    "failures": [
+      "FAIL  the REAL person comes back from every sentence  wrong=[('Записать Никиту Гущина на 15:00', 'Записать Льва Юдина на 15:00', 'Записать Никиты Никиту Гущина:00')]",
+      "FAILED: 1 — ['the REAL person comes back from every sentence']"
+    ]
+  },
+  {
+    "seed": 3,
+    "engine": "before",
+    "exit_code": 0,
+    "failures": []
+  },
+  {
+    "seed": 3,
+    "engine": "after",
+    "exit_code": 0,
+    "failures": []
+  },
+  {
+    "seed": 4,
+    "engine": "before",
+    "exit_code": 0,
+    "failures": []
+  },
+  {
+    "seed": 4,
+    "engine": "after",
+    "exit_code": 0,
+    "failures": []
+  },
+  {
+    "seed": 5,
+    "engine": "before",
+    "exit_code": 0,
+    "failures": []
+  },
+  {
+    "seed": 5,
+    "engine": "after",
+    "exit_code": 0,
+    "failures": []
+  },
+  {
+    "seed": 6,
+    "engine": "before",
+    "exit_code": 0,
+    "failures": []
+  },
+  {
+    "seed": 6,
+    "engine": "after",
+    "exit_code": 0,
+    "failures": []
+  },
+  {
+    "seed": 7,
+    "engine": "before",
+    "exit_code": 0,
+    "failures": []
+  },
+  {
+    "seed": 7,
+    "engine": "after",
+    "exit_code": 0,
+    "failures": []
+  }
+]

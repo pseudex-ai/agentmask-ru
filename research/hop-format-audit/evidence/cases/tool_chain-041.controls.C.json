@@ -1,0 +1,366 @@
+{
+  "arm": "C",
+  "calls": [
+    {
+      "name": "crm_find_contact",
+      "parsed": {
+        "query": {
+          "phone": "+79620091409"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "query": {
+          "phone": "+79620091409"
+        }
+      },
+      "seq": 1,
+      "written": {
+        "query": {
+          "phone": "+79620091409"
+        }
+      }
+    },
+    {
+      "name": "address_suggest",
+      "parsed": {
+        "count": 5,
+        "query": "Псков, Загородный 177"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "count": 5,
+        "query": "Псков, Загородный 177"
+      },
+      "seq": 2,
+      "written": {
+        "count": 5,
+        "query": "Псков, Загородный 177"
+      }
+    },
+    {
+      "name": "delivery_create_order",
+      "parsed": {
+        "comment": "Повторная доставка",
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Лебедева Ирина Петровна",
+          "phones": [
+            "+79620091409"
+          ]
+        },
+        "to_location": {
+          "address": "ул Загородный, д. 177, кв. 49",
+          "city": "псков",
+          "postal_code": "180136"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "comment": "Повторная доставка",
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Лебедева Ирина Петровна",
+          "phones": [
+            {
+              "number": "+79620091409"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "ул Загородный, д. 177, кв. 49",
+          "city": "Псков",
+          "postal_code": "180136"
+        }
+      },
+      "seq": 3,
+      "written": {
+        "comment": "Повторная доставка",
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Лебедева Ирина Петровна",
+          "phones": [
+            {
+              "number": "+79620091409"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "ул Загородный, д. 177, кв. 49",
+          "city": "Псков",
+          "postal_code": "180136"
+        }
+      }
+    },
+    {
+      "name": "courier_book",
+      "parsed": {
+        "address": {
+          "building": "177",
+          "locality": "псков",
+          "porch": "",
+          "sflat": "49",
+          "street": "загородный"
+        },
+        "contact": {
+          "name": "Лебедева Ирина Петровна",
+          "phone": "+79620091409"
+        },
+        "interval": {
+          "from": "2026-09-02T10:00:00+03:00",
+          "to": "2026-09-02T11:00:00+03:00"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "address": {
+          "building": "177",
+          "locality": "Псков",
+          "sflat": "49",
+          "street": "Загородный"
+        },
+        "contact": {
+          "name": "Лебедева Ирина Петровна",
+          "phone": "+79620091409"
+        },
+        "interval": {
+          "from": "2026-09-02T10:00:00+03:00",
+          "to": "2026-09-02T11:00:00+03:00"
+        }
+      },
+      "seq": 4,
+      "written": {
+        "address": {
+          "building": "177",
+          "locality": "Псков",
+          "sflat": "49",
+          "street": "Загородный"
+        },
+        "contact": {
+          "name": "Лебедева Ирина Петровна",
+          "phone": "+79620091409"
+        },
+        "interval": {
+          "from": "2026-09-02T10:00:00+03:00",
+          "to": "2026-09-02T11:00:00+03:00"
+        }
+      }
+    },
+    {
+      "name": "crm_add_note",
+      "parsed": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Клиент попросила повторить прошлую доставку. Оформила заказ ord-1 на адрес: г. Псков, ул. Загородный, д. 177, кв. 49, индекс 180136, получатель — Лебедева Ирина Петровна, вес 1000 г. Вызван курьер (clm-1) на 02.09.2026, интервал 10:00–11:00."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Клиент попросила повторить прошлую доставку. Оформила заказ ord-1 на адрес: г. Псков, ул. Загородный, д. 177, кв. 49, индекс 180136, получатель — Лебедева Ирина Петровна, вес 1000 г. Вызван курьер (clm-1) на 02.09.2026, интервал 10:00–11:00."
+      },
+      "seq": 5,
+      "written": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Клиент попросила повторить прошлую доставку. Оформила заказ ord-1 на адрес: г. Псков, ул. Загородный, д. 177, кв. 49, индекс 180136, получатель — Лебедева Ирина Петровна, вес 1000 г. Вызван курьер (clm-1) на 02.09.2026, интервал 10:00–11:00."
+      }
+    },
+    {
+      "name": "notify_sms",
+      "parsed": {
+        "number": "+79620091409",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен: доставка по адресу г. Псков, ул. Загородный, д. 177, кв. 49, индекс 180136. Курьер прибудет 02.09.2026 до 11:00."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "number": "+79620091409",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен: доставка по адресу г. Псков, ул. Загородный, д. 177, кв. 49, индекс 180136. Курьер прибудет 02.09.2026 до 11:00."
+      },
+      "seq": 6,
+      "written": {
+        "number": "+79620091409",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен: доставка по адресу г. Псков, ул. Загородный, д. 177, кв. 49, индекс 180136. Курьер прибудет 02.09.2026 до 11:00."
+      }
+    },
+    {
+      "name": "crm_find_contact",
+      "parsed": {
+        "query": {
+          "phone": "+79620091409"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "query": {
+          "phone": "+79620091409"
+        }
+      },
+      "seq": 7,
+      "written": {
+        "query": {
+          "phone": "+79620091409"
+        }
+      }
+    },
+    {
+      "name": "address_suggest",
+      "parsed": {
+        "count": 5,
+        "query": "Псков, Загородный 177"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "count": 5,
+        "query": "Псков, Загородный 177"
+      },
+      "seq": 8,
+      "written": {
+        "count": 5,
+        "query": "Псков, Загородный 177"
+      }
+    },
+    {
+      "name": "order_status",
+      "parsed": {
+        "order_id": "ord-1"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "order_id": "ord-1"
+      },
+      "seq": 9,
+      "written": {
+        "order_id": "ord-1"
+      }
+    }
+  ],
+  "case_id": "tool_chain-041",
+  "cluster": "PHONE:9620091409",
+  "cost_usd": 0.010782,
+  "key": "tool_chain-041|C|0",
+  "kind": "tool_chain",
+  "masked_spans": {},
+  "meta": {
+    "api_error_status": null,
+    "cap_usd": 0.28,
+    "duration_ms": 42301,
+    "errors": [],
+    "is_error": false,
+    "model": "deepseek-flash",
+    "reason": "",
+    "session_id": "deepseek-1790440293631238000",
+    "subtype": "success",
+    "turns": 43
+  },
+  "register": "voice_itn",
+  "repeat": 0,
+  "reply": "Проверила — заказ прошёл успешно.\n\n**Заказ ord-1**\n- Статус: **ACCEPTED** (принят службой доставки)\n- Получатель: Лебедева Ирина Петровна, +79620091409\n- Адрес: г. Псков, ул. Загородный, д. 177, кв. 49 (индекс 180136)\n\nЗаказ зарегистрирован, курьер вызван на 02.09.2026, интервал 10:00–11:00. Всё в порядке.",
+  "state": [
+    {
+      "fields": {
+        "comment": "Повторная доставка",
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Лебедева Ирина Петровна",
+          "phones": [
+            "+79620091409"
+          ]
+        },
+        "to_location": {
+          "address": "ул Загородный, д. 177, кв. 49",
+          "city": "псков",
+          "postal_code": "180136"
+        }
+      },
+      "id": "ord-1",
+      "seq": 3,
+      "table": "orders",
+      "tool": "delivery_create_order"
+    },
+    {
+      "fields": {
+        "address": {
+          "building": "177",
+          "locality": "псков",
+          "porch": "",
+          "sflat": "49",
+          "street": "загородный"
+        },
+        "contact": {
+          "name": "Лебедева Ирина Петровна",
+          "phone": "+79620091409"
+        },
+        "interval": {
+          "from": "2026-09-02T10:00:00+03:00",
+          "to": "2026-09-02T11:00:00+03:00"
+        }
+      },
+      "id": "clm-1",
+      "seq": 4,
+      "table": "claims",
+      "tool": "courier_book"
+    },
+    {
+      "fields": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Клиент попросила повторить прошлую доставку. Оформила заказ ord-1 на адрес: г. Псков, ул. Загородный, д. 177, кв. 49, индекс 180136, получатель — Лебедева Ирина Петровна, вес 1000 г. Вызван курьер (clm-1) на 02.09.2026, интервал 10:00–11:00."
+      },
+      "id": "note-1",
+      "seq": 5,
+      "table": "notes",
+      "tool": "crm_add_note"
+    },
+    {
+      "fields": {
+        "number": "+79620091409",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен: доставка по адресу г. Псков, ул. Загородный, д. 177, кв. 49, индекс 180136. Курьер прибудет 02.09.2026 до 11:00."
+      },
+      "id": "sms-1",
+      "seq": 6,
+      "table": "sms",
+      "tool": "notify_sms"
+    }
+  ],
+  "substitutes": {},
+  "termination": "done"
+}

@@ -1,0 +1,144 @@
+{
+ "label": "isolation-start",
+ "captured_utc": "2026-10-01T05:01:34Z",
+ "captured_epoch": 1790830894.193,
+ "hostname": "MacBook-Pro-Igor.local",
+ "platform": "macOS-26.6.2-arm64-arm-64bit",
+ "uptime": "10:01  up 2 days, 17:31, 3 users, load averages: 4.25 4.75 5.23",
+ "loadavg": [
+  "4.25",
+  "4.75",
+  "5.23"
+ ],
+ "cpu_count": 10,
+ "top_cpu": [
+  {
+   "cpu_pct": 99.8,
+   "pid": 31169,
+   "rss_kb": 197296,
+   "etime": "16:34:27",
+   "command": ".venv/bin/python -m bench.agentpii5.live bench/runs/2026-09-30/v5-sprint-v2-813 --web --host 127.0.0.1 --port 8099 --baseline-dir /Users/igor/Projects/Obscura-hop-audit/research/hop-format-audit/evidence/prev-813"
+  },
+  {
+   "cpu_pct": 84.7,
+   "pid": 96958,
+   "rss_kb": 126160,
+   "etime": "00:02",
+   "command": ".venv/bin/python ../research/quality-sprint-2026-09-30/work/D0/perf-isolated/make_env.py --out ../research/quality-sprint-2026-09-30/work/D0/perf-isolated --corpus ../research/quality-sprint-2026-09-30/work/D0/perf-isolated/corpus.jsonl --isolation-out ../research/quality-sprint-2026-09-30/work/D0/perf-isolated/isolation-start.json --write-inputs"
+  },
+  {
+   "cpu_pct": 20.9,
+   "pid": 412,
+   "rss_kb": 45008,
+   "etime": "02-17:30:36",
+   "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon"
+  },
+  {
+   "cpu_pct": 18.3,
+   "pid": 923,
+   "rss_kb": 414240,
+   "etime": "02-17:30:26",
+   "command": "/Applications/Zen.app/Contents/MacOS/zen -os-restarted"
+  },
+  {
+   "cpu_pct": 14.2,
+   "pid": 930,
+   "rss_kb": 3019520,
+   "etime": "02-17:30:26",
+   "command": "/Applications/OrbStack.app/Contents/Frameworks/OrbStack Helper.app/Contents/MacOS/OrbStack Helper vmgr -build-id macho:05775f98b4bb3d75b88520220872c248 -handoff"
+  },
+  {
+   "cpu_pct": 10.1,
+   "pid": 1122,
+   "rss_kb": 68576,
+   "etime": "02-17:30:22",
+   "command": "/Applications/Zen.app/Contents/MacOS/gpu-helper.app/Contents/MacOS/Zen GPU Helper -parentBuildID 20260922050124 -prefsHandle 0:42106 -prefMapHandle 1:307108 -sbStartup -sbAppPath /Applications/Zen.app -ipcHandle 0 -initialChannelId {d24b6e8c-5858-49fd-a07a-6e274615593c} -parentPid 923 -appDir /Applications/Zen.app/Contents/Resources/browser -profile /Users/igor/Library/Application Support/zen/Profiles/aknmvh5n.Default (release) org.mozilla.machname.582151701 1 gpu"
+  },
+  {
+   "cpu_pct": 9.2,
+   "pid": 1843,
+   "rss_kb": 199904,
+   "etime": "02-10:20:35",
+   "command": "/Applications/Zen.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container -isForBrowser -prefsHandle 0:51324 -prefMapHandle 1:307108 -jsInitHandle 2:162620 -sbStartup -sbAppPath /Applications/Zen.app -sbLevel 3 -parentBuildID 20260922050124 -ipcHandle 0 -initialChannelId {3edf1014-f4c7-4564-ab73-c4040e3c1a9e} -parentPid 923 -greomni /Applications/Zen.app/Contents/Resources/omni.ja -appomni /Applications/Zen.app/Contents/Resources/browser/omni.ja -appDir /Applications/Zen.app/Contents/Resources/browser -profile /Users/igor/Library/Application Support/zen/Profiles/aknmvh5n.Default (release) org.mozilla.machname.410909418 375 tab"
+  },
+  {
+   "cpu_pct": 7.2,
+   "pid": 35143,
+   "rss_kb": 16624,
+   "etime": "01-21:55:12",
+   "command": "/System/Library/Frameworks/VideoToolbox.framework/Versions/A/XPCServices/VTDecoderXPCService.xpc/Contents/MacOS/VTDecoderXPCService"
+  },
+  {
+   "cpu_pct": 4.0,
+   "pid": 692,
+   "rss_kb": 122912,
+   "etime": "02-17:30:32",
+   "command": "/Applications/Telegram.app/Contents/MacOS/Telegram"
+  },
+  {
+   "cpu_pct": 3.8,
+   "pid": 734,
+   "rss_kb": 38592,
+   "etime": "02-17:30:32",
+   "command": "/Applications/Happ.app/Contents/MacOS/Happ"
+  },
+  {
+   "cpu_pct": 3.1,
+   "pid": 1135,
+   "rss_kb": 11536,
+   "etime": "02-17:30:22",
+   "command": "/Applications/Zen.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container -parentBuildID 20260922050124 -prefsHandle 0:42206 -prefMapHandle 1:307108 -sbStartup -sbAppPath /Applications/Zen.app -ipcHandle 0 -initialChannelId {6603c112-dc2d-49df-8aad-50a2e8987965} -parentPid 923 -appDir /Applications/Zen.app/Contents/Resources/browser -profile /Users/igor/Library/Application Support/zen/Profiles/aknmvh5n.Default (release) org.mozilla.machname.1169371357 4 rdd"
+  },
+  {
+   "cpu_pct": 3.0,
+   "pid": 36546,
+   "rss_kb": 87648,
+   "etime": "22:41:02",
+   "command": "/Applications/Zen.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container -isForBrowser -prefsHandle 0:51359 -prefMapHandle 1:307108 -jsInitHandle 2:162620 -sbStartup -sbAppPath /Applications/Zen.app -sbLevel 3 -parentBuildID 20260922050124 -ipcHandle 0 -initialChannelId {f26d326a-c3d9-4733-b204-aef109f9f33c} -parentPid 923 -greomni /Applications/Zen.app/Contents/Resources/omni.ja -appomni /Applications/Zen.app/Contents/Resources/browser/omni.ja -appDir /Applications/Zen.app/Contents/Resources/browser -profile /Users/igor/Library/Application Support/zen/Profiles/aknmvh5n.Default (release) org.mozilla.machname.167404157 3813 tab"
+  },
+  {
+   "cpu_pct": 2.5,
+   "pid": 425,
+   "rss_kb": 19744,
+   "etime": "02-17:30:36",
+   "command": "/usr/sbin/coreaudiod"
+  },
+  {
+   "cpu_pct": 2.2,
+   "pid": 34424,
+   "rss_kb": 60752,
+   "etime": "01-21:57:57",
+   "command": "/Applications/Zen.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container -isForBrowser -prefsHandle 0:51324 -prefMapHandle 1:307108 -jsInitHandle 2:162620 -sbStartup -sbAppPath /Applications/Zen.app -sbLevel 3 -parentBuildID 20260922050124 -ipcHandle 0 -initialChannelId {81360452-358b-431b-a5c3-6b4f29dd3097} -parentPid 923 -greomni /Applications/Zen.app/Contents/Resources/omni.ja -appomni /Applications/Zen.app/Contents/Resources/browser/omni.ja -appDir /Applications/Zen.app/Contents/Resources/browser -profile /Users/igor/Library/Application Support/zen/Profiles/aknmvh5n.Default (release) org.mozilla.machname.1734843896 942 tab"
+  },
+  {
+   "cpu_pct": 2.1,
+   "pid": 76421,
+   "rss_kb": 66336,
+   "etime": "01-15:53:10",
+   "command": "/Applications/Zen.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container -isForBrowser -prefsHandle 0:51324 -prefMapHandle 1:307108 -jsInitHandle 2:162620 -sbStartup -sbAppPath /Applications/Zen.app -sbLevel 3 -parentBuildID 20260922050124 -ipcHandle 0 -initialChannelId {3845bdb5-c43e-460e-b8a3-d3c238d58aa7} -parentPid 923 -greomni /Applications/Zen.app/Contents/Resources/omni.ja -appomni /Applications/Zen.app/Contents/Resources/browser/omni.ja -appDir /Applications/Zen.app/Contents/Resources/browser -profile /Users/igor/Library/Application Support/zen/Profiles/aknmvh5n.Default (release) org.mozilla.machname.867497535 1503 tab"
+  }
+ ],
+ "heavy_jobs": [
+  {
+   "cpu_pct": 99.8,
+   "pid": 31169,
+   "rss_kb": 197296,
+   "etime": "16:34:27",
+   "command": ".venv/bin/python -m bench.agentpii5.live bench/runs/2026-09-30/v5-sprint-v2-813 --web --host 127.0.0.1 --port 8099 --baseline-dir /Users/igor/Projects/Obscura-hop-audit/research/hop-format-audit/evidence/prev-813"
+  }
+ ],
+ "verdict": "NOT_ISOLATED",
+ "threshold_cpu_pct": 40.0,
+ "hints": [
+  "bench",
+  "agentpii",
+  "eval",
+  "ner",
+  "pytest",
+  "uvicorn",
+  "docker",
+  "nuitka",
+  "gates.py"
+ ],
+ "note": "RUNBOOK-PERF §0.1 requires no other NER/container/benchmark job. A NOT_ISOLATED verdict makes every number EXPLORATORY: it may not enter an admission budget (RUNBOOK-PERF §3)."
+}

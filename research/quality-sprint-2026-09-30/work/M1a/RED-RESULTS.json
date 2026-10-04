@@ -1,0 +1,1058 @@
+{
+  "checks": 8,
+  "red": 5,
+  "source_scope": "existing unmodified M04 prototype; synthetic fixtures; not a paid-run replay",
+  "cases": [
+    {
+      "name": "each_repeated_fake_is_local",
+      "pass": true,
+      "requirement": "one correct occurrence cannot hide the second unchanged fake",
+      "events": [
+        {
+          "case_id": "truth-condition",
+          "repeat": 0,
+          "event_id": "0:12:0",
+          "raw_start": 0,
+          "raw_end": 12,
+          "delivered_start": 0,
+          "delivered_end": 12,
+          "written": "+79990001122",
+          "delivered": "+79164021187",
+          "expected": "+79164021187",
+          "item_ids": [
+            "p1"
+          ],
+          "pii_type": "PHONE",
+          "role": "",
+          "status": "matched",
+          "evidence": "mention:p1:msg=0:result=-1:request=0",
+          "measurable": true,
+          "value_ok": true,
+          "form_ok": true,
+          "form_measured": true,
+          "residual": false,
+          "joint_ok": true,
+          "form_differs": []
+        },
+        {
+          "case_id": "truth-condition",
+          "repeat": 0,
+          "event_id": "15:27:1",
+          "raw_start": 15,
+          "raw_end": 27,
+          "delivered_start": 15,
+          "delivered_end": 27,
+          "written": "+79990001122",
+          "delivered": "+79990001122",
+          "expected": "+79164021187",
+          "item_ids": [
+            "p1"
+          ],
+          "pii_type": "PHONE",
+          "role": "",
+          "status": "residual",
+          "evidence": "mention:p1:msg=0:result=-1:request=0",
+          "measurable": true,
+          "value_ok": false,
+          "form_ok": true,
+          "form_measured": true,
+          "residual": true,
+          "joint_ok": false,
+          "form_differs": []
+        }
+      ],
+      "text_status": "preserved",
+      "aggregate": {
+        "estimator": "m04-answer-restoration-1",
+        "runs": 1,
+        "answers_with_substitutes": 1,
+        "answers_without_substitutes": 0,
+        "answer_restore_clean": 0,
+        "answer_text_preserved": 1,
+        "answer_text_changed": 0,
+        "answer_text_unresolved": 0,
+        "unmapped_changes": 0,
+        "overall": {
+          "pii_type": "all",
+          "candidates": 2,
+          "measurable": 2,
+          "unresolved": 0,
+          "value_ok": 1,
+          "form_ok": 2,
+          "form_unmeasured": 0,
+          "residual": 1,
+          "joint_ok": 1,
+          "statuses": [
+            [
+              "matched",
+              1
+            ],
+            [
+              "value_wrong",
+              0
+            ],
+            [
+              "form_wrong",
+              0
+            ],
+            [
+              "residual",
+              1
+            ],
+            [
+              "ambiguous",
+              0
+            ],
+            [
+              "provenance_unavailable",
+              0
+            ],
+            [
+              "alignment_unresolved",
+              0
+            ],
+            [
+              "form_unmeasured",
+              0
+            ]
+          ]
+        },
+        "by_type": [
+          {
+            "pii_type": "PHONE",
+            "candidates": 2,
+            "measurable": 2,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 2,
+            "form_unmeasured": 0,
+            "residual": 1,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                1
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "exact_copy_does_not_silently_repair_source_typo",
+      "pass": false,
+      "requirement": "verbatim fake must return source literal игрь, not corrected canonical игорь; cannot pass",
+      "events": [
+        {
+          "case_id": "truth-condition",
+          "repeat": 0,
+          "event_id": "0:4:0",
+          "raw_start": 0,
+          "raw_end": 4,
+          "delivered_start": 0,
+          "delivered_end": 5,
+          "written": "егрь",
+          "delivered": "игорь",
+          "expected": "игорь",
+          "item_ids": [
+            "p1"
+          ],
+          "pii_type": "NAME",
+          "role": "given",
+          "status": "matched",
+          "evidence": "mention:p1:msg=0:result=-1:request=0",
+          "measurable": true,
+          "value_ok": true,
+          "form_ok": true,
+          "form_measured": true,
+          "residual": false,
+          "joint_ok": true,
+          "form_differs": []
+        }
+      ],
+      "text_status": "preserved",
+      "aggregate": {
+        "estimator": "m04-answer-restoration-1",
+        "runs": 1,
+        "answers_with_substitutes": 1,
+        "answers_without_substitutes": 0,
+        "answer_restore_clean": 1,
+        "answer_text_preserved": 1,
+        "answer_text_changed": 0,
+        "answer_text_unresolved": 0,
+        "unmapped_changes": 0,
+        "overall": {
+          "pii_type": "all",
+          "candidates": 1,
+          "measurable": 1,
+          "unresolved": 0,
+          "value_ok": 1,
+          "form_ok": 1,
+          "form_unmeasured": 0,
+          "residual": 0,
+          "joint_ok": 1,
+          "statuses": [
+            [
+              "matched",
+              1
+            ],
+            [
+              "value_wrong",
+              0
+            ],
+            [
+              "form_wrong",
+              0
+            ],
+            [
+              "residual",
+              0
+            ],
+            [
+              "ambiguous",
+              0
+            ],
+            [
+              "provenance_unavailable",
+              0
+            ],
+            [
+              "alignment_unresolved",
+              0
+            ],
+            [
+              "form_unmeasured",
+              0
+            ]
+          ]
+        },
+        "by_type": [
+          {
+            "pii_type": "NAME",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "correct_literal_source_can_earn_value",
+      "pass": false,
+      "requirement": "actual source typo must not be charged as wrong restoration solely because canonical differs",
+      "events": [
+        {
+          "case_id": "truth-condition",
+          "repeat": 0,
+          "event_id": "0:4:0",
+          "raw_start": 0,
+          "raw_end": 4,
+          "delivered_start": 0,
+          "delivered_end": 4,
+          "written": "егрь",
+          "delivered": "игрь",
+          "expected": "игорь",
+          "item_ids": [
+            "p1"
+          ],
+          "pii_type": "NAME",
+          "role": "given",
+          "status": "value_wrong",
+          "evidence": "mention:p1:msg=0:result=-1:request=0",
+          "measurable": true,
+          "value_ok": false,
+          "form_ok": true,
+          "form_measured": true,
+          "residual": false,
+          "joint_ok": false,
+          "form_differs": []
+        }
+      ],
+      "text_status": "preserved",
+      "aggregate": {
+        "estimator": "m04-answer-restoration-1",
+        "runs": 1,
+        "answers_with_substitutes": 1,
+        "answers_without_substitutes": 0,
+        "answer_restore_clean": 0,
+        "answer_text_preserved": 1,
+        "answer_text_changed": 0,
+        "answer_text_unresolved": 0,
+        "unmapped_changes": 0,
+        "overall": {
+          "pii_type": "all",
+          "candidates": 1,
+          "measurable": 1,
+          "unresolved": 0,
+          "value_ok": 0,
+          "form_ok": 1,
+          "form_unmeasured": 0,
+          "residual": 0,
+          "joint_ok": 0,
+          "statuses": [
+            [
+              "matched",
+              0
+            ],
+            [
+              "value_wrong",
+              1
+            ],
+            [
+              "form_wrong",
+              0
+            ],
+            [
+              "residual",
+              0
+            ],
+            [
+              "ambiguous",
+              0
+            ],
+            [
+              "provenance_unavailable",
+              0
+            ],
+            [
+              "alignment_unresolved",
+              0
+            ],
+            [
+              "form_unmeasured",
+              0
+            ]
+          ]
+        },
+        "by_type": [
+          {
+            "pii_type": "NAME",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 0,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 0,
+            "statuses": [
+              [
+                "matched",
+                0
+              ],
+              [
+                "value_wrong",
+                1
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "unmapped_push_clock_is_not_provider_provenance",
+      "pass": false,
+      "requirement": "mention request_index99 vs response request1 are different clocks; no snapshot relation proves availability, so unknown not pass",
+      "events": [
+        {
+          "case_id": "truth-condition",
+          "repeat": 0,
+          "event_id": "0:12:0",
+          "raw_start": 0,
+          "raw_end": 12,
+          "delivered_start": 0,
+          "delivered_end": 12,
+          "written": "+79990001122",
+          "delivered": "+79164021187",
+          "expected": "+79164021187",
+          "item_ids": [
+            "p1"
+          ],
+          "pii_type": "PHONE",
+          "role": "",
+          "status": "matched",
+          "evidence": "mention:p1:msg=0:result=-1:request=99",
+          "measurable": true,
+          "value_ok": true,
+          "form_ok": true,
+          "form_measured": true,
+          "residual": false,
+          "joint_ok": true,
+          "form_differs": []
+        }
+      ],
+      "text_status": "preserved",
+      "aggregate": {
+        "estimator": "m04-answer-restoration-1",
+        "runs": 1,
+        "answers_with_substitutes": 1,
+        "answers_without_substitutes": 0,
+        "answer_restore_clean": 1,
+        "answer_text_preserved": 1,
+        "answer_text_changed": 0,
+        "answer_text_unresolved": 0,
+        "unmapped_changes": 0,
+        "overall": {
+          "pii_type": "all",
+          "candidates": 1,
+          "measurable": 1,
+          "unresolved": 0,
+          "value_ok": 1,
+          "form_ok": 1,
+          "form_unmeasured": 0,
+          "residual": 0,
+          "joint_ok": 1,
+          "statuses": [
+            [
+              "matched",
+              1
+            ],
+            [
+              "value_wrong",
+              0
+            ],
+            [
+              "form_wrong",
+              0
+            ],
+            [
+              "residual",
+              0
+            ],
+            [
+              "ambiguous",
+              0
+            ],
+            [
+              "provenance_unavailable",
+              0
+            ],
+            [
+              "alignment_unresolved",
+              0
+            ],
+            [
+              "form_unmeasured",
+              0
+            ]
+          ]
+        },
+        "by_type": [
+          {
+            "pii_type": "PHONE",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "known_initials_not_silent_zero_denominator",
+      "pass": false,
+      "requirement": "known derived fake initials need candidate/provenance uncertainty or measured event, not answers_without_substitutes",
+      "events": [],
+      "text_status": "changed",
+      "aggregate": {
+        "estimator": "m04-answer-restoration-1",
+        "runs": 1,
+        "answers_with_substitutes": 0,
+        "answers_without_substitutes": 1,
+        "answer_restore_clean": 0,
+        "answer_text_preserved": 0,
+        "answer_text_changed": 1,
+        "answer_text_unresolved": 0,
+        "unmapped_changes": 2,
+        "overall": {
+          "pii_type": "all",
+          "candidates": 0,
+          "measurable": 0,
+          "unresolved": 0,
+          "value_ok": 0,
+          "form_ok": 0,
+          "form_unmeasured": 0,
+          "residual": 0,
+          "joint_ok": 0,
+          "statuses": [
+            [
+              "matched",
+              0
+            ],
+            [
+              "value_wrong",
+              0
+            ],
+            [
+              "form_wrong",
+              0
+            ],
+            [
+              "residual",
+              0
+            ],
+            [
+              "ambiguous",
+              0
+            ],
+            [
+              "provenance_unavailable",
+              0
+            ],
+            [
+              "alignment_unresolved",
+              0
+            ],
+            [
+              "form_unmeasured",
+              0
+            ]
+          ]
+        },
+        "by_type": []
+      }
+    },
+    {
+      "name": "street_type_is_value_identity_not_only_form",
+      "pass": false,
+      "requirement": "улица and переулок are different identities; a form failure alone cannot excuse a false value pass",
+      "events": [
+        {
+          "case_id": "truth-condition",
+          "repeat": 0,
+          "event_id": "0:24:0",
+          "raw_start": 0,
+          "raw_end": 24,
+          "delivered_start": 0,
+          "delivered_end": 21,
+          "written": "переулок Липовый, дом 21",
+          "delivered": "улица Пушкина, дом 14",
+          "expected": "переулок Пушкина, дом 14",
+          "item_ids": [
+            "p1"
+          ],
+          "pii_type": "LOC",
+          "role": "",
+          "status": "form_wrong",
+          "evidence": "mention:p1:msg=0:result=-1:request=0",
+          "measurable": true,
+          "value_ok": true,
+          "form_ok": false,
+          "form_measured": true,
+          "residual": false,
+          "joint_ok": false,
+          "form_differs": [
+            "generic"
+          ]
+        }
+      ],
+      "text_status": "preserved",
+      "aggregate": {
+        "estimator": "m04-answer-restoration-1",
+        "runs": 1,
+        "answers_with_substitutes": 1,
+        "answers_without_substitutes": 0,
+        "answer_restore_clean": 0,
+        "answer_text_preserved": 1,
+        "answer_text_changed": 0,
+        "answer_text_unresolved": 0,
+        "unmapped_changes": 0,
+        "overall": {
+          "pii_type": "all",
+          "candidates": 1,
+          "measurable": 1,
+          "unresolved": 0,
+          "value_ok": 1,
+          "form_ok": 0,
+          "form_unmeasured": 0,
+          "residual": 0,
+          "joint_ok": 0,
+          "statuses": [
+            [
+              "matched",
+              0
+            ],
+            [
+              "value_wrong",
+              0
+            ],
+            [
+              "form_wrong",
+              1
+            ],
+            [
+              "residual",
+              0
+            ],
+            [
+              "ambiguous",
+              0
+            ],
+            [
+              "provenance_unavailable",
+              0
+            ],
+            [
+              "alignment_unresolved",
+              0
+            ],
+            [
+              "form_unmeasured",
+              0
+            ]
+          ]
+        },
+        "by_type": [
+          {
+            "pii_type": "LOC",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 0,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 0,
+            "statuses": [
+              [
+                "matched",
+                0
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                1
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "nonpii_id_change_never_clean_answer",
+      "pass": true,
+      "requirement": "all raw literal gaps outside minimal written fake must be preserved",
+      "events": [
+        {
+          "case_id": "truth-condition",
+          "repeat": 0,
+          "event_id": "8:20:0",
+          "raw_start": 8,
+          "raw_end": 20,
+          "delivered_start": 8,
+          "delivered_end": 20,
+          "written": "+79990001122",
+          "delivered": "+79164021187",
+          "expected": "+79164021187",
+          "item_ids": [
+            "p1"
+          ],
+          "pii_type": "PHONE",
+          "role": "",
+          "status": "matched",
+          "evidence": "mention:p1:msg=0:result=-1:request=0",
+          "measurable": true,
+          "value_ok": true,
+          "form_ok": true,
+          "form_measured": true,
+          "residual": false,
+          "joint_ok": true,
+          "form_differs": []
+        }
+      ],
+      "text_status": "changed",
+      "aggregate": {
+        "estimator": "m04-answer-restoration-1",
+        "runs": 1,
+        "answers_with_substitutes": 1,
+        "answers_without_substitutes": 0,
+        "answer_restore_clean": 0,
+        "answer_text_preserved": 0,
+        "answer_text_changed": 1,
+        "answer_text_unresolved": 0,
+        "unmapped_changes": 1,
+        "overall": {
+          "pii_type": "all",
+          "candidates": 1,
+          "measurable": 1,
+          "unresolved": 0,
+          "value_ok": 1,
+          "form_ok": 1,
+          "form_unmeasured": 0,
+          "residual": 0,
+          "joint_ok": 1,
+          "statuses": [
+            [
+              "matched",
+              1
+            ],
+            [
+              "value_wrong",
+              0
+            ],
+            [
+              "form_wrong",
+              0
+            ],
+            [
+              "residual",
+              0
+            ],
+            [
+              "ambiguous",
+              0
+            ],
+            [
+              "provenance_unavailable",
+              0
+            ],
+            [
+              "alignment_unresolved",
+              0
+            ],
+            [
+              "form_unmeasured",
+              0
+            ]
+          ]
+        },
+        "by_type": [
+          {
+            "pii_type": "PHONE",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 1,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 0,
+            "joint_ok": 1,
+            "statuses": [
+              [
+                "matched",
+                1
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                0
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "actual_stream_defeats_correct_whole",
+      "pass": true,
+      "requirement": "delivered reply is the scored boundary; whole answer is diagnostic only",
+      "events": [
+        {
+          "case_id": "truth-condition",
+          "repeat": 0,
+          "event_id": "0:12:0",
+          "raw_start": 0,
+          "raw_end": 12,
+          "delivered_start": 0,
+          "delivered_end": 12,
+          "written": "+79990001122",
+          "delivered": "+79990001122",
+          "expected": "+79164021187",
+          "item_ids": [
+            "p1"
+          ],
+          "pii_type": "PHONE",
+          "role": "",
+          "status": "residual",
+          "evidence": "mention:p1:msg=0:result=-1:request=0",
+          "measurable": true,
+          "value_ok": false,
+          "form_ok": true,
+          "form_measured": true,
+          "residual": true,
+          "joint_ok": false,
+          "form_differs": []
+        }
+      ],
+      "text_status": "preserved",
+      "aggregate": {
+        "estimator": "m04-answer-restoration-1",
+        "runs": 1,
+        "answers_with_substitutes": 1,
+        "answers_without_substitutes": 0,
+        "answer_restore_clean": 0,
+        "answer_text_preserved": 1,
+        "answer_text_changed": 0,
+        "answer_text_unresolved": 0,
+        "unmapped_changes": 0,
+        "overall": {
+          "pii_type": "all",
+          "candidates": 1,
+          "measurable": 1,
+          "unresolved": 0,
+          "value_ok": 0,
+          "form_ok": 1,
+          "form_unmeasured": 0,
+          "residual": 1,
+          "joint_ok": 0,
+          "statuses": [
+            [
+              "matched",
+              0
+            ],
+            [
+              "value_wrong",
+              0
+            ],
+            [
+              "form_wrong",
+              0
+            ],
+            [
+              "residual",
+              1
+            ],
+            [
+              "ambiguous",
+              0
+            ],
+            [
+              "provenance_unavailable",
+              0
+            ],
+            [
+              "alignment_unresolved",
+              0
+            ],
+            [
+              "form_unmeasured",
+              0
+            ]
+          ]
+        },
+        "by_type": [
+          {
+            "pii_type": "PHONE",
+            "candidates": 1,
+            "measurable": 1,
+            "unresolved": 0,
+            "value_ok": 0,
+            "form_ok": 1,
+            "form_unmeasured": 0,
+            "residual": 1,
+            "joint_ok": 0,
+            "statuses": [
+              [
+                "matched",
+                0
+              ],
+              [
+                "value_wrong",
+                0
+              ],
+              [
+                "form_wrong",
+                0
+              ],
+              [
+                "residual",
+                1
+              ],
+              [
+                "ambiguous",
+                0
+              ],
+              [
+                "provenance_unavailable",
+                0
+              ],
+              [
+                "alignment_unresolved",
+                0
+              ],
+              [
+                "form_unmeasured",
+                0
+              ]
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

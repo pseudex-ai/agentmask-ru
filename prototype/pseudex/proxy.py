@@ -485,8 +485,11 @@ def _record_prefix_cache(payload: dict[str, object]) -> None:
         _PREFIX_CACHE["responses"] += 1
 
 
-async def _stream_content(body: dict[str, object], tenant: Tenant, vault: Vault):
-    """True token-by-token streaming for plain chat (content carry-buffer detok)."""
+async def _stream_content(body: dict[str, object], tenant: Tenant, vault: Vault,
+                          leaf_notation: dict[str, str] | None = None):
+    """True token-by-token streaming for plain chat (content carry-buffer detok).
+    `leaf_notation` is accepted for a uniform call with `_stream_as_single` and
+    ignored: this path carries no tool calls, so no schema notation can apply."""
     url = f"{tenant.upstream_base_url}/chat/completions"
     headers = {"Authorization": f"Bearer {tenant.upstream_key}", "Content-Type": "application/json"}
     detok: dict[int, StreamDetokenizer] = {}
@@ -539,13 +542,14 @@ def _delta_chunk(content: str) -> str:
     return f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
 
 
-async def _stream_as_single(body: dict[str, object], tenant: Tenant, vault: Vault):
+async def _stream_as_single(body: dict[str, object], tenant: Tenant, vault: Vault,
+                            leaf_notation: dict[str, str] | None = None):
     """Tool-call requests: do it non-streamed (correct arg detok), emit as one SSE
     chunk. Token-by-token detok of streamed tool args can't retract an already-sent
     fake prefix, so we buffer — correctness over smoothness."""
     body = dict(body)
     body["stream"] = False
-    unmasked = unmask_response(await _forward(body, tenant), vault)
+    unmasked = unmask_response(await _forward(body, tenant), vault, leaf_notation)
     for choice in unmasked.get("choices", []):
         message = choice.get("message", {})
         delta = {k: message[k] for k in ("role", "content", "tool_calls") if k in message}
@@ -690,6 +694,15 @@ async def chat_completions(request: Request):
         body = await request.json()
     if not isinstance(body, dict) or not isinstance(body.get("messages"), list):
         raise HTTPException(status_code=400, detail="missing messages array")
+    # THE TOOL SCHEMA'S DECLARED NOTATION (класс Ж) rides in on the request as an
+    # optional flat map keyed by leaf KEY — the proxy leg has no notation vocabulary
+    # of its own, and the OpenAI tool schema format carries no such field, so the
+    # caller's reading of its own schema is the only authority there is. A leaf
+    # absent from the map is «not declared» and keeps the sender's own form.
+    leaf_notation = body.get("leaf_notation") or {}
+    if not isinstance(leaf_notation, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in leaf_notation.items()):
+        raise HTTPException(status_code=400, detail="leaf_notation must be an object of string->string")
     # THE WAY BACK IS SCOPED TO THE SAME CONVERSATION AS THE WAY IN. The mask
     # leg keys everything a dialogue decides — a linked address, the
     # substitutes it was shown (`token_uses`, `shown_forms`) — under
@@ -737,11 +750,12 @@ async def chat_completions(request: Request):
 
     if body.get("stream") is True:
         streamer = _stream_as_single if body.get("tools") else _stream_content
-        return StreamingResponse(streamer(masked_body, tenant, vault), media_type="text/event-stream")
+        return StreamingResponse(streamer(masked_body, tenant, vault, leaf_notation),
+                                 media_type="text/event-stream")
 
     upstream = await _forward(masked_body, tenant)
     with stage("proxy.unmask_response"):
-        restored = unmask_response(upstream, vault)
+        restored = unmask_response(upstream, vault, leaf_notation)
     with stage("proxy.serialize"):
         # THE ANSWER IS OPENAI-SHAPED AND MUST STAY SO, so the residual signal
         # rides in a HEADER rather than in the body: the customer's SDK parses

@@ -1,0 +1,18 @@
+diff --git a/prototype/bench/agentpii5/revise.py b/prototype/bench/agentpii5/revise.py
+index 0ba7bde..08bee0c 100644
+--- a/prototype/bench/agentpii5/revise.py
++++ b/prototype/bench/agentpii5/revise.py
+@@ -184,5 +184,5 @@ def _finish(case: Case, reads: dict[str, list[tuple[PiiItem, str]]], forms: dict
+                    pick=pick, branch=branch, loop=loop if behaviour == "user_in_loop" else None,
+                    rag=None, document=None, has_result=declared.has_result,
+-                   streaming=declared.streaming, revised_from_v4=True),
++                   streaming=declared.streaming, revised_from_v4=True, v6=None),
+             downgraded, reason)
+ 
+@@ -260,5 +260,5 @@ def _declare(case: Case, reads: dict[str, list[tuple[PiiItem, str]]], forms: dic
+                   forced=(), memory=_memory_specs(loop, answered), pick=None, branch=None,
+                   loop=loop, rag=None, document=None, has_result=reached,
+-                  streaming=streaming and reached, revised_from_v4=True)
++                  streaming=streaming and reached, revised_from_v4=True, v6=None)
+ 
+ 

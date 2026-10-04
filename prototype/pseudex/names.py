@@ -25,7 +25,7 @@ import re
 
 from pseudex.assets import ASSETS, NameAssets
 from pseudex.detect import Span
-from pseudex.fuzzy import build_index, lookup, within_one_edit, within_one_typo
+from pseudex.fuzzy import build_index, lookup, recover_one_edit, within_one_edit, within_one_typo
 from pseudex.morph import MORPH, is_stretched_filler
 from pseudex import spoken
 
@@ -103,11 +103,120 @@ def _is_known_name(word: str, names: NameAssets) -> bool:
                                         for lemma in _lemmas(low))
 
 
+def _plain_ascii_token(text: str, start: int, end: int) -> bool:
+    """Стоит ли латинское слово ВНУТРИ большего ASCII-токена.
+
+    Почта, URL, путь, `snake_case`-идентификатор и имя файла — не человек, и
+    ни одно из них не может быть чьим-то именем. Отвергается по соседнему
+    символу, а не по регулярке всего токена: сосед — то, что уже написано в
+    тексте, и отдельного словаря для этого не нужно.
+
+    ТОЧКА СУДИТСЯ ПО ТОМУ, ЧТО ЗА НЕЙ. Конец предложения — «Ivanov.» — это
+    точка, за которой пробел или конец строки; точка домена — за ней ещё буква.
+    Без этого различия половина имён в конце фразы перестала бы находиться.
+    """
+    before = text[start - 1] if start else ""
+    after = text[end] if end < len(text) else ""
+    # `in` on a string is TRUE FOR THE EMPTY STRING, and the first word of a
+    # message has no character before it: `before in "…"` would refuse every
+    # Latin name that opens a sentence.
+    if before and before in "@/_\\-0123456789":
+        return False
+    if after and after in "@/_\\-0123456789":
+        return False
+    if before == "." and start > 1 and text[start - 2] not in " \t\n":
+        return False
+    if after == "." and end + 1 < len(text) and text[end + 1] not in " \t\n":
+        return False
+    return True
+
+
+def _latin_dictionary_hit(text: str, start: int, end: int, word: str, low: str,
+                          before: str, names: NameAssets) -> bool:
+    """ЛАТИНСКОЕ СЛОВО СУДИТСЯ ТЕМ ЖЕ ИНДЕКСОМ, ЧТО И КИРИЛЛИЧЕСКОЕ.
+
+    Позиция в прогоне перестаёт быть свидетельством: `Kukushkin Valeriy` — тот
+    же человек, что `Valeriy Kukushkin`, и судится он СЛОВОМ. Свидетельство
+    лежит в `dict_surnames`/`dict_first`, прочитанных латиницей
+    (`assets.NameAssets.latin_surnames`/`latin_first`).
+
+    ЗАГЛАВНАЯ ИЛИ ИМЕННОЙ ЯКОРЬ — тот же гейт, что у строчной кириллической
+    ветки: транслит 196 800 русских фамилий совпадает с английскими словами и
+    торговыми марками (`Roman`, `Sokol`, `Volkov`), и столица либо уже
+    написанная рядом подсказка — единственное, что отделяет человека от прозы.
+
+    ПОЧТА/URL/ПУТЬ ИСКЛЮЧЕНЫ ДО этого вопроса — за них отвечает
+    `_plain_ascii_token`: локальная часть адреса — не фамилия.
+    """
+    if not low.isascii() or not low.isalpha():
+        return False
+    if low not in names.latin_first and low not in names.latin_surnames:
+        return False
+    if not _plain_ascii_token(text, start, end):
+        return False
+    if word[:1].isupper() or any(cue in before for cue in names.cues):
+        return True
+    return False
+
+
 def _is_surname_shaped(word: str, names: NameAssets) -> bool:
     low = word.lower()
     if low in names.dict_surnames:
         return True
     return len(low) > 4 and low.endswith(names.surname_suffixes)
+
+
+_NAME_ANCHOR_WINDOW = 24
+
+
+_CASE_ENDINGS = ("ого", "ему", "ому", "ыми", "ими", "ой", "ый", "ая", "ые",
+                 "ым", "их", "ых", "ов", "ев", "ин", "у", "а", "е", "и", "ю", "я", "ы")
+
+
+def _declined_surname_shaped(low: str, names: NameAssets) -> bool:
+    """Фамилия, пришедшая В КОСВЕННОМ ПАДЕЖЕ, — та же фамилия.
+
+    Суффиксный тест читает именительный («-ов», «-ин», «-ский»), а человек
+    называется «от аленчиев», «к аленчиеву», «у ивановых»: падежное окончание
+    снимается перед тестом, ровно как `canonicalize` снимает его перед ключом.
+    Окончание снимается ОДНО, и слово обязано остаться фамильно-образным —
+    иначе «-ов» нашёлся бы в любом слове, кончающемся на «а».
+    """
+    if _is_surname_shaped(low, names):
+        return True
+    return any(len(low) > len(ending) and _is_surname_shaped(low[:-len(ending)], names)
+               for ending in _CASE_ENDINGS if low.endswith(ending))
+
+
+def _anchored_surname(text: str, start: int, word: str, low: str,
+                      names: NameAssets) -> bool:
+    """СТРОЧНАЯ ФАМИЛИЯ, КОТОРОЙ ЯКОРЬ ДАЁТ ПРАВО НА СПАН.
+
+    Строчное слово в арендованном словаре уже судится `_lowercase_dictionary_ok`,
+    и этот тест отвергает «репина»: у него есть обычное чтение «NOUN,inan». Но
+    «от аленчиев» не находит НИЧТО — слово не лежит ни в одном словаре, а
+    `_is_surname_shaped` без второго сигнала спана не даёт. Второй сигнал —
+    ЯКОРЬ: предлог, вводящий человека («от», «к», «у», «для»), или уже
+    арендованная подсказка («перезвоните», «имя», «фио»).
+
+    ПОЧЕМУ ЭТО ОДНО ПРАВИЛО, А НЕ ЗАПЛАТКА. Ровно так же решает адресная
+    ветка: роль строчного слова определяется тем, что стоит ПЕРЕД ним. Якорь
+    уже был написан — `_street_reference` читает «на/по» + реестр ГАР, чтобы
+    ОТОБРАТЬ спан у имени; здесь то же свидетельство работает в обратную
+    сторону.
+
+    ГЕЙТ ОТ ОВЕРМАСКИРОВАНИЯ — тот же словарный тест, что у строчной ветки:
+    слово принимается, только если pymorphy НЕ знает его как обычное русское
+    слово. Поэтому «от клиентов», «для сотрудников», «у поставщиков» (NOUN,
+    родительный множественного) остаются прозой, а «от аленчиев» — человеком.
+    """
+    if (not _declined_surname_shaped(low, names)
+            or not _lowercase_dictionary_ok(word, low)):
+        return False
+    tail = text[max(0, start - _NAME_ANCHOR_WINDOW):start]
+    if any(cue in tail.lower() for cue in names.cues):
+        return True
+    return names.anchor_re.search(tail) is not None
 
 
 def is_known_name(word: str) -> bool:
@@ -587,7 +696,7 @@ def _misspelling_index(version: str) -> dict[str, tuple[str, ...]]:
                        if len(word) >= 5 and word not in names.ambiguous)
 
 
-def _looks_misspelt_name(word: str) -> bool:
+def _looks_misspelt_name(word: str, min_len: int = 5) -> bool:
     """Whether this word is one edit away from a name we know.
 
     The second signal, and it is needed: the first — sitting next to a name we
@@ -595,12 +704,18 @@ def _looks_misspelt_name(word: str) -> bool:
     very often an ordinary one. Requiring near-membership in the dictionary is
     the same tolerance the cue-word deny matching already uses, bounded the same
     way at a single edit.
+
+    `min_len` is the one dial the callers move, and it moves DOWN only where a
+    cue has already said the next word names a person: «меня зовут игрь» is four
+    letters, one deletion from «игорь», and without the cue a four-letter word
+    reaches too much of the language («игрь» → «игра», «тигр»…). The cue is what
+    makes that neighbourhood safe to enter.
     """
     if _is_numeral_word(word):
         return False
     lowered = word.lower()
-    if len(lowered) < 5:
-        # Below five letters a single edit reaches too much of the language:
+    if len(lowered) < min_len:
+        # Below the floor a single edit reaches too much of the language:
         # «Иван» is one edit from «Иван», «Инан», «Иванк»… and also from ordinary
         # short words. The gazetteer already covers names this short exactly.
         return False
@@ -627,6 +742,26 @@ def _looks_misspelt_name(word: str) -> bool:
     if any(within_one_typo(lowered, cue) for cue in ASSETS.get().names.never_cues):
         return False
     return lookup(lowered, _misspelling_index(ASSETS.version or ""))
+
+
+def recover_damaged_name(word: str) -> str | None:
+    """The dictionary name one edit from this damaged word, or None.
+
+    The mint's half of class А: detection answers «is this a damaged name», and
+    the mint needs WHICH name it is so the edit that made it can be applied to
+    the substitute. Same signals as `_looks_misspelt_name` (unknown to
+    morphology, not a cue word, not a numeral, not a stretched filler), so the
+    two halves cannot disagree about what is and is not a damaged name.
+    """
+    if _is_numeral_word(word) or is_stretched_filler(word):
+        return None
+    parses = MORPH.parse(word)
+    if not parses or parses[0].is_known:
+        return None
+    lowered = word.lower()
+    if any(within_one_typo(lowered, cue) for cue in ASSETS.get().names.never_cues):
+        return None
+    return recover_one_edit(lowered, _misspelling_index(ASSETS.version or ""))
 
 
 _SURNAME_CUE_RE = re.compile(r"(?i)\bфамил\w*\s*[:\-—–]?\s*([А-ЯЁа-яё][А-ЯЁа-яё\-]{2,})")
@@ -710,7 +845,12 @@ def _cued_misspelt_names(text: str, names: NameAssets) -> list[Span]:
         candidate = word.group()
         if len(candidate) < 4 or candidate.lower() in names.stopwords:
             continue
-        if not _looks_misspelt_name(candidate):
+        # A CUE LICENSES THE SHORT DAMAGED NAME IT INTRODUCES. «меня зовут игрь»
+        # is four letters and one deletion from «игорь»; without the cue the
+        # four-letter neighbourhood is too dense, and with it the word is
+        # already declared a person, so the shorter floor is safe (class А —
+        # the owner's literal example).
+        if not _looks_misspelt_name(candidate, min_len=4):
             continue
         start = match.end() + word.start()
         spans.append(Span(start, match.end() + word.end(), "NAME", candidate))
@@ -1445,6 +1585,100 @@ def _saint_reference(text: str, start: int) -> bool:
     return _SAINT_BEFORE.search(text[max(0, start - 24):start]) is not None
 
 
+def _street_type_word(word: str) -> bool:
+    """Слово НАЗЫВАЕТ ТИП УЛИЦЫ («улица», «переулок», «проспект»).
+
+    Читается только `street_type_nohouse` — тот ярус арендованных стемов, чьё
+    ЕДИНСТВЕННОЕ обычное значение и есть улица («съезд», «квартал», «линия»,
+    «тупик» стоят в соседнем ярусе именно потому, что у них есть второе
+    значение, и без номера дома они улицу не называют). Стем сравнивается с
+    НОРМАЛЬНОЙ ФОРМОЙ слова, а не с написанной: «улицы», «улице», «улицей» —
+    одно слово, и pymorphy уже знает это; «алле» при этом не ловит «аллегорию»
+    и «аллергию», потому что их нормальные формы на «алле» не начинаются.
+    """
+    for parse in MORPH.parse(word):
+        form = parse.normal_form
+        if any(form.startswith(stem) for stem in ASSETS.get().address.street_type_nohouse):
+            return True
+    return False
+
+
+def _adjacent_word(text: str, edge: int, step: int) -> str | None:
+    """Слово ВПЛОТНУЮ к границе спана, или None.
+
+    Вплотную — значит между ним и спаном НЕТ ничего, кроме пробела: «улицы
+    лермонтова» — да, «на территории улицы лермонтова» — тоже да, потому что
+    сосед «лермонтова» это само «улицы», а «на территории» в свидетельство не
+    берётся вовсе. Запятая, точка, тире и перевод строки соседом не являются и
+    оговорку закрывают: «гуля, улица лермонтова» — два разных упоминания.
+
+    ПРАВАЯ ВЕТКА НЕ РАБОТАЛА, И ЭТО БЫЛА ОШИБКА КОДА, А НЕ РЕШЕНИЕ. Она
+    пропускала `_FUSED_LETTERS`, а там ЕСТЬ ПРОБЕЛ — тот самый, за которым
+    стоит сосед. Единственный пробел съедался первым же циклом, после чего
+    ветка требовала ЕЩЁ один, поэтому сосед справа читался только через
+    табуляцию. «лермонтова улица» оставалось человеком — то есть один из двух
+    RED-кейсов F4 (FIX-PLAN §5), ради которого сторож и писался, закрывался
+    лишь тогда, когда «улица» стояла СЛЕВА от второго упоминания. Измерено на
+    закреплённом кадре (seed20 в аренде, иначе не с чем сравнивать): минус один
+    ложный NAME-спан (377 -> 376), полнота по людям 246/271 без изменений,
+    новых промахов ноль. Склейка дефисом осталась внутри слова, а не в
+    разделителе: «лермонтова-улица» соседей не образует.
+    """
+    if step > 0:
+        cursor = edge
+        while cursor < len(text) and text[cursor].isspace():
+            cursor += 1
+        # сосед — СЛОВО: сразу за пробелом обязана стоять буква, иначе это
+        # знак препинания вплотную, а он оговорку закрывает
+        if cursor >= len(text) or not text[cursor].isalpha():
+            return None
+        start = cursor
+        while start < len(text) and (text[start].isalpha() or text[start] in _HYPHENS):
+            start += 1
+        return text[cursor:start] or None
+    cursor = edge
+    while cursor > 0 and text[cursor - 1].isspace():
+        cursor -= 1
+    if cursor <= 0 or not text[cursor - 1].isalpha():
+        return None
+    end = cursor
+    start = end
+    while start > 0 and text[start - 1].isalpha():
+        start -= 1
+    return text[start:end] or None
+
+
+def _street_type_adjacent(text: str, start: int, end: int) -> bool:
+    """ТИП УЛИЦЫ РЯДОМ — тот же сторож, что «на» + реестр ГАР, только без предлога.
+
+    `_street_reference` уже отбирает спан у имени, когда перед словом стоит «на»
+    или «по» и слово лежит в реестре ГАР. Этого мало: половина настоящей речи
+    называет улицу БЕЗ предлога, и тогда тип улицы — единственное свидетельство,
+    которое вообще есть. «нет у нас на территории улицы лермонтова» и
+    «лермонтова улица» уходили к модели как «Валерий» и «Любовь» — место
+    превращалось в несуществующего человека, и это хуже лишней маски. Оба
+    вхождения размечены `place`, оба закрыты этим сторожем.
+
+    ЧИТАЕТСЯ РОВНО ОДИН СОСЕД С КАЖДОЙ СТОРОНЫ, и он обязан быть соседом
+    НАСТОЯЩИМ: между ним и спаном только пробел или дефис. Запятая, точка,
+    тире, скобка и перевод строки закрывают оговорку. В «на территории улицы
+    лермонтова» это работает без окна вовсе: сосед «лермонтова» — само «улицы»,
+    а «на территории» остаётся прозой и в свидетельство не берётся.
+
+    ЧЕГО ЭТОТ СТОРОЖ НЕ ДЕЛАЕТ. Он не забирает спан у ЗАГЛАВНОГО слова
+    (вызывающий пропускает такие слова мимо сторожа — как «счёт на Гагарина»),
+    не отменяет `_STREET_REF_NUMBER` и не трогает ярусы стемов, которым номер
+    дома нужен как опора. Он только ОТКАЗЫВАЕТ строчной словарной ветке, а
+    решает дальше `_resolve`: у адресной ветки приоритет выше
+    (`ADDR 4 > NAME 3`), так что настоящий адрес остаётся адресом.
+    """
+    if not ASSETS.get().address.street_type_nohouse:
+        return False
+    left = _adjacent_word(text, start, -1)
+    right = _adjacent_word(text, end, +1)
+    return any(_street_type_word(word) for word in (left, right) if word)
+
+
 def _street_reference(text: str, start: int, end: int) -> bool:
     """«на ленина торговый центр» — это улица, а не человек.
 
@@ -1585,6 +1819,19 @@ def gazetteer_names(text: str) -> list[Span]:
             continue
         if _name_set_hit(word, low, lemmas, before, names):
             spans.append(Span(match.start(), match.end(), "NAME", word))
+        elif _latin_dictionary_hit(text, match.start(), match.end(), word, low,
+                                   before, names):
+            # ЛАТИНИЦА — НЕ ОТДЕЛЬНАЯ ВЕТКА, А ТОТ ЖЕ СЛОВАРНЫЙ ПУТЬ. Здесь она
+            # судится СЛОВОМ, и потому порядок слов в прогоне перестаёт быть
+            # свидетельством. Склейка соседей ниже (`_merge_adjacent`) собирает
+            # из найденных слов один спан — прогон перестал быть детектором и
+            # стал соединителем.
+            spans.append(Span(match.start(), match.end(), "NAME", word))
+        elif _anchored_surname(text, match.start(), word, low, names):
+            # СТРОЧНАЯ ФАМИЛИЯ, КОТОРОЙ СЛОВАРЬ НЕ ДАЁТ СПАНА, А ЯКОРЬ ДАЁТ.
+            # «от аленчиев» — то же правило, что у адресной ветки: роль слова
+            # решает то, что стоит ПЕРЕД ним (см. `_anchored_surname`).
+            spans.append(Span(match.start(), match.end(), "NAME", word))
         elif (word[:1].isupper() or _lowercase_dictionary_ok(word, low)) and (
             # СТОРОЖ ОТНОСИТСЯ ТОЛЬКО К СТРОЧНОЙ СЛОВАРНОЙ ВЕТКЕ, ради которой
             # и заведён. Стоя выше, он отключал и семенной список, и ветку с
@@ -1602,6 +1849,7 @@ def gazetteer_names(text: str) -> list[Span]:
             not (word[:1].islower()
                  and not any(cue in before for cue in names.cues)
                  and (_street_reference(text, match.start(), match.end())
+                      or _street_type_adjacent(text, match.start(), match.end())
                       or _saint_reference(text, match.start())))
         ) and (
             low in names.dict_first or low in names.dict_surnames

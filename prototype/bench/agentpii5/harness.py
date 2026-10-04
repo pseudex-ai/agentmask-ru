@@ -67,7 +67,8 @@ from bench.agentpii4.compare import ArmRun, ObservedCall, substitutes_for
 from bench.agentpii4.gateway import HarnessError, PassThrough, RealGateway
 from bench.agentpii4.mock import CallLog
 from bench.agentpii4.records import ArmMeta, arm_record
-from bench.agentpii4.schema import ARMS, EXCLUDED_TERMINATIONS, Case, Ladder, tier
+from bench.agentpii4.schema import ARMS, EXCLUDED_TERMINATIONS, Case, Ladder, PiiItem, tier
+from bench.agentpii4.writer import WriterError
 from bench.agentpii5 import build as corpus_build
 from bench.agentpii5 import provider
 from bench.agentpii5 import records as r
@@ -76,17 +77,27 @@ from bench.agentpii5 import reportjson
 from bench.agentpii5 import runinfo
 from bench.agentpii5.codex_connector import CodexJudgeConnector, CodexSettings
 from bench.agentpii5.connectors import (
-    AgentConnector, ConnectorError, Json, ToolResult, ToolSpec, json_object)
+    AgentConnector, Json, ToolResult, ToolSpec, json_object)
 from bench.agentpii5.deepseek_connector import DeepSeekConnector, DeepSeekSettings
 from bench.agentpii5.calibration import write_stamp
 from bench.agentpii5.contracts import (
     AGENT_MODEL, BENCHMARK, ECHO_TAG_PREFIX, JUDGE_MODEL, QUERY_CAP_USD, RETRIES, ArmRunV5,
     CalibrationStamp, CaseV5, HopObservation, JudgeRow, JudgeVerdict,
-    MentionRecord, ToolResultRecord)
+    MentionRecord, ModelResponse, ModelTrace, ToolResultRecord)
 from bench.agentpii5.judge import (
     JUDGE_TEMPERATURE, ConnectedJudgeConfig, JudgeConfig, LeakedPrompt, OracleLeak, build_prompt, judge_input,
     judge_prompt, masked_dialogue, prompt_sha256, residual_pregate_of)
 from bench.agentpii5.mock import BackendV5, seed_backend_v5
+
+
+def _backend_for(case: CaseV5):
+    """The mock backend for a case: v6 cases seed `v6_record` rows and need the v6
+    backend (imported lazily so the v5 path never widens the tool registry)."""
+    if any(record.table == "v6_record" for record in case.base.seed_records):
+        from bench.agentpii5.mock_v6 import seed_backend_v6  # local: v6 registry
+        return seed_backend_v6(case)
+    return seed_backend_v5(case)
+from bench.agentpii5 import payload_canaries as canaries
 from bench.agentpii5.observe import observe
 from bench.agentpii5.schema import case_v5_from_json, case_v5_to_json, corpus_digest_v5
 from pseudex.audit import AuditLog
@@ -94,6 +105,7 @@ from pseudex.detect_all import Detector
 from pseudex.maskcache import MaskCache
 from pseudex.morph_places import strip_leading_city
 from pseudex.redact import StreamDetokenizer, unmask_text
+from pseudex import vault
 from pseudex.vault import Vault
 from testkit import load_dev_bundle
 
@@ -113,6 +125,46 @@ JUDGE_SKIPPED_BUDGET: str = "судья пропущен (потолок)"
 # by construction. 16 would split «+7 900 000-00-00» the same way on every
 # phone in the corpus and a carry bug would hide behind the regularity.
 STREAM_CHUNK: int = 17
+# THE PER-CONVERSATION TOOL-CALL BUDGET. A long `sequential_chain` case makes
+# more calls than `3 * len(user turns) + 10` — search → read → write, with the
+# model's own retries and parallel calls on top — and that hardcoded floor was
+# excluding honest chains as `ConnectorLimit("tool call limit reached")`. The
+# guard must sit far above any honest chain, while `--agent-turn-limit` (the
+# request count) and the per-case timeout still bound a stuck model.
+DEFAULT_MAX_CALLS: int = 4096
+
+
+# DeepSeek rejects `max_tokens` above this ("the valid range of max_tokens is
+# [1, 393216]"), so the per-response cap must stay inside it even when the
+# operator asked for a larger session budget.
+DEEPSEEK_MAX_OUTPUT_TOKENS = 393216
+
+
+def deepseek_max_output_tokens(connector_max_tokens: int) -> int:
+    """The per-response output cap: the session token budget, NOT a fraction of it.
+
+    `max_tokens` bounds the cumulative SESSION — input plus output across every
+    request of one conversation (`deepseek_connector.py` checks it after each
+    response). `max_output_tokens` bounds ONE response's output. The old
+    `min(16000, …)` floor cut long mail chains short mid-answer
+    (`DeepSeek response ended incomplete`); one response may legitimately grow to
+    the session budget while the session check still holds the whole conversation
+    to it.
+    """
+    return min(connector_max_tokens, DEEPSEEK_MAX_OUTPUT_TOKENS)
+
+
+def scaled_timeout(case: Case, scale: float) -> float:
+    """v4's per-case timeout, scaled by `--timeout-scale`.
+
+    v5 calls `v4_harness._timeout(case)` in THREE places — `converse(...,
+    timeout_s=...)`, `asyncio.wait_for(drive(), timeout=...)` and the `timeout`
+    arm's reason — and the three must multiply by the SAME scale, or a run's
+    record and its actual deadline disagree about how long the model had. v4's
+    own `_timeout` stays untouched: it is the baseline the treatment arm is
+    measured against, and the control arms still run under it.
+    """
+    return v4_harness._timeout(case) * scale
 
 
 @dataclass
@@ -129,6 +181,12 @@ class TripleResult:
     hops: tuple[HopObservation, ...]
     judge: JudgeRow | None
     triple: dict[str, object]
+    # S02 CAPTURE: what the gateway handed each boundary, per (case, repeat), so
+    # `drive_v5` can persist it. Empty for a triple that never reached the
+    # intervention arm (a budget refusal, an excluded C), and empty for a caller
+    # that built a `TripleResult` by hand — a canned row honestly measures
+    # nothing, which is what NOT_MEASURED says.
+    captures: tuple[canaries.RunCapture, ...] = ()
 
 
 class TripleRunner(Protocol):
@@ -144,6 +202,55 @@ class TripleRunner(Protocol):
 
 # --- the gateway that also remembers ----------------------------------------------------
 
+def _declared_surfaces(case: CaseV5, item: PiiItem) -> tuple[str, ...]:
+    """Original literals the case declared before the gateway processed it."""
+    out: list[str] = [item.value, item.canonical]
+    where = item.where
+    if where.kind == "message" and 0 <= where.msg < len(case.base.messages):
+        content = case.base.messages[where.msg].content
+        out.append(content[where.start:where.end])
+    return tuple(dict.fromkeys(value for value in out if value))
+
+
+def _manifest_at_delivery(case: CaseV5, manifest: canaries.CanaryManifest,
+                          boundary: str, original: str) -> canaries.CanaryManifest:
+    """Place case-declared literals using the raw payload before masking output.
+
+    The detector, replacement spans and delivered bytes never select a canary.
+    A declared ordinary value selects a neighbour on the same boundary.
+    """
+    if not original:
+        return manifest
+    specs = list(manifest.canaries)
+    positions = {one.id: index for index, one in enumerate(specs)}
+    context = {"tool_result": "result", "tool_error": "error",
+               "tool_args": "argument", "final_answer": "answer",
+               "model_request": "request"}.get(boundary, "message")
+    for item in case.base.pii:
+        planted = tuple(canaries.PlantedSurface(value, canaries.SURFACE_FULL)
+                        for value in _declared_surfaces(case, item)
+                        if canaries.surface_in(original, value))
+        if not planted:
+            continue
+        canary_id = f"{item.id}@{boundary}"
+        if canary_id in positions:
+            index = positions[canary_id]
+            specs[index] = replace(specs[index], surfaces=tuple(dict.fromkeys(
+                specs[index].surfaces + planted)))
+        else:
+            positions[canary_id] = len(specs)
+            specs.append(canaries.CanarySpec(canary_id, item.type, boundary,
+                                             planted, "", context))
+    neighbours = list(manifest.neighbours)
+    present = {(one.boundary, one.text) for one in neighbours}
+    for ordinary in (*case.base.plain, *case.base.negatives):
+        value = ordinary.value
+        key = (boundary, value)
+        if value and key not in present and canaries.surface_in(original, value):
+            neighbours.append(canaries.Neighbour(boundary, value))
+            present.add(key)
+    return replace(manifest, canaries=tuple(specs), neighbours=tuple(neighbours))
+
 class GatewayV5(RealGateway):
     """v4's production-path gateway, plus the record `observe.py` reads.
 
@@ -157,7 +264,8 @@ class GatewayV5(RealGateway):
     """
 
     def __init__(self, case: CaseV5, detector: Detector, vault: Vault, audit: AuditLog,
-                 cache: MaskCache) -> None:
+                 cache: MaskCache, capture: bool = False,
+                 manifest: canaries.CanaryManifest | None = None) -> None:
         super().__init__(case.base, detector, vault, audit, cache)
         # ВОССТАНАВЛИВАЕМ ТЕМ ЖЕ VIEW, КОТОРЫМ МАСКИРОВАЛИ (G3.1). v4 masks
         # through `_view` (`MaskContext(vault=self._view)`) and restores through
@@ -183,6 +291,99 @@ class GatewayV5(RealGateway):
         self._requests = 0
         self._mentions: list[MentionRecord] = []
         self._results: list[ToolResultRecord] = []
+        # PAYLOAD CANARIES (S02). Off by default: a run that does not ask for
+        # the capture pays nothing. The composed request is taken from the
+        # production mask call itself; no second mask pass is needed.
+        # Candidate literals and ordinary neighbours come from the case. Their
+        # boundary placement is recorded from each raw payload at delivery.
+        self._capture = capture
+        self._auto_manifest = capture and manifest is None
+        self._manifest = (manifest if manifest is not None else
+                          canaries.CanaryManifest(canaries=(), source="case-construction")
+                          if capture else None)
+        self._payloads: list[canaries.CapturedPayload] = []
+
+    # --- the exact bytes this gateway delivered, at the moment it delivered them ------
+    #
+    # Five surfaces, and the S01 finding is why they are five: the user message
+    # was clean and the real value rode an ERROR payload nobody had a row for.
+    # The capture is taken from the SAME call that does the delivery, so it
+    # cannot describe a payload the model never saw.
+
+    def _capture_payload(self, name: str, text: str, real_text: str) -> None:
+        if self._capture:
+            if self._auto_manifest and self._manifest is not None:
+                self._manifest = _manifest_at_delivery(
+                    self._case5, self._manifest, name, real_text)
+            self._payloads.append(canaries.CapturedPayload(
+                name=name, text=text, real_text=real_text))
+
+    def note_final(self, raw_reply: str, restored: str) -> None:
+        """The two ends of the answer leg, both taken from the harness.
+
+        `text` is the model's OWN bytes — what the gateway hands the restorer;
+        `real_text` is what the customer receives. A real value in the first is
+        the leak (the model held it); its presence in the second and absence
+        from the first is the restore working, and the count says so."""
+        self._capture_payload("final_answer", raw_reply, restored or raw_reply)
+
+    def captured_payloads(self) -> tuple[canaries.CapturedPayload, ...]:
+        """Every payload the run delivered, plus the composed model-bound one.
+
+        THE COMPOSED REQUEST IS A BOUNDARY OF ITS OWN. Per-message capture proves
+        each message was masked; it cannot prove the transcript the provider is
+        actually sent is masked. `_on_masked_request` records the result of the
+        existing production mask call at every push, before later notes can
+        change the transcript or vault state.
+        """
+        return tuple(self._payloads)
+
+    def _on_masked_request(self, masked: list[dict[str, object]]) -> None:
+        self._capture_payload("model_request", json.dumps(masked, ensure_ascii=False),
+                              json.dumps(self._transcript, ensure_ascii=False))
+
+    def evidence(self) -> canaries.ProvenanceEvidence:
+        """Provenance from the OBSERVER RECORD, used ONLY to classify a leak.
+
+        `span_missed` compares the item's DECLARED range (construction) with the
+        spans the masking record holds — the record answers «what was replaced»,
+        the case answers «what should have been». This NEVER decides whether a
+        leak exists: `payload_canaries.scan` decides that from the manifest and
+        the delivered bytes, and the evidence only labels the result."""
+        return canaries.evidence_from_spans(
+            self._case5.base.pii, self.masked_spans(), self.substitutes_seen())
+
+    def canary_report(self) -> canaries.CanaryReport:
+        """The report for THIS run's delivered bytes — the real harness caller.
+
+        NO MANIFEST, NO MEASUREMENT: a gateway that was handed no construction-
+        time manifest reports NOT_MEASURED rather than reading a clean run off a
+        scan it cannot ground."""
+        if self._manifest is None:
+            return canaries.not_measured(
+                "the gateway carried no construction-time canary manifest")
+        return canaries.scan(self._manifest, self.captured_payloads(), self.evidence())
+
+    def capture(self, repeat: int) -> canaries.RunCapture:
+        """THIS triple's manifest and the exact bytes it delivered, packaged for
+        the run directory.
+
+        S02 CAPTURE. `captured_payloads()` is the gateway's own memory and dies
+        with the process; before `drive_v5` writes it to disk, a battery's bytes
+        existed only in the worker that produced them, and `check_run` could only
+        reconstruct them from `mentions` — the reconstruction the reviewer
+        refused. This method is the ONE place that pairs the manifest with the
+        delivered bytes, and both come from the run itself: the manifest was
+        handed in at case construction, the bytes were appended as they were
+        handed to the model. `repeat` is the arm's index and travels with the row
+        because ONE case is run K times and the K rows must not be merged into
+        one."""
+        if not self._capture or self._manifest is None:
+            raise canaries.CaptureError(
+                f"{self._case5.base.id}|{repeat}: payload capture was not enabled")
+        return canaries.RunCapture(case_id=self._case5.base.id, repeat=int(repeat),
+                                   arm="I", manifest=self._manifest,
+                                   delivered=self.captured_payloads())
 
     @property
     def request_index(self) -> int:
@@ -203,7 +404,31 @@ class GatewayV5(RealGateway):
         served = super()._push(wire, text, index)
         if index is not None:
             self._note_message_mentions(index)
+            # The model's own bytes in place of THIS message: `served` is what
+            # the provider is handed, `text` is what the customer wrote.
+            self._capture_payload("model_input", served, text)
         return served
+
+    def note_tool_call(self, name: str, arguments: dict[str, object]) -> None:
+        """PLUS the canary capture: the arguments AS THE AGENT WROTE THEM.
+
+        This is the leak surface — a real value here means the model held it.
+        The restore that follows is the product working (the TOOL is supposed to
+        get real values), so `restore_arguments` fills in the pre-mask text and
+        the count of hidden canaries comes from the difference."""
+        super().note_tool_call(name, arguments)
+        self._capture_payload("tool_args", json.dumps(arguments, ensure_ascii=False), "")
+
+    def restore_arguments(self, arguments: dict[str, object]):
+        restored, residual = super().restore_arguments(arguments)
+        if self._capture and self._payloads and self._payloads[-1].name == "tool_args":
+            self._payloads[-1] = replace(
+                self._payloads[-1], real_text=json.dumps(restored, ensure_ascii=False))
+            if self._auto_manifest and self._manifest is not None:
+                self._manifest = _manifest_at_delivery(
+                    self._case5, self._manifest, "tool_args",
+                    self._payloads[-1].real_text)
+        return restored, residual
 
     def _note_message_mentions(self, index: int) -> None:
         """What the model read in place of each item of THIS message.
@@ -234,6 +459,11 @@ class GatewayV5(RealGateway):
         """
         served = self.push_tool(name, log.result_text)
         masked = self._tool_results[-1]
+        # The text the MODEL read back, on the shape it read it: an error payload
+        # is its own boundary (S01), even though both cross the same leg.
+        forced = log.parsed is None and log.refusal is None
+        self._capture_payload("tool_error" if forced else "tool_result",
+                              masked.masked, masked.text)
         spans = {str(tag): (int(span[0]), int(span[1]))
                  for tag, span in log.result_spans.items()}
         self._results.append(ToolResultRecord(
@@ -246,7 +476,7 @@ class GatewayV5(RealGateway):
             # answered before the parser ran. A documented parse refusal is also
             # `error_with_value` (ruling R-18) but carries its `Refusal`, so the
             # two are told apart by the refusal and not by the form.
-            forced=log.parsed is None and log.refusal is None))
+            forced=forced))
         for tag, (start, end) in spans.items():
             item_id = tag[len(ECHO_TAG_PREFIX):] if tag.startswith(ECHO_TAG_PREFIX) else tag
             covering = next((piece for piece in masked.pieces
@@ -469,14 +699,24 @@ class ArmConnector(Protocol):
 class ClaudeArms:
     """Keep the existing Claude execution path available through the same interface."""
 
+    def __init__(self, timeout_scale: float = 1.0) -> None:
+        # `--timeout-scale`, carried here because the per-case timeout is a
+        # property of how ONE arm executes, not of the retry driver. The same
+        # value rides in `DrivePolicy.timeout_scale` (the run-level record) and
+        # in `meta.provider`; both arms and the policy are built from the one
+        # CLI flag in `main`, so they cannot drift.
+        self.timeout_scale = timeout_scale
+
     async def control(self, case: CaseV5, arm: str, repeat: int, backend: BackendV5,
                       model: str, cap: float, run_id: str) -> v4_harness.ArmOutcome:
-        return await _guarded_control(case, arm, repeat, backend, model, cap, run_id)
+        return await _guarded_control(case, arm, repeat, backend, model, cap, run_id,
+                                      self.timeout_scale)
 
     async def intervention(self, case: CaseV5, repeat: int, gateway: GatewayV5,
                            backend: BackendV5, model: str, cap: float,
                            run_id: str) -> ArmOutcomeV5:
-        return await _guarded_arm_v5(case, repeat, gateway, backend, model, cap, run_id)
+        return await _guarded_arm_v5(case, repeat, gateway, backend, model, cap, run_id,
+                                     self.timeout_scale)
 
 
 class GatewayHooks:
@@ -490,14 +730,65 @@ class GatewayHooks:
         self.calls: list[ObservedCall] = []
         self.turns: list[int] = []
         self.turn = -1
+        # THE PROVIDER CHRONOLOGY (Codex contract, 2026-09-27). `responses` is
+        # one entry per completed provider response the connector reported
+        # through `response`; `call_requests` maps each accepted call to the
+        # `request` of the response that emitted it. `_pending_request` is the
+        # response whose function calls are being processed RIGHT NOW, and
+        # `_unmapped` records a call that arrived with no reported response —
+        # such an arm yields `None`, never a manufactured request.
+        self.responses: list[ModelResponse] = []
+        self.call_requests: list[int] = []
+        self._pending_request: int | None = None
+        self._unmapped_call = False
 
     def user(self, index: int) -> str:
         self.turn = index
+        # A call that arrives before THIS turn's first reported response has no
+        # response to belong to. Clearing here makes such a call an UNMAPPED one
+        # instead of letting it silently inherit the previous turn's ordinal.
+        self._pending_request = None
         return self.gateway.push_user(index)
 
     def assistant(self, text: str) -> None:
         if text:
             self.gateway.note(text)
+
+    def response(self, text: str) -> None:
+        """One COMPLETED provider response, BEFORE its function calls run.
+
+        Called even when `text` is empty: a pure tool-call turn returned no
+        prose and that is an observation, not an absence. `available_results`
+        is the number of accepted results already in hand — the count the two
+        calls of ONE response both see, and which the NEXT response sees raised
+        by them. `restored` goes through the gateway's CURRENT state, the same
+        object `answer_leg` will use for the final reply.
+        """
+        request = len(self.responses) + 1
+        self.responses.append(ModelResponse(
+            request=request, turn=self.turn, available_results=len(self.calls),
+            raw=text, restored=self.gateway.restore_text(text)))
+        self._pending_request = request
+
+    def model_trace(self) -> ModelTrace | None:
+        """The chronology, or None only when the connector never reported one.
+
+        NO RESPONSE AT ALL is the legacy connector (Claude, a double): there is
+        no chronology to report and `None` is the honest answer, even if it made
+        calls. But ANY response means this connector speaks the hook, so a call
+        it could not place, or a count that does not line up, is BROKEN
+        chronology rather than silence — `None` there would erase the evidence.
+        """
+        if not self.responses:
+            return None
+        if self._unmapped_call:
+            raise HarnessError(
+                "model_trace: a tool call arrived with no reported provider response")
+        if len(self.call_requests) != len(self.calls):
+            raise HarnessError(f"model_trace: {len(self.call_requests)} mapped calls for "
+                               f"{len(self.calls)} recorded calls")
+        return ModelTrace(responses=tuple(self.responses),
+                          call_requests=tuple(self.call_requests))
 
     def tool(self, name: str, arguments: dict[str, Json]) -> ToolResult:
         written: dict[str, object] = dict(arguments)
@@ -512,6 +803,13 @@ class GatewayHooks:
             refusal_rule=log.refusal.rule if log.refusal else '', parsed=log.parsed,
             seq=len(self.calls) + 1))
         self.turns.append(self.turn)
+        # EACH ACCEPTED CALL MAPS TO THE RESPONSE THAT EMITTED IT. Two calls of
+        # one response share its `request`; the second one did NOT see the
+        # first's result (`available_results` was fixed before either ran).
+        if self._pending_request is None:
+            self._unmapped_call = True
+        else:
+            self.call_requests.append(self._pending_request)
         if isinstance(self.gateway, GatewayV5):
             served = self.gateway.push_call(name, log, self.backend.form_of(log.seq),
                                            self.turn, ordinal)
@@ -532,26 +830,39 @@ def connector_tools(schemas: list[dict[str, object]]) -> tuple[ToolSpec, ...]:
 class ConnectedArms:
     """Run all three arms through one injected model connector."""
 
-    def __init__(self, connector: AgentConnector) -> None:
+    def __init__(self, connector: AgentConnector, max_calls: int = DEFAULT_MAX_CALLS,
+                 timeout_scale: float = 1.0) -> None:
         self.connector = connector
+        self.max_calls = max_calls
+        # `--timeout-scale`: same comment as `ClaudeArms` — the per-case timeout
+        # is an arm-execution property, so the connector carries the scale it
+        # hands to `converse(... timeout_s=...)`.
+        self.timeout_scale = timeout_scale
 
     async def _run(self, case: CaseV5, arm: str, repeat: int,
                    gateway: GatewayV5 | PassThrough, backend: BackendV5,
-                   model: str, cap: float) -> tuple[v4_harness.ArmOutcome, ArmRunV5 | None]:
-        hooks = GatewayHooks(case, gateway, backend)
+                   model: str, cap: float,
+                   hooks: GatewayHooks | None = None) -> tuple[v4_harness.ArmOutcome, ArmRunV5 | None]:
+        if hooks is None:
+            hooks = GatewayHooks(case, gateway, backend)
         system = gateway.push_system(case.base.messages[0].content)
         tools = connector_tools(gateway.tools())
         indices = tuple(i for i, message in enumerate(case.base.messages)
                         if message.role == 'user')
         result = await self.connector.converse(system, tools, indices, hooks,
-                                               v4_harness._timeout(case.base),
-                                               3 * len(indices) + 10)
+                                               scaled_timeout(case.base, self.timeout_scale),
+                                               self.max_calls)
         if gateway.faults:
             raise HarnessError(f'{case.base.id}/{arm}: {gateway.faults[0]}')
         raw = next((reply for reply in reversed(result.replies) if reply.strip()), '')
         leg = (answer_leg(raw, case.streaming, gateway.vault, gateway.restore_text)
                if isinstance(gateway, GatewayV5) else None)
         reply = leg.reply if leg else gateway.restore_text(raw)
+        # THE CANARY BOUNDARY THE HARNESS ALONE CAN NAME: the model's own bytes
+        # and the customer's restored answer, both taken here — in the real
+        # caller — so the capture cannot be driven by a test-only path.
+        if isinstance(gateway, GatewayV5):
+            gateway.note_final(raw, reply)
         base = ArmRun(case_id=case.base.id, arm=arm, repeat=repeat, calls=tuple(hooks.calls),
                       state=backend.snapshot(), reply=reply, termination='done',
                       cost_usd=result.usage.cost_usd,
@@ -568,7 +879,11 @@ class ConnectedArms:
                       tool_results=gateway.tool_records(), mentions=gateway.mentions(),
                       turn_replies=restored_turn_replies(result.replies, turn_restorer(case, gateway)),
                       call_turns=tuple(hooks.turns), request_count=gateway.request_index,
-                      stream_mismatch=leg.mismatch, reply_whole=leg.reply_whole, turn_residual=0)
+                      stream_mismatch=leg.mismatch, reply_whole=leg.reply_whole, turn_residual=0,
+                      # The provider chronology, if this connector reported it.
+                      # None (not a guess) for a connector that never called
+                      # `response`.
+                      model_trace=hooks.model_trace())
         return outcome, run
 
     async def control(self, case: CaseV5, arm: str, repeat: int, backend: BackendV5,
@@ -577,33 +892,45 @@ class ConnectedArms:
             outcome, _ = await self._run(case, arm, repeat, PassThrough(case.base),
                                           backend, model, cap)
             return outcome
-        except (ConnectorError, asyncio.TimeoutError) as error:
-            kind = 'timeout' if isinstance(error, asyncio.TimeoutError) else 'harness_error'
-            return v4_harness._failed_arm(case.base, arm, repeat, kind,
+        except asyncio.TimeoutError as error:
+            # OUR OWN `wait_for` deadline on the connector — a verdict, not a
+            # blip. ConnectorError (DeepSeek cut the reply) is NOT caught here:
+            # it is a RuntimeError, so it falls to the guard below and
+            # `arm_verdict` re-raises it as a transient blip for §1.4's retry.
+            return v4_harness._failed_arm(case.base, arm, repeat, 'timeout',
                                          type(error).__name__ + ': ' + str(error), cap, cap, run_id)
         except (HarnessError, OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
-            return arm_verdict(case.base, arm, repeat, error, cap, run_id)
+            return arm_verdict(case.base, arm, repeat, error, cap, run_id, self.timeout_scale)
 
     async def intervention(self, case: CaseV5, repeat: int, gateway: GatewayV5,
                            backend: BackendV5, model: str, cap: float,
                            run_id: str) -> ArmOutcomeV5:
+        # The hooks are owned HERE, not inside `_run`: an error must still yield
+        # the calls, state and results the arm produced before it failed, never
+        # the empty record that once claimed a gateway_5xx arm did nothing.
+        hooks = GatewayHooks(case, gateway, backend)
         try:
-            outcome, run = await self._run(case, 'I', repeat, gateway, backend, model, cap)
+            outcome, run = await self._run(case, 'I', repeat, gateway, backend,
+                                           model, cap, hooks=hooks)
             if run is None:
                 raise HarnessError('intervention did not record observations')
             return ArmOutcomeV5(outcome, run)
-        except (ConnectorError, asyncio.TimeoutError) as error:
-            kind = 'timeout' if isinstance(error, asyncio.TimeoutError) else 'harness_error'
-            outcome = v4_harness._failed_arm(case.base, 'I', repeat, kind,
+        except asyncio.TimeoutError as error:
+            # Same line as `control`: our deadline is a verdict, ConnectorError
+            # is a transient blip re-raised by `arm_verdict` below.
+            outcome = v4_harness._failed_arm(case.base, 'I', repeat, 'timeout',
                                            type(error).__name__ + ': ' + str(error), cap, cap, run_id)
-            return ArmOutcomeV5(outcome, _empty_run(case, repeat))
         except (HarnessError, OSError, ValueError, KeyError, TypeError, RuntimeError) as error:
-            return ArmOutcomeV5(arm_verdict(case.base, 'I', repeat, error, cap, run_id),
-                                _empty_run(case, repeat))
+            outcome = arm_verdict(case.base, 'I', repeat, error, cap, run_id, self.timeout_scale)
+        return ArmOutcomeV5(
+            outcome,
+            _partial_run_v5(case, gateway, backend, hooks, repeat,
+                            outcome.run.termination, outcome.run.cost_usd))
 
 
 async def run_arm_v5(case: CaseV5, arm: str, repeat: int, gateway: GatewayV5,
-                     backend: BackendV5, model: str, cap: float, run_id: str) -> ArmOutcomeV5:
+                     backend: BackendV5, model: str, cap: float, run_id: str,
+                     timeout_scale: float = 1.0) -> ArmOutcomeV5:
     """The GATEWAY arm of one case against the real model.
 
     Only the gateway arm: a control has no substitutes to observe, so it runs
@@ -661,7 +988,7 @@ async def run_arm_v5(case: CaseV5, arm: str, repeat: int, gateway: GatewayV5,
                 if joined:
                     gateway.note(joined)
 
-    await asyncio.wait_for(drive(), timeout=v4_harness._timeout(case.base))
+    await asyncio.wait_for(drive(), timeout=scaled_timeout(case.base, timeout_scale))
     if gateway.faults:
         raise HarnessError(f"{case.base.id}/{arm}: {gateway.faults[0]}")
     if result is None:
@@ -705,31 +1032,37 @@ async def run_arm_v5(case: CaseV5, arm: str, repeat: int, gateway: GatewayV5,
                    # `with_turn_residual`. Guessing it here would mean masking
                    # the dialogue twice, once for a number and once for the
                    # judge, and two spellings of one scan is how they drift.
-                   turn_residual=0)
+                   turn_residual=0,
+                   # THE CLAUDE LEG HAS NO PROVIDER CHRONOLOGY. It runs through
+                   # the Agent SDK, which reports no per-response boundary, so
+                   # the field is an explicit None rather than a manufactured
+                   # request per call.
+                   model_trace=None)
     return ArmOutcomeV5(v4_harness.ArmOutcome(base, meta), run)
 
 
-def transport_blip(error: BaseException) -> bool:
-    """Обрыв провайдера НА ПЛЕЧЕ — и никогда наш собственный дедлайн (§1.4).
+def transient_blip(error: BaseException) -> bool:
+    """Флаки-отказ провайдера НА ПЛЕЧЕ — и никогда наш собственный дедлайн (§1.4).
 
-    `runinfo.is_transport_error` держит закрытую таблицу имён классов SDK плюс
-    `ConnectionError` и `TimeoutError`. На плече второй из встроенных надо
-    вычесть: `run_arm_v5` и v4's `run_arm` ограничивают плечо собственным
-    `asyncio.wait_for`, а `asyncio.TimeoutError is TimeoutError` начиная с
-    3.11 — то есть дедлайн, который мы поставили сами, неотличим по типу от
-    таймаута провайдера. Повторять его трижды значит трижды прождать
-    `_timeout(case)` секунд и заплатить три потолка за одно зависшее плечо, а
-    у него уже есть честный ответ — v4's `timeout` с полным начислением.
-    Собственный таймаут SDK приходит СВОИМ классом (`APITimeoutError`), он в
-    таблице имён и повторяется.
+    `runinfo.is_transient_error` держит транспорт (`is_transport_error` — закрытая
+    таблица имён классов SDK плюс `ConnectionError`/`TimeoutError`) И три
+    флаки-класса (`ConnectorError`/`ConnectorLimit`/`WriterError`). На плече
+    встроенный `TimeoutError` надо вычесть: `run_arm_v5` и v4's `run_arm`
+    ограничивают плечо собственным `asyncio.wait_for`, а
+    `asyncio.TimeoutError is TimeoutError` начиная с 3.11 — то есть дедлайн,
+    который мы поставили сами, неотличим по типу от таймаута провайдера.
+    Повторять его значит заново прождать `_timeout(case)` секунд и заплатить
+    потолок за одно зависшее плечо, а у него уже есть честный ответ — v4's
+    `timeout` с полным начислением. Собственный таймаут SDK приходит СВОИМ
+    классом (`APITimeoutError`), он в таблице имён и повторяется.
     """
     if isinstance(error, asyncio.TimeoutError):
         return False
-    return runinfo.is_transport_error(error)
+    return runinfo.is_transient_error(error)
 
 
 def arm_verdict(case: Case, arm: str, repeat: int, broken: BaseException, cap: float,
-                run_id: str) -> v4_harness.ArmOutcome:
+                run_id: str, timeout_scale: float = 1.0) -> v4_harness.ArmOutcome:
     """Вердикт v4 по исключению ОДНОГО плеча — одно место на все три.
 
     ОБРЫВ ПРОВАЙДЕРА ОТСЮДА УЛЕТАЕТ НАВЕРХ, и это вся починка §1.4: защита
@@ -748,11 +1081,11 @@ def arm_verdict(case: Case, arm: str, repeat: int, broken: BaseException, cap: f
     вызывающего не ловит `BaseException`, так что `CancelledError` и
     `KeyboardInterrupt` проходят насквозь, как и раньше.
     """
-    if transport_blip(broken):
+    if transient_blip(broken):
         raise broken
     if isinstance(broken, asyncio.TimeoutError):
         return v4_harness._failed_arm(case, arm, repeat, "timeout",
-                                      f"таймаут {v4_harness._timeout(case):.0f}s",
+                                      f"таймаут {scaled_timeout(case, timeout_scale):.0f}s",
                                       cap, cap, run_id)
     if isinstance(broken, HarnessError):
         return v4_harness._failed_arm(case, arm, repeat, "harness_error",
@@ -767,7 +1100,8 @@ def arm_verdict(case: Case, arm: str, repeat: int, broken: BaseException, cap: f
 
 
 async def _guarded_arm_v5(case: CaseV5, repeat: int, gateway: GatewayV5, backend: BackendV5,
-                          model: str, cap: float, run_id: str) -> ArmOutcomeV5:
+                          model: str, cap: float, run_id: str,
+                          timeout_scale: float = 1.0) -> ArmOutcomeV5:
     """Never raises for one arm — EXCEPT on a provider blip, which §1.4's retry
     owns and which `arm_verdict` sends back up.
 
@@ -775,14 +1109,16 @@ async def _guarded_arm_v5(case: CaseV5, repeat: int, gateway: GatewayV5, backend
     ledger that books it at zero lets the next case spend money already gone).
     """
     try:
-        return await run_arm_v5(case, "I", repeat, gateway, backend, model, cap, run_id)
+        return await run_arm_v5(case, "I", repeat, gateway, backend, model, cap, run_id,
+                                timeout_scale)
     except Exception as broken:      # noqa: BLE001 — `arm_verdict` re-raises what is not ours
-        failed = arm_verdict(case.base, "I", repeat, broken, cap, run_id)
+        failed = arm_verdict(case.base, "I", repeat, broken, cap, run_id, timeout_scale)
     return ArmOutcomeV5(failed, _empty_run(case, repeat))
 
 
 async def _guarded_control(case: CaseV5, arm: str, repeat: int, backend: BackendV5,
-                           model: str, cap: float, run_id: str) -> v4_harness.ArmOutcome:
+                           model: str, cap: float, run_id: str,
+                           timeout_scale: float = 1.0) -> v4_harness.ArmOutcome:
     """Плечо контроля — v4's `run_arm` под НАШИМ стражем.
 
     v4's `_guarded_arm` делает то же самое, но обрыв провайдера у него никуда
@@ -790,12 +1126,16 @@ async def _guarded_control(case: CaseV5, arm: str, repeat: int, backend: Backend
     что зовём v4's `run_arm` (его опции, его таймаут, его запись) и отдаём
     исключение общему `arm_verdict`: контрольные плечи ходят в ту же модель и
     моргает провайдер на них ровно так же, как на плече шлюза.
+
+    `timeout_scale` сюда НЕ доезжает до v4's `run_arm` (тот сам зовёт v4's
+    `_timeout` — базлайн не двигается); он нужен только `arm_verdict`, чтобы
+    сообщение «таймаут …s» в записи назвало тот же дедлайн, что и плечо I.
     """
     try:
         return await v4_harness.run_arm(case.base, arm, repeat, PassThrough(case.base),
                                         backend, model, cap, run_id)
     except Exception as broken:      # noqa: BLE001 — `arm_verdict` re-raises what is not ours
-        return arm_verdict(case.base, arm, repeat, broken, cap, run_id)
+        return arm_verdict(case.base, arm, repeat, broken, cap, run_id, timeout_scale)
 
 
 def _empty_run(case: CaseV5, repeat: int) -> ArmRunV5:
@@ -803,7 +1143,38 @@ def _empty_run(case: CaseV5, repeat: int) -> ArmRunV5:
                   termination="harness_error", cost_usd=0.0, substitutes={}, masked_spans={})
     return ArmRunV5(base=base, reply_raw="", control_reply="", tool_results=(), mentions=(),
                     turn_replies=(), call_turns=(), request_count=0, stream_mismatch=False,
-                    reply_whole="", turn_residual=0)
+                    reply_whole="", turn_residual=0, model_trace=None)
+
+
+def _partial_run_v5(case: CaseV5, gateway: GatewayV5, backend: BackendV5,
+                    hooks: GatewayHooks, repeat: int, termination: str,
+                    cost_usd: float) -> ArmRunV5:
+    """The observations an arm made BEFORE an error, never an empty record.
+
+    `_empty_run` is correct only for an arm that never started. A gateway_5xx
+    or a connector error raised AFTER calls executed otherwise erases the
+    created/cancelled orders from the main record while the capture still proves
+    they happened — the long_order-012 contradiction (three accepted/cancelled
+    orders under calls=[], v5=None). State, calls, tool results, mentions and
+    chronology are preserved; the final reply stays empty because none was
+    produced. `model_trace` can be unbuildable when a call arrived with no
+    reported response — that is a separate chronology fault and must not erase
+    the preserved operations, so it degrades to None rather than failing again.
+    """
+    base = ArmRun(case_id=case.base.id, arm="I", repeat=repeat,
+                  calls=tuple(hooks.calls), state=backend.snapshot(), reply="",
+                  termination=termination, cost_usd=cost_usd,
+                  substitutes=substitutes_for(case.base, gateway.substitutes_seen()),
+                  masked_spans=gateway.masked_spans())
+    try:
+        trace = hooks.model_trace()
+    except HarnessError:
+        trace = None
+    return ArmRunV5(base=base, reply_raw="", control_reply="",
+                    tool_results=gateway.tool_records(), mentions=gateway.mentions(),
+                    turn_replies=(), call_turns=tuple(hooks.turns),
+                    request_count=gateway.request_index, stream_mismatch=False,
+                    reply_whole="", turn_residual=0, model_trace=trace)
 
 
 # --- one triple ---------------------------------------------------------------------------
@@ -982,7 +1353,7 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
         # records' OWN writer (R-54), because the report reads them through
         # records' reader and a row spelled here by hand is a second schema.
         **r.triple_totals_to_json(triple_totals(None, 0)),
-        "status": "refused", "reason": "", "arms": {}, "judge": {}}
+        "status": "refused", "reason": "", "attempts": 1, "arms": {}, "judge": {}}
     try:
         await ledger.reserve(cap * 3)
     except v3_judge.BudgetExhausted as exhausted:
@@ -995,8 +1366,12 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
     judged: JudgeRow | None = None
     spent = 0.0
     turn_residual = 0
+    # S02 CAPTURE. The gateway constructs canaries from case-declared literals
+    # and records placement from each raw payload at delivery. The real runner
+    # persists both manifest and delivered bytes after intervention.
+    captures: tuple[canaries.RunCapture, ...] = ()
     try:
-        control = await arms.control(case, "C", repeat, seed_backend_v5(case),
+        control = await arms.control(case, "C", repeat, _backend_for(case),
                                          model, cap, run_id)
         outcomes.append(control)
         spent += control.run.cost_usd
@@ -1005,12 +1380,17 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
             triple["reason"] = f"C: {control.run.termination} {control.meta.reason}".strip()
             return TripleResult(outcomes, None, (), None, triple)
         gateway = GatewayV5(case, detector, Vault(":memory:", _ORG), AuditLog(":memory:"),
-                            MaskCache(256))
+                            MaskCache(256), capture=True)
         intervention, second = await asyncio.gather(
-            arms.intervention(case, repeat, gateway, seed_backend_v5(case), model, cap, run_id),
-            arms.control(case, "C2", repeat, seed_backend_v5(case), model, cap, run_id))
+            arms.intervention(case, repeat, gateway, _backend_for(case), model, cap, run_id),
+            arms.control(case, "C2", repeat, _backend_for(case), model, cap, run_id))
         outcomes.extend((intervention.base, second))
         spent += intervention.base.run.cost_usd + second.run.cost_usd
+        # THE CAPTURE IS TAKEN FROM THE ARM THAT ACTUALLY RAN THE GATEWAY, after
+        # it returned, and it is taken whether the judge spoke or not: a triple
+        # the judge refused still delivered bytes, and «the judge was skipped» is
+        # not «the model was sent nothing».
+        captures = (gateway.capture(repeat),)
         excluded = [one.run.arm for one in outcomes if one.run.termination in EXCLUDED_TERMINATIONS]
         triple["status"] = "excluded" if excluded else "complete"
         triple["reason"] = " · ".join(
@@ -1059,7 +1439,7 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
                                         "cost_usd": round(one.run.cost_usd, 6),
                                         "calls": len(one.run.calls), "reason": one.meta.reason}
                           for one in outcomes}
-    return TripleResult(outcomes, gateway_run, hops, judged, triple)
+    return TripleResult(outcomes, gateway_run, hops, judged, triple, captures)
 
 
 def judge_summary(verdict: JudgeVerdict) -> dict[str, object]:
@@ -1140,12 +1520,20 @@ class DrivePolicy:
     `expected_per_case_usd` — точка оценки §1.1, делённая на тройки; ноль
     означает «оценки не было», и тогда стоп-кран не вооружён (см.
     `runinfo.brake_verdict`), а не срабатывает наугад.
+
+    `timeout_scale` — множитель per-case таймаута (`--timeout-scale`). Это
+    свойство ИСПОЛНЕНИЯ плеча, а не повтора, поэтому до мест исполнения его
+    несёт коннектор (`ClaudeArms`/`ConnectedArms`); здесь поле живёт как
+    запись настройки прогона рядом с остальными ручками драйвера, и в
+    `main` оно берётся из того же флага, что и коннектор.
     """
 
     attempts: int
+    base_s: float
     pause: Callable[[float], Awaitable[None]]
     jitter: Callable[[], float]
     expected_per_case_usd: float
+    timeout_scale: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -1184,32 +1572,41 @@ def transport_triple(case: CaseV5, repeat: int, attempts: int, error: str) -> di
             "cost_usd": 0.0, **r.triple_totals_to_json(triple_totals(None, 0)),
             "status": "excluded",
             "reason": f"{runinfo.TRANSPORT_TERMINATED}: {error} (попыток {attempts})",
-            "arms": {}, "judge": {}}
+            "attempts": attempts, "arms": {}, "judge": {}}
 
 
 async def run_with_retries(run_one: TripleRunner, case: CaseV5, repeat: int,
                            policy: DrivePolicy) -> TripleResult:
-    """Одна тройка с повтором на обрыве провайдера — экспоненциальный отступ с
-    джиттером, `policy.attempts` попыток, потом `TransportExhausted`.
+    """Одна тройка с повтором на флаки-отказе — экспоненциальный отступ с
+    джиттером (`policy.base_s` как первый отступ), `policy.attempts` попыток,
+    потом `TransportExhausted`.
 
-    `except Exception` здесь НЕ глотает ничего: всё, что не признано обрывом
-    транспорта (`runinfo.is_transport_error` — закрытая таблица имён классов),
-    поднимается дальше немедленно. Повторять наш собственный дефект три раза с
-    отступом значит трижды подождать перед тем же отказом и спрятать причину
-    за словом «транспорт».
+    `except Exception` здесь НЕ глотает ничего: всё, что не признано флаки
+    (`runinfo.is_transient_error` — транспорт + ConnectorError/ConnectorLimit +
+    WriterError), поднимается дальше немедленно. Повторять наш собственный
+    дефект с отступом значит несколько раз подождать перед тем же отказом и
+    спрятать причину за словом «флаки».
+
+    ПОВТОР НЕ ПЛОДИТ СТРОКИ. Возвращается ПЕРВЫЙ успешный `TripleResult` (его
+    `triple` и пишется в `<run>.triples.jsonl`), а сколько попыток на него ушло
+    штампуется в `triple["attempts"]`. Прерванные попытки не пишут ничего — это
+    та же тройка, а не новый repeat (`--repeats` — другое, K ПРОГОНОВ всех
+    троек).
     """
     last = ""
     for attempt in range(1, policy.attempts + 1):
         try:
-            return await run_one(case, repeat)
+            result = await run_one(case, repeat)
+            result.triple["attempts"] = attempt
+            return result
         except Exception as error:
-            if not runinfo.is_transport_error(error):
+            if not runinfo.is_transient_error(error):
                 raise
             last = f"{type(error).__name__}: {error}"
             print(f"  ОБРЫВ {case.base.id}|{repeat} попытка {attempt}/{policy.attempts}: {last}",
                   file=sys.stderr, flush=True)
             if attempt < policy.attempts:
-                await policy.pause(runinfo.backoff_seconds(attempt, policy.jitter()))
+                await policy.pause(runinfo.backoff_seconds(attempt, policy.jitter(), policy.base_s))
     raise TransportExhausted(last)
 
 
@@ -1230,6 +1627,12 @@ async def drive_v5(cases: Sequence[CaseV5], repeats: int, run_one: TripleRunner,
     hops_sink = r.run_file(run_dir, run_id, "<run>.hops.jsonl")
     judge_sink = r.run_file(run_dir, run_id, "<run>.judge.jsonl")
     triples_sink = r.run_file(run_dir, run_id, "<run>.triples.jsonl")
+    # S02 CAPTURE. NOT a `RUN_FILES` entry, and that is deliberate: the artifact
+    # holds the corpus's own delivered bytes, and `RUN_FILES` is the list a
+    # consumer iterates to build the run's outward documents. `records.run_file`
+    # refuses a name the contract does not know, which is the guard that keeps
+    # this file out of `<run>.meta.json`, `<run>.report.json` and
+    # `<run>.public.json` — a run's public JSON must never carry a corpus value.
     triples: list[dict[str, object]] = []
     total = len(jobs)
     done = 0
@@ -1276,6 +1679,13 @@ async def drive_v5(cases: Sequence[CaseV5], repeats: int, run_one: TripleRunner,
                 r.append_row(hops_sink, r.hop_observation_to_json(hop))
             if result.judge is not None:
                 r.append_row(judge_sink, r.judge_row_to_json(result.judge))
+            # BEFORE the triple row, for the reason every other per-triple sink is:
+            # the bytes are on disk before the next triple starts, so an outage
+            # costs one capture and not the run. A triple with no capture (a
+            # budget refusal, an excluded C) writes no row at all — an empty row
+            # would claim the boundaries were reached and delivered nothing.
+            for captured in result.captures:
+                canaries.append_capture(run_dir, run_id, captured)
             r.append_row(triples_sink, result.triple)
             triples.append(result.triple)
             done += 1
@@ -1375,6 +1785,39 @@ def stamp_judge_file(run_dir: Path, run_id: str, stamp: CalibrationStamp) -> Non
     write_stamp(run_dir, run_id, stamp)
 
 
+def capture_run_repairs(run_dir: Path) -> Path | None:
+    """M04: freeze THIS run's LOC repair witnesses while the engine is live.
+
+    THE PRODUCER ASKS, THE SCORER READS. `report.frozen_score_and_observations`
+    must print a saved number that cannot move when `register_spelling` is
+    edited, so the engine is consulted exactly once — here, by the process that
+    owns it at run time — and the answer is persisted as a versioned
+    `repairs.json` beside the run's artifacts. Without this call every real run's
+    LOC pairs stay UNMEASURED, which the report prints honestly and which is why
+    a missing capture is a gap rather than a wrong number.
+
+    THE OBSERVATIONS COME FROM THE SCORER'S OWN ENGINE-FREE READER
+    (`report.v5_observations`, the same one `report.frozen_score_and_observations`
+    uses), so the pair list is the artifact's own and not a second derivation of
+    it: the table answers for exactly the pairs the report will score.
+
+    FROZEN ONCE. A table already on disk is never rewritten — a `--report`
+    replay of a finished directory must read the witnesses, not re-ask the
+    engine, or the defect M04 removes comes back through the report path. And
+    with no bundle leased nothing is frozen at all: an invented witness would be
+    worse than the honest «не измерено»."""
+    from bench.agentpii5 import frozen_oracle
+    from pseudex.address import register_spelling
+    from pseudex.assets import ASSETS
+
+    path = frozen_oracle.repairs_path(run_dir)
+    if path.exists() or not ASSETS.is_loaded:
+        return None
+    half = v5_report.v5_observations(run_dir, ())
+    return frozen_oracle.capture_run_repairs(
+        run_dir, frozen_oracle.repair_pairs(half.observations), register_spelling)
+
+
 def finish_run(run_dir: Path, baseline: Path) -> list[str]:
     """The side-by-side and the two machine-readable halves beside it:
     `<run>.report.txt`, `<run>.gate.json`, `<run>.report.json`, `<run>.public.json`.
@@ -1392,6 +1835,12 @@ def finish_run(run_dir: Path, baseline: Path) -> list[str]:
     where `<run>.report.txt` lives out of `report.py` and into this module,
     which is the drift the file names exist to prevent.
     """
+    # THE WITNESSES ARE FROZEN BEFORE ANY LINE IS PRINTED. `render_side_by_side`
+    # scores through `report.frozen_score_and_observations`, which reads
+    # `repairs.json`; capturing after it would print a run in which every LOC
+    # pair was unmeasured and then freeze them, so the replay and the live
+    # report would disagree about the same bytes on disk.
+    capture_run_repairs(run_dir)
     lines = v5_report.render_side_by_side(run_dir, baseline)
     written = reportjson.write_side_by_side(run_dir, baseline)
     return lines + ["", f"машинный отчёт: {written.report.name} (ТЗ §5.1)",
@@ -1740,6 +2189,9 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("corpus", nargs="?", default=str(here / "corpus.v5.json"))
     parser.add_argument("--ladder", default=str(here / "ladder.json"))
+    parser.add_argument("--v6", action="store_true",
+                        help="корпус v6 (v6/corpus.v5.json + v6/ladder.json) вместо v5, "
+                             "когда corpus/ladder не названы явно")
     parser.add_argument("--tier", default="nano",
                         choices=("nano", "small", "medium", "large", "holdout", "max"))
     parser.add_argument("--ids", default="", help="запятые: точный список случаев вместо яруса")
@@ -1767,6 +2219,9 @@ def main() -> int:
                         help='observed cumulative tokens per session; one in-flight response may overshoot')
     parser.add_argument('--agent-turn-limit', type=int, default=12,
                         help='historical name: total DeepSeek Responses requests across agent sessions')
+    parser.add_argument('--max-calls', type=int, default=DEFAULT_MAX_CALLS,
+                        help='per-conversation tool-call budget: the loop guard a long chain '
+                             'must not trip, generous but bounded')
     parser.add_argument('--judge-request-limit', type=int, default=2)
     parser.add_argument('--codex-home', default=os.environ.get('AGENTPII5_CODEX_HOME', ''),
                         help='dedicated clean CODEX_HOME for the subscription judge')
@@ -1787,10 +2242,25 @@ def main() -> int:
     parser.add_argument("--runs", default=str(runinfo.RUNS_PATH),
                         help="реестр прогонов (runs.json)")
     parser.add_argument("--retries", type=int, default=runinfo.RETRY_ATTEMPTS,
-                        help="попыток на случай при обрыве провайдера")
+                        help="попыток на случай при флаки-отказе провайдера")
+    parser.add_argument("--retry-delay", type=float, default=runinfo.RETRY_BASE_S,
+                        help="первый отступ между попытками в секундах (растёт "
+                             "экспоненциально до потолка)")
+    parser.add_argument("--timeout-scale", type=float, default=1.0,
+                        help="множитель per-case таймаута: (120 + 30 * ходов) * scale, "
+                             "scale > 0. Для длинных цепочек, которым не хватает "
+                             "дефолтных секунд на глубокое рассуждение")
+    parser.add_argument("--no-price-brake", action="store_true",
+                        help="не вооружать стоп-кран по цене: точечный перепрогон "
+                             "дорогих кейсов, чья оценка взята от дешёвой пары и врёт")
     parser.add_argument("--dirty-ok", action="store_true",
                         help="прогон нельзя привязать к коммиту; это записано "
                              "в meta.json и в реестре")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="детерминированная чеканка фейков (42 — как у "
+                             "golden/dirty); один и тот же кейс всегда получает "
+                             "тот же фейк, чтобы до/после сравнивалось на "
+                             "одинаковых подменах, а не на случайных улицах/фамилиях")
     parser.add_argument("--provider", default="",
                         help=f"{', '.join(provider.PROVIDERS)}; пусто — {provider.PROVIDER_ENV} "
                              f"или anthropic")
@@ -1807,10 +2277,34 @@ def main() -> int:
         parser.error('--agent-connector deepseek requires --provider deepseek')
     if args.judge_connector == 'codex' and not args.no_judge and not args.codex_home:
         parser.error('--judge-connector codex requires --codex-home or AGENTPII5_CODEX_HOME')
-    if min(args.connector_max_tokens, args.agent_turn_limit, args.judge_request_limit) <= 0:
+    if min(args.connector_max_tokens, args.agent_turn_limit, args.judge_request_limit,
+           args.max_calls) <= 0:
         parser.error('connector limits must be positive')
+    if args.retries < 0:
+        parser.error('--retries must be >= 0')
+    if args.retry_delay < 0:
+        parser.error('--retry-delay must be >= 0')
+    if args.timeout_scale <= 0:
+        parser.error('--timeout-scale must be > 0')
     if args.resume and (args.agent_connector == 'deepseek' or args.judge_connector == 'codex'):
         parser.error('new connector resume is not yet validated; use a fresh output directory')
+
+    # `--v6` — сокращение для корпуса v6: меняет ТОЛЬКО незаданные corpus/ladder,
+    # заданные явно остаются (так можно срезать v6-корпус, лежащий не в v6/).
+    if args.v6:
+        default_corpus = str(here / "corpus.v5.json")
+        default_ladder = str(here / "ladder.json")
+        if args.corpus == default_corpus:
+            args.corpus = str(here / "v6" / "corpus.v5.json")
+        if args.ladder == default_ladder:
+            args.ladder = str(here / "v6" / "ladder.json")
+        # v6 tools enter the LIVE tool registry the same way v5 did: the v4
+        # `REGISTRY` dict is widened with each v6 spec's base ToolSpec, so
+        # `gateway.tools()` can read `.schema` and the model is offered the v6
+        # tools. Lazy, so a v5 run never imports the v6 tool set.
+        from bench.agentpii4.tools import REGISTRY as _v4_registry
+        from bench.agentpii5.mock_v6 import V6_SPECS
+        _v4_registry.update({name: spec.base for name, spec in V6_SPECS.items()})
 
     # ОБА БЕСПЛАТНЫХ ПУТИ — ДО ВСЕГО ОСТАЛЬНОГО, и оба возвращаются отсюда: ни
     # бандла, ни модели, ни каталога прогона, ни строки в реестре. `--replay`
@@ -1915,6 +2409,7 @@ def main() -> int:
         if args.agent_connector == 'deepseek' or args.judge_connector == 'codex':
             print(f'connectors: agent={args.agent_connector}, judge={args.judge_connector}; '
                   f'agent request limit={args.agent_turn_limit}, '
+                  f'tool-call limit={args.max_calls}, '
                   f'judge request limit={args.judge_request_limit} '
                   f'(worst case {required_judge_requests}); '
                   'subscription quota is separate from USD; token limits are checked after responses')
@@ -2030,6 +2525,12 @@ def main() -> int:
         return 2
 
     load_dev_bundle()
+    # DETERMINISTIC TOKENS FOR THE PAID RUN. The mint draws the SAME fake for
+    # the SAME value on every run at one seed, so a before/after comparison is
+    # not confounded by random street/surname draws and a defect reproduces
+    # offline. Production still mints cryptographically (the engine's default),
+    # the benchmark is the one place that asks for a reproducible draw.
+    vault.seed_token_rng(args.seed)
     detector = Detector()
     run_id = str(uuid.uuid4())
     out = Path(args.out) if args.out else (here.parent / "runs" / datetime.now().strftime("%Y-%m-%d")
@@ -2068,13 +2569,14 @@ def main() -> int:
     config = None if args.no_judge else JudgeConfig(
         model=args.judge_model, ledger=ledger, query_cap_usd=QUERY_CAP_USD, retries=RETRIES,
         trace_path=out / f"{run_id}.judge.trace.jsonl", temperature=JUDGE_TEMPERATURE)
-    arms: ArmConnector = ClaudeArms()
+    arms: ArmConnector = ClaudeArms(args.timeout_scale)
     if args.agent_connector == 'deepseek':
         arms = ConnectedArms(DeepSeekConnector(DeepSeekSettings(
             args.model, args.agent_effort, args.connector_max_tokens,
-            args.agent_turn_limit, min(16000, args.connector_max_tokens),
+            args.agent_turn_limit, deepseek_max_output_tokens(args.connector_max_tokens),
             out / f'{run_id}.agent.usage.jsonl',
-            os.environ.get('AGENTPII5_DEEPSEEK_BASE_URL', 'https://api.deepseek.com'))))
+            os.environ.get('AGENTPII5_DEEPSEEK_BASE_URL', 'https://api.deepseek.com'))),
+            args.max_calls, args.timeout_scale)
     if config is not None and args.judge_connector == 'codex':
         config = ConnectedJudgeConfig(
             model=args.judge_model, ledger=ledger, query_cap_usd=QUERY_CAP_USD,
@@ -2095,8 +2597,9 @@ def main() -> int:
     # ОЖИДАНИЕ НА СЛУЧАЙ ДЛЯ СТОП-КРАНА — точка оценки, делённая на тройки.
     # Ноль, когда оценки не было: кран не вооружён, и это сказано вслух, а не
     # срабатывает наугад на первом же прогоне новой пары моделей.
-    expected = (plan.usd_point / plan.demand.triples
-                if plan.basis.kind != "reserve_only" and plan.demand.triples else 0.0)
+    expected = (0.0 if args.no_price_brake else
+                (plan.usd_point / plan.demand.triples
+                 if plan.basis.kind != "reserve_only" and plan.demand.triples else 0.0))
     brake_line = ("не вооружён (оценки нет)" if expected <= 0.0 else
                   f"${expected * runinfo.COST_BRAKE_FACTOR:.4f} на случай в среднем")
     print(f"стоп-кран по цене: {brake_line}", flush=True)
@@ -2108,6 +2611,10 @@ def main() -> int:
             'agent_effort': args.agent_effort,
             'judge_effort': args.judge_effort, 'max_tokens': args.connector_max_tokens,
             'agent_turn_limit': args.agent_turn_limit, 'judge_request_limit': args.judge_request_limit,
+            'max_calls': args.max_calls,
+            # The multiplier that decided the per-case deadline (the excluded
+            # `timeout` arms are reproduced only if this number is known).
+            'timeout_scale': args.timeout_scale,
             'agent_cost_basis': ('deepseek_peak_estimate_2026-09-26' if args.agent_connector == 'deepseek'
                                  else 'claude_sdk_reported_usd'),
             'judge_cost_basis': ('chatgpt_subscription_quota_not_api_usd' if args.judge_connector == 'codex'
@@ -2135,8 +2642,9 @@ def main() -> int:
         print(f"холдаут прочитан живым прогоном {touch.touched_by[:12]} от "
               f"{touch.touched_at}: состав ярусов больше не перерисовывается (R-52, п.10)",
               flush=True)
-    policy = DrivePolicy(attempts=max(1, args.retries), pause=asyncio.sleep,
-                         jitter=random.random, expected_per_case_usd=expected)
+    policy = DrivePolicy(attempts=max(1, args.retries), base_s=args.retry_delay,
+                         pause=asyncio.sleep, jitter=random.random,
+                         expected_per_case_usd=expected, timeout_scale=args.timeout_scale)
     started = time.time()
     # §1.2: ОДНА ЗАЩИЩЁННАЯ ОБЛАСТЬ НА ВСЁ, ЧТО ИДЁТ ПОСЛЕ ПЕРВОГО ДОЛЛАРА, а не
     # на один `asyncio.run`. Раньше обработчик накрывал только сам прогон, и

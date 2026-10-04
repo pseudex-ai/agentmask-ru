@@ -548,7 +548,7 @@ voice_itn 19,3%), chat **30,0%** (`REGISTER_SHARES` по R-09/R-16), sloppy
 
 | тип | признаки (все обязательны) |
 |---|---|
-| NAME | `case_class` (lower/Title/UPPER/mixed) · `gram_case` (им/род/дат/вин/тв/пр — по pymorphy3 голосованием) · `order` (Ф-И-О / И-Ф / И-О-Ф) · `parts` (сколько частей) · `initials` (нет/И./И.О.) · `script` (кириллица/латиница/транслит-таблица) · `hyphen/particle` |
+| NAME | `case_class` (lower/Title/UPPER/mixed) · `gram_case` (им/род/дат/вин/тв/пр — по pymorphy3 голосованием) · `order` (Ф-И-О / И-Ф / И-О-Ф) · `parts` (сколько частей) · `initials` (нет/И./И.О.) · `script` (кириллица/латиница/смешанная — АЛФАВИТ) · `translit` (gost/icao/bgn/unknown — СИСТЕМА РОМАНИЗАЦИИ, воздерживается на `unknown`) · `hyphen/particle` |
 | PHONE | `prefix` (+7 / 8 / 7 / голый) · `grouping` (3-3-2-2 / 3-3-4 / слитно) · `separators` (пробел/дефис/точка) · `parens` |
 | LOC | `case_class` · `generic` (нет/полное/сокращение, какое) · `generic_position` (перед/после) · `house_marker` (нет/д./дом, слитно/раздельно) · `flat_marker` (нет/кв./квартира, слитно/раздельно) · `commas` · `city_present`/`city_position` · `by_fields` vs строка · `building/entrance markers` |
 | DOB/DATE | `notation` (dd.mm.yyyy / dd/mm/yy / ISO / словами / «др» без точек) · `separator` · `padding` · `year_len` (2/4) · `month_form` (число/слово/падеж) |
@@ -569,6 +569,18 @@ voice_itn 19,3%), chat **30,0%** (`REGISTER_SHARES` по R-09/R-16), sloppy
   `case_class` (NAME/LOC/EMAIL/PLATE) и `NAME.script` у строки без букв. Иначе
   собственные приёмочные пары спецификации невыполнимы: у латинской записи
   имени нет русского падежа, у адреса без родового слова нет его позиции.
+- **`script` — это АЛФАВИТ, `translit` — это СИСТЕМА РОМАНИЗАЦИИ** (класс Ж,
+  `research/hop-format-audit/SPIKE-Ж.md`). До 30.09.2026 один признак `script`
+  отвечал на оба вопроса и возвращал `latin:gost|icao|bgn|unknown`; `unknown`
+  — это собственное признание извлекателя «ни одна из трёх таблиц эти буквы
+  по-разному не пишет», то есть ОТСУТСТВИЕ МНЕНИЯ, а не другая конвенция. Две
+  латинские строки, различавшиеся только этим, читались как расхождение
+  `script` — 50 из 62 промахов `form OUT/answer` в g07. Теперь алфавит
+  (`cyrillic`/`latin`/`mixed`/`none`) отвечает `script`, система
+  (`latin:gost`/`latin:icao`/`latin:bgn`/`latin:unknown`) — `translit`, и
+  `FORM_ABSTAIN[('NAME','translit')] = 'latin:unknown'` — тем же воздержанием,
+  каким `order` воздерживается на `other`. Вынуть признак нельзя: 3 хопа
+  «кириллица против латиницы» в архивах и 202 в g06 — настоящий класс Г.
 - **`other` у `PHONE.prefix` и `CARD.separator`** — строка, не подошедшая ни под
   одну названную форму, получает метку, а не проваливается в последнюю ветку.
 - **`LOC.city_present` неотделим от `city_position`** (отсутствие города — тоже

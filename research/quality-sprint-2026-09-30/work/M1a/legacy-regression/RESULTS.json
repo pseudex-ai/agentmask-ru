@@ -1,0 +1,56 @@
+[
+  {
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "bench.agentpii5.test_metrics"
+    ],
+    "exit": 0,
+    "log": "test_metrics.log"
+  },
+  {
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "bench.agentpii5.test_fixtures"
+    ],
+    "exit": 0,
+    "log": "test_fixtures.log"
+  },
+  {
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "bench.agentpii5.test_form"
+    ],
+    "exit": 0,
+    "log": "test_form.log"
+  },
+  {
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "bench.agentpii5.test_observe"
+    ],
+    "exit": 0,
+    "log": "test_observe.log"
+  },
+  {
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "bench.agentpii5.test_hop_report"
+    ],
+    "exit": 0,
+    "log": "test_hop_report.log"
+  },
+  {
+    "command": [
+      ".venv/bin/python",
+      "-m",
+      "bench.agentpii5.test_live"
+    ],
+    "exit": 0,
+    "log": "test_live.log"
+  }
+]

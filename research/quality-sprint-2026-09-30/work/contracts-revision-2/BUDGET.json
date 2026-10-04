@@ -1,0 +1,51 @@
+{
+  "artifact": "BUDGET",
+  "revision": "contracts-revision-2",
+  "owner_checkpoint": "O-DATA",
+  "currency": "human review items (NOT money); 1 labeler-item = one labeler judging one unit once; 1 owner-item = one adjudication or re-check",
+  "budget_status": "ESTIMATE_PRELIMINARY_STAGE",
+  "budget_status_meaning": "arithmetic is coherent for the staged plan; it is NOT adequate for a full per-type 99% claim across all 55 v6 types, and it is not a money forecast",
+  "recomputed_by": "research/quality-sprint-2026-09-30/work/contracts-revision-2/verify_facts.py (FACTS.json.a1_budget_arithmetic)",
+  "staged_arithmetic": {
+    "native_positive_units": 3000,
+    "ppv_spans": 3000,
+    "specificity_negatives": 600,
+    "units_native_only": 6600,
+    "v6_new_type_occurrences_est": 1360,
+    "temp_secret_fixture_units_est": 360,
+    "units_full_scope": 8320,
+    "labeler_items_native_only": 13200,
+    "labeler_items_full_scope": 16640,
+    "owner_dispute_items_full_scope_range": [416, 1248],
+    "owner_agreed_review_items_full_scope_range": [707, 790],
+    "total_human_review_items_full_scope_range": [17846, 18595],
+    "declared_matches_recomputed": true
+  },
+  "claim_cost_the_staged_budget_does_not_cover": {
+    "support_floor_per_type": 300,
+    "v6_types": 55,
+    "v6_positive_units_implied": 16500,
+    "staged_v6_units": 1360,
+    "temp_secret_fixture_units_staged": 360,
+    "status": "BELOW_THE_IMPLIED_FLOOR",
+    "excluded_from_the_staged_number": [
+      "registers (clean/chat/sloppy/voice_raw/voice_itn) per type",
+      "PPV sample for the 55 v6 types",
+      "hard negatives / specificity frame per type",
+      "identity and template-family de-duplication (independent units, not occurrences)"
+    ]
+  },
+  "open_inputs": {
+    "owner_authorized_budget": "OWNER_PENDING (Q1/Q3)",
+    "human_adjudication_hours": "NOT_MEASURED",
+    "dollars": "NOT_MEASURED",
+    "dispute_rate": "ASSUMPTION_5_TO_15_PERCENT not measured",
+    "agreed_review_share": "ASSUMPTION_10_PERCENT"
+  },
+  "labour_model_correction": {
+    "labeler_items": "2 x units = two labeler passes; labelers may be independent model workers per the plan",
+    "owner_items": "adjudication and stratified agreed-review; a separate population, not measured here",
+    "forbidden": "presenting 2 x units as a count of human actions"
+  },
+  "no_paid_runs": "historical budget does not authorise new spend; offline gates first, then an exact estimate and a separate owner GO"
+}

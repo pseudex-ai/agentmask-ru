@@ -1,0 +1,9 @@
+  no_pseudex: PASS
+  three_kinds_each: PASS
+  fixture_expectations: PASS
+  kind_invariants: PASS
+  adversarial_notes: PASS
+  fixtures_are_hand_built: PASS
+fixtures: PASS (38 метрик × 3)
+
+STDERR

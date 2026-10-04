@@ -1,0 +1,782 @@
+{
+ "generated_by": "bench.agentpii5.overlap_review",
+ "overlap_paths": 24,
+ "decision_vocabulary": [
+  "HAND_MERGE_ADDITIVE",
+  "HAND_MERGE_KEEP_V5_SEMANTICS",
+  "ADOPT_V6",
+  "GATED_ADOPT_V6",
+  "KEEP_V5"
+ ],
+ "decisions": {
+  "HAND_MERGE_ADDITIVE": 11,
+  "HAND_MERGE_KEEP_V5_SEMANTICS": 7,
+  "ADOPT_V6": 4,
+  "GATED_ADOPT_V6": 1,
+  "KEEP_V5": 1
+ },
+ "resolved_in": {
+  "S2": 16,
+  "S3": 6,
+  "S7": 2
+ },
+ "frozen_inputs": {
+  "prototype/bench/agentpii5/corpus.json": {
+   "sha256": "6bc58c5b8d6a3957b604bb67a7ea9a78992882f2c028c837186f57ad11e6e4ec",
+   "pinned_by": "work/A1/INVENTORY.json"
+  },
+  "prototype/bench/agentpii5/corpus.v5.json": {
+   "sha256": "3ba227908d40911bd6578418b2da9d3b7925a1ffefe88ebbf5cead5ce5115118",
+   "pinned_by": "work/A1/INVENTORY.json · work/D1/A/GAPS.json"
+  },
+  "prototype/bench/agentpii5/ladder.json": {
+   "sha256": "3e088f66334309feedd32f8d860a34d215e3ca94561b2a8d55425c01317708d9",
+   "pinned_by": "work/B0/INPUTS.json ladder_file_sha256"
+  },
+  "prototype/bench/agentpii5/v6/corpus.v5.json": {
+   "sha256": "76b5bffe5a00bf7858212d0280b8d69bf8dfeeaf3c63372fbfd616745da23ad7",
+   "pinned_by": "review/v6-integration.json regress.pinned_v5"
+  },
+  "prototype/bench/agentpii5/v6/ladder.json": {
+   "sha256": "b7f1d05a9f63d7a327ffbdbc1a35d0bb51b160e4309aacddc810d935e7541600",
+   "pinned_by": "review/v6-integration.json regress.pinned_v5"
+  }
+ },
+ "records": [
+  {
+   "id": "C01",
+   "path": "CLAUDE.md",
+   "decision": "HAND_MERGE_ADDITIVE",
+   "resolved_in": "S2",
+   "keep_v5": [
+    "the v5 statements about live code",
+    "the embedded MAP block, byte-equal to wiki/MAP.md"
+   ],
+   "adopt_v6": [
+    "the v6 §4.1.1 block describing the agentpii5 v6 modules"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 wiki/check.py",
+    "python3 wiki/check.py --sync is a no-op after the MAP edit"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "wiki/check.py",
+     "exists": true,
+     "reason_if_absent": ""
+    },
+    {
+     "target": "wiki/check.py",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "696765d60313720073ddfc9f4ea51506b7f80d7924187c837fdf84034eb06143"
+  },
+  {
+   "id": "C02",
+   "path": "prototype/bench/agentpii5/contracts.py",
+   "decision": "HAND_MERGE_KEEP_V5_SEMANTICS",
+   "resolved_in": "S3",
+   "keep_v5": [
+    "FORM_FEATURES/FEATURE_LABELS/FORM_ABSTAIN carrying the script(alphabet) vs translit(romanization) SPLIT",
+    "LEAF_EQUIVALENCE / semantic_leaf / is_canonical_leaf / equivalent_leaves / equivalence_problems",
+    "VALUE_READINGS / VALUE_NORMALISERS as the ONE reading of «same value»",
+    "OUT_HOP_WRITTEN_STATUSES / OUT_HOP_RESTORABLE_STATUSES and the eight status-split metric rows",
+    "V5_CASE_RULES R22/R23",
+    "ModelResponse / ModelTrace"
+   ],
+   "adopt_v6": [
+    "TYPES = v4.TYPES + pii_types.NEW_ITEM_TYPES",
+    "the INDUSTRIES / V6_AXES / V6_PROVENANCE_KINDS / V6_DIR / CaseV6Meta / ProcedureRecord / V6_NEGATIVE_FAMILIES / V5_TOOL_NAMES re-exports",
+    "CaseV5.v6",
+    "ArmRunV5.message_pieces"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_contracts",
+    "python3 -m bench.agentpii5.test_spec_form",
+    "python3 -m bench.agentpii5.test_pii_types",
+    "the live-file table equality check (stage S4) must read the LIVE contracts.py, never a hand copy"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_contracts",
+     "exists": true,
+     "reason_if_absent": ""
+    },
+    {
+     "target": "bench.agentpii5.test_spec_form",
+     "exists": true,
+     "reason_if_absent": ""
+    },
+    {
+     "target": "bench.agentpii5.test_pii_types",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "e6ce078dd7318aaec788f26b9eb6ba9ab1840f659eae4bf7edd8a83e09d3622f"
+  },
+  {
+   "id": "C03",
+   "path": "prototype/bench/agentpii5/fixtures.py",
+   "decision": "HAND_MERGE_ADDITIVE",
+   "resolved_in": "S2",
+   "keep_v5": [
+    "the closed v5 FIXTURES surface (zero/one/adversarial per v5 metric)",
+    "the v5 *_written fixture families and their name constants"
+   ],
+   "adopt_v6": [
+    "V6_FIXTURES kept deliberately OUTSIDE FIXTURES",
+    "_with_message_pieces",
+    "v6=None in _case"
+   ],
+   "owner_covered": [
+    "COV-CHECKSUM-INHERIT",
+    "MUTANT-LINE-REDEFINE"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_fixtures",
+    "python3 -m bench.agentpii5.test_metrics_v6"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_fixtures",
+     "exists": true,
+     "reason_if_absent": ""
+    },
+    {
+     "target": "bench.agentpii5.test_metrics_v6",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "cbfd4fedf459fe88ab1c819ed1bb8ad0347623c3aee854c0cb5e8d9df11075e0"
+  },
+  {
+   "id": "C04",
+   "path": "prototype/bench/agentpii5/form.py",
+   "decision": "GATED_ADOPT_V6",
+   "resolved_in": "S3",
+   "keep_v5": [
+    "name_translit (the romanization extractor the v5 split added)",
+    "its registration FEATURE_EXTRACTORS[('NAME','translit')]"
+   ],
+   "adopt_v6": [
+    "the NAME row re-read from the registry's form features"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_form",
+    "python3 -m bench.agentpii5.test_spec_form"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_form",
+     "exists": true,
+     "reason_if_absent": ""
+    },
+    {
+     "target": "bench.agentpii5.test_spec_form",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "963b16f99fec25ccfcdc9df5abcd42b39bb9d694c5cc58a4767dc2ca31ff178b"
+  },
+  {
+   "id": "C05",
+   "path": "prototype/bench/agentpii5/harness.py",
+   "decision": "ADOPT_V6",
+   "resolved_in": "S2",
+   "keep_v5": [
+    "the v5 connector/gateway-hook machinery",
+    "delivery-manifest capture",
+    "scaled timeouts"
+   ],
+   "adopt_v6": [
+    "main() wiring for the v6 corpus",
+    "contracts.PSEUDEX_ALLOWED_MODULES admitting bench.agentpii5.regress_print"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_cli",
+    "old-corpus replay byte comparison (F7)"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_cli",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "4f042fa47d5429f360fb645a1567f02380152818280ae09809aa414d9f7fdc83"
+  },
+  {
+   "id": "C06",
+   "path": "prototype/bench/agentpii5/judge.py",
+   "decision": "HAND_MERGE_ADDITIVE",
+   "resolved_in": "S2",
+   "keep_v5": [
+    "ConnectedJudgeConfig / _ask_connector",
+    "the v5 hunted_types contract ((*NEEDLE_TYPES,'PLATE') when a plate shape is present)"
+   ],
+   "adopt_v6": [
+    "the v6 hunt-shape gate: hunted_types additionally returns registry types whose hunt is always/covered AND whose grammar fullmatches the folded surface"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_judge",
+    "python3 -m bench.agentpii5.test_judge_v6"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_judge",
+     "exists": true,
+     "reason_if_absent": ""
+    },
+    {
+     "target": "bench.agentpii5.test_judge_v6",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "9443709a6fee5ced5b5d19afc3131eb4c0f264de07fd053d5734a68c4439aac0"
+  },
+  {
+   "id": "C07",
+   "path": "prototype/bench/agentpii5/metrics.py",
+   "decision": "HAND_MERGE_KEEP_V5_SEMANTICS",
+   "resolved_in": "S3",
+   "keep_v5": [
+    "the closed METRIC_FUNCTIONS / contracts.METRICS surface",
+    "the status-split metrics (out_written, out_no_mint, out_engine_kept, out_not_masked, out_leaf_foreign, end_to_end_written, chain_*_written, multi_all_out_written)",
+    "v5 value_matches / role_matches behaviour for the eleven v5 types"
+   ],
+   "adopt_v6": [
+    "V6_METRIC_FUNCTIONS (typed_user / fake_checksum_invalid / overmask_result) kept OUTSIDE the v5 dict",
+    "v6 value comparison by value_notation",
+    "NEG_TAG_PREFIX",
+    "the type_class axis"
+   ],
+   "owner_covered": [
+    "COV-CHECKSUM-INHERIT",
+    "MUTANT-LINE-REDEFINE",
+    "COV-INTEGRATION-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_metrics",
+    "python3 -m bench.agentpii5.test_metrics_v6",
+    "old-corpus replay byte comparison (F7)"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_metrics",
+     "exists": true,
+     "reason_if_absent": ""
+    },
+    {
+     "target": "bench.agentpii5.test_metrics_v6",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "e7ab6c2352ded49f6ac75ffaecee049699b774a6b3d25bf527fc345624047cc8"
+  },
+  {
+   "id": "C08",
+   "path": "prototype/bench/agentpii5/observe.py",
+   "decision": "HAND_MERGE_KEEP_V5_SEMANTICS",
+   "resolved_in": "S3",
+   "keep_v5": [
+    "VALUE_READINGS as the ONE reading of «same value» (_leaf_value_ok, _phone_equal, _name_equal, _place_equal, equivalent_out_leaf, call_ordinal_of)",
+    "the v5 hop statuses engine_kept / not_masked / leaf_foreign in place of the single `unmasked`"
+   ],
+   "adopt_v6": [
+    "the three new needle kinds (glyph, octets, ipv6)",
+    "glyph_fold",
+    "the IPv4/IPv6 span finders"
+   ],
+   "owner_covered": [
+    "COV-INTEGRATION-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_observe",
+    "python3 -m bench.agentpii5.test_observe_v6",
+    "the frozen old-corpus status-count replay (stage S3)"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_observe",
+     "exists": true,
+     "reason_if_absent": ""
+    },
+    {
+     "target": "bench.agentpii5.test_observe_v6",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "99964cc1a038a20889926986ba0c33e0d839e8544927934e4a397d11a394d3e9"
+  },
+  {
+   "id": "C09",
+   "path": "prototype/bench/agentpii5/perfect.py",
+   "decision": "HAND_MERGE_KEEP_V5_SEMANTICS",
+   "resolved_in": "S3",
+   "keep_v5": [
+    "the v5 perfect-arm semantics: a checksum-type substitute keeps the source's validity (INVARIANTS.md#structured-ids, COV-CHECKSUM-INHERIT)",
+    "reverse_action_order"
+   ],
+   "adopt_v6": [
+    "mint_v6 (class-preserving alphanumeric shift with a digits-only fallback)"
+   ],
+   "owner_covered": [
+    "COV-CHECKSUM-INHERIT",
+    "MUTANT-LINE-REDEFINE"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_perfect",
+    "python3 -m bench.agentpii5.test_perfect_v6",
+    "the redefined mutant separation test (valid->invalid, invalid->valid, wrong form, unsafe identity/collision)"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_perfect",
+     "exists": true,
+     "reason_if_absent": ""
+    },
+    {
+     "target": "bench.agentpii5.test_perfect_v6",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "1fee2f57d818da0affcaf618e4038ceb9cc3fe67060473d8e2aec01d2f263b4c"
+  },
+  {
+   "id": "C10",
+   "path": "prototype/bench/agentpii5/records.py",
+   "decision": "HAND_MERGE_ADDITIVE",
+   "resolved_in": "S2",
+   "keep_v5": [
+    "byte-identical old-corpus run rows (the v5 _v5_block keys)",
+    "the model-trace record added on this branch"
+   ],
+   "adopt_v6": [
+    "message_pieces written ONLY when non-empty"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_observe",
+    "old-corpus replay byte comparison (F7)"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_observe",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "cb06c8e4b07314ec82f2e6ecd5565371ed4efc8d9569c85e3e1ce9aa898decd1"
+  },
+  {
+   "id": "C11",
+   "path": "prototype/bench/agentpii5/report.py",
+   "decision": "HAND_MERGE_ADDITIVE",
+   "resolved_in": "S2",
+   "keep_v5": [
+    "beside_of / FrozenParts / axis_cells",
+    "every v5 printed line, including the eight status-split diagnostic rows"
+   ],
+   "adopt_v6": [
+    "has_v6_case",
+    "v6_axis_rows",
+    "v6_type_slice_lines",
+    "v6_new_row_lines",
+    "_calibration_new_types"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_report",
+    "python3 -m bench.agentpii5.test_report_v6",
+    "G2 meter gate on an unchanged old corpus"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_report",
+     "exists": true,
+     "reason_if_absent": ""
+    },
+    {
+     "target": "bench.agentpii5.test_report_v6",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "499f84155664df6408797a12153b8bb28c4e2d89803eaf58e781e8e8320691f1"
+  },
+  {
+   "id": "C12",
+   "path": "prototype/bench/agentpii5/revise.py",
+   "decision": "ADOPT_V6",
+   "resolved_in": "S2",
+   "keep_v5": [
+    "_dedup_equivalent_leaves",
+    "the v5 `optional` reading (a hop on a generic role is optional)"
+   ],
+   "adopt_v6": [
+    "the two v6-changed lines"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_revise"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_revise",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "58ed87e2805d441c1d7cb2d496f890e9c0196759549c627a8b3c73263cc44c6a"
+  },
+  {
+   "id": "C13",
+   "path": "prototype/bench/agentpii5/scenarios5/common.py",
+   "decision": "KEEP_V5",
+   "resolved_in": "S2",
+   "keep_v5": [
+    "arg_hop setting optional = (not spec.required) or spec.role in GENERIC_PIECE_ROLES, so a REQUIRED hop on a settlement is never declared"
+   ],
+   "adopt_v6": [],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_scenarios5"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_scenarios5",
+     "exists": false,
+     "reason_if_absent": "no such module in this package; the scenarios5 family is driven by test_build / test_calibration / test_report_gate (each exit 0 in the S7 sweep), and the plan's C13 row named a module that was never added"
+    }
+   ],
+   "sha256": "f00758baa75b2347468bc8de148768a2d758efbecdbbed3f0159de47754097e5"
+  },
+  {
+   "id": "C14",
+   "path": "prototype/bench/agentpii5/schema.py",
+   "decision": "HAND_MERGE_ADDITIVE",
+   "resolved_in": "S2",
+   "keep_v5": [
+    "_superseded_ids",
+    "R23 (a required OUT hop must not name a superseded item)"
+   ],
+   "adopt_v6": [
+    "_r02_suppressed — v6 negatives admitted as a known «negative family» line in R02"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_schema"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_schema",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "51e34ef68d95c2271efbaa34d5c5f7bea475cf6ee44fbfe01679dbd192e63944"
+  },
+  {
+   "id": "C15",
+   "path": "prototype/bench/agentpii5/test_cli.py",
+   "decision": "ADOPT_V6",
+   "resolved_in": "S2",
+   "keep_v5": [
+    "the v5 CLI test"
+   ],
+   "adopt_v6": [
+    "six added lines"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_cli"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_cli",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "09185c072625577c2149a0884f500a4e0b694b8cfae2fe587eda5d6fb5a50f6c"
+  },
+  {
+   "id": "C16",
+   "path": "prototype/bench/agentpii5/test_contracts.py",
+   "decision": "HAND_MERGE_KEEP_V5_SEMANTICS",
+   "resolved_in": "S3",
+   "keep_v5": [
+    "the v5 contract tests (leaf equivalence, value readings, R22/R23)"
+   ],
+   "adopt_v6": [
+    "the nine added / five removed lines"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5",
+    "INSTRUMENT-FIX-LEAF-READINGS"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_contracts"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_contracts",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "27aa8507f90b76e17d80556f605a740572e770c142ecbad9239dc1a040a29fff"
+  },
+  {
+   "id": "C17",
+   "path": "prototype/bench/agentpii5/test_form.py",
+   "decision": "HAND_MERGE_KEEP_V5_SEMANTICS",
+   "resolved_in": "S7",
+   "keep_v5": [
+    "the v5 form tests"
+   ],
+   "adopt_v6": [
+    "the seven added / five removed lines"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_form"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_form",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "6c315aa8d3ad40e5ec189290181b56da190ac4f7c6ad1128f57b16970810ae7b"
+  },
+  {
+   "id": "C18",
+   "path": "prototype/bench/agentpii5/test_judge.py",
+   "decision": "ADOPT_V6",
+   "resolved_in": "S2",
+   "keep_v5": [
+    "the v5 judge test"
+   ],
+   "adopt_v6": [
+    "one line"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_judge"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_judge",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "edafe3e42dcf73c7a8e9b99ed11a1f86daeecaa12a36d8e43d27e54a2f661763"
+  },
+  {
+   "id": "C19",
+   "path": "prototype/bench/agentpii5/test_observe.py",
+   "decision": "HAND_MERGE_ADDITIVE",
+   "resolved_in": "S2",
+   "keep_v5": [
+    "test_second_declared_hop_on_a_claimed_leaf_is_absent (the v5 R22 watcher)"
+   ],
+   "adopt_v6": [
+    "_registry_values",
+    "the twenty-two added lines"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_observe"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_observe",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "7e49db73b72c3a9be86adf2d82a0e16537189b2ceb0108603f34fdcd3bc8b541"
+  },
+  {
+   "id": "C20",
+   "path": "prototype/bench/agentpii5/test_schema.py",
+   "decision": "HAND_MERGE_ADDITIVE",
+   "resolved_in": "S2",
+   "keep_v5": [
+    "test_r22",
+    "test_r23",
+    "_address_case",
+    "_correction_case"
+   ],
+   "adopt_v6": [
+    "one line"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_schema"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_schema",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "31b4dcec8611c435c09664ca796464927d5169424a65408e59d363d82c096c21"
+  },
+  {
+   "id": "C21",
+   "path": "prototype/bench/agentpii5/test_spec_form.py",
+   "decision": "HAND_MERGE_KEEP_V5_SEMANTICS",
+   "resolved_in": "S7",
+   "keep_v5": [
+    "the v5 spec/form tests"
+   ],
+   "adopt_v6": [
+    "V5_TYPES",
+    "the fifteen added lines"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 -m bench.agentpii5.test_spec_form"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "bench.agentpii5.test_spec_form",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "a0dfbc11d94cec928dfdab5ecb0eb96e5c1f900036c535ab9e2c1c7f29ab3d47"
+  },
+  {
+   "id": "C22",
+   "path": "wiki/INDEX.md",
+   "decision": "HAND_MERGE_ADDITIVE",
+   "resolved_in": "S2",
+   "keep_v5": [
+    "the v5 rows for the hop-format audit and the v5 model-connector docs"
+   ],
+   "adopt_v6": [
+    "two added lines"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 wiki/check.py"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "wiki/check.py",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "adda4c97e6a6a8a6545a8b6b876e2de86b86f440fd8b0685090c7bfd09f6a661"
+  },
+  {
+   "id": "C23",
+   "path": "wiki/MAP.md",
+   "decision": "HAND_MERGE_ADDITIVE",
+   "resolved_in": "S2",
+   "keep_v5": [
+    "the v5 module rows (connectors, live runner, payload canaries, vault helpers)"
+   ],
+   "adopt_v6": [
+    "the §4.1.1 v6 module block (193 added lines)"
+   ],
+   "owner_covered": [
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "python3 wiki/check.py",
+    "python3 wiki/check.py --sync must be a no-op after the merge"
+   ],
+   "red_acceptance_targets": [
+    {
+     "target": "wiki/check.py",
+     "exists": true,
+     "reason_if_absent": ""
+    },
+    {
+     "target": "wiki/check.py",
+     "exists": true,
+     "reason_if_absent": ""
+    }
+   ],
+   "sha256": "6113ebe5f27be8ffa9e4c76acbff075438e34bdca3dd3f3ed690d0c66fbf8db3"
+  },
+  {
+   "id": "C24",
+   "path": "wiki/STATE.md",
+   "decision": "HAND_MERGE_ADDITIVE",
+   "resolved_in": "S2",
+   "keep_v5": [
+    "D-070 … D-076 as the v5 branch defines them (current-hop PHONE form, vault identity, classes А/Б/Г/Д)"
+   ],
+   "adopt_v6": [
+    "the v6 decision records for pilot types, pilot tools and the full corpus"
+   ],
+   "owner_covered": [
+    "D-ID-RENUMBER",
+    "COV-KEEP-V5"
+   ],
+   "red_acceptance": [
+    "every D-NNN cross-reference in wiki/ resolves to exactly one heading",
+    "count of '^### D-' headings == count of distinct ids"
+   ],
+   "red_acceptance_targets": [],
+   "sha256": "4e4e108a086772182b0114bfbcb25b8e50d78710c934a9f853a3e0b6afb1609a"
+  }
+ ]
+}

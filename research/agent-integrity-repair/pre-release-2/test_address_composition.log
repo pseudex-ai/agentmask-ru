@@ -1,0 +1,37 @@
+class Б — the address composes
+  PASS  Б-1 prose: the real type survives, in the agent's position   'Светлый переулок, 7'
+  PASS  Б-1 CTRL: a LEADING marker is the agent's own and travels verbatim   'бульвар Светлый, 7'
+  PASS  Б-1 CTRL: his abbreviation, not ours   'ул. Светлый, 7'
+  PASS  Б-2 tool (nested): the field keeps the type and the real house   'Светлый переулок' / '7'
+  PASS  Б-2 tool (dotted): the field keeps the type and the real house   'Светлый переулок' / '7'
+  PASS  Б-3 tool (snake): `street_type` holds the type word alone   'переулок'
+  PASS  Б-3 tool (snake): the two leaves compose the real street ONCE   "'Светлый' + 'переулок'"
+  PASS  Б-3 tool (camel): `street_type` holds the type word alone   'переулок'
+  PASS  Б-3 tool (camel): the two leaves compose the real street ONCE   "'Светлый' + 'переулок'"
+  PASS  Б-4 one real street -> ONE fake street (houses 9 / 9а / 11)   streets=['брянск каштановая']
+  PASS  Б-4 the three houses keep three numbers (no collapse onto one)   houses=['5', '7', '95']
+  PASS  Б-5 identity: «34 в» and «34» are two different houses   'толстой 34в' vs 'толстой 34'
+  PASS  Б-5 identity: the glued and the spaced litera are one house   'толстой 34в'
+  PASS  Б-5 linking: the tolerant key still lets a short mention find the place   'толстой 34'
+  PASS  Б-5 two real houses -> two different fake houses   'абрикосовая 71' / 'г Краснодар, ул Жасминовая, д 25'
+  PASS  Б-6 the tool gets the REAL house, never a real street with a fake house   'мой адрес сортавала, улица грушевая, 15' -> 'мой адрес сортавала, улица вольная, 75'
+  PASS  Б-6 the flat the agent did not name is not invented either   'мой адрес сортавала, улица вольная, 75'
+  PASS  Б-6 a resolved address raises no alarm   []
+  PASS  Б-6 a fake house left standing is NAMED in residual_tokens   'улица вольная, 15' -> ['15']
+  PASS  Б-6 a number no substitute of ours carries is not a residual   []
+  PASS  Б-7 identity: a переулок and an улица of one name are two keys   ['пушкин 5 переулок', 'пушкин 5 улица']
+  PASS  Б-7 identity: two types named -> TWO substitutes, not one   ['пушкин 5 переулок', 'пушкин 5 улица']
+  PASS  Б-7 linking: with the type and without it -> ONE fake street (A2)   'адрес г Уфа, переулок Речной 15, кв. 819' / 'адрес г Уфа, Речной 15, кв. 819'
+  PASS  Б-7 linking: and ONE fake house (A2)   'адрес г Уфа, переулок Речной 15, кв. 819' / 'адрес г Уфа, Речной 15, кв. 819'
+  PASS  Б-8 the result reuses the SAME fake street name   'переулок Вишнёвый 75, кв. 515' vs 'переулок вишнёвый 75, квартира 515'
+  PASS  Б-8 the same fake house and flat (no leak of «34»/«9»)   'переулок Вишнёвый 75, кв. 515' vs 'переулок вишнёвый 75, квартира 515'
+  PASS  Б-8 the real street name does not survive   'переулок Вишнёвый 75, кв. 515'
+  PASS  Б-8 the generic word is part of the substitute, not a redaction   'переулок Вишнёвый 75, кв. 515'
+  PASS  Б-8 the street name is rendered in the result's case   'переулок Вишнёвый 75, кв. 515'
+  PASS  CTRL the whole fake copied verbatim comes back whole   'г Торжок, Барбарисовый бульвар, д 3, кв 897'
+  PASS  CTRL and through the argument leg   'г Торжок, Барбарисовый бульвар, д 3, кв 897'
+  PASS  CTRL two houses WITHOUT a litera share one fake street   'г Брянск, ул Абрикосовая, д 8\nг Брянск, ул Абрикосовая, д 56'
+  PASS  CTRL the customer wrote no type word -> the tool gets none   'г Тверь, каштановая 78, кв 492' -> 'г Тверь, луговая 10, кв 3'
+
+33/33 contract checks passed
+class Б: type, keys, houses and the whole-or-loud rule all hold

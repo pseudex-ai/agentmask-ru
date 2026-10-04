@@ -1,0 +1,404 @@
+{
+  "report_version": "hop-cohort-report-1",
+  "cohort_fingerprint": "6c2a6d6978f9ec061e85c739b6bb3bb5b666c15118a6931096ef0866f8cf622c",
+  "scorer_sha256": {
+    "cohort.py": "0368ede46a71c55bfee21be8382f655c35deffcb44b26f195f2b3f266a20bd15",
+    "actual_hops.py": "8a7bf3a7355dd280f7c8d8bf47987463e2e5f1144ed5f07fc0d5215081e57b66",
+    "hop_report.py": "fff7bb7da71a639fed2f8e0dd9f54f3af2bd97c83de5b78186681a6c8f96210e",
+    "observe.py": "ce43b85caec20751806f4c0e8927e671dd5f8981e81f5b5242ad991a26e240d7",
+    "metrics.py": "34e2d9d10167109e53250f0933cae1280929a8d313c67a398af05174d2c1f053",
+    "form.py": "074e9c7716dabe60e09b9225b2d67ba878aa5d435ee1eb8220041a4606e7ed85",
+    "contracts.py": "5304f0870df3815062f90ebc153d921ada7477d0daeaa44b31f420ecf7600f18",
+    "tools.py": "52b29a979b2788cd596ed002ee248abe77a902a7012c466a37757ec5bd9ce5b4"
+  },
+  "historical": {
+    "leak": {
+      "hits": 3750,
+      "total": 3751
+    },
+    "coverage": {
+      "hits": 3691,
+      "total": 3751
+    },
+    "residual": {
+      "hits": 7549,
+      "total": 8349
+    },
+    "end_to_end": {
+      "hits": 301,
+      "total": 1736
+    },
+    "form_hIN": {
+      "hits": 3184,
+      "total": 3750
+    },
+    "form_hOUT": {
+      "hits": 5153,
+      "total": 7470
+    },
+    "chain_value": {
+      "hits": 9,
+      "total": 197
+    },
+    "chain_form": {
+      "hits": 11,
+      "total": 197
+    },
+    "consistency": {
+      "hits": 1267,
+      "total": 1295
+    },
+    "memory_consistency": {
+      "hits": 549,
+      "total": 549
+    },
+    "multi_all_out": {
+      "hits": 0,
+      "total": 330
+    },
+    "overmask": {
+      "hits": 450,
+      "total": 450
+    },
+    "out_absent": {
+      "hits": 1498,
+      "total": 2692
+    }
+  },
+  "actual": {
+    "estimator": "m0-actual-out-v4",
+    "runs": 450,
+    "events_total": 11565,
+    "not_applicable": 5103,
+    "overall": {
+      "pii_type": "all",
+      "candidates": 6462,
+      "attributed": 3586,
+      "value_ok": 3137,
+      "form_ok": 2890,
+      "form_unmeasured": 3174,
+      "residual": 288,
+      "joint_ok": 2782,
+      "statuses": [
+        [
+          "matched",
+          3137
+        ],
+        [
+          "mixed",
+          2
+        ],
+        [
+          "residual",
+          288
+        ],
+        [
+          "value_wrong",
+          151
+        ],
+        [
+          "unmasked_known",
+          10
+        ],
+        [
+          "ambiguous",
+          2162
+        ],
+        [
+          "unattributed",
+          712
+        ]
+      ]
+    },
+    "by_type": [
+      {
+        "pii_type": "",
+        "candidates": 1210,
+        "attributed": 0,
+        "value_ok": 0,
+        "form_ok": 0,
+        "form_unmeasured": 1210,
+        "residual": 0,
+        "joint_ok": 0,
+        "statuses": [
+          [
+            "matched",
+            0
+          ],
+          [
+            "mixed",
+            1
+          ],
+          [
+            "residual",
+            0
+          ],
+          [
+            "value_wrong",
+            0
+          ],
+          [
+            "unmasked_known",
+            0
+          ],
+          [
+            "ambiguous",
+            497
+          ],
+          [
+            "unattributed",
+            712
+          ]
+        ]
+      },
+      {
+        "pii_type": "CARD",
+        "candidates": 43,
+        "attributed": 43,
+        "value_ok": 43,
+        "form_ok": 43,
+        "form_unmeasured": 0,
+        "residual": 0,
+        "joint_ok": 43,
+        "statuses": [
+          [
+            "matched",
+            43
+          ],
+          [
+            "mixed",
+            0
+          ],
+          [
+            "residual",
+            0
+          ],
+          [
+            "value_wrong",
+            0
+          ],
+          [
+            "unmasked_known",
+            0
+          ],
+          [
+            "ambiguous",
+            0
+          ],
+          [
+            "unattributed",
+            0
+          ]
+        ]
+      },
+      {
+        "pii_type": "DOB",
+        "candidates": 306,
+        "attributed": 65,
+        "value_ok": 65,
+        "form_ok": 65,
+        "form_unmeasured": 241,
+        "residual": 0,
+        "joint_ok": 65,
+        "statuses": [
+          [
+            "matched",
+            65
+          ],
+          [
+            "mixed",
+            0
+          ],
+          [
+            "residual",
+            0
+          ],
+          [
+            "value_wrong",
+            0
+          ],
+          [
+            "unmasked_known",
+            0
+          ],
+          [
+            "ambiguous",
+            241
+          ],
+          [
+            "unattributed",
+            0
+          ]
+        ]
+      },
+      {
+        "pii_type": "EMAIL",
+        "candidates": 77,
+        "attributed": 77,
+        "value_ok": 77,
+        "form_ok": 77,
+        "form_unmeasured": 0,
+        "residual": 0,
+        "joint_ok": 77,
+        "statuses": [
+          [
+            "matched",
+            77
+          ],
+          [
+            "mixed",
+            0
+          ],
+          [
+            "residual",
+            0
+          ],
+          [
+            "value_wrong",
+            0
+          ],
+          [
+            "unmasked_known",
+            0
+          ],
+          [
+            "ambiguous",
+            0
+          ],
+          [
+            "unattributed",
+            0
+          ]
+        ]
+      },
+      {
+        "pii_type": "LOC",
+        "candidates": 911,
+        "attributed": 592,
+        "value_ok": 246,
+        "form_ok": 297,
+        "form_unmeasured": 602,
+        "residual": 283,
+        "joint_ok": 241,
+        "statuses": [
+          [
+            "matched",
+            246
+          ],
+          [
+            "mixed",
+            0
+          ],
+          [
+            "residual",
+            283
+          ],
+          [
+            "value_wrong",
+            63
+          ],
+          [
+            "unmasked_known",
+            0
+          ],
+          [
+            "ambiguous",
+            319
+          ],
+          [
+            "unattributed",
+            0
+          ]
+        ]
+      },
+      {
+        "pii_type": "NAME",
+        "candidates": 1987,
+        "attributed": 881,
+        "value_ok": 790,
+        "form_ok": 838,
+        "form_unmeasured": 1112,
+        "residual": 3,
+        "joint_ok": 788,
+        "statuses": [
+          [
+            "matched",
+            790
+          ],
+          [
+            "mixed",
+            1
+          ],
+          [
+            "residual",
+            3
+          ],
+          [
+            "value_wrong",
+            85
+          ],
+          [
+            "unmasked_known",
+            3
+          ],
+          [
+            "ambiguous",
+            1105
+          ],
+          [
+            "unattributed",
+            0
+          ]
+        ]
+      },
+      {
+        "pii_type": "PHONE",
+        "candidates": 1928,
+        "attributed": 1928,
+        "value_ok": 1916,
+        "form_ok": 1570,
+        "form_unmeasured": 9,
+        "residual": 2,
+        "joint_ok": 1568,
+        "statuses": [
+          [
+            "matched",
+            1916
+          ],
+          [
+            "mixed",
+            0
+          ],
+          [
+            "residual",
+            2
+          ],
+          [
+            "value_wrong",
+            3
+          ],
+          [
+            "unmasked_known",
+            7
+          ],
+          [
+            "ambiguous",
+            0
+          ],
+          [
+            "unattributed",
+            0
+          ]
+        ]
+      }
+    ]
+  },
+  "limitations": [
+    "Actual tool leaves only; not full pipeline or behavioural equivalence",
+    "Unknown/ambiguous attribution is measurement uncertainty",
+    "Historical IN/answer/chain scores are not repaired by this report",
+    "No LLM generation or engine replay; saved outcomes only",
+    "Non-PHONE value predicates and free-text needles retain historical limitations",
+    "Whole/part records of one entity may remain conservatively ambiguous"
+  ]
+}

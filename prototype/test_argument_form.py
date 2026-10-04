@@ -24,13 +24,13 @@ from pseudex.redact import (mask_text, surviving_substitutes, unmask_arguments, 
 from pseudex.vault import Vault                  # noqa: E402
 
 
-def _round_trip(detector, source, take):
+def _round_trip(detector, source, take, field="field"):
     """Замаскировать, дать агенту взять КУСОК подмены, восстановить в аргументе."""
     vault = Vault(":memory:", "acme").for_conversation("c1")
     masked = mask_text(source, vault, detector.detect(source))
     written = take(masked)
     restored = json.loads(unmask_arguments(
-        json.dumps({"field": written}, ensure_ascii=False), vault))["field"]
+        json.dumps({field: written}, ensure_ascii=False), vault))[field]
     return masked, written, restored
 
 
@@ -388,14 +388,16 @@ def main() -> int:
     def passport(m: str) -> str:
         return re.search(r"\d{2} ?\d{2} \d{6}", m).group()  # type: ignore[union-attr]
 
-    for name, take, want in (
-        ("серия паспорта", lambda m: " ".join(passport(m).replace(" ", "")[i:i + 2] for i in (0, 2)), "45 09"),
-        ("номер паспорта", lambda m: passport(m)[-6:], "123456"),
-        ("последние четыре цифры телефона", lambda m: re.search(r"\+7\d{10}", m).group()[-4:], "4567"),  # type: ignore[union-attr]
-        ("первая группа СНИЛС", lambda m: re.search(r"\d{3}-\d{3}-\d{3} \d{2}", m).group()[:3], "112"),  # type: ignore[union-attr]
+    for name, take, field, want in (
+        ("серия паспорта", lambda m: " ".join(passport(m).replace(" ", "")[i:i + 2] for i in (0, 2)), "series", "45 09"),
+        ("номер паспорта", lambda m: passport(m)[-6:], "number", "123456"),
+        ("последние четыре цифры телефона", lambda m: re.search(r"\+7\d{10}", m).group()[-4:], "last4", "4567"),  # type: ignore[union-attr]
+        # Класс Д: у «первой группы СНИЛС» нет названного места в карте FieldSpec,
+        # поэтому под generic-ключом она остаётся фейком и НЕ угадывается.
+        ("первая группа СНИЛС", lambda m: re.search(r"\d{3}-\d{3}-\d{3} \d{2}", m).group()[:3], "field", None),  # type: ignore[union-attr]
     ):
-        _, _, restored = _round_trip(detector, source, take)
-        failures += not _check(name, restored, want)
+        masked, written, restored = _round_trip(detector, source, take, field)
+        failures += not _check(name, restored, written if want is None else want)
 
     # --- адрес, разложенный по ВЛОЖЕННЫМ полям ------------------------------
     # Схема CRM просит `contact.address.street`, а не `street` на верхнем уровне.
@@ -440,8 +442,9 @@ def main() -> int:
             json.dumps({"v": written}, ensure_ascii=False), vault))["v"]
         failures += not _check(name, restored, want)
     prose = unmask_text(f"перезвоним на {fake_phone}", vault)
-    failures += not _check("в прозе — как написал клиент", prose,
-                           "перезвоним на 8 916 402 11 87")
+    # The current sender owns the form in prose too (owner ruling 2026-09-27).
+    failures += not _check("в прозе — форма текущего ответа агента", prose,
+                           "перезвоним на +79164021187")
 
     # --- фамилия, которой морфология не знает, перед известным именем -------
     # «миллер валерий» читалось как (имя, фамилия): подмена чеканилась в том же

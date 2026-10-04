@@ -30,13 +30,15 @@ Run the test: cd prototype && source .venv/bin/activate
                 && python3 -m bench.agentpii5.test_metrics
 """
 import difflib
+import ipaddress
 from collections.abc import Sequence
 from dataclasses import replace
 
 from bench.agentpii4.parts import parts_of
 from bench.agentpii4.schema import Locus, PiiItem
+from bench.agentpii4.stats import zero_failure_floor
 from bench.agentpii4.tools import FieldSpec, flatten
-from bench.agentpii5 import contracts
+from bench.agentpii5 import checksum_v6, contracts, pii_types
 from bench.agentpii5.contracts import (
     HopObservation,
     Line,
@@ -50,7 +52,9 @@ from bench.agentpii5.observe import (
     answer_spans,
     calls_of_turn,
     covering_piece,
+    digits_of,
     fold,
+    glyph_fold,
     item_survives_in,
     items_by_id,
     occurrences_of,
@@ -60,8 +64,10 @@ from bench.agentpii5.observe import (
     span_of_item,
     residual_answer_items,
     substitute_surfaces,
+    squeeze,
     survives_in,
     value_needles,
+    values_equal,
 )
 from bench.agentpii5.tools import expected_leaf_value, spec_v5_for
 
@@ -88,6 +94,28 @@ REWRITE_RATIO_FLOOR = 0.7
 # disagreeing about whether «марта» identifies anybody.
 GRAMMAR_WORDS: frozenset[str] = GENERIC_WORDS
 
+# --- the v6 registry surface (TZ §1.0, §5.5, §6.2, §6.3, §6.5) -------------------
+#
+# Everything here reads the ONE home (`pii_types`) and never restates a fact it
+# owns: the value comparison keyed by `value_notation`, the alias table for
+# `typed`/`typed_user`, the `type_class` axis, and the three OD-54 rows. The v5
+# path is untouched — a v5 type is not in these branches, so an old-corpus run
+# prints the SAME bytes as before (F7).
+_SPECS: dict[str, pii_types.TypeSpec] = {t.id: t for t in pii_types.TYPE_REGISTRY}
+_TYPE_CLASS: dict[str, str] = {t.id: t.type_class for t in pii_types.TYPE_REGISTRY}
+# The v6 report axes (TZ §6.5). Kept OUT of `contracts.AXES`; `by_axis` accepts
+# them only when a v6 caller asks, so the old report's `_axis_rows` over
+# `contracts.AXES` is unchanged.
+V6_AXES: tuple[str, ...] = contracts.V6_AXES
+# The tag a v6 result slot wears to mark a NEGATIVE inside a result (TZ §6.3
+# `overmask_result`, CQ-11). Mirrors `contracts.ECHO_TAG_PREFIX` for echoes: a
+# tag that is not an item id, so the observer never confuses it with a positive.
+NEG_TAG_PREFIX: str = "neg:"
+# The fixed BIK `gen_v6` mints BANK_ACCOUNT values against (the pair check of
+# CBR 515 needs the BIK; there is exactly one in the corpus). Named here rather
+# than imported so this module stays a CALLER of `checksum_v6` only (R6-07).
+_BANK_ACCOUNT_BIK: str = "049805746"
+
 
 # --- shared readers --------------------------------------------------------------------
 
@@ -113,18 +141,105 @@ def _item_of(one: RunObservation, item_id: str) -> PiiItem | None:
 
 
 def value_matches(pii_type: str, produced: str, target: str) -> bool:
-    """Did the consumer receive THE WHOLE value, byte for byte.
+    """Did the consumer receive THE SAME VALUE, whatever notation wrote it.
 
-    LOC is the one exception, and it is not leniency: an address is carried by
-    several fields and joined with `FIELD_SEP`, so the string can never equal a
-    one-line canonical. The roles are compared instead — street, house, flat —
-    and the city is left out because a tool that stores the city in its own
-    field is not a different address."""
-    if pii_type == "LOC":
-        left, right = parts_of("LOC", produced.replace(contracts.FIELD_SEP, ", ")), parts_of("LOC", target)
-        roles = [role for role in ("street", "house", "flat") if role in right]
-        return bool(roles) and all(fold(left.get(role, "")) == fold(right[role]) for role in roles)
-    return fold(produced.strip()) == fold(target.strip())
+    A THIN CALLER OF `observe.values_equal`, which reads the closed table
+    `contracts.VALUE_NORMALISERS` (SPIKE-Ж, Ж-1). It used to be a SECOND
+    implementation — `fold(produced) == fold(target)` with a LOC exception — and
+    the choice between it and the needle layer's copy was made by whether a
+    leaf's `FieldSpec.role` was empty, so a PLATE written «в 163 оу 23» against
+    the canonical «В163ОУ23» read as the gateway's miss on a value the tool's
+    own parser had accepted. The LOC exception did not disappear: it is the
+    table's `place_roles` reading, and `test_spike_zh` pins that both former
+    copies now answer it the same way (they disagreed in BOTH directions).
+
+    THE v6 BRANCH IS ADDITIVE AND LEAVES THE v5 PATH BYTE-FOR-BYTE (SPEC §2.1
+    C07: keep_v5 + adopt_v6). A v6 type compares by its registry `value_notation`
+    (TZ §5.5, R6-38): digits, a date, a squeezed/glyph-folded spelling, or a
+    strict IP address — never a byte comparison, so a substitute with the right
+    digits and wrong separators still IS the value. The eleven v5 types are
+    `ORIGIN_V5` and fall straight through to `values_equal`, so the old-corpus
+    replay prints the same bytes as before (F7). The v6 side is deliberately NOT
+    a second LOC branch: the v5 table already answers LOC through `place_roles`,
+    and a hand-written copy beside it is exactly the drift class Ж removed."""
+    spec = _SPECS.get(pii_type)
+    if spec is not None and spec.origin == pii_types.ORIGIN_V6:
+        return _v6_value_matches(spec, produced, target)
+    return values_equal(pii_type, produced, target)
+
+
+def _notation_equal(spec: pii_types.TypeSpec, left: str, right: str) -> bool:
+    """Two renderings of one v6 value, compared in the notation the registry
+    declares (`value_notation`, TZ §5.5). THE LETTERS ENTER for a glyph-folded
+    type: a substitution of the SERIES is a miss, the correct series a hit. An
+    IPv4 with a leading zero is a DIFFERENT host (`ip_strict`), so the padded
+    spelling is a miss even though `octets` still finds it as a LEAK."""
+    if not left or not right:
+        return False
+    notation = spec.value_notation
+    if notation == "digits":
+        return bool(digits_of(left)) and digits_of(left) == digits_of(right)
+    if notation == "date":
+        return bool(parts_of("DOB", left)) and parts_of("DOB", left) == parts_of("DOB", right)
+    if notation == "squeezed":
+        return bool(squeeze(left)) and squeeze(left) == squeeze(right)
+    if notation == "glyph_fold":
+        return bool(glyph_fold(left)) and glyph_fold(left) == glyph_fold(right)
+    if notation == "ip_strict":
+        return _ip_strict_equal(left, right)
+    return fold(left.strip()) == fold(right.strip())
+
+
+def _ip_strict_equal(left: str, right: str) -> bool:
+    """Strict `ipaddress` equality of both sides (TZ §5.5). `ipaddress` refuses
+    a padded IPv4 octet, so «192.168.010.024» is NOT «192.168.10.24» here —
+    the value comparison is strict where the `octets` LEAK needle is lenient."""
+    try:
+        return ipaddress.ip_address(left.strip()) == ipaddress.ip_address(right.strip())
+    except ValueError:
+        return False
+
+
+def _v6_value_matches(spec: pii_types.TypeSpec, produced: str, target: str) -> bool:
+    """A v6 value compared in its `value_notation` (TZ §5.5, R6-38).
+
+    The by-fields reading needs NO branch of its own: a series and a number
+    carried in separate leaves arrive joined with `FIELD_SEP`, and the notation
+    fold (digits / squeeze / glyph_fold) drops `FIELD_SEP` and concatenates IN
+    ORDER — so the correct assignment folds to the canonical while a swapped
+    series/number folds to a different run and is a miss. """
+    return _notation_equal(spec, produced, target)
+
+
+def _checksum_canonical(spec: pii_types.TypeSpec, surface: str) -> str:
+    """The surface folded into the shape the published checksum is defined over:
+    the internal span separators are dropped (`value_notation` decides which
+    fold), so a grouped substitute «7707 5364 …» is validated as its digit run
+    and never as the raw string (TZ §6.3 `fake_checksum_invalid`)."""
+    notation = spec.value_notation
+    if notation == "digits":
+        return digits_of(surface)
+    if notation == "glyph_fold":
+        return glyph_fold(surface)
+    if notation == "squeezed":
+        return squeeze(surface)
+    return surface
+
+
+def _checksum_valid(spec: pii_types.TypeSpec, surface: str) -> bool:
+    """Does `surface` PASS the published checksum the registry names? A caller
+    of `checksum_v6` only (R6-07: the arithmetic lives in its two homes); the
+    BANK_ACCOUNT key is a (account, BIK) pair, so it takes the fixed corpus BIK.
+    """
+    canonical = _checksum_canonical(spec, surface)
+    if not canonical:
+        return False
+    if spec.id == "BANK_ACCOUNT":
+        return checksum_v6.validate_account(canonical, _BANK_ACCOUNT_BIK)
+    try:
+        return checksum_v6.validate(spec.id, canonical)
+    except KeyError:
+        return False
 
 
 def leaf_spec(tool_name: str, path: str) -> FieldSpec | None:
@@ -171,20 +286,62 @@ def returned_as_item(source: PiiItem, returned: str) -> PiiItem:
 def role_matches(pii_type: str, produced: str, target: str) -> bool:
     """Did THIS LEAF receive its own part of the value.
 
-    A THIN CALLER OF `observe.part_matches` (contracts §4bis). The comparison
-    of two renderings of one part belongs to the needle layer — `leaf_holds`
-    asks it of a substitute and this line asks it of the real value, and two
-    copies of «is this the same part written another way» is exactly the
-    shape of the defect round 4 removed. The FORM the leaf wears is
-    `form_hOUT`'s question and is not folded in here."""
+    A THIN CALLER OF THE ONE PREDICATE (contracts §4bis, SPIKE-Ж Ж-1). The
+    comparison of two renderings of one part belongs to the needle layer —
+    `leaf_holds` asks it of a substitute and this line asks it of the real
+    value, and two copies of «is this the same part written another way» is
+    exactly the shape of the defect round 4 removed. Since class Ж the two
+    names call ONE implementation (`observe.values_equal` over
+    `contracts.VALUE_NORMALISERS`), so a difference between them can no longer
+    be produced by editing one of them. The FORM the leaf wears is
+    `form_hOUT`'s question and is not folded in here.
+
+    A v6 part compares by its registry `value_notation` (TZ §5.5, R6-38) — the
+    same `_notation_equal` `value_matches` uses, minus the by-fields join: a
+    role'd leaf already holds ONE part, so there is nothing to split. The v5
+    path stays `part_matches`, untouched, so a v5 type prints the same byte it
+    printed before the merge (SPEC §2.1 C07: keep_v5 + adopt_v6)."""
+    spec = _SPECS.get(pii_type)
+    if spec is not None and spec.origin == pii_types.ORIGIN_V6:
+        return _notation_equal(spec, produced, target)
     return part_matches(pii_type, produced, target)
+
+
+def leaf_value_ok_for_spec(item: PiiItem, spec: FieldSpec | None, produced: str) -> bool:
+    """THE PREDICATE, parameterised by the SPEC — «did this leaf receive what it
+    asks for».
+
+    IT IS ONE FUNCTION WITH TWO CALLERS AND THAT IS THE WHOLE POINT (SPIKE-Е,
+    Е-7). `end_to_end` asks it of a hop, `end_to_end_written` asks it of the
+    same hop, and `observe._out_status` asks it to decide between the correct
+    real value (`engine_kept` / `not_masked`) and a foreign one
+    (`leaf_foreign`). Two copies of «is this the value the tool asked for» is
+    exactly the drift R-53 removed: the honest share and the headline would stop
+    differing by their population and start differing by their rule.
+
+    THE ROLE PICKS THE TARGET, NEVER THE COMPARATOR (SPIKE-Ж, Ж-3). It used to
+    fork — `value_matches` for a role-less leaf, `role_matches` for a role leaf —
+    and the fork decided which of two copies of «same value» a hop got. The
+    leaves the class-Ж witnesses land on are exactly the role-less ones
+    (`calendar_free.person`, `vehicle_check.plate`, `snils_verify.snils`), so
+    the fork was not a distinction between two questions: it was a coin. One
+    predicate now, and the role still chooses the PART of the value
+    (`expected_leaf_value`).
+    """
+    if spec is not None and spec.kind == "free":
+        return item_survives_in(item, item.canonical or item.value, produced)
+    target = expected_leaf_value(item, spec) if spec is not None and spec.role \
+        else (item.canonical or item.value)
+    return values_equal(item.type, produced, target)
 
 
 def leaf_value_ok(item: PiiItem, tool_name: str, path: str, produced: str) -> bool:
     """Did the leaf receive the value asked of it: its PART when the tool asks
     for a part, the whole value when it asks for the whole.
 
-    A THIN CALLER OF `tools.expected_leaf_value` (R-53). What a leaf expects is
+    IT LOOKS THE SPEC UP AND HANDS IT ON: `leaf_value_ok_for_spec` is where the
+    rule lives, and this name is the one every tool-leaf caller uses. The rule
+    itself is a thin caller of `tools.expected_leaf_value` (R-53). What a leaf expects is
     the registry's business and it is decided there, once; this function only
     compares, and the comparison is per type — digits with digits, an ISO date
     with an ISO date (`role_matches`). Two definitions of the expected value
@@ -217,12 +374,7 @@ def leaf_value_ok(item: PiiItem, tool_name: str, path: str, produced: str) -> bo
     asks of the reply, which is the same shape of text. It can still fail: a
     leaf holding another value, an empty leaf, or one where the substitute was
     never restored carries no needle of the expected value."""
-    spec = leaf_spec(tool_name, path)
-    if spec is not None and spec.kind == "free":
-        return item_survives_in(item, item.canonical or item.value, produced)
-    if spec is None or not spec.role:
-        return value_matches(item.type, produced, item.canonical or item.value)
-    return role_matches(item.type, produced, expected_leaf_value(item, spec))
+    return leaf_value_ok_for_spec(item, leaf_spec(tool_name, path), produced)
 
 
 def _item_value_ok(hop: HopObservation, item: PiiItem) -> bool:
@@ -250,9 +402,17 @@ def value_repaired(pii_type: str, produced: str, target: str) -> bool:
 
 
 def _item_value_repaired(hop: HopObservation, item: PiiItem) -> bool:
-    """`value_repaired`, asked of the leaf's own part. Without the role the
-    diagnostic would answer a different question from the line it explains,
-    and the two would stop differing by «what normalisation costs»."""
+    """`value_repaired`, asked of the leaf's own part.
+
+    THE FORK HERE IS ABOUT THE TARGET, NOT THE COMPARATOR (SPIKE-Ж, Ж-3). A
+    role-less leaf is still asked the whole `value_repaired` — its lenient
+    per-type ladder (a canonical date notation, a declined name, the digits of a
+    phone) is the diagnostic's own question and `round_trip_repaired` is
+    published apart from `round_trip` precisely because the two differ by what
+    normalisation costs. The one way they could ALSO have differed — by their
+    RULE — is gone: `role_matches` and `value_matches` are now one predicate, so
+    this diagnostic cannot disagree with the line it explains about whether two
+    spellings are one value."""
     spec = leaf_spec(hop.hop.tool_name, hop.hop.path)
     if spec is None or not spec.role:
         return value_repaired(item.type, hop.produced, item.canonical or item.value)
@@ -383,8 +543,9 @@ def round_trip(observations: Sequence[RunObservation]) -> Line:
     folded per type there and nothing else is: a value that arrived REPAIRED
     (the nominative of a declined name) is counted by `round_trip_repaired`
     and nowhere else (§4.4 «без фолбэков»). A leaf the gateway never masked
-    (`unmasked`) and one the agent never wrote (`absent`) are misses inside the
-    denominator."""
+    (`engine_kept` / `not_masked` / `leaf_foreign`, the three facts class Е
+    split out of `unmasked`) and one the agent never wrote (`absent`) are
+    misses inside the denominator."""
     rows = _altered_with_parameter(observations)
     hits = sum(1 for _one, hop, item in rows
                if hop.status == "observed" and _item_value_ok(hop, item))
@@ -404,16 +565,24 @@ def round_trip_repaired(observations: Sequence[RunObservation]) -> Line:
 def end_to_end(observations: Sequence[RunObservation]) -> Line:
     """«The agent still works»: the gateway restored the real value at the
     leaf, over ALL declared tool arguments — the ones the agent never wrote
-    (`absent`) and the ones it never masked (`unmasked`) included, both as
-    MISSES.
+    (`absent`) and the ones it never masked (`engine_kept` / `not_masked` /
+    `leaf_foreign`) included, both as MISSES.
 
     A PASSTHROUGH SCORES 0 HERE, NOT 100, and this docstring used to say the
-    opposite. F1.3 made an OUT leaf carrying no substitute `unmasked`, and
-    every form and value line counts that as a miss inside the denominator —
-    so «the tool got the real value» stopped being the question: the question
-    is whether the gateway PUT it there. Measured on the production observer:
-    a gateway that masks nothing prints 0/2 (`report --selftest`'s
-    `end_to_end` mutant is that old promise, written out).
+    opposite. F1.3 made an OUT leaf carrying no substitute a miss of its own
+    status (`unmasked` then, three statuses since class Е), and every form and
+    value line counts that as a miss inside the denominator — so «the tool got
+    the real value» stopped being the question: the question is whether the
+    gateway PUT it there. Measured on the production observer: a gateway that
+    masks nothing prints 0/2 (`report --selftest`'s `end_to_end` mutant is that
+    old promise, written out).
+
+    THE DENOMINATOR IS THE CORPUS'S AND IS NOT NARROWED BY THIS ROUND, on
+    purpose: the honest share over the leaves the engine had to restore is
+    `end_to_end_written`, printed BESIDE this line (`report.beside_of`) and
+    never instead of it. Narrowing here is the move v4's D3 defect came from
+    («did the arm act at all»), and it is what would let a counting fix be read
+    as an engine improvement.
 
     The consequence is stated rather than hidden: this line and `leak` are no
     longer independent halves of the promise — one masking failure now shows
@@ -428,6 +597,57 @@ def end_to_end(observations: Sequence[RunObservation]) -> Line:
         hits += 1 if (hop.status == "observed" and item is not None
                       and _item_value_ok(hop, item)) else 0
     return _line("end_to_end", hits, total)
+
+
+def _out_leaf_rows(observations: Sequence[RunObservation]) -> list[tuple[RunObservation, HopObservation]]:
+    """Declared OUT/tool_arg leaves — `end_to_end`'s population, in the order
+    the report reads it. One reader for the strict line and for its honest
+    sibling, so the two can differ by their POPULATION and by nothing else."""
+    return [(one, hop) for one, hop in _owned(observations, "OUT", ("tool_arg",)) if hop.declared]
+
+
+def end_to_end_written(observations: Sequence[RunObservation]) -> Line:
+    """THE ENGINE'S HONEST SHARE, published BESIDE the strict headline and never
+    instead of it (SPIKE-Е, Е-3; the owner's ruling in `DECISIONS-SPRINT.md`).
+
+    WHY THE STRICT LINE STAYS. `end_to_end` counts every declared leaf, `absent`
+    (the agent wrote nothing) and `engine_kept` / `not_masked` (there was
+    nothing to restore) included, and it must: a denominator that shrinks when
+    the agent does less work is v4's D3 defect, and a denominator that drops the
+    leaves the engine never masked would let a passthrough earn the line whose
+    job is to catch it. Measured on the corpus: 41 % strict against ≈90–96 % of
+    the leaves the engine actually had to restore (DIAGNOSIS §Рефрейм). The
+    strict number is a statement about the TRAJECTORY OF A FREE AGENT; published
+    alone it reads as a statement about the engine, and no engine fix can move
+    it — which is why the split comes first.
+
+    THE POPULATION IS `contracts.OUT_HOP_RESTORABLE_STATUSES`, and each status
+    is there for a reason the strict line does not share. `observed` and
+    `residual` put a substitute in the agent's hand, so the restoration was the
+    engine's to perform. `leaf_foreign` says a third value arrived where a datum
+    was at stake — leaving it out would hide a wrong value behind the
+    denominator. `engine_kept` and `not_masked` are OUT and printed as counts
+    (`out_no_mint`, `out_engine_kept`, `out_not_masked`): a leaf that already
+    holds the real value proves nothing about restoring it, and `absent` is a
+    fact about the agent, printed by `out_absent`.
+
+    THE HIT IS THE STRICT HIT — `status == "observed"` and the SAME
+    `leaf_value_ok` (Е-7). The two lines differ by their population and by
+    nothing else, which is what lets a reader put them on one page.
+
+    A PASSTHROUGH PRINTS «н/п» HERE AND 0 ON THE STRICT LINE. That is not
+    leniency: there was nothing to restore, so there is no share to report, and
+    the gateway that protected nothing is caught by `leak` on the IN leg."""
+    hits = 0
+    total = 0
+    for one, hop in _out_leaf_rows(observations):
+        if hop.status not in contracts.OUT_HOP_RESTORABLE_STATUSES:
+            continue
+        total += 1
+        item = _item_of(one, hop.hop.item_id)
+        hits += 1 if (hop.status == "observed" and item is not None
+                      and _item_value_ok(hop, item)) else 0
+    return _line("end_to_end_written", hits, total)
 
 
 def overmask(observations: Sequence[RunObservation]) -> Line:
@@ -576,17 +796,22 @@ def form_hOUT(observations: Sequence[RunObservation]) -> Line:  # noqa: N802 - t
     """Did the REAL value come back in the AGENT's form — the form read off the
     agent's own output, never a canonical the benchmark chose.
 
-    OVER THE OUT HOPS THE AGENT WROTE, which is `observed` ∪ `unmasked` and
-    not «all declared tool arguments» as this docstring used to promise. An
-    `unmasked` leaf carried no substitute, so there was nothing to restore and
-    the comparison was of a string with itself — a MISS, in the denominator,
-    never a hit. An `absent` leaf was never written at all: it is a fact about
-    the AGENT and it is printed on its own line (`out_absent`), because a
-    denominator that shrinks when the agent does less work is the v4 D3
-    defect and a denominator that grows with it flatters a gateway that
-    protected nothing."""
+    OVER THE OUT HOPS THE AGENT WROTE — `contracts.OUT_HOP_WRITTEN_STATUSES`,
+    every status but `absent`, and not «all declared tool arguments» as this
+    docstring used to promise. A leaf the gateway never masked carried no
+    substitute, so there was nothing to restore and the comparison was of a
+    string with itself — a MISS, in the denominator, never a hit; the split put
+    three names on that fact (`engine_kept`, `not_masked`, `leaf_foreign`) and
+    all three stay in. `residual` is in it NOW and was not before: a leaf
+    holding a fake the agent wrote is written, and the old pair («observed ∪
+    unmasked») spelled the population from the other end and left out the one
+    state in which a fake reached the customer's tool. An `absent` leaf was
+    never written at all: it is a fact about the AGENT and it is printed on its
+    own line (`out_absent`), because a denominator that shrinks when the agent
+    does less work is the v4 D3 defect and a denominator that grows with it
+    flatters a gateway that protected nothing."""
     rows = [hop for _one, hop in _hops(observations, "OUT")
-            if hop.status in ("observed", "unmasked")]
+            if hop.status in contracts.OUT_HOP_WRITTEN_STATUSES]
     return _line("form_hOUT", sum(1 for hop in rows if hop.verdict is not None and hop.verdict.same), len(rows))
 
 
@@ -597,6 +822,56 @@ def out_absent(observations: Sequence[RunObservation]) -> Line:
     agent that wrote almost nothing."""
     rows = [hop for _one, hop in _hops(observations, "OUT") if hop.declared]
     return _line("out_absent", sum(1 for hop in rows if hop.status == "absent"), len(rows))
+
+
+def out_written(observations: Sequence[RunObservation]) -> Line:
+    """DIAGNOSTIC, the population `form_hOUT` counts: declared OUT hops the
+    agent wrote something in. `out_absent` is its complement over the same
+    denominator, and the two together are every declared OUT hop — which is how
+    a reader checks that neither line quietly moved."""
+    rows = [hop for _one, hop in _hops(observations, "OUT") if hop.declared]
+    return _line("out_written", sum(1 for hop in rows if hop.status != "absent"), len(rows))
+
+
+def out_no_mint(observations: Sequence[RunObservation]) -> Line:
+    """DIAGNOSTIC: declared OUT hops the engine had NOTHING to restore on —
+    `engine_kept` and `not_masked`, both halves in one count. It is exactly the
+    population `end_to_end_written` subtracts from «everything the agent
+    wrote», and printing it is what makes the subtraction visible instead of
+    silent (the precedent is J1.1's `answer_optional_only`)."""
+    rows = [hop for _one, hop in _hops(observations, "OUT") if hop.declared]
+    return _line("out_no_mint",
+                 sum(1 for hop in rows if hop.status in ("engine_kept", "not_masked")), len(rows))
+
+
+def out_engine_kept(observations: Sequence[RunObservation]) -> Line:
+    """DIAGNOSTIC: the engine LEFT THE REAL VALUE ON PURPOSE — a generic role
+    (`contracts.GENERIC_PIECE_ROLES`) with the mint record proving it was awake
+    for this entity. Printed rather than subtracted because it is the one status
+    that could hide a real over-masking defect: if the engine started masking
+    settlements, these leaves would become `observed` and this count would fall
+    (SPIKE-Е risk 2)."""
+    rows = [hop for _one, hop in _hops(observations, "OUT") if hop.declared]
+    return _line("out_engine_kept", sum(1 for hop in rows if hop.status == "engine_kept"), len(rows))
+
+
+def out_not_masked(observations: Sequence[RunObservation]) -> Line:
+    """DIAGNOSTIC: the leaf already held the REAL value and no substitute was
+    minted for it — a passthrough, or a leaf naming no generic role. The fact
+    that used to be one cell together with `engine_kept` and a third value:
+    read beside `out_engine_kept` it says whether «the engine did not mask
+    here» was a decision or a failure."""
+    rows = [hop for _one, hop in _hops(observations, "OUT") if hop.declared]
+    return _line("out_not_masked", sum(1 for hop in rows if hop.status == "not_masked"), len(rows))
+
+
+def out_leaf_foreign(observations: Sequence[RunObservation]) -> Line:
+    """DIAGNOSTIC: a THIRD value stands in the leaf — neither this datum's
+    substitute nor its real value. `form_match` cannot see it (`verdict` is
+    None, `produced == reference`), so before the split the report had no cell
+    in which this fact was named at all."""
+    rows = [hop for _one, hop in _hops(observations, "OUT") if hop.declared]
+    return _line("out_leaf_foreign", sum(1 for hop in rows if hop.status == "leaf_foreign"), len(rows))
 
 
 def _span_masked(record: ToolResultRecord, item: PiiItem, span: tuple[int, int]) -> bool:
@@ -620,8 +895,16 @@ def _span_masked(record: ToolResultRecord, item: PiiItem, span: tuple[int, int])
 
 
 def _record_clean(record: ToolResultRecord, items: dict[str, PiiItem]) -> bool:
-    """Every TAGGED slot of this result was masked, pieces included."""
+    """Every TAGGED slot of this result was masked, pieces included.
+
+    A `neg:` slot is a NEGATIVE (a business identifier that must stay), not a
+    PII item to mask — `overmask_result` scores it, and a right gateway leaves it
+    untouched. Folding it in here would make every result carrying a negative
+    read as a `toolresult_masked` miss, which is the defect this line existed to
+    prevent in the other direction."""
     for tag, span in record.spans_real.items():
+        if tag.startswith(NEG_TAG_PREFIX):
+            continue
         owner = _tagged_item(items, tag)
         if owner is None or not _span_masked(record, owner, span):
             return False
@@ -843,6 +1126,45 @@ def chain_form(observations: Sequence[RunObservation]) -> Line:
     return _line("chain_form", hits, len(rows))
 
 
+def _written_transitions(observations: Sequence[RunObservation]
+                         ) -> list[tuple[RunObservation, HopObservation, HopObservation]]:
+    """`_transitions`, restricted to the OUT(B) leaves the engine had something
+    to do on — the population rule of `end_to_end_written`, at the transition
+    level. `chain_value` / `chain_form` keep the corpus's whole timetable; these
+    read the hand-overs the engine was actually asked to perform."""
+    return [(one, hop, source) for one, hop, source in _transitions(observations)
+            if hop.status in contracts.OUT_HOP_RESTORABLE_STATUSES]
+
+
+def chain_value_written(observations: Sequence[RunObservation]) -> Line:
+    """`chain_value` over the restorable hand-overs. The strict line counts an
+    `absent` B as a broken hand-over, which it is not — nothing crossed — and
+    744 of the 6 880 scheduled transitions on the saved corpus read that way
+    while the same tool worked in another turn (SPIKE-Е, Е-5: the timetable is
+    the timetable). This line names what the engine did with what the agent
+    wrote; the same identity test and the same value predicate."""
+    hits = 0
+    rows = _written_transitions(observations)
+    for one, hop, source in rows:
+        left, right = _item_of(one, hop.hop.item_id), _item_of(one, source.hop.item_id)
+        same_identity = left is not None and right is not None and left.identity == right.identity
+        arrived = right is not None and leaf_value_ok(
+            returned_as_item(right, source.reference),
+            hop.hop.tool_name, hop.hop.path, hop.produced)
+        hits += 1 if (hop.status == "observed" and same_identity and arrived) else 0
+    return _line("chain_value_written", hits, len(rows))
+
+
+def chain_form_written(observations: Sequence[RunObservation]) -> Line:
+    """Same population, the other question: did B receive it in the AGENT's
+    form. Read beside `chain_value_written` it separates «the value was lost»
+    from «the value arrived canonicalised»."""
+    rows = _written_transitions(observations)
+    hits = sum(1 for _one, hop, _source in rows
+               if hop.status == "observed" and hop.verdict is not None and hop.verdict.same)
+    return _line("chain_form_written", hits, len(rows))
+
+
 def _multi_turns(observations: Sequence[RunObservation]) -> list[tuple[RunObservation, int, list[HopObservation]]]:
     out: list[tuple[RunObservation, int, list[HopObservation]]] = []
     for one in observations:
@@ -873,6 +1195,40 @@ def multi_all_out(observations: Sequence[RunObservation]) -> Line:
                 good = False
         hits += 1 if good else 0
     return _line("multi_all_out", hits, len(rows))
+
+
+def multi_all_out_written(observations: Sequence[RunObservation]) -> Line:
+    """`multi_all_out` over the turns the agent actually wrote in.
+
+    WHY THE STRICT LINE COULD NOT ANSWER THIS. `_multi_turns` filters on the
+    CASE — declared, non-optional, ≥ 2 leaves — and never looks at the status,
+    so a turn where the agent wrote one leaf and left the other blank is `0/1`
+    for the whole turn. On g02, 55 of 56 multi-hop turns had NEITHER leaf
+    written (the scene gives no interval that the `courier_book` schema
+    demands) and the headline printed 0/56: a fact about the SCENE, read as a
+    defect of the engine.
+
+    THE POPULATION IS THE RESTORABLE LEAVES OF THE TURN, and a turn with none
+    is outside the denominator — the strict line still counts it as a miss, so
+    the two differ by the population and by nothing else. Order is still not a
+    condition and the form verdict is still asked (`multi_all_out`'s own
+    ruling)."""
+    rows = _multi_turns(observations)
+    hits = 0
+    total = 0
+    for one, _turn, hops in rows:
+        written = [hop for hop in hops if hop.status in contracts.OUT_HOP_RESTORABLE_STATUSES]
+        if not written:
+            continue
+        total += 1
+        good = True
+        for hop in written:
+            item = _item_of(one, hop.hop.item_id)
+            if not (hop.status == "observed" and hop.verdict is not None and hop.verdict.same
+                    and item is not None and _item_value_ok(hop, item)):
+                good = False
+        hits += 1 if good else 0
+    return _line("multi_all_out_written", hits, total)
 
 
 def same_substitute(pii_type: str, left: str, right: str) -> bool:
@@ -1251,12 +1607,13 @@ def residual(observations: Sequence[RunObservation]) -> Line:
     an agent that called nothing at all — the critical-defect line certifying
     a run in which nothing happened.
 
-    An `unmasked` leaf IS clean here, and the exception is deliberate: the
-    agent wrote the real value because the gateway never minted a substitute,
-    so no fake reached the consumer. That failure is `leak`'s to report, and
-    making this line fire on it would mean two lines for one defect and a
-    `residual` number that no longer means what it says. Everywhere a FORM or
-    a VALUE is asked of an OUT hop, `unmasked` is a miss.
+    A LEAF THAT CARRIES NO SUBSTITUTE IS CLEAN HERE, and the exception is
+    deliberate: `not_masked` and `engine_kept` hold the REAL value, so no fake
+    reached the consumer (`leak` is where that failure is reported, and firing
+    here as well would mean two lines for one defect and a `residual` number
+    that no longer means what it says); `leaf_foreign` holds a third value,
+    which is neither a residual of this datum nor a restoration of it.
+    Everywhere a FORM or a VALUE is asked of an OUT hop, all three are misses.
 
     AN EARLIER TURN COUNTS TOO (R-54). `ArmRunV5.turn_residual` is how many of
     the agent's own earlier turns still held a minted substitute when the judge
@@ -1290,16 +1647,251 @@ def stream_fidelity(observations: Sequence[RunObservation]) -> Line:
     return _line("stream_fidelity", sum(1 for one in rows if not one.run.stream_mismatch), len(rows))
 
 
+# --- §6.3 the three v6 rows (OD-54) ---------------------------------------------------
+#
+# Each is a v6-only line, printed on runs with a v6 case and gated by its own
+# three fixtures (TZ §6.3: «без трёх фикстур ворота отказывают им в печати»).
+# They live OUTSIDE `METRIC_FUNCTIONS` on purpose: `contracts.METRICS` is the
+# closed v5 surface and `test_metrics.test_every_metric_registered` pins
+# `METRIC_FUNCTIONS` to exactly those names, so a v6 row registered there would
+# turn the v5 battery red without a v6 case anywhere in sight.
+
+
+def _engine_labels(pii_type: str) -> tuple[str, ...]:
+    """The engine labels a type accepts for `typed`/`typed_user` (TZ §6.2):
+    `engine_labels` from the registry, never another element type. A v5 type has
+    no labels and the DOB/DATE equivalence is the one declared exception."""
+    spec = _SPECS.get(pii_type)
+    return spec.engine_labels if spec is not None else ()
+
+
+def _covering_message_piece(run: object, item: PiiItem) -> tuple[int, int, int, str] | None:
+    """The recorded message piece that covers this item's locus ENTIRELY (OD-76).
+    `ArmRunV5.message_pieces` is the IN/user analogue of `ToolResultRecord.pieces`;
+    a piece covering only part of the item's span leaves the rest in the model's
+    context and is no cover, exactly like `observe.covering_piece`."""
+    if item.where.kind != "message" or item.where.msg < 0:
+        return None
+    for piece in run.message_pieces:  # type: ignore[attr-defined]
+        msg, start, end, engine_type = piece
+        if msg == item.where.msg and start <= item.where.start and item.where.end <= end:
+            return piece
+    return None
+
+
+def typed_user(observations: Sequence[RunObservation]) -> Line:
+    """Did the gateway also call an IN/user value the right type (OD-76, §6.3).
+
+    `typed` reads IN/tool and IN/document hops off `ToolResultRecord.pieces`; the
+    user leg had no piece record at all, so a message value mistyped as CARD was
+    invisible (F21). The denominator is the IN/user hops whose locus a recorded
+    piece covers — the value was actually replaced and a type exposed; a hop with
+    no covering piece is outside it, the way `typed` skips an uncovered slot."""
+    hits = 0
+    total = 0
+    for one, hop in _hops(observations, "IN"):
+        if hop.hop.owner != "user":
+            continue
+        item = _item_of(one, hop.hop.item_id)
+        if item is None:
+            continue
+        piece = _covering_message_piece(one.run, item)
+        if piece is None:
+            continue
+        total += 1
+        labels = _engine_labels(item.type)
+        hits += 1 if piece[3] in labels else 0
+    return _line("typed_user", hits, total)
+
+
+def fake_checksum_invalid(observations: Sequence[RunObservation]) -> Line:
+    """HISTORICAL v1 — checksum-carrying elements whose SUBSTITUTE fails its own
+    checksum (§6.3).
+
+    KEPT AS A VERSIONED ROW, NEVER REWRITTEN IN PLACE (V1 S5, MUTANT-LINE-
+    REDEFINE). Its accepted semantics were the R6-39 re-mint-until-invalid rule,
+    boundary 1.0; `COV-CHECKSUM-INHERIT` replaces them with inheritance — a VALID
+    source mints a VALID substitute — under which this line prints 0/11 for the
+    correct arm and an identical 0/11 for the old `valid -> invalid` arm, so it
+    cannot separate the behaviour it exists to catch; on a faulty source it
+    REWARDS the forbidden repair. The live line is `fake_checksum_inherited`
+    (v2). The substitute is folded by `value_notation` before validating — a
+    grouped «7707 5364 …» is the digit run, never the raw string."""
+    hits = 0
+    total = 0
+    for one in observations:
+        for item in one.case.base.pii:
+            spec = _SPECS.get(item.type)
+            if spec is None or not spec.generated_checksum:
+                continue
+            minted = one.run.base.substitutes.get(item.id)
+            if minted is None or not minted[0]:
+                continue
+            total += 1
+            hits += 0 if _checksum_valid(spec, minted[0]) else 1
+    return _line("fake_checksum_invalid", hits, total)
+
+
+# --- §6.3 THE CHECKSUM LINE, RE-VERSIONED (V1 S5 / OC-2 / MUTANT-LINE-REDEFINE) ---
+#
+# THE TWO VERSIONS AND WHY BOTH STAY. v1 (`fake_checksum_invalid`) counts a hit
+# when the fake FAILS its checksum; v2 (`fake_checksum_inherited`) counts a hit
+# when the fake's verdict MATCHES the source's. `COV-CHECKSUM-INHERIT` decides
+# the policy — a VALID source mints a VALID substitute, a faulty source is NOT
+# repaired — so v1's accepted semantics are gone while its SAVED results are
+# not: the migration keeps the old row under its own version instead of
+# reinterpreting a printed number.
+#
+# THE NEW MUTANT SET (V1 S5): `valid -> invalid` (the old R6-39 arm), `invalid
+# -> valid` (a repair), `wrong form`, `unsafe identity/collision`. Each is
+# distinct from the correct arm by at least one fixture, reproducibly —
+# `test_metrics_v6.test_checksum_line_reversioned` and
+# `test_perfect_v6.test_mutants_are_distinct_from_the_correct_arm` hold it.
+#
+# WIRING NOTE (routed, not hidden): `V6_METRIC_FUNCTIONS` still holds the v1 row
+# so a saved v6 report keeps printing exactly what it printed, and the v2 line
+# is exposed here plus in `CHECKSUM_METRIC_FUNCTIONS`. Moving the REPORT to v2
+# needs a v2 fixture row in `fixtures.py` and a `report.py` edit, neither of
+# which is in this stage's write set.
+CHECKSUM_LINE_VERSIONS: dict[str, int] = {
+    "fake_checksum_invalid": 1,
+    "fake_checksum_inherited": 2,
+}
+
+
+def fake_checksum_inherited(observations: Sequence[RunObservation]) -> Line:
+    """v2 / LIVE — checksum-carrying elements whose substitute's validity MATCHES
+    its SOURCE's (§6.3, COV-CHECKSUM-INHERIT).
+
+    A hit is `validity(substitute) == validity(source)`: a valid source mints a
+    valid fake, a faulty source is not repaired. The perfect arm holds 1.0. The
+    `invalid -> valid` repair and the `valid -> invalid` flip are the two misses;
+    `wrong form` and `unsafe identity/collision` are held by the mint contract
+    (`perfect._grammar_holds`, the no-shared-position rule) and named in the S5
+    mutant set. Both sides are folded by `value_notation` before validating, the
+    same rule v1 used, so a grouped spelling is the digit run and never the raw
+    string."""
+    hits = 0
+    total = 0
+    for one in observations:
+        for item in one.case.base.pii:
+            spec = _SPECS.get(item.type)
+            if spec is None or not spec.generated_checksum:
+                continue
+            minted = one.run.base.substitutes.get(item.id)
+            if minted is None or not minted[0]:
+                continue
+            total += 1
+            if _checksum_valid(spec, item.value) == _checksum_valid(spec, minted[0]):
+                hits += 1
+    return _line("fake_checksum_inherited", hits, total)
+
+
+# BOTH ROWS, BY VERSION. v1 is historical and must keep answering; v2 is the
+# accepted semantics under the owner's inheritance choice.
+CHECKSUM_METRIC_FUNCTIONS: dict[str, Metric] = {
+    "fake_checksum_invalid": fake_checksum_invalid,
+    "fake_checksum_inherited": fake_checksum_inherited,
+}
+
+
+def overmask_result(observations: Sequence[RunObservation]) -> Line:
+    """Negatives INSIDE tool results that reached the model untouched (§6.3).
+
+    `overmask` reads message negatives only (F20); a negative the mock renders in
+    a result — a BIK in a statement — was measured by nothing. The locus is a
+    `NEG_TAG_PREFIX` slot in `ToolResultRecord.spans_real` (CQ-11), and the
+    verdict is the SPAN's own coverage, never a needle search of the digits: a
+    BIK whose digits open the neighbouring account would make a needle metric
+    read a survival that the span says did not happen."""
+    hits = 0
+    total = 0
+    for one in observations:
+        for record in one.run.tool_results:
+            for tag, span in record.spans_real.items():
+                if not tag.startswith(NEG_TAG_PREFIX):
+                    continue
+                total += 1
+                hits += 0 if covering_piece(record, span) is not None else 1
+    return _line("overmask_result", hits, total)
+
+
+# The three OD-54 rows, gated by the report only on a v6 run (F7). Their names
+# are deliberately NOT in `contracts.METRIC_NAMES`.
+#
+# `fake_checksum_invalid` here is the HISTORICAL v1 row (see the re-version block
+# above): the report keeps printing what a saved run printed. The LIVE checksum
+# semantics under `COV-CHECKSUM-INHERIT` is `fake_checksum_inherited`, exposed in
+# `CHECKSUM_METRIC_FUNCTIONS`; moving the report to it needs a v2 fixture row and
+# a `report.py` edit beyond this stage's write set.
+V6_METRIC_FUNCTIONS: dict[str, Metric] = {
+    "typed_user": typed_user,
+    "fake_checksum_invalid": fake_checksum_invalid,
+    "overmask_result": overmask_result,
+}
+
+
+# --- §6.4 the per-type certificate over CASES, not hops (OD-67, R6-40) ---------------
+
+
+def case_line(metric: Metric, observations: Sequence[RunObservation]
+              ) -> tuple[Line, int, int]:
+    """`metric` over a slice, beside the DISTINCT cases and elements behind it.
+
+    The per-type slice prints hops, elements and cases together (TZ §6.4); this
+    is the one reader that computes all three, so the report cannot count them
+    differently from the metrics. The hop `Line` is `metric`'s own; the case and
+    element counts are the slice's distinct `case.base.id` / `hop.item_id`."""
+    line = metric(observations)
+    case_ids = {one.case.base.id for one in observations}
+    element_ids = {hop.hop.item_id for one in observations for hop in one.hops}
+    return line, len(case_ids), len(element_ids)
+
+
+def certified_over_cases(metric: Metric, observations: Sequence[RunObservation]) -> float | None:
+    """The one-sided floor of a clean line, computed over DISTINCT CASES (§6.4).
+
+    240 clean hops from 12 cases certify `zero_failure_floor(12)` = 77.9 %, not
+    the ~98 % the hop count would claim — the whole of OD-67 / R6-40. None when
+    the line is not clean or the slice is empty."""
+    line, cases, _elements = case_line(metric, observations)
+    if line.total and line.hits == line.total and cases:
+        return zero_failure_floor(cases)
+    return None
+
+
+def survival_excluded(observations: Sequence[RunObservation], pii_type: str) -> int:
+    """Distinct elements of `pii_type` whose value carries no identifying needle
+    (below `SURVIVAL_MIN_CHARS`) — the count every survival denominator leaves
+    out (R-58), printed per type as «не оценивается по выживанию: n» (§6.5)."""
+    seen: set[str] = set()
+    out = 0
+    for one in observations:
+        for item in one.case.base.pii:
+            if item.type != pii_type or item.id in seen:
+                continue
+            seen.add(item.id)
+            surface = item.canonical or item.value
+            if surface and not value_needles(pii_type, surface):
+                out += 1
+    return out
+
+
 METRIC_FUNCTIONS: dict[str, Metric] = {
     "leak": leak, "coverage": coverage, "typed": typed, "round_trip": round_trip,
-    "round_trip_repaired": round_trip_repaired, "end_to_end": end_to_end, "overmask": overmask,
+    "round_trip_repaired": round_trip_repaired, "end_to_end": end_to_end,
+    "end_to_end_written": end_to_end_written, "overmask": overmask,
     "consistency": consistency, "stability": stability, "rewrite_ratio_v5": rewrite_ratio_v5,
     "shared_block_answer": shared_block_answer,
     "form_hIN": form_hIN, "form_hOUT": form_hOUT, "out_absent": out_absent,
+    "out_written": out_written, "out_no_mint": out_no_mint, "out_engine_kept": out_engine_kept,
+    "out_not_masked": out_not_masked, "out_leaf_foreign": out_leaf_foreign,
     "toolresult_masked": toolresult_masked,
     "answer_real": answer_real, "answer_optional_only": answer_optional_only,
     "chain_value": chain_value, "chain_form": chain_form,
-    "multi_all_out": multi_all_out, "multi_consistency": multi_consistency,
+    "chain_value_written": chain_value_written, "chain_form_written": chain_form_written,
+    "multi_all_out": multi_all_out, "multi_all_out_written": multi_all_out_written,
+    "multi_consistency": multi_consistency,
     "retry_form": retry_form, "memory_consistency": memory_consistency,
     "rag_masked": rag_masked,
     "rag_identity_kept": rag_identity_kept, "doc_masked": doc_masked,
@@ -1321,7 +1913,9 @@ METRIC_FUNCTIONS: dict[str, Metric] = {
 # different buckets (`IN/user` and `OUT/tool_arg`), so the pair dissolves and
 # the bucket totals add up to less than the line's own.
 HOP_SLICEABLE: frozenset[str] = frozenset({
-    "leak", "coverage", "typed", "end_to_end", "form_hIN", "form_hOUT", "out_absent"})
+    "leak", "coverage", "typed", "end_to_end", "end_to_end_written", "form_hIN", "form_hOUT",
+    "out_absent", "out_written", "out_no_mint", "out_engine_kept", "out_not_masked",
+    "out_leaf_foreign"})
 AXIS_NOTE: str = "по хоповой оси не печатается: знаменатель — не хопы"
 
 
@@ -1381,10 +1975,16 @@ def _hop_bucket(axis: str, one: RunObservation, hop: HopObservation) -> str:
         return _return_form_bucket(one, hop)
     if axis == "spoken":
         return _spoken_bucket(one, hop)
+    if axis == "type_class":
+        # The v6 axis `type_class` is per HOP: the class of the type that crossed
+        # the gateway (TZ §14.2). A v5 type files under "v5", a v6 one under its
+        # registry `type_class` (C/K/KC) — read off the ONE home, never restated.
+        return _TYPE_CLASS.get(hop.pii_type, "v5")
     return _cue_bucket(one, hop)
 
 
-HOP_AXES: tuple[str, ...] = ("vertical", "hop_owner", "pii_type", "return_form", "cue", "spoken")
+HOP_AXES: tuple[str, ...] = ("vertical", "hop_owner", "pii_type", "return_form", "cue", "spoken",
+                             "type_class")
 
 
 def by_axis(observations: Sequence[RunObservation], axis: str) -> dict[str, list[RunObservation]]:
@@ -1396,8 +1996,9 @@ def by_axis(observations: Sequence[RunObservation], axis: str) -> dict[str, list
     copy of the observation carrying only its own hops, so `form_hOUT` by
     `pii_type` counts NAME hops under NAME and nowhere else, while the run's
     records stay reachable for the metrics that need them."""
-    if axis not in contracts.AXES:
-        raise ValueError(f"by_axis: {axis!r} is not one of contracts.AXES ({list(contracts.AXES)})")
+    if axis not in contracts.AXES and axis not in V6_AXES:
+        raise ValueError(f"by_axis: {axis!r} is not one of contracts.AXES ∪ V6_AXES "
+                         f"({list(contracts.AXES)}, {list(V6_AXES)})")
     buckets: dict[str, list[RunObservation]] = {}
     if axis in HOP_AXES:
         for one in observations:
@@ -1414,6 +2015,12 @@ def by_axis(observations: Sequence[RunObservation], axis: str) -> dict[str, list
             name = one.case.base.kind
         elif axis == "behaviour":
             name = one.case.behaviour
+        elif axis == "industry":
+            # ONE per case, read off `CaseV5.v6`; a v5 case files under "" so the
+            # axis is empty on the old corpus and nothing is printed there (TZ §14.2).
+            name = one.case.v6.industry if one.case.v6 is not None else ""
+        elif axis == "provenance":
+            name = one.case.v6.provenance if one.case.v6 is not None else ""
         else:
             name = "rare" if one.case.base.provenance.selection == "rare" else "authored"
         buckets.setdefault(name, []).append(one)

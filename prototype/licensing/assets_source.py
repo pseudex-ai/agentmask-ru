@@ -100,6 +100,33 @@ DIMINUTIVES: tuple[str, ...] = (
     "танюха", "катюха", "надюха", "любаша", "катюша", "ленка", "светка",
     "танька", "юлька", "олька", "иринка", "настюха", "алёнка", "аленка",
     "ленуся", "машуля", "дашка", "наташка",
+    # THE SHORT DIMINUTIVES THE LENGTH FLOOR THROWS AWAY, and they are a SEED
+    # entry rather than a lower floor because the floor is what protects 225k
+    # capital-only bulk entries. Measured on the pinned 587-occurrence
+    # real-speech frame (`bench/gate`, D1-N): these surfaces carry a Name/Surn
+    # reading and are refused by `names.py::_lowercase_dictionary_ok` for one
+    # reason only — `len(word) < _LOWER_DICT_MIN (=5)`. Adding them HERE closes
+    # 27 person occurrences, 219/271 -> 246/271 = 90.8% whole recall. Lowering
+    # `_LOWER_DICT_MIN` to 4 instead is measured at 1.98 false masks per close on
+    # the same frame and 3.3 per name in `bench/gate/README.md`, paid three times
+    # already («жуков»/«попов»/«машин»); the seed list is the mechanism that
+    # exists precisely for lower-case diminutives the capital-only bulk cannot
+    # serve (`gazetteer_names` docstring).
+    #
+    # THE PRICE IS NOT ZERO AND IT IS NOT THE 0.15 fp/close ALONE. `_name_set_hit`
+    # runs BEFORE `_lowercase_dictionary_ok`, so membership here is CONTEXT-FREE.
+    # «боб», «кац», «гуля», «ежи», «мия» read as ordinary nouns, and pymorphy's
+    # FIRST parse carries NOUN and Name/Surn together, so `assets._build_names`
+    # does NOT put them in `ambiguous` and no naming cue is demanded. Named
+    # honestly: on the same frozen frame the close costs 4 hand-labelled
+    # `other`/`place` occurrences («спанч боб», «мама мия», «кац», «ежи») —
+    # 0.15 per close by the frame denominator, and a larger number by the
+    # detector-span denominator (see work/P1/r1/DELTA.json, which prints both).
+    # «гуля» is the dangerous one: a pigeon in ordinary prose and a person in
+    # speech. It was measured on MASSIVE/NEREL before shipping (GATE.json).
+    "лера", "гуля", "ника", "варя", "илик", "шура", "алсу", "боб", "ирка",
+    "мия", "тони", "лех", "азиз", "алик", "лекс", "жора", "тоня", "кац",
+    "жан", "ежи",
 )
 SURNAME_SUFFIXES: tuple[str, ...] = (
     "ов", "ова", "ев", "ева", "ёв", "ёва", "ин", "ина", "ын", "ына",
@@ -177,6 +204,40 @@ STREET_GAZ: tuple[str, ...] = (
     "дружбы", "свободы", "труда", "молодёжи", "юности", "гвардии", "марта", "мая",
     "ленина", "гагарина", "пушкина", "кирова", "жукова",
 )
+# Real settlements pymorphy3 reads ONLY as a surname (no `Geox`). A bare city is
+# detected by the dictionary's `Geox` tag alone, so «самара» and «москва» need no
+# list; but «одоев», «венёв» and «белёв» are towns in Tula oblast that pymorphy
+# knows only as surnames — the same words, in an address, were minted as a PERSON
+# while the street beside them was minted as a LOC, and production parted from the
+# scorer (long_order-*, E01 re-case). The lowercase variant needs a DICTIONARY
+# rather than morphology (detect-change), and this is that dictionary: a word on
+# it is a settlement ONLY when the address structure says so (a street-type word
+# or a settlement marker beside it), never on its own — so «фамилия одоев» stays a
+# person. Kept apart from `FAKE_CITIES` on purpose: that pool is the substitute
+# mint and may change for substitution reasons; this list names what the detector
+# may read as a place.
+SETTLEMENT_GAZ: tuple[str, ...] = (
+    "одоев", "венёв", "белёв",
+    # АББРЕВИАТУРЫ ГОРОДОВ, КОТОРЫМИ ЧАТ ПИШЕТ ГОЛОВУ АДРЕСА. «екб,
+    # луначарского 156», «мск, тверская 5»: город сокращён до трёх букв, и ни
+    # морфология (`Geox` у «екб» нет), ни реестр ГАР его не знают — поэтому
+    # голова спана начиналась с улицы, а город уходил к модели ОТКРЫТЫМ
+    # ТЕКСТОМ, внутри спана, который колонка полноты уже считала найденным.
+    # Измерено на PII-Bench: 2 из 176 ADDRESS (значения 171 и 176 несли «екб» и
+    # «омск»).
+    #
+    # ЭТО ТОТ ЖЕ СПИСОК И ТО ЖЕ ПРАВИЛО, ЧТО «ОДОЕВ». Слово, которого
+    # морфология не знает как место, признаётся поселением ТОЛЬКО когда рядом
+    # стоит адресная структура (улица с домом), и никогда само по себе: голая
+    # «екб» даёт SUPPORT-кандидата, который ни с чем не сливается и
+    # отбрасывается, — тот же инвариант «голый топоним не ПД», что и у
+    # настоящих городов. Список нарочно короткий, без двусмысленных
+    # сокращений вроде «сч» (счёт) или «бр» (бронь): каждое лишнее слово
+    # пришлось бы чинить в чужом трафике.
+    "екб", "ект", "спб", "мск", "нск", "крд", "рнд", "кзн", "влг", "прм",
+    "тмн", "ирк", "хбр", "тлт",
+)
+
 # A candidate is CORE (can stand alone) or SUPPORT (only counts when merged with
 # a core). City/settlement/apt/index are SUPPORT so lone cities stay unmasked.
 CORE_PART: tuple[str, ...] = (
@@ -312,7 +373,15 @@ _ST = (
 # inside an IGNORECASE pattern, so "пер" in "перезвоните" can't grab a lowercase
 # tail and "площадью 5 кв" can't pass as a street.
 _NAME = r"(?-i:[А-ЯЁ])[а-яё]+(?:[\s-](?-i:[А-ЯЁ])[а-яё]+){0,2}"
-_CAP = r"(?:\d+[-\s]?[а-яё]{0,2}\s+)?" + _NAME
+# A NUMBERED NAME IS PART OF THE STREET'S NAME, and two written forms were
+# missing from every arm that carries `_CAP`. «улица 20-летия Октября» (a
+# number and a hyphenated «-летия») and «улица 10 лет Октября» (a number, a
+# spelled unit and the name) are ordinary Russian street names; both matched
+# only their type word, so the NAME stayed outside the span and went to the
+# model in the clear while the polnota column counted the address as found.
+# Measured on PII-Bench: 2 of the 176 ADDRESS golds (values 143 and 161).
+_CAP = (r"(?:\d+[-\s]?[а-яё]{0,2}\s+|\d{1,4}-лети\w*\s+|\d{1,4}\s+(?:лет|года|год)\s+)?"
+        + _NAME)
 # A TOOL RESULT ARRIVES AS JSON, AND JSON PUTS A QUOTE WHERE PROSE PUTS A SPACE.
 # The left-context set held whitespace, comma, semicolon, paren, № and #, so
 # «"addr": "г. Пермь, ул. Добролюбова, д. 154б"» lost its «г. » and
@@ -788,7 +857,15 @@ ADDRESS_PATTERNS: dict[str, str] = {
         r"(?:(?<=^)|(?<=[\s,;(]))"
         r"(?P<num>\d+[-\s]?[яейои]?\s+)?"
         r"(?P<words>[А-ЯЁ][а-яё]+(?:[\s-][А-ЯЁ][а-яё]+){0,2})"
-        r"\s+(\d{1,3}[А-ЯЁа-яё]?(?:/\d+)?)(?![0-9A-Za-zА-Яа-яёЁ])"
+        # THE DIRECTORY FORM PUTS A COMMA BEFORE THE HOUSE, and it matched
+        # nowhere: «Владимир, Большая Московская, 14» is how every CRM writes
+        # an address, the pattern demanded whitespace, and the whole street
+        # name went to the model in the clear. The comma is admitted by the
+        # engine only for a MULTI-WORD name — see the gate in
+        # `_regex_candidates`: a single capitalised word, a comma and a number
+        # is a person in a list («Смирнов, 14»).
+        r"(?P<hsep>\s+|,\s*)"
+        r"(\d{1,3}[А-ЯЁа-яё]?(?:/\d+)?)(?![0-9A-Za-zА-Яа-яёЁ])"
     ),
     # MARKER-LESS STREET WRITTEN IN LOWER CASE — «вы находитесь на ленина 14?».
     # The pattern above cannot see it: it spells the name `[А-ЯЁ][а-яё]+`, and
@@ -944,8 +1021,30 @@ ADDRESS_PATTERNS: dict[str, str] = {
         r"(?i)\s*(?:м²|м2|%"
         r"|(?:кв\.?\s*м|гектар\w*|га|метр\w*|километр\w*|км|сантиметр\w*|см"
         r"|миллиметр\w*|мм|сотк\w+|квадратн\w+|штук\w*|шт|тонн\w*|кг"
-        r"|литр\w*|процент\w*|м)\b)"
+        # Spoken full units license a quantity just as their abbreviations do.
+        # A fuzzy street followed by 'пять килограммов' must not become a house
+        # merely because the sender did not abbreviate the unit to 'кг'.
+        r"|(?:кило|милли|микро)?грамм\w*|мг|мкг"
+        r"|(?:милли)?литр\w*|мл|процент\w*|м)\b)"
     ),
+    # СТРОЧНАЯ УЛИЦА БЕЗ НОМЕРА ДОМА И БЕЗ СЛОВА-ТИПА. «адрес репина», «на
+    # бибиревская»: слово в нижнем регистре потеряло заглавную — второй сигнал,
+    # которым его судили все ветки, — а номер дома, которым держатся
+    # `street_bare_lower` и `markerless_lower`, здесь не написан вовсе. Так не
+    # принадлежало НИ ОДНОЙ ветке: адрес требовал дом, имена — словарь или
+    # заглавную; а ЯКОРЬ перед словом (адресная подсказка или предлог вплотную)
+    # в коде уже был — но умел только ЗАПРЕЩАТЬ (`names._street_reference`).
+    #
+    # Форма даёт слово; роль решают якорь и морфология В ДВИЖКЕ, потому что ни
+    # то, ни другое регуляркой не выражается.
+    "street_nohouse_bare": (
+        r"(?<![А-Яа-яЁё])(?P<bare>[а-яё]{4,})"
+        r"(?!\s*,?\s*(?:дом|д)?\.?\s*\d)"
+    ),
+    # МЕСТНЫЙ ПРЕДЛОГ ВПЛОТНУЮ: «на репина», «на бибиревская». Именно «на»/«по»,
+    # а не весь `prep_before`: «в» и «у» вводят обстоятельство и владельца
+    # («в марте», «у клиента») и адресной роли не дают.
+    "street_nohouse_prep": r"(?i)\b(?:на|по)\s+$",
     # No (?i): separators only.
     "gap": r"[\s,.;\-/№#()]*",
     # No (?i) — deliberately. `[а-яё]` here is the lowercase letter that can
@@ -1030,6 +1129,16 @@ DENY: tuple[str, ...] = (
     # happened to share a sentence with the customer it belongs to.
     "наряд", "договор", "акт", "копия", "справк", "заявк", "обращени", "отчёт",
     "отчет", "квитанц", "смет", "приказ", "протокол",
+    # OPERATIONAL slots next to the SUBJECT — a bare date beside the patient's
+    # name is their appointment, not their date of birth (152-ФЗ: a date alone
+    # identifies nobody). «…родился 21.09.1955, слот 2026-09-02» was retyped DATE
+    # -> DOB by the 80-char association gate and the model booked March instead
+    # of September (clinic run). «слот»/«приём»/«запись» govern the date directly.
+    "слот", "приём", "прием", "запись", "расписан",
+    # Things a number of YEARS describes without a person: «стаж 15 лет»,
+    # «опыт 28 лет», «гарантия 3 года». They deny an AGE even beside a name
+    # («Иванов, стаж 15 лет» is tenure, not the person's age).
+    "опыт", "стаж", "выслуг", "гарант", "подписк", "аренд",
 )
 # Words that, near a passport-shaped number, mean it really is a passport. The
 # type has no checksum, so context is the only evidence there is.
@@ -1079,6 +1188,20 @@ ORG_CUE: tuple[str, ...] = (
     "компания", "компании", "фирма", "фирмы", "организация", "организации",
     "поставщик", "поставщика", "магазин", "магазина", "бренд", "бренда",
 )
+# A ROLE WORD THAT INTRODUCES STAFF, NOT THE SUBJECT. A date beside a name the
+# text frames as a doctor / specialist / position holder is a meeting or slot
+# date, not that person's date of birth: `context._date_is_personal` must not
+# read the DOCTOR's name in a clinic-slot result as evidence the date belongs to
+# the patient. The subject is named by nothing or by a subject word («пациент»,
+# «клиент»); the role word is what demotes the name. Kept as tuning rather than a
+# published abbreviation list because the set is authored from a measured false
+# positive (a live clinic run), like `ORG_CUE`.
+PERSONNEL_CUE: tuple[str, ...] = (
+    "врач", "врача", "врачу", "доктор", "доктора", "специалист", "специалиста",
+    "должность", "сотрудник", "сотрудника", "администратор", "администратора",
+    "медсестра", "медсестры", "медбрат", "медбрата", "лечащий", "лечащего",
+    "doctor", "physician", "specialist", "speciality", "specialty", "nurse",
+)
 
 # --- transliteration machinery (align/render/fold) ------------------------
 # TUNING-DATA mined from 1 812 aligned control-arm words (counts in the inline
@@ -1089,14 +1212,15 @@ ORG_CUE: tuple[str, ...] = (
 # the FOLD sequence are load-bearing (see pseudex.translit for why).
 TRANSLIT_UNITS: dict[str, tuple[str, ...]] = {
     # endings: «-ий» iy 77:y 51, «-ый» y 24:yy 2, «-ия» ia 36:0, «ья» ia 22:ya 2,
-    # «кс» ks 25:x 10, «ей» ei 22:ey 12, «йя» one ya (Майя→Maya, not Mayya).
+    # «кс» ks 25:x 10, «ей» ei 22:ey 12, «йя» defaults to ya; table spellings
+    # iia/jya/yya are also recognised so a model's standard spelling resolves.
     "ий": ("iy", "y", "ii", "ij", "yi"),
     "ый": ("y", "yy", "yi", "yj", "iy"),
     "ия": ("ia", "iya", "iia", "ija"),
     "ья": ("ia", "ya", "ja"),
     "кс": ("ks", "x"),
     "ей": ("ei", "ey", "ej"),
-    "йя": ("ya", "iya", "ja"),
+    "йя": ("ya", "iya", "ja", "iia", "jya", "yya"),
     "а": ("a",), "б": ("b",), "в": ("v",), "г": ("g",), "д": ("d",),
     "е": ("e", "ye", "ie", "je"), "ё": ("e", "yo", "io", "jo"),
     "ж": ("zh", "j"), "з": ("z",), "и": ("i",), "й": ("y", "i", "j"),
@@ -1145,6 +1269,7 @@ TRANSLIT_FOLD: tuple[tuple[str, str], ...] = (
     ("kh", "X"), ("ks", "X"), ("x", "X"),
     ("ts", "T"), ("tc", "T"), ("cz", "T"), ("c", "T"),
     ("yu", "U"), ("iu", "U"), ("ju", "U"),
+    ("jya", "A"), ("yya", "A"),
     ("iya", "A"), ("iia", "A"), ("ija", "A"), ("ya", "A"), ("ia", "A"), ("ja", "A"),
     ("yo", "E"), ("jo", "E"), ("ye", "E"), ("ie", "E"), ("e", "E"),
     ("y", "I"), ("j", "I"), ("i", "I"),
@@ -1259,6 +1384,30 @@ BIO_CUES: tuple[str, ...] = (
     "актёр", "актер", "певец", "певиц", "поёт", "поет", "карьер",
 )
 
+# ПРЕДЛОГИ, ВВОДЯЩИЕ ЧЕЛОВЕКА: «от аленчиев», «к аленчиеву», «позвоните у».
+# Строчное слово потеряло заглавную — второй сигнал, которым его судили
+# словари, — и якорь перед ним ровно то, чего не хватает. Список арендуется, а
+# не живёт в коде: он настраиваемый, как и всякий другой cue.
+#
+# «НА» ЗДЕСЬ НЕТ НАМЕРЕННО: оно вводит и улицу («на ленина»), и человека
+# («перезвоните на морозова») — различает их слово ПЕРЕД предлогом, и это уже
+# работа `NAME_CUES`, а не предлога.
+NAME_ANCHOR_PREPS: tuple[str, ...] = (
+    "от", "ото", "к", "ко", "у", "для", "о", "об", "обо", "про", "из",
+)
+
+# ПРЕДЛОГИ, ВВОДЯЩИЕ ЧЕЛОВЕКА: «от аленчиев», «к аленчиеву», «перезвоните
+# у». Строчное слово потеряло заглавную — второй сигнал, которым его судили
+# словари, — и ЯКОРЬ здесь ровно то, чего не хватает. Список арендуется, а не
+# живёт в коде: он настраиваемый, как и всякий другой cue.
+#
+# «НА» ЗДЕСЬ НЕТ НАМЕРЕННО: оно вводит и улицу («на ленина»), и человека
+# («перезвоните на морозова») — различает их слово ПЕРЕД предлогом, и это уже
+# работа `NAME_CUES`, а не предлога.
+NAME_ANCHOR_PREPS: tuple[str, ...] = (
+    "от", "ото", "к", "ко", "у", "для", "о", "об", "обо", "про", "из",
+)
+
 KEY_TYPE: dict[str, str] = {
     "имя": "NAME", "фио": "NAME", "клиент": "NAME", "заказчик": "NAME",
     "получатель": "NAME", "name": "NAME",
@@ -1306,6 +1455,72 @@ KEY_TYPE: dict[str, str] = {
     "rqidentdoc": "PASSPORT", "identdocser": "PASSPORT", "identdocnum": "PASSPORT",
     "rqinn": "INN", "rqlastname": "NAME", "rqfirstname": "NAME", "rqsecondname": "NAME",
     "rqname": "NAME", "rqemail": "EMAIL", "rqphone": "PHONE",
+    # --- the temporary-secret family: field keys ------------------------------
+    #
+    # C1 (O-SECRET), on the owner's decision EX-O-SECRET-1: CVC and ISSUER_OTP are
+    # measured; TOTP/2FA, recovery codes, transaction authorisation codes and PIN
+    # stay a NAMED GAP. A key here types the WHOLE value (P03) with no shape check
+    # of its own — the declared LENGTH SET per alias lives in `pseudex/cvc.py`,
+    # because the 3-or-4 arithmetic is the payment brands' published grammar
+    # (PCI SSC S1), not tuned vocabulary. What is leased is WHICH WORDS NAME THE
+    # CLASS, which is exactly this list.
+    #
+    # WHY THE BLOCK STANDS BEFORE `card`. `_key_type` asks the exact map first and
+    # then walks the same dict as PREFIX STEMS IN ORDER, so `card_cvc` — which is
+    # not an exact key of the v5 map — reached the `card` stem and was typed CARD:
+    # a three-digit field received a SIXTEEN-digit Luhn-valid card number (RED-9,
+    # probe `card_renderer_for_3_digits`). Placing the compounds before `card`
+    # makes the whole-word reading win over its head. `card_number` is untouched
+    # and keeps CARD (`card` is still the only stem it matches).
+    #
+    # NOT ADDED, deliberately: bare «код»/`code` (it names an order, a status and a
+    # product far more often than a secret — P05, OWNER-DECISIONS Q3), `pin`,
+    # `2fa`/`totp`, `recovery`/`резервный` and `транзакц`/`transaction` (all four
+    # are OWNER_PENDING and stay NOT_MEASURED), and bare `sms` — NEG-OTP-3
+    # (`{"sms_count": "000000"}`) is the counter-example: a key that merely
+    # contains «sms» names no code.
+    "cvc": "CARD_VERIFICATION_CODE", "cvc2": "CARD_VERIFICATION_CODE",
+    "cvv": "CARD_VERIFICATION_CODE", "cvv2": "CARD_VERIFICATION_CODE",
+    "csc": "CARD_VERIFICATION_CODE", "cav2": "CARD_VERIFICATION_CODE",
+    "cv2": "CARD_VERIFICATION_CODE", "cvv4": "CARD_VERIFICATION_CODE",
+    "cvvcode": "CARD_VERIFICATION_CODE", "cvvnum": "CARD_VERIFICATION_CODE",
+    "cvvnumber": "CARD_VERIFICATION_CODE", "cvv2code": "CARD_VERIFICATION_CODE",
+    "cvccode": "CARD_VERIFICATION_CODE", "cvcnum": "CARD_VERIFICATION_CODE",
+    "cvc2code": "CARD_VERIFICATION_CODE", "codecvv": "CARD_VERIFICATION_CODE",
+    "codecvc": "CARD_VERIFICATION_CODE",
+    "securitycode": "CARD_VERIFICATION_CODE",
+    "cardsecuritycode": "CARD_VERIFICATION_CODE",
+    "cardverificationcode": "CARD_VERIFICATION_CODE",
+    "cardverificationvalue": "CARD_VERIFICATION_CODE",
+    "cardcvc": "CARD_VERIFICATION_CODE", "cardcvc2": "CARD_VERIFICATION_CODE",
+    "cardcvv": "CARD_VERIFICATION_CODE", "cardcvv2": "CARD_VERIFICATION_CODE",
+    "cardcvvcode": "CARD_VERIFICATION_CODE",
+    "cardcode": "CARD_VERIFICATION_CODE",
+    "cid": "CARD_VERIFICATION_CODE", "cidcode": "CARD_VERIFICATION_CODE",
+    "cidnumber": "CARD_VERIFICATION_CODE", "4dbc": "CARD_VERIFICATION_CODE",
+    "amexcid": "CARD_VERIFICATION_CODE", "cardcid": "CARD_VERIFICATION_CODE",
+    "card4dbc": "CARD_VERIFICATION_CODE",
+    # Russian spellings: a form field, an OCR'd card or a support script writes
+    # these with a space or a hyphen, and `_KEY_CLEAN_RE` removes separators
+    # before this map is asked — so «защитный код карты» arrives as one word.
+    "цвс": "CARD_VERIFICATION_CODE", "цсв": "CARD_VERIFICATION_CODE",
+    "защитныйкод": "CARD_VERIFICATION_CODE",
+    "защитныйкодкарты": "CARD_VERIFICATION_CODE",
+    "кодбезопасностикарты": "CARD_VERIFICATION_CODE",
+    "кодпроверкикарты": "CARD_VERIFICATION_CODE",
+    "cvvкод": "CARD_VERIFICATION_CODE", "кодcvv": "CARD_VERIFICATION_CODE",
+    "кодcvc": "CARD_VERIFICATION_CODE", "cidкод": "CARD_VERIFICATION_CODE",
+    "кодcid": "CARD_VERIFICATION_CODE",
+    # ISSUER_OTP — the dynamic one-time value. The LENGTH IS NOT ASSERTED
+    # anywhere (see `pseudex/cvc.py`), so these keys are the class's whole
+    # evidence: the field names the secret, the value is taken as written.
+    "otp": "ISSUER_OTP", "otpcode": "ISSUER_OTP", "otpnumber": "ISSUER_OTP",
+    "onetimecode": "ISSUER_OTP", "onetimepassword": "ISSUER_OTP",
+    "verificationcode": "ISSUER_OTP", "smscode": "ISSUER_OTP",
+    "smsкод": "ISSUER_OTP", "кодsms": "ISSUER_OTP", "кодсмс": "ISSUER_OTP",
+    "3dscode": "ISSUER_OTP", "code3ds": "ISSUER_OTP",
+    "code3dsecure": "ISSUER_OTP", "authcode": "ISSUER_OTP",
+    "authenticationcode": "ISSUER_OTP",
     "карта": "CARD", "карты": "CARD", "card": "CARD",
     "почта": "EMAIL", "email": "EMAIL", "мейл": "EMAIL", "емейл": "EMAIL",
     "адрес": "LOC", "address": "LOC",
@@ -1327,8 +1542,222 @@ KEY_TYPE: dict[str, str] = {
     # карта …» typed the whole line as one account number and swallowed the
     # СНИЛС inside it. Those two words belong in CTX_TYPES, where the 20-digit
     # shape is what keeps an invoice number out.
-    "account": "ACCOUNT", "accountnumber": "ACCOUNT",
-    "рс": "ACCOUNT", "расчётныйсчёт": "ACCOUNT", "расчетныйсчет": "ACCOUNT",
+    "account": "BANK_ACCOUNT", "accountnumber": "BANK_ACCOUNT",
+    "рс": "BANK_ACCOUNT", "расчётныйсчёт": "BANK_ACCOUNT", "расчетныйсчет": "BANK_ACCOUNT",
+    # --- the v6 checksum-carrying family: field keys -------------------------
+    #
+    # A KEY TYPES THE WHOLE VALUE (P03), so these are the registry's own
+    # `field_keys`, cleaned the way `_key_type` cleans them (separators go:
+    # `deal_uid` → `dealuid`). Two deliberate deviations, both recorded:
+    #
+    #   * `card_number` is NOT mapped to a loyalty card. `card` is already a
+    #     stem above and in Russian traffic a `card_number` is a bank card far
+    #     more often than a loyalty card; mistyping a bank card as a loyalty
+    #     number would hand the model a 13-18 digit token for a PAN.
+    #   * `uid` is safe as a PREFIX stem precisely because «uuid» does not start
+    #     with it — an agent's own request id keeps its own type.
+    "rqaccnum": "BANK_ACCOUNT", "bankaccount": "BANK_ACCOUNT", "accnum": "BANK_ACCOUNT",
+    "ls": "BANK_ACCOUNT", "номерсчета": "BANK_ACCOUNT",
+    "iban": "IBAN", "rqiban": "IBAN", "beneficiaryiban": "IBAN",
+    "uid": "LOAN_UID", "dealuid": "LOAN_UID", "contractuid": "LOAN_UID",
+    "uiddeal": "LOAN_UID", "loanuid": "LOAN_UID",
+    "ogrnip": "OGRNIP", "rqogrnip": "OGRNIP",
+    "enp": "OMS_ENP", "oms": "OMS_ENP", "omspolicy": "OMS_ENP", "polis": "OMS_ENP",
+    "polisnumber": "OMS_ENP", "policynumber": "OMS_ENP",
+    "npolis": "OMS_ENP", "spolis": "OMS_ENP", "vpolis": "OMS_ENP",
+    "vin": "VIN", "вин": "VIN", "vincode": "VIN", "vehiclevin": "VIN",
+    "vinnumber": "VIN",
+    "epts": "EPTS_NUMBER", "eptsnumber": "EPTS_NUMBER", "номераптс": "EPTS_NUMBER",
+    "uin": "UIN", "supplierbillid": "UIN", "paymentuin": "UIN", "уин": "UIN",
+    "imei": "IMEI", "imei1": "IMEI", "imei2": "IMEI", "deviceimei": "IMEI",
+    "imeisv": "IMEI",
+    "iccid": "ICCID", "simiccid": "ICCID", "simnumber": "ICCID",
+    "loyaltycard": "LOYALTY_CARD_NUMBER", "bonuscard": "LOYALTY_CARD_NUMBER",
+    "discountcard": "LOYALTY_CARD_NUMBER",
+    # --- the v6 identity-document family: field keys -------------------------
+    #
+    # A KEY TYPES THE WHOLE VALUE (P03), and these are the registry's own
+    # `field_keys`, cleaned the way `_key_type` cleans them (`_KEY_CLEAN_RE`
+    # removes separators, so `birth_cert_number` is `birthcertnumber`). Every key
+    # below is also a PREFIX STEM, which is why four registry keys are DELIBERATELY
+    # ABSENT rather than copied:
+    #
+    #   * `license` alone — a software licence is far commoner in Russian business
+    #     traffic than a driver's licence, and a key types the value with no shape
+    #     check, so `{"license": "MIT"}` would mint a 2-2-6 document number for it.
+    #   * `dl` — a two-letter stem claims every key that begins with it.
+    #   * `ву` — same argument, and Russian has words starting with it.
+    #   * `doc_type` (BIRTH_CERT) — every schema has one, and it holds «passport»,
+    #     not a document number.
+    #
+    # `sts`/`pts` are safe as stems because no other field key begins with them;
+    # `passport` is already a stem above and keeps its v5 meaning (the internal
+    # passport), so the international one is reached through its own keys.
+    "intlpassport": "INTL_PASSPORT", "foreignpassport": "INTL_PASSPORT",
+    "заграничныйпаспорт": "INTL_PASSPORT", "биометрическийпаспорт": "INTL_PASSPORT",
+    # THE CERTIFICATE KEYS ARE SPLIT WITH THE LABELS (03.10.2026). A key types the
+    # WHOLE value with no shape check (P03), so a key that named the wrong registry
+    # record would type a civil act BIRTH_CERT by the customer's own schema — the
+    # same desync the cue table closed, one layer down. `birthcert` is the birth
+    # record's; the five civil-act keys are `pii_types_a.A-03`'s own list, cleaned
+    # the way `_key_type` cleans them.
+    "birthcert": "BIRTH_CERT", "birthcertnumber": "BIRTH_CERT",
+    "birthcertseries": "BIRTH_CERT",
+    "marriagecertificate": "CIVIL_ACT_CERT", "marriagecert": "CIVIL_ACT_CERT",
+    "divorcecertificate": "CIVIL_ACT_CERT", "deathcertificate": "CIVIL_ACT_CERT",
+    "namechangecertificate": "CIVIL_ACT_CERT",
+    "civilactcertificate": "CIVIL_ACT_CERT", "certificatenumber": "CIVIL_ACT_CERT",
+    "residencepermit": "RESIDENCE_PERMIT", "vnzh": "RESIDENCE_PERMIT",
+    "виднажительство": "RESIDENCE_PERMIT", "внж": "RESIDENCE_PERMIT",
+    "military": "MILITARY_ID", "военныйбилет": "MILITARY_ID",
+    "военник": "MILITARY_ID",
+    "driverlicense": "DRIVER_LICENSE", "driverlicence": "DRIVER_LICENSE",
+    "dlnumber": "DRIVER_LICENSE",
+    "водительскоеудостоверение": "DRIVER_LICENSE",
+    "pts": "PTS_NUMBER", "ptsnumber": "PTS_NUMBER",
+    "vehiclepassport": "PTS_NUMBER", "номерптс": "PTS_NUMBER",
+    "sts": "STS_NUMBER", "stsnumber": "STS_NUMBER",
+    "vehicleregistrationcertificate": "STS_NUMBER", "номерстс": "STS_NUMBER",
+    # --- the v6 legal/court family: field keys -------------------------------
+    #
+    # A KEY TYPES THE WHOLE VALUE (P03), cleaned the way `_key_type` cleans it
+    # (`_KEY_CLEAN_RE` removes separators, so `case_uid` is `caseuid`). These are
+    # the registry's own `field_keys`, EXCEPT where a key names two different
+    # things — and those are named below rather than guessed:
+    #
+    #   * `uid` is DELIBERATELY NOT re-mapped. The registry gives it to BOTH
+    #     COURT_CASE_UID and LOAN_UID, and the checksum family already landed it
+    #     as the loan УИД (the 33-hex ЦБ form). A key types with no shape check,
+    #     so re-pointing it would break the bank identifier instead of separating
+    #     the two — the court УИД is reached by `case_uid`/`court_uid`, and in
+    #     prose by the «УИД»/«уникальный идентификатор дела» cue.
+    #   * `уид` is omitted for the same reason: the registry names it for the
+    #     court card only, but «УИД» in Russian business writing is the loan one
+    #     at least as often, and the two cards' cues are the SAME word. The cue
+    #     path separates them by SHAPE; a key could not.
+    #   * `number` (ARBITRAZH) is not a key at all — it names nothing.
+    #   * `ip_number`/`номер_ип` — the first is distinctive and mapped; the second
+    #     is left out because «номер ИП» also names an individual entrepreneur's
+    #     ОГРНИП, and typing a 15-digit ОГРНИП as an enforcement number would
+    #     re-shape a document the customer's validator reads. ОГРНИП has its own
+    #     key (`ogrnip`) above.
+    #   * `case_number`/`номер_дела` are given to COURT_CASE_NO_SOU, the ordinary
+    #     general-jurisdiction reading; ARBITRAZH keeps its own distinctive keys.
+    #     The two share ONE identity key in `ru_pii_v6.legal_signature` and the
+    #     mint preserves the SOURCE's variant, so a generic key can misname a
+    #     label but can never re-shape or fork the value.
+    "caseuid": "COURT_CASE_UID", "courtuid": "COURT_CASE_UID",
+    "courtcaseuid": "COURT_CASE_UID",
+    "arbitrcase": "ARBITRAZH_CASE_NO", "arbitrazhcase": "ARBITRAZH_CASE_NO",
+    "arbitrazhcasenumber": "ARBITRAZH_CASE_NO",
+    "bankruptcycase": "ARBITRAZH_CASE_NO",
+    "casenumber": "COURT_CASE_NO_SOU", "courtcase": "COURT_CASE_NO_SOU",
+    "номердела": "COURT_CASE_NO_SOU",
+    "ipnumber": "FSSP_IP_NO", "fsspip": "FSSP_IP_NO",
+    "enforcementnumber": "FSSP_IP_NO", "exeproduction": "FSSP_IP_NO",
+    "execlistnumber": "EXEC_DOC_NO", "writnumber": "EXEC_DOC_NO",
+    "исполнительныйлист": "EXEC_DOC_NO",
+    "cadastralnumber": "CADASTRAL_NUMBER", "cadnum": "CADASTRAL_NUMBER",
+    "кадастровыйномер": "CADASTRAL_NUMBER", "cadastral": "CADASTRAL_NUMBER",
+    # --- the v6 finance family: field keys ------------------------------------
+    #
+    # A KEY TYPES THE WHOLE VALUE (P03), cleaned the way `_key_type` cleans it
+    # (`_KEY_CLEAN_RE` removes separators, so `loan_id` is `loanid`). These are the
+    # registry's own `field_keys`, EXCEPT where one registry key names THREE
+    # different documents — and those are named below rather than guessed:
+    #
+    #   * `policy_number` / `policyNumber` belong to DMS_POLICY, OSAGO_POLICY and
+    #     KASKO_POLICY at once, and the key ALREADY EXISTS in this map as `OMS`
+    #     (the checksum family landed `policynumber`/`polis` for the ОМС policy).
+    #     Re-pointing it would break the ОМС record the engine already protects —
+    #     a v5 regression traded for a v6 label — so each finance policy gets its
+    #     own distinctive keys (`dmspolicy`, `osagonumber`, `kaskopolicy`, …) and
+    #     the shared key keeps its v5 meaning.
+    #   * `insurance_policy` (DMS_POLICY) is omitted for the same reason: it names
+    #     a health policy and a car policy with one word, and a key types with NO
+    #     shape check.
+    #   * `policySerial`/`policy_series` are given to OSAGO_POLICY, whose registry
+    #     card is the only one that names a SERIES as a separate field.
+    #
+    # `dogovor` IS A PREFIX STEM and is the registry's own key: every key starting
+    # with it is typed as a loan contract. Its price is measured and recorded in
+    # TYPES.md — a B2B supply contract under `dogovor_postavki` is over-masked,
+    # and the registry itself proposes `CONTRACT_NUMBER_B2B` as a negative that the
+    # owner has not decided yet.
+    "contractnumber": "LOAN_CONTRACT_NUMBER", "loanid": "LOAN_CONTRACT_NUMBER",
+    "loannumber": "LOAN_CONTRACT_NUMBER",
+    "creditagreementno": "LOAN_CONTRACT_NUMBER",
+    "номердоговора": "LOAN_CONTRACT_NUMBER", "dogovor": "LOAN_CONTRACT_NUMBER",
+    "credithistorycode": "CREDIT_SUBJECT_CODE",
+    "subjectcode": "CREDIT_SUBJECT_CODE", "kodsubekta": "CREDIT_SUBJECT_CODE",
+    "dmspolicy": "DMS_POLICY",
+    "osagoseries": "OSAGO_POLICY", "osagonumber": "OSAGO_POLICY",
+    "policyserial": "OSAGO_POLICY", "policyseries": "OSAGO_POLICY",
+    "kaskopolicy": "KASKO_POLICY",
+    "claimnumber": "INSURANCE_CLAIM_NUMBER", "claimid": "INSURANCE_CLAIM_NUMBER",
+    "lossnumber": "INSURANCE_CLAIM_NUMBER", "ubytok": "INSURANCE_CLAIM_NUMBER",
+    "medcard": "MEDCARD_NUMBER", "medcardnumber": "MEDCARD_NUMBER",
+    "patientcard": "MEDCARD_NUMBER", "emkid": "MEDCARD_NUMBER",
+    "historynumber": "MEDCARD_NUMBER",
+    "lncode": "ELN_NUMBER", "prevlncode": "ELN_NUMBER",
+    "nextlncode": "ELN_NUMBER", "eln": "ELN_NUMBER", "elnnumber": "ELN_NUMBER",
+    "sickleavenumber": "ELN_NUMBER",
+    "prescriptionid": "PRESCRIPTION_NUMBER",
+    "recipenumber": "PRESCRIPTION_NUMBER", "rxnumber": "PRESCRIPTION_NUMBER",
+    "recipeseries": "PRESCRIPTION_NUMBER",
+    "referralid": "REFERRAL_NUMBER", "napravlenienumber": "REFERRAL_NUMBER",
+    # --- the v6 telecom/device family: field keys -----------------------------
+    #
+    # A KEY TYPES THE WHOLE VALUE (P03), cleaned the way `_key_type` cleans it
+    # (`_KEY_CLEAN_RE` removes separators, so `mac_address` is `macaddress` and
+    # `x_forwarded_for` is `xforwardedfor`). These are the registry's own
+    # `field_keys`, EXCEPT where a key already names something the engine
+    # protects — and those are named below rather than guessed:
+    #
+    #   * `account_number` / `contract_number` (SUBSCRIBER_ACCOUNT) are
+    #     DELIBERATELY ABSENT. Both already exist: the first is a bank ACCOUNT
+    #     (20 digits, cbr515) and the second is the loan CONTRACT_NUMBER above
+    #     (where «dogovor» is a prefix stem). A key types with NO shape check, so
+    #     re-pointing either would mint a 12-digit operator account where a
+    #     20-digit balance account or a loan agreement was meant — a v5
+    #     regression traded for a v6 label, which the finance family already
+    #     refused once (`policy_number`). The operator account is reached by
+    #     `personal_account`/`personalaccount`, which is distinctive, and by its
+    #     own cues in CTX_TYPES.
+    #   * `ls` is DELIBERATELY ABSENT although the registry names it. It is a
+    #     TWO-LETTER STEM: it would claim every key beginning with `ls`, and its
+    #     census in this map is already the bank account («л/с» is the commonest
+    #     spelling of a расчётный счёт in Russian business writing). The
+    #     Russian-account reading is reached by the CTX_TYPES cue «л/с», whose
+    #     shape is the 8–12 digit observation — where the bank account's own
+    #     shape is twenty digits, so the two never meet.
+    #   * `idfa` and `ios_ifa` name the ADVERTISING id (MOBILE_AD_ID); `idfv` and
+    #     `app_set_id` name the VENDOR/app id (APP_DEVICE_ID). The registry keeps
+    #     them apart and so does this map: an IDFA is a UUID a tracker reads
+    #     across apps, an IDFV is one an app reads about itself.
+    #   * `ip` is a PREFIX STEM and that is safe HERE for one checked reason:
+    #     `ipnumber` is an EXACT key in this same map (FSSP enforcement), and
+    #     `_key_type` asks the exact map FIRST — so the only keys the stem claims
+    #     are ones beginning with `ip` and not already named.
+    #   * `x_forwarded_for` is the proxy header's key, and its VALUE is a LIST of
+    #     addresses. The key types it as one IP_ADDRESS; the list separator keeps
+    #     the shape from matching across commas, so the first address is typed and
+    #     the rest are reached by the bare v5 recognizer. The limit is recorded.
+    "imsi": "IMSI", "subscriberimsi": "IMSI",
+    "mac": "MAC", "macaddress": "MAC", "clientmac": "MAC", "bssid": "MAC",
+    "ip": "IP_ADDRESS", "ipaddress": "IP_ADDRESS", "clientip": "IP_ADDRESS",
+    "remoteaddr": "IP_ADDRESS",
+    "xforwardedfor": "IP_ADDRESS",
+    "oid": "ESIA_OID", "personoid": "ESIA_OID", "prnoid": "ESIA_OID",
+    "esiaoid": "ESIA_OID", "sbjid": "ESIA_OID",
+    "googleaid": "MOBILE_AD_ID", "iosifa": "MOBILE_AD_ID",
+    "advertisingidentifier": "MOBILE_AD_ID", "gaid": "MOBILE_AD_ID",
+    "idfa": "MOBILE_AD_ID", "adid": "MOBILE_AD_ID",
+    "appmetricadeviceid": "APP_DEVICE_ID", "deviceid": "APP_DEVICE_ID",
+    "idfv": "APP_DEVICE_ID", "appsetid": "APP_DEVICE_ID",
+    "clientid": "METRICA_CLIENT_ID", "ymuid": "METRICA_CLIENT_ID",
+    "ymclientid": "METRICA_CLIENT_ID",
+    "personalaccount": "SUBSCRIBER_ACCOUNT",
     # Credentials named by their key. `detect_credentials` only finds what a
     # vendor stamped with a prefix; a bare `{"password": "qwerty123"}` has no
     # shape at all, and the KEY is the only evidence it is a secret.
@@ -1342,6 +1771,90 @@ KEY_TYPE: dict[str, str] = {
     "secret": "SECRET", "секрет": "SECRET", "clientsecret": "SECRET",
     "accesskey": "SECRET", "accesstoken": "SECRET", "refreshtoken": "SECRET",
     "privatekey": "SECRET", "secretkey": "SECRET",
+    # --- the v6 utility/account/education/travel family: field keys -----------
+    #
+    # A KEY TYPES THE WHOLE VALUE (P03), cleaned the way `_key_type` cleans it
+    # (`_KEY_CLEAN_RE` removes separators, so `unified_account` is
+    # `unifiedaccount`). Every entry is also a PREFIX STEM, and this family adds
+    # its stems LAST, so no key an EARLIER family already claimed can move — the
+    # exact map is asked first and the stem walk keeps its order. SIX of the
+    # registry's own keys are DELIBERATELY ABSENT, each for a reason that is
+    # checked rather than guessed:
+    #
+    #   * `account`, `personal_account` and `ls` (UTILITY_ACCOUNT) already exist:
+    #     the first and third are the v5 bank ACCOUNT («л/с» is the commonest
+    #     spelling of a расчётный счёт in Russian business writing) and the second
+    #     is the telecom family's SUBSCRIBER_ACCOUNT. Re-pointing any of them
+    #     would mint a 6–12 digit ЖКХ account where a 20-digit balance account or
+    #     an operator account was meant — a v5/telecom regression traded for a
+    #     label, which the finance and telecom families already refused once.
+    #     UTILITY_ACCOUNT is reached by `abonent_id`/`лицевой_счет`, which are
+    #     distinctive, and by the letter-bearing cue.
+    #   * `client_id` (CDP_CUSTOMER_ID) is the telecom family's METRICA_CLIENT_ID
+    #     stem. The CRM reading keeps `customer_id`, `user_id`, `external_id` and
+    #     `crm_id`.
+    #   * `card_number` and `card_uid` (ACCESS_PASS_NUMBER) start with the v5
+    #     `card` stem: a `card_number` in Russian traffic is a bank card, and
+    #     re-pointing it would mint a six-to-twelve digit pass where a PAN was
+    #     meant. The pass keeps `pass_number`, `access_card_id` and `badge_id`.
+    #   * `account_login` (LOGIN) starts with the v5 `account` stem, and
+    #     `diploma_series` (DIPLOMA_NUMBER) names ONE PART of a document, not the
+    #     number: a key types the WHOLE value, so a six-digit series would mint a
+    #     thirteen-digit diploma number. Both are recorded in TYPES.md; the
+    #     composite-part machinery (`COMPOSITE_TYPES`) is the Lead's seam.
+    "els": "GIS_ZHKH_ELS", "unifiedaccount": "GIS_ZHKH_ELS",
+    "gkuid": "GIS_ZHKH_ELS", "paymentdocumentid": "GIS_ZHKH_ELS",
+    "елс": "GIS_ZHKH_ELS",
+    "abonentid": "UTILITY_ACCOUNT", "лицевойсчет": "UTILITY_ACCOUNT",
+    "customerid": "CDP_CUSTOMER_ID", "userid": "CDP_CUSTOMER_ID",
+    "externalid": "CDP_CUSTOMER_ID", "crmid": "CDP_CUSTOMER_ID",
+    "login": "LOGIN", "username": "LOGIN",
+    "diplomanumber": "DIPLOMA_NUMBER", "educationdocnumber": "DIPLOMA_NUMBER",
+    "attestatnumber": "SCHOOL_CERT_NUMBER",
+    "schoolcertificatenumber": "SCHOOL_CERT_NUMBER",
+    "studentid": "STUDENT_ID_NUMBER", "studentcardnumber": "STUDENT_ID_NUMBER",
+    "idnumber": "STUDENT_ID_NUMBER",
+    "tabnumber": "EMPLOYEE_TAB_NUMBER", "personnelnumber": "EMPLOYEE_TAB_NUMBER",
+    "employeenumber": "EMPLOYEE_TAB_NUMBER", "tabnum": "EMPLOYEE_TAB_NUMBER",
+    "табельныйномер": "EMPLOYEE_TAB_NUMBER",
+    "employmentcontractnumber": "EMPLOYMENT_CONTRACT_NUMBER",
+    "laborcontractno": "EMPLOYMENT_CONTRACT_NUMBER",
+    "passnumber": "ACCESS_PASS_NUMBER", "accesscardid": "ACCESS_PASS_NUMBER",
+    "badgeid": "ACCESS_PASS_NUMBER",
+    "pnr": "PNR", "recordlocator": "PNR", "bookingreference": "PNR",
+    "bookingcode": "PNR",
+    "ticketnumber": "E_TICKET_NUMBER", "eticket": "E_TICKET_NUMBER",
+    "ticketno": "E_TICKET_NUMBER",
+}
+
+# --- composite objects: the PARENT KEY types its CHILDREN -----------------
+#
+# «Родительский ключ типизирует детей» — одно правило, и до сих пор оно было
+# написано ровно один раз и жёстко под LOC (`structured._address_object_spans`):
+# роли city/street/house/flat, причём street и house обязательны. Поэтому в
+# одном и том же payload объект `address` закрывался целиком, а
+# `{"passport": {"series": "4608", "number": "246256"}}` уходил открытым: 4 и 6
+# цифр без контрольной суммы не берёт НИ ОДИН shape-рекогнайзер, а `_JSON_KV`
+# матчит только строковые значения и родительский ключ вовсе не видит.
+# 24 утечки g09 (`document-027…-048`), клетка `form:OUT/tool_arg PASSPORT 0/22`.
+#
+# Здесь — только СЛОВАРЬ ЧАСТЕЙ: тип уже в `KEY_TYPE` («passport» →
+# PASSPORT), не хватало карты «тип → роли». Порядок ролей — тождество
+# документа, поэтому он объявлен списком, а не выводится из `json.dumps`.
+#
+# ДЛИНА КАЖДОЙ ЧАСТИ — часть конвенции документа, а не догадка: серия
+# российского паспорта 4 цифры, номер 6. По ней подмена раскладывается обратно
+# по полям и по ней же листья складываются в целое при восстановлении.
+COMPOSITE_TYPES: dict[str, dict[str, object]] = {
+    "PASSPORT": {
+        "roles": {
+            "series": ["series", "ser", "серия", "rqidentdocser", "identdocser"],
+            "number": ["number", "num", "номер", "rqidentdocnum", "identdocnum"],
+        },
+        "lengths": {"series": 4, "number": 6},
+        "order": ["series", "number"],
+        "required": ["series", "number"],
+    },
 }
 
 # --- context-anchored document types -------------------------------------
@@ -1352,22 +1865,913 @@ KEY_TYPE: dict[str, str] = {
 # the type — and the type matters, not just the masking: mistyping a licence as a
 # phone replaces it with a fake PHONE.
 CTX_TYPES: tuple[tuple[str, str, str], ...] = (
-    ("OMS", r"омс|полис", r"\d{16}"),
+    # THE REGISTRY'S PRINTED VARIANTS ARE PART OF THE GRAMMAR: ОМС «слитно, 4×4»,
+    # an account «4×5», an ОГРНИП «324 77 000012345 5», a 19-digit ICCID. A shape
+    # that demands the glued form is the shape the customer who copies off their
+    # own document does not have — the lesson the СНИЛС separators already taught
+    # («112 233 445 95»). Exactly N digits with an OPTIONAL single separator
+    # between any two of them; where a checksum exists it is asked of the digits.
+    # THE LABEL IS THE REGISTRY ID (G7 follow-up, 02.10.2026). `engine_labels` in
+    # `pii_types.py` records that this family used to emit the v5-internal «OMS»
+    # while the benchmark's `typed` axis reads `OMS_ENP`: the value was masked,
+    # the TYPE was not, and 34 of 34 gold spans scored as misses. The engine's
+    # own vocabulary stays available to the vault through
+    # `ru_pii_v6.engine_label()`, so the row, the audit trail and every mint
+    # branch that used to key on «OMS» are unchanged.
+    ("OMS_ENP", r"омс|полис|медполис|мед\.?\s*полис|\bенп\b|номер полиса|единый номер полиса",
+     r"\d(?:[ .-]?\d){15}"),
     # «реквизиты» belongs here and not only among the KV keys: the KV layer needs
     # a `key: value` shape, and a customer writing prose puts the word and the
     # number a space apart. Persona 1 produced both in ONE sentence — «счёт
     # 4081…, реквизиты 4081…» — and watched the same value be masked once and
     # leak once.
-    ("ACCOUNT", r"счёт|счет|р/с|расчётн\w*|расчетн\w*|реквизит\w*", r"\d{20}"),
+    # THE NEGATIVE FAMILIES MOVE INTO THE SHAPE. This entry is a v6
+    # `BANK_ACCOUNT` (the registry's `engine_labels` for it is «ACCOUNT»), and
+    # the v6 negative families `CORR_ACCOUNT`/`LEGAL_ACCOUNT`/`TREASURY_ACCOUNT`
+    # are refused by `ru_pii_v6.is_business_account` in `ru_pii.detect_structured`
+    # — a guard that keys on the OLD label and therefore no longer sees this
+    # entry. The exclusion is stated in the leased shape instead, with the SAME
+    # prefix rule and the SAME separator class the shape itself allows, so a
+    # legal entity's account is never typed as a person's (152-ФЗ ст. 3 п. 1;
+    # the guard and the shape agree by construction — `test_pii_v6` pins it).
+    ("BANK_ACCOUNT", r"счёт|счет|р/с|л/с|лицев\w* счёт|номер счёта|текущ\w* счёт|"
+                     r"счёт вклада|расчётн\w*|расчетн\w*|реквизит\w*|"
+                     r"зачислить на|перевести на счёт",
+     r"(?!30[ .-]?1|40[ .-]?7|03100|40[ .-]?10)\d(?:[ .-]?\d){19}"),
     ("DRIVER_LICENSE", r"водительск\w*|в/у|удостоверени\w* водител\w*|прав[аои]",
      r"\d{2}\s?\d{2}\s?\d{6}"),
-    ("VEHICLE_DOC", r"стс|птс|свидетельств\w* о регистрации", r"\d{2}\s?\d{2}\s?\d{6}"),
+    # STS_NUMBER (registry id): the digit-only reading. The v5 label was
+    # `VEHICLE_DOC`, which covered СТС and ПТС together; see the identity block
+    # below for why the two are now separate ids on the span.
+    ("STS_NUMBER", r"стс|птс|свидетельств\w* о регистрации", r"\d{2}\s?\d{2}\s?\d{6}"),
     # Two digits of series, seven of number. The separator is OPTIONAL and was
     # missing: `\d{9}` matched only `711234567`, while the form actually printed
     # in the document and typed by people — `71 1234567` — went undetected. The
     # sibling document patterns above always allowed `\s?` between groups; this
     # one did not, and nothing tested the spaced form.
     ("INTL_PASSPORT", r"загранпаспорт\w*|заграничн\w* паспорт\w*", r"\d{2}\s?\d{7}"),
+    # --- the v6 checksum-carrying family: cue -> shape -----------------------
+    #
+    # THE CUE TYPES THE VALUE, THE CHECKSUM ONLY GATES A BARE ONE (the rule
+    # already written for СНИЛС above). That is COV-TYPED-INVALID: behind
+    # «полис ОМС» a one-digit typo is still the customer's ОМС, and the checksum
+    # gate must not send it to the model in the clear. Shapes are the registry
+    # cards' own grammar; the checksum arithmetic lives in `pseudex/ru_pii_v6.py`.
+    #
+    # IBAN: country + key + BBAN, glued or printed in groups of four.
+    ("IBAN", r"\biban\b|айбан|международн\w* номер счёта",
+     r"(?i:[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,8})"),
+    # УИД: the dashed UUID form and the 33-hex glued one.
+    ("LOAN_UID", r"\bуид\b|уникальн\w* идентификатор договора|идентификатор сделк\w*|"
+                 r"uid договора",
+     r"(?i:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}-[0-9a-f]|[0-9a-f]{33})"),
+    # ОГРНИП: the cue path protects a faulty check digit; the bare valid form is
+    # the v5 recognizer and stays (`COV-INTEGRATION-KEEP-V5`).
+    ("OGRNIP", r"огрнип|огрн\s*ип|рег\.?\s*номер\s*ип", r"\d(?:[ -]?\d){14}"),
+    # VIN: the ГОСТ form (13 alphanumerics + four digits) AND the Cyrillic
+    # look-alikes a keyboard layout leaves behind («ХТА…»), which normalisation
+    # does not fold — it folds digits only inside digit-dense runs.
+    ("VIN", r"\bvin\b|\bвин\b|вин-код|идентификационн\w* номер|номер кузова|"
+            r"номер шасси|\bкузов\b|\bрама\b",
+     r"(?i:[0-9A-HJ-NPR-ZА-ЯЁ]{13}[0-9]{4})"),
+    ("EPTS_NUMBER", r"эптс|электронн\w* птс|электронн\w* паспорт|номер эп|эпсм",
+     r"[123]\d{3}0[1-4]\d{9}"),
+    ("UIN", r"\bуин\b|уникальн\w* идентификатор начислени\w*|номер постановлени\w*|"
+            r"индекс документа|код \(поле 22\)",
+     r"\d(?:[ .-]?\d){19}|\d(?:[ .-]?\d){24}"),
+    ("IMEI", r"\bimei\b|\bимей\b|\bimei1\b|\bimei2\b|серийн\w* номер телефона|\*#06#",
+     r"\d{2}(?:[ -]?\d{6}){2}[ -]?\d"),
+    ("ICCID", r"\biccid\b|\bicc\b|номер сим-карты|номер sim|серийн\w* номер сим",
+     r"\d(?:[ .-]?\d){18,19}"),
+    ("LOYALTY_CARD_NUMBER", r"карта лояльности|бонусн\w* карта|дисконтн\w* карта|"
+                            r"клубн\w* карта|номер карты покупателя",
+     r"\d(?:[ .-]?\d){12,17}"),
+    # --- the v6 identity-document family: cue -> shape -----------------------
+    #
+    # NO CHECKSUM EXISTS FOR THESE (the registry gives none), so the cue and the
+    # shape are the WHOLE mechanism, and `bare_typed=False` on every one of the
+    # eight says a bare value is not typed. Three of them —
+    # BIRTH_CERT, CIVIL_ACT_CERT, RESIDENCE_PERMIT — carry
+    # `grammar_status == "ГРАММАТИКА?"`, i.e. the ministry order that composes the
+    # series was not obtained; their shapes below are exactly what the registry's
+    # own sample proves and nothing more (`ru_pii_v6.GRAMMAR_UNASSERTED`). No
+    # permissive regex was invented to widen them.
+    #
+    # The separator class `[ .-]?` is the registry's `form_features`
+    # («none/space/hyphen/dot/other») — a shape that demands the glued form is the
+    # shape the customer copying off their own document does not have.
+    #
+    # INTL_PASSPORT: two digits of series, seven of number, and the registry's
+    # other cue words. The v5 cue above covered «загранпаспорт»; «биометрический
+    # паспорт» and «паспорт для выезда» reached nothing at all.
+    ("INTL_PASSPORT", r"биометрическ\w* паспорт|паспорт для выезда|загранник\w*|"
+                      r"загран\w*",
+     r"\d{2}[ .-]?\d{7}"),
+    # BIRTH_CERT: <roman>-<2 Cyrillic capitals> № <6 digits>. The Roman numeral may
+    # be typed with the Cyrillic «І»/«Х» a Ukrainian layout leaves behind —
+    # `_BIRTH_CERT_RE` (the v5 bare recognizer) knows only Latin «IVX», so the cue
+    # path is what closes that variant. CIVIL_ACT_CERT is the SAME grammar with its
+    # own registry id and its own entry below (03.10.2026); the birth cues stand
+    # here alone so the two entries cannot both answer one mention.
+    ("BIRTH_CERT", r"свидетельств\w* о рождении|св-во о рождении|"
+                   r"свид-во о рожд|свидетельство ребенка|\bСОР\b|"
+                   r"о рождении",
+     r"[IVXІХ]{1,4}[ .-]{0,3}[А-ЯЁ]{2}[ .-]{0,3}№?[ .-]{0,3}\d{6}"),
+    # CIVIL_ACT_CERT — THE SAME GRAMMAR, ITS OWN v6 ID (03.10.2026). The registry
+    # says «как BIRTH_CERT: <римские>-<2 заглавные кириллические> № NNNNNN», and the
+    # benchmark's `typed` axis reads CIVIL_ACT_CERT while this entry typed
+    # BIRTH_CERT: 34 of 34 gold spans were masked under the WRONG registry id, i.e.
+    # 0% exact and 0% typed with 76% coverage — the same desync the G7 alignment
+    # closed for eight other ids.
+    #
+    # THE CUES MOVED; THE SHAPE DID NOT. «свидетельство о браке», «о смерти», «о
+    # перемене имени»… are this record's own list in `pii_types_a.A-03`, and they
+    # were only ever in the BIRTH_CERT entry above. The BIRTH_CERT entry now carries
+    # the birth cues ALONE — keeping one of them on both sides would type every
+    # civil act as whichever entry `_resolve` happened to keep, which is the
+    # desync this split exists to remove.
+    #
+    # WHY THE SPLIT CANNOT LOSE THE ARBITRATION. The same characters are also read
+    # by `ru_pii._BIRTH_CERT_RE` (the v5 BARE recognizer, which types this shape
+    # BIRTH_CERT at rank 7). The two spans cover the same characters, so `_resolve`
+    # falls through to `(priority, length)` — both 7 and both equal — and breaks the
+    # tie by the order the spans were appended: `detect_structured` builds the CUE
+    # path before the bare one, so the typed reading wins. `PRIORITY["CIVIL_ACT_CERT"]`
+    # is 7 (already in the table, written for this split) so the ranks match.
+    ("CIVIL_ACT_CERT",
+     r"свидетельств\w* о браке|о заключении брака|о расторжении брака|"
+     r"свидетельств\w* о смерти|о смерти|свидетельств\w* о перемене имени|"
+     r"о перемене имени|об установлении отцовства|об усыновлении",
+     r"[IVXІХ]{1,4}[ .-]{0,3}[А-ЯЁ]{2}[ .-]{0,3}№?[ .-]{0,3}\d{6}"),
+    # RESIDENCE_PERMIT: серия «82»/«83» + seven digits. The series is a CLOSED set
+    # in the registry's own grammar, so the shape is conservative by construction.
+    ("RESIDENCE_PERMIT", r"вид на жительство|вид на жит\.|\bВНЖ\b|\bвнж\b|"
+                         r"residence permit",
+     r"8[23][ .-]?\d{7}"),
+    # MILITARY_ID: two capitals (Cyrillic on paper, Latin off a keyboard) and
+    # seven digits, with or without «№». Only the «№» form is free of the v5 plate
+    # recognizer's overlap — see ru_pii_v6 §identity.
+    ("MILITARY_ID", r"военн\w* билет|военник|в/б|military id",
+     r"[А-ЯЁA-Z]{2}[ .-]?№?[ .-]?\d{7}"),
+    # DRIVER_LICENSE: the registry's «вод. удостоверение» reached the phone
+    # recognizer instead (ten digits, 2-2-6 — libphonenumber reads it as a number),
+    # so the v5 cue list is completed here with the abbreviation it was missing.
+    ("DRIVER_LICENSE", r"вод\.?\s*удостоверени\w*|права на управление",
+     r"\d{2}[ .-]?\d{2}[ .-]?\d{6}"),
+    # PTS_NUMBER: two digits, two letters, six digits. THE v5 ENTRY ABOVE CANNOT
+    # SEE IT — its shape is digit-only — so «ПТС 77 УК 123456» was typed PLATE
+    # («УК 123456», priority 5) and the series went to the model in the clear.
+    # THE v5 LABEL `VEHICLE_DOC` COVERED BOTH DOCUMENTS, AND THE SPAN NOW CARRIES
+    # THE REGISTRY ID. G7 (02.10.2026) measured the cost: 35/35 ПТС and 35/35 СТС
+    # were masked under `VEHICLE_DOC` and scored 0% recall on the benchmark's
+    # `typed` axis. The two entries were ALREADY split by shape — letters vs
+    # digits — so naming them is the label change only, and the vault keeps one
+    # identity key for both (`ru_pii_v6.engine_label` maps either id back to
+    # `VEHICLE_DOC`, which is the label `identity_signature` puts in the key).
+    # «серия» JOINS THE CUE LIST (03.10.2026). The registry's own two-letter series
+    # is what ordinary Russian writes after «серия» — «серия 13 ОГ 695459» — and the
+    # cue list above did not carry the word, so that spelling was missed while
+    # «ПТС 13 ОГ 695459» was read. The SHAPE is unchanged and is the whole guard:
+    # two digits + two LETTERS + six digits. «серия 1234 номер 567890» (the
+    # `test_pii_v6` passport negative) has no letter group and stays open, and the
+    # digit-only СТС shape cannot reach the same word.
+    ("PTS_NUMBER", r"\bПТС\b|паспорт транспортного средства|паспорт ТС|"
+                   r"\bPTS\b|серия",
+     r"\d{2}[ .-]?[А-ЯЁA-Z]{2}[ .-]?\d{6}"),
+    # STS_NUMBER: the same document family, digit-only. The v5 entry above allows
+    # only WHITESPACE between the groups, so «СТС 77-12-345678» fell through to the
+    # phone recognizer (ten digits, 2-2-6) and the customer's licence plate of a
+    # certificate was replaced by a fake PHONE. The registry's separators are
+    # space/hyphen/dot/other, and its groupings are «2-2-6» and «4-6».
+    ("STS_NUMBER", r"\bСТС\b|свидетельств\w* о регистрации ТС|"
+                   r"свидетельств\w* о регистрации транспортного средства",
+     r"(?:\d{2}[ .-]?\d{2}|\d{4})[ .-]?\d{6}"),
+    # --- the v6 legal/court family: cue -> shape -----------------------------
+    #
+    # ALL SIX ARE `bare_typed=False`, so the cue or the field key is the WHOLE
+    # evidence and NOT ONE bare anchor is added here. None carries a checksum
+    # (the registry gives `generated_checksum == ""` to every one of them), so
+    # there is nothing to gate a bare run with: the shapes below are the
+    # registry's own grammar and the arithmetic-free module that reads them is
+    # `pseudex/ru_pii_v6.py` §legal.
+    #
+    # EXEC_DOC_NO is `grammar_status == "ГРАММАТИКА?"` (ПП № 579 describes the
+    # blank, the series composition was not asserted): its shape is the registry's
+    # grammar VERBATIM and the constant that names it is
+    # `ru_pii_v6.LEGAL_GRAMMAR_UNASSERTED`.
+    #
+    # COURT_CASE_UID: the Инструкция СД № 36 form, 22 characters. The two letters
+    # are `[A-Z]` in the registry's grammar, but the record's `form_features` name
+    # `script` and the frozen FORM fixture pairs «77ОС0000-…» with «77OS0000-…»
+    # as ONE document — so the Cyrillic twins are accepted and `legal_signature`
+    # folds them (`value_notation: glyph_fold`). The dashes follow the record's
+    # `separators` feature and may be absent.
+    ("COURT_CASE_UID", r"\bуид\b|уникальн\w* идентификатор дела",
+     r"\d{2}[A-ZА-ЯЁ]{2}\d{4}[ .\-]?\d{2}[ .\-]?\d{4}[ .\-]?\d{6}[ .\-]?\d{2}"),
+    # ARBITRAZH_CASE_NO: five variants in the registry's own grammar — ordinary,
+    # bankruptcy (a second numeric group), appeal (АП), cassation (Ф) and the
+    # intellectual-rights court (С01). «А»/«Ф»/«С»/«АП» are the TYPE and are never
+    # replaced by the mint; the Latin twins are admitted for the `script`/`glyph`
+    # features, the same widening VIN already carries.
+    ("ARBITRAZH_CASE_NO", r"дело №|по делу|арбитражн\w* дело|"
+                          r"дело о банкротств\w*|обособленн\w* спор",
+     r"(?:[АA]\d{2}-\d{1,7}-\d{1,5}/\d{4}"
+     r"|[АA]\d{2}-\d{1,7}/\d{4}"
+     r"|\d{2}[АA][ПP]-\d{1,7}/\d{4}"
+     r"|[ФF]\d{2}-\d{1,7}/\d{4}"
+     r"|[СC]01-\d{1,7}/\d{4}"
+     # THE SQUEEZED SPELLING (G7 follow-up, 02.10.2026 — NOT one of the brief's
+     # six). «А11-14094/2024» reaches the corpus message as «A11140942024» and
+     # the dashed grammar read NONE of the 34 gold spans: 0% recall, 0% coverage.
+     # The squeeze drops the TYPE letter nowhere and the digits are the record's
+     # own groups (2 + 1..7 + 4), so the separator-free form is `[АA]` and 7–13
+     # digits, token-bounded. `[АA]` accepts the Latin twin the glyph fold
+     # produces, exactly as the dashed alternatives above already do.
+     r"|(?<![0-9A-Za-zА-Яа-яЁё])[АA]\d{7,13}(?![0-9A-Za-zА-Яа-яЁё]))"),
+    # COURT_CASE_NO_SOU: the general-jurisdiction case number, Инструкция СД № 36
+    # п. 3.14. The leading group is one or two digits with an optional INDEX
+    # LETTER («2а-456/2026») or «М» for a materials proceeding; the letter is
+    # grammar, not content. «дело №» and «по делу» are shared with ARBITRAZH and
+    # the SHAPE is what tells the two apart — the registry's own cards overlap
+    # here, and both readings are offered rather than one being guessed.
+    ("COURT_CASE_NO_SOU", r"дело №|гражданск\w* дело|по делу|"
+                          r"судебн\w* приказ\s*№?|производство №",
+     r"(?:\d{1,2}[а-я]?|[МM])-\d{1,6}/\d{4}"
+     # THE SQUEEZED SPELLING (G7 follow-up). «2-13/2015» reaches the corpus as
+     # «2132015» and the dashed shape read 1 of 35: 0% recall, 2.9% coverage.
+     # The record's own groups are 1–2 + 1–6 + 4 digits, so the separator-free
+     # form is a bare 6–12-digit run — cue-gated on «дело №»/«по делу», which is
+     # the strongest evidence in this family, and token-bounded on both sides.
+     # THE FAMILY'S PRIORITY IS RAISED WITH IT (see PRIORITY): an eleven-digit
+     # case number beginning with 7 is what libphonenumber reads as a PHONE, and
+     # at the default rank of 1 the bare shape lost the span to it (the sweep's
+     # label-desync list names exactly that, `COURT_CASE_NO_SOU -> PHONE`).
+     r"|(?<!\d)\d{6,12}(?!\d)"),
+    # FSSP_IP_NO: two shapes, and the CUES ARE SPLIT BETWEEN THEM ON PURPOSE.
+    # Alternative 1 carries the «-ИП»/«-СД» suffix, which is an anchor of its own;
+    # alternative 2 (`12345/24/77001/12`) is four bare groups and would be a
+    # fraction under a generic cue, so «ИП»/«пристав» reach alternative 1 only and
+    # alternative 2 needs the words that cannot mean anything else.
+    ("FSSP_IP_NO", r"исполнительн\w* производств\w*|номер ИП|ИП №|"
+                   r"сводн\w* производств\w*|\bФССП\b|пристав",
+     r"\d{1,7}/\d{2}/\d{5}-(?:[ИI][ПP]|[СC][ДD])"
+     # THE SQUEEZED SPELLING, WHICH IS THE ONE THE CORPUS WRITES. The separators
+     # graded «842899/97/31188-ИП» into «8428999731188ИП» (G7 §2: gold with
+     # separators, message without), and the dashed alternative above cannot read
+     # it. The `-ИП`/`-СД` suffix survives the squeeze and IS the anchor: the
+     # groups are 1–7 + 2 + 5 digits glued, so the shape is 8–14 digits then the
+     # suffix — narrower than any bare digit run, and cue-gated on top.
+     #
+     # THE SUFFIX ACCEPTS THE GLYPH TWINS. `squeeze`+`glyph_fold` is what the
+     # corpus applies, so «СД» arrives as «CД» — Latin C, Cyrillic Д, the exact
+     # pair `VIN_ALPHABET`-style folding produces — and 18 of 35 spans were missed
+     # while the shape demanded Cyrillic only.
+     r"|\d{8,14}(?:[ИI][ПP]|[СC][ДD])"),
+    ("FSSP_IP_NO", r"исполнительн\w* производств\w*|сводн\w* производств\w*|"
+                   r"\bФССП\b|судебн\w* пристав",
+     r"\d{1,7}/\d{2}/\d{2}/\d{2}"),
+    # EXEC_DOC_NO: two capitals and nine digits. The registry's cue list names
+    # «серия ФС» — a cue that ENDS with the grammar's own two letters, so a
+    # pattern demanding the shape immediately after it can never fire on
+    # «серия ФС 012345678». The cue is therefore «серия», and the SHAPE is what
+    # carries «ФС». «ИЛ» is anchored on word boundaries: it is a real word in no
+    # other reading here, but a two-letter stem inside a longer word is not it.
+    ("EXEC_DOC_NO", r"исполнительн\w* лист|исполнительн\w* документ|"
+                    r"исп\. лист|серия|(?<!\w)ИЛ(?!\w)",
+     r"[А-ЯЁA-Z]{2}\s?№?\s?\d{9}"),
+    # EXEC_DOC_NO, THE «исполнительный № …» SPELLING (03.10.2026). The entry above
+    # needs the word «лист»/«документ» after «исполнительный», and the writ is
+    # exactly as often written «исполнительный № ХО 332743690» with no noun between
+    # — measured on the pristine engine as a miss. The SHAPE IS THE SAME ONE (two
+    # capitals and nine digits, the registry's grammar verbatim); only the cue is
+    # added, so nothing new becomes claimable.
+    #
+    # THE BARE «исполнительный № 332743690» — nine digits with NO series letters —
+    # IS DELIBERATELY NOT CLAIMED. Catching it needs a bare `\d{9}` in the value
+    # shape, which would enter `LEGAL_TOKEN_PATTERNS` and make every nine-digit run
+    # in the customer's traffic a restore candidate — the permissive bare regex this
+    # change is forbidden to add, and the exact class `test_collisions` exists to
+    # bound. It also cannot move the sweep: EXEC_DOC_NO's deficit there is 28 seed
+    # records whose clean form is not in any scanned text (`scored` 43 of `gt` 71),
+    # not a miss — the engine masks 43/43 of what the frame carries.
+    ("EXEC_DOC_NO", r"исполнительн\w*\s*(?:лист\w*|документ\w*)?\s*№",
+     r"[А-ЯЁA-Z]{2}\s?№?\s?\d{9}"),
+    # CADASTRAL_NUMBER: Приказ П/0183 п. 3. The three separators are MANDATORY —
+    # the registry's grammar writes colons and the record is `bare_typed=False`,
+    # so a separator-free spelling (an unanchored digit run) is NOT claimed here.
+    # The record's own `separators` feature names the closed list, and the shape
+    # takes it; `case_class`/`script` have `abstain` for «none», so there are no
+    # letters to widen.
+    #
+    # G7 FOLLOW-UP (02.10.2026), AND THIS ONE WAS NOT IN THE BRIEF'S SIX. The
+    # corpus's squeeze removes the colons, so «43:72:743493:8225» reaches the
+    # message as «43727434938225» and the mandatory-separator shape read NONE of
+    # the 35 gold spans: 0% recall, 0% coverage — the single largest remaining
+    # leak after the six (35 of the 284 message-level misses). The separator-free
+    # spelling IS this record's own digit run (2+2+6..7+1..5 = 11–16 digits), and
+    # it is claimed behind the SAME cues and with `(?<!\d)`/`(?!\d)` on both
+    # sides, so an unanchored run is still not a cadastral number.
+    ("CADASTRAL_NUMBER", r"кадастр\w*|кад\.?\s*номер|\bКН\b",
+     r"\d{2}[ .\-/:]\d{2}[ .\-/:]\d{6,7}[ .\-/:]\d{1,10}"
+     r"|(?<!\d)\d{11,16}(?!\d)"),
+    # --- the v6 finance/insurance/medical family: cue -> shape ----------------
+    #
+    # ALL TEN ARE `bare_typed=False` AND NONE CARRIES A CHECKSUM (the registry
+    # gives every one `generated_checksum == ""`), so the cue or the field key is
+    # the WHOLE evidence and NOT ONE bare anchor is added here. Eight of the ten
+    # are FREE-FORM («национальной НЕТ») — the registry's grammar names the forms
+    # its authors saw, not a standard — so the shape below is the conservative
+    # shape rule `pseudex/ru_pii_v6.py §finance` states, and the two constants that
+    # name its limits are `ru_pii_v6.FINANCE_GRAMMAR_UNASSERTED` (OSAGO_POLICY —
+    # the РСА/НСИС primary source was not obtained; REFERRAL_NUMBER — national
+    # grammar not established) and the shape's own two guards:
+    #
+    #   * A DATE IS NOT CLAIMED. A typed span CONTAINS the DATE span the v5
+    #     recognizer already found and therefore REPLACES it, so «история болезни
+    #     12.03.2020» would hand the model a fake medcard number where the
+    #     customer's date stood and the agent's date field would get a number. The
+    #     lookahead `(?!\d{1,2}[.]\d{1,2}[.]\d{2,4})` / `(?!(?:19|20)\d{2}-\d{2}-
+    #     \d{2})` is the one place that can refuse it.
+    #   * A SPACE JOINS EXACTLY TWO GROUPS. The registry's own spaced sample is
+    #     «45 0012345678» (PRESCRIPTION_NUMBER) and the printed forms allow a
+    #     letter prefix joined by `.-/` («001SB12345678», «12-345678/2025»,
+    #     «МФО-2025-0012345»). A repeating space gap would let the date of the
+    #     NEXT word be swallowed into the value, so the space alternative is
+    #     written out separately and bounded.
+    #
+    # THE CUES ARE THE REGISTRY'S OWN, WITH FOUR DELIBERATE OMISSIONS, each named
+    # because each was a measured over-mask risk and not a convenience:
+    #
+    #   * DMS_POLICY drops «страховка» and «номер полиса»: «полис» is ALREADY the
+    #     ОМС cue above (`omspolicy`, and the ОМС shape is exact-16 digits), and
+    #     «страховка» alone introduces a phone number at least as often as a
+    #     policy. «ДМС», «карта ДМС» and «добровольное медицинское» carry the type.
+    #   * INSURANCE_CLAIM_NUMBER drops the bare «номер дела»: the legal family's
+    #     ARBITRAZH/СОУ cues are «дело №»/«по делу» and a claim is «страховое
+    #     дело»/«номер выплатного дела» — a bare «номер дела» would type a court
+    #     case number as an insurance claim.
+    #   * REFERRAL_NUMBER drops the bare «направление»: the registry itself says
+    #     the word means a DIRECTION or a DEPARTMENT far more often, so the cue
+    #     demands the document reading — «номер направления», «электронное
+    #     направление», or «направление на <диагностику>».
+    #   * LOAN_CONTRACT_NUMBER keeps the registry's «договор №» even though it also
+    #     introduces B2B supply contracts: that is the registry's own cue, the
+    #     owner's `CONTRACT_NUMBER_B2B` question is still open (OD-28), and
+    #     dropping it would send a consumer loan contract to the model in the clear.
+    ("LOAN_CONTRACT_NUMBER",
+     r"кредитн\w* договор\w*|договор\w* займ\w*|договор\w*\s*№|"
+     r"договор\w* потребительск\w*|номер договора|займ\w*\s*№|\bКД\s*№",
+     r"(?!\d{1,2}[.]\d{1,2}[.]\d{2,4}(?!\d))(?!(?:19|20)\d{2}-\d{2}-\d{2}(?!\d))"
+     r"(?:(?<!\+)(?:[A-Za-zА-Яа-яЁё]{1,5}[.\-/]?)?"
+     r"\d(?:(?:[.\-/]{0,2}|[.\-/]?[A-Za-zА-Яа-яЁё]{1,5}[.\-/]?)\d){7,19}"
+     r"|\d{2,8} \d{2,12})"),
+    # CREDIT_SUBJECT_CODE is the one record with a REAL grammar (Указание ЦБ
+    # 6474-У п. 1.3): 4–15 characters, digits plus letters of ONE alphabet, case
+    # insensitive. All three facts are in the shape, and the single-alphabet clause
+    # is enforced rather than assumed — folding two alphabets into one key would
+    # merge two different subjects' codes.
+    # THE ALL-LETTER READING WAS MISSING AND IT IS THE ONE THE CORPUS WRITES
+    # (03.10.2026). The two alternatives above demand a digit AND a letter; the
+    # registry's own words are «4–15 знаков: цифры + буквы ОДНОГО алфавита», and a
+    # code drawn as letters only («АСПЗГ», «STIPJPEFNAY») satisfies every fact the
+    # card states — one alphabet, the length, case-insensitive — but no digit. 5 of
+    # the 7 misses of this type were exactly that, with the cue undamaged.
+    #
+    # THE OVER-MASK GUARD IS THE CASE, NOT THE CUE: the all-letter alternative
+    # takes UPPERCASE only. «код субъекта указан в договоре» is ordinary prose and
+    # its «указан» must not become a credit-history code; a code is issued in
+    # caps, and the mixed reading below still accepts a lowercase code that also
+    # carries a digit. The single-alphabet clause is unchanged — the Latin class
+    # excludes Cyrillic and the Cyrillic class excludes Latin.
+    ("CREDIT_SUBJECT_CODE",
+     r"код субъекта кредитной истории|код субъекта|\bкод КИ\b|"
+     r"дополнительн\w* код|код для ЦККИ",
+     r"(?:(?=[A-Za-z0-9]{4,15}(?![A-Za-z0-9]))(?=[A-Za-z]*\d)(?=\d*[A-Za-z])"
+     r"[A-Za-z0-9]{4,15}"
+     r"|(?=[А-Яа-яЁё0-9]{4,15}(?![А-Яа-яЁё0-9]))(?=[А-Яа-яЁё]*\d)"
+     r"(?=\d*[А-Яа-яЁё])[А-Яа-яЁё0-9]{4,15}"
+     # THE TWO CAPITAL ALTERNATIVES ARE SCOPED `(?-i:…)` BECAUSE THE BUILDER
+     # COMPILES THE WHOLE SHAPE `(?i:…)`. Writing the class in capitals is NOT
+     # enough: under IGNORECASE it matches lowercase too, and the first run of this
+     # widening typed «будет», «двух», «номер» and «телефон» as credit-history codes
+     # in ordinary conversation, plus four real sentences in `test_overmasking`.
+     # The scoped flag is what makes «a code is issued in caps» a rule instead of a
+     # hope.
+     r"|(?-i:(?=[A-Z0-9]{4,15}(?![A-Za-z0-9]))(?=\d*[A-Z])[A-Z0-9]{4,15})"
+     r"|(?-i:(?=[А-ЯЁ0-9]{4,15}(?![А-Яа-яЁё0-9]))(?=\d*[А-ЯЁ])[А-ЯЁ0-9]{4,15}))"),
+    ("DMS_POLICY",
+     r"\bДМС\b|карт\w* ДМС|добровольн\w* медицинск\w*",
+     r"(?!\d{1,2}[.]\d{1,2}[.]\d{2,4}(?!\d))(?!(?:19|20)\d{2}-\d{2}-\d{2}(?!\d))"
+     r"(?:(?<!\+)(?:[A-Za-zА-Яа-яЁё]{1,5}[.\-/]?)?"
+     r"\d(?:(?:[.\-/]{0,2}|[.\-/]?[A-Za-zА-Яа-яЁё]{1,5}[.\-/]?)\d){5,19}"
+     r"|\d{2,8} \d{2,12})"),
+    # OSAGO_POLICY is `ГРАММАТИКА?`: the primary source was not obtained and the
+    # «12 letters a series may use» restriction is explicitly unverified, so the
+    # series class takes ANY three capitals — Cyrillic («ХХХ», «ТТТ», «ААН») or the
+    # Latin «XXX» a form prints — and the shape asserts only the composition the
+    # registry states. The optional «№»/«номер» covers the printed order «серия ТТТ
+    # номер 7012345678».
+    ("OSAGO_POLICY", r"ОСАГО|автогражд\w*|"
+                     r"страховк\w* на машин\w*",
+     r"(?:[А-ЯЁ]{3}|[A-Z]{3})[ .\-]?(?:№|N|номер)?[ .\-]?\d{10}(?!\d)"),
+    ("KASKO_POLICY", r"КАСКО|добровольн\w* автострахован\w*",
+     r"(?!\d{1,2}[.]\d{1,2}[.]\d{2,4}(?!\d))(?!(?:19|20)\d{2}-\d{2}-\d{2}(?!\d))"
+     r"(?:(?<!\+)(?:[A-Za-zА-Яа-яЁё]{1,5}[.\-/]?)?"
+     r"\d(?:(?:[.\-/]{0,2}|[.\-/]?[A-Za-zА-Яа-яЁё]{1,5}[.\-/]?)\d){5,19}"
+     r"|\d{2,8} \d{2,12})"),
+    # INSURANCE_CLAIM_NUMBER: «У-671-475136/25», «0012345678-001»,
+    # «ОСАГО-25-123456». The cue list keeps the registry's «номер убытка»,
+    # «убыток №», «страховое дело», «номер выплатного дела» and drops the bare
+    # «номер дела» — see the omission note above.
+    ("INSURANCE_CLAIM_NUMBER",
+     r"номер убытка|убыт\w*\s*№|страхов\w* дело|выплатн\w* дело|"
+     r"номер страхового дела|номер выплатного дела",
+     r"(?!\d{1,2}[.]\d{1,2}[.]\d{2,4}(?!\d))(?!(?:19|20)\d{2}-\d{2}-\d{2}(?!\d))"
+     r"(?:(?<!\+)(?:[A-Za-zА-Яа-яЁё]{1,5}[.\-/]?)?"
+     r"\d(?:(?:[.\-/]{0,2}|[.\-/]?[A-Za-zА-Яа-яЁё]{1,5}[.\-/]?)\d){4,19}"
+     r"|\d{2,8} \d{2,12})"),
+    # MEDCARD_NUMBER: «12345/2024» and a department prefix. The registry's
+    # `digits` needle names «если ≥4», which is the bound here.
+    ("MEDCARD_NUMBER",
+     r"медкарт\w*|медицинск\w* карт\w*|амбулаторн\w* карт\w*|"
+     r"истори\w* болезн\w*|\bЭМК\b|номер карты пациента",
+     r"(?!\d{1,2}[.]\d{1,2}[.]\d{2,4}(?!\d))(?!(?:19|20)\d{2}-\d{2}-\d{2}(?!\d))"
+     r"(?:(?<!\+)(?:[A-Za-zА-Яа-яЁё]{1,5}[.\-/]?)?"
+     r"\d(?:(?:[.\-/]{0,2}|[.\-/]?[A-Za-zА-Яа-яЁё]{1,5}[.\-/]?)\d){3,19}"
+     r"|\d{2,8} \d{2,12})"),
+    # ELN_NUMBER: the СФР specification says «xs:string, Макс.длинна: 12» and every
+    # example the emitter prints is twelve digits on «9000…», so the shape claims
+    # the digit form and nothing shorter or longer. A 12-digit ИНН is a DIFFERENT
+    # personal identifier and not a negative — the cue is what separates them, and
+    # the typed span beats the bare ИНН span on the same characters.
+    ("ELN_NUMBER",
+     r"\bЭЛН\b|больничн\w*|листок нетрудоспособности|"
+     r"лист\w* нетрудоспособности|номер больничного|"
+     r"электронн\w* больничн\w*",
+     r"(?<!\d)\d{12}(?!\d)"),
+    # PRESCRIPTION_NUMBER: бумажный бланк 148-1/у-04(л) — серия с кодом субъекта
+    # (две первые цифры ОКАТО) + номер; the electronic one is a regional ГИС
+    # number, which is why the shape is the free-form one and the cue is the
+    # evidence. The registry's own sample is the spaced form.
+    ("PRESCRIPTION_NUMBER", r"рецепт\w*",
+     r"(?!\d{1,2}[.]\d{1,2}[.]\d{2,4}(?!\d))(?!(?:19|20)\d{2}-\d{2}-\d{2}(?!\d))"
+     r"(?:(?<!\+)(?:[A-Za-zА-Яа-яЁё]{1,5}[.\-/]?)?"
+     r"\d(?:(?:[.\-/]{0,2}|[.\-/]?[A-Za-zА-Яа-яЁё]{1,5}[.\-/]?)\d){3,19}"
+     r"|\d{2,8} \d{2,12})"),
+    # REFERRAL_NUMBER is `ГРАММАТИКА?` — 057/у-04 and the МИС/РЕГИЗ electronic
+    # referrals, national grammar NOT established. Its cue is the narrowest in the
+    # family because «направление» alone means a direction or a department far more
+    # often (see the omission note above).
+    #
+    # G7 (02.10.2026): THE OMISSION OF THE BARE «направление» WAS THE WHOLE GAP —
+    # 34/34 gold spans were missed with 0% coverage, and the corpus cue is exactly
+    # «направление <13 digits>». The registry's own `cues` field names it
+    # («направление»), so it is admitted here. The over-mask risk the old note
+    # feared is real and is bounded by the SHAPE, not by the cue list: the shape
+    # requires at least five digits in groups, so «направление деятельности» and
+    # «направление в отдел» stay open, and `test_v6_gaps` pins both.
+    ("REFERRAL_NUMBER",
+     r"направлени\w*",
+     r"(?!\d{1,2}[.]\d{1,2}[.]\d{2,4}(?!\d))(?!(?:19|20)\d{2}-\d{2}-\d{2}(?!\d))"
+     r"(?:(?<!\+)(?:[A-Za-zА-Яа-яЁё]{1,5}[.\-/]?)?"
+     r"\d(?:(?:[.\-/]{0,2}|[.\-/]?[A-Za-zА-Яа-яЁё]{1,5}[.\-/]?)\d){4,19}"
+     r"|\d{2,8} \d{2,12})"),
+    # --- the v6 telecom/device family: cue -> shape ---------------------------
+    #
+    # ALL EIGHT ARE `bare_typed=False` AND NONE CARRIES A CHECKSUM (the registry
+    # gives every one `generated_checksum == ""`), so the cue or the field key is
+    # the WHOLE evidence for the six that have no v5 recognizer. MAC and
+    # IP_ADDRESS are the exception, and it is named here rather than smoothed
+    # over: `detect_vehicle_ids` already reads `\b(?:[0-9A-Fa-f]{2}[:-]){5}
+    # [0-9A-Fa-f]{2}\b` with no cue at all, and the v5 IPv4 regex already reads a
+    # bare dotted quad. Those bare anchors STAY (`COV-INTEGRATION-KEEP-V5`); what
+    # these entries add is what v5 cannot see — the Cisco `001A.2B3C.4D5E`
+    # grouping, IPv6, the Cyrillic hex twins, and the field keys that name the
+    # value in a JSON payload.
+    #
+    # THE SHAPES ARE THE SHAPES `pseudex/ru_pii_v6.py §telecom` COMPILES, and
+    # `test_pii_v6` measures that the two readings of a value cannot drift. Every
+    # digit-only shape carries `(?<!\d)`/`(?!\d)` and NO DOT OR COLON separator:
+    # an IPv4 address must not also be an operator account, which is exactly what
+    # happened when the separator class was shared.
+    #
+    # THE CUES ARE THE REGISTRY'S OWN, WITH FOUR DELIBERATE OMISSIONS, each a
+    # measured over-mask risk rather than a convenience:
+    #
+    #   * IP_ADDRESS drops «с адреса». It introduces a POSTAL address far more
+    #     often than an IP in Russian business writing («с адреса клиента: Москва,
+    #     Ленина 14»), and the shape would then have to choose between the two.
+    #   * SUBSCRIBER_ACCOUNT drops the English «account id» — «account» is ALREADY
+    #     the bank-account cue above, whose shape is twenty digits, and a key or a
+    #     cue types with no shape check. «лицевой счёт»/«л/с» carry the telecom
+    #     reading, and their 8–12 digits can never meet the bank account's twenty.
+    #   * METRICA_CLIENT_ID drops the bare «идентификатор посетителя»: a visitor
+    #     is a counter, not a person, and the phrase introduces a session id at
+    #     least as often as a Метрика ClientID. «ClientID», «client id» and
+    #     «_ym_uid» are the evidence.
+    #   * APP_DEVICE_ID drops the bare English «device id»: in a support chat that
+    #     is a printer, a router or a handset model far more often than a person's
+    #     identifier, and neither shape narrows it.
+    ("IMSI", r"\bIMSI\b|международн\w* идентификатор абонент\w*",
+     r"(?<!\d)250[ \t\-/:№]{0,2}\d{2,3}[ \t\-/:№]{0,2}\d{8,10}(?!\d)"),
+    # MAC: the 2-2-2-2-2-2 forms the v5 recognizer already reads, the Cisco
+    # 4-4-4 grouping it does not, AND the SOLID 12-hex spelling the corpus
+    # actually writes. The letters are HEX, and the Cyrillic twins are admitted
+    # because a hex field has no other reading (see `ru_pii_v6`).
+    #
+    # G7 (02.10.2026): the solid form was deliberately absent as «a prefix of the
+    # 32-hex UUID», and that reasoning cost 35/35 spans — the corpus writes
+    # «mac FCF3C2CFA5AC» and 0% was detected. It is admitted here BEHIND THE CUE
+    # and with `(?<![0-9A-Fa-f...])`/`(?![0-9A-Fa-f...])` on both sides, so a
+    # 12-hex run INSIDE a 32-hex UUID cannot match (the lookbehind/lookahead see
+    # a hex neighbour), and no cue-less 12-hex run is claimed at all.
+    ("MAC", r"\bMAC\b|мак[-\s]?адрес|физическ\w* адрес",
+     r"(?<![0-9A-Fa-fАВЕСКМНОРТУХ])"
+     r"(?:[0-9A-Fa-fАВЕСКМНОРТУХ]{2}(?:[:\-][0-9A-Fa-fАВЕСКМНОРТУХ]{2}){5}"
+     r"|[0-9A-Fa-fАВЕСКМНОРТУХ]{4}\.[0-9A-Fa-fАВЕСКМНОРТУХ]{4}"
+     r"\.[0-9A-Fa-fАВЕСКМНОРТУХ]{4}"
+     r"|[0-9A-Fa-fАВЕСКМНОРТУХ]{12})"
+     r"(?![0-9A-Fa-fАВЕСКМНОРТУХ])"),
+    # IP_ADDRESS: the octet-bounded IPv4 quad (the v5 class itself, so the two
+    # readings of an address cannot disagree), the SQUEEZED quad the corpus
+    # writes, and the RFC 5952 IPv6 notation whose IPv4-mapped tail is read as
+    # four OCTETS. The builder's `\D{0,20}` gap is bounded, so a cue at the head
+    # of a line cannot reach a number further down it.
+    #
+    # THE LABEL IS THE REGISTRY ID. `engine_labels` records the v5-internal «IP»;
+    # G7 measured 0/35 recall for a value that was masked (the span carried «IP»)
+    # AND 0/35 coverage for the squeezed spelling, so both halves are fixed: the
+    # id here, the squeezed quad below. The v5 bare recognizer
+    # (`ru_pii._IPV4_RE`) still emits «IP» for a dotted quad with no cue — an
+    # alias the vault answers for through `ru_pii_v6.engine_label`, and
+    # `TELECOM_FAMILY_LABELS` carries both spellings so the notation path is the same.
+    ("IP_ADDRESS", r"\bIP\b|айпи|ip[-\s]?адрес",
+     r"(?:(?<![\d.])(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
+     r"(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}(?![\d.])"
+     # THE SQUEEZED QUAD: four octets with their dots removed, so «201.73.0.173»
+     # reaches the message as «201730173». The four octets are read off the digit
+     # run by the SAME class as the dotted form (`25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d`)
+     # and the run is token-bounded on both sides, so the reading is "these digits
+     # ARE four octets" and not "some digits are near four octets". 4–12 digits;
+     # «ip 999999999» is refused because no 4-way split of nine nines is ≤255.
+     #
+     # THE BOUNDARY EXCLUDES `:` AND `.` AND HEX, and that is load-bearing rather
+     # than tidy: `2001` is itself four valid octets (2|0|0|1), so a plain
+     # `(?<!\d)…(?!\d)` here swallowed the first group of «ip-адрес 2001:db8::1»
+     # and handed the model a four-character span where an IPv6 address stood —
+     # found by `test_pii_v6`, not by the corpus, which carries no IPv6.
+     #
+     # A SENTENCE'S FULL STOP IS NOT PART OF THE ADDRESS (03.10.2026). The guard
+     # was a bare `(?!…)` over a class containing `.`, so «ip 13082476.» — an
+     # address at the end of a sentence — matched NOTHING and the value reached the
+     # model in the clear. What the class has to refuse is a quad that is the HEAD
+     # of a longer dotted or hex token, and that is `(?!\.\d)` plus the class
+     # without `.`: «13082476.5» and «2001:db8::1» are still refused.
+     r"|(?<![0-9A-Za-zА-Яа-яЁё])(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d){4}"
+     r"(?![0-9A-Za-zА-Яа-яЁё:])(?!\.\d)"
+     # the IPv4-mapped / IPv4-embedded IPv6 families: a hex prefix, then a
+     # DOTTED QUAD of real octets — which is why «::ffff:999.1.1.1» is refused.
+     r"|(?<![0-9A-Fa-f:.])(?:(?:[0-9A-Fa-f]{1,4}:){1,6}"
+     r"|::(?:[0-9A-Fa-f]{1,4}:){0,5}"
+     r"|(?:[0-9A-Fa-f]{1,4}:){6})"
+     r"(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
+     r"(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}(?![0-9A-Fa-f:.])"
+     # the pure IPv6 notations, IPv4-mapped tail included
+     r"|(?<![0-9A-Fa-f:.])"
+     r"(?:(?:[0-9A-Fa-f]{1,4}:){1,6}:(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
+     r"(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}"
+     r"|(?:[0-9A-Fa-f]{1,4}:){6}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
+     r"(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}"
+     r"|::(?:[0-9A-Fa-f]{1,4}:){0,5}(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)"
+     r"(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}"
+     r"|[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){7}"
+     r"|(?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6})?"
+     r"::(?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6})?"
+     r"|(?:[0-9A-Fa-f]{1,4}:){1,7}:)(?![0-9A-Fa-f:.]))"),
+    # ESIA_OID: «\d+; длина не установлена». `\d+` is every digit run in the
+    # message, so the shape takes the sample's floor (ten digits) and the fifteen
+    # a digit run may reach. «СНИЛС» is deliberately NOT a cue here: the registry
+    # names it, but СНИЛС is a checksum-gated type of its own and typing a
+    # correctly-found СНИЛС as an ЕСИА identifier would trade a hard identifier
+    # for a soft label.
+    ("ESIA_OID", r"\boid\b|ЕСИА|идентификатор ЕСИА|Госуслуги ID",
+     r"(?<!\d)\d{1,5}(?:[ \t\-/:№]{0,2}\d{1,5}){1,4}(?!\d)"),
+    # MOBILE_AD_ID: GAID (lower case) and IDFA (upper case) differ only in case,
+    # and the shape is ONE UUID either way — the case belongs to the writer, not
+    # to the identity.
+    ("MOBILE_AD_ID", r"\bGAID\b|\bIDFA\b|рекламн\w* идентификатор|advertising id",
+     r"(?<![0-9A-Fa-fАВЕСКМНОРТУХ])"
+     r"(?:[0-9A-Fa-f]{8}(?:[ \t.\-/:№]{0,2}[0-9A-Fa-f]{4}){3}"
+     r"[ \t.\-/:№]{0,2}[0-9A-Fa-f]{12}"
+     r"|[0-9A-Fa-f]{32})(?![0-9A-Fa-fАВЕСКМНОРТУХ])"),
+    # APP_DEVICE_ID: a UUID (IFV) or the numeric appmetrica form. The bare
+    # «device id» is deliberately not a cue — see the omission note above.
+    #
+    # THE UUID BODY ACCEPTS THE GLYPH TWINS (03.10.2026), and it is a DRIFT FIX
+    # rather than a widening: the lookarounds on both sides have always listed the
+    # Cyrillic hex twins (`[0-9A-Fa-fАВЕСКМНОРТУХ]`, the module's `_TC_HEX_B`), while
+    # the body between them listed Latin hex only — so the record's own
+    # `glyph`-folded spelling («device id E944АD90-…», a Cyrillic А where the Latin
+    # A stood) was refused by the leased shape and accepted by the module shape
+    # (`ru_pii_v6._TC_UUID`) that mints and restores it. Measured on the pristine
+    # engine as a miss; the twins are the same three-joint hex alphabet
+    # `VIN_GLYPH_FOLD` defines, and nothing wider.
+    ("APP_DEVICE_ID", r"appmetrica[_-]?device[_-]?id|идентификатор устройства",
+     r"(?:(?<![0-9A-Fa-fАВЕСКМНОРТУХавескмнортух])"
+     r"(?:[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{8}"
+     r"(?:[ \t.\-/:№]{0,2}[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{4}){3}"
+     r"[ \t.\-/:№]{0,2}[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{12}"
+     r"|[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{32})"
+     r"(?![0-9A-Fa-fАВЕСКМНОРТУХавескмнортух])"
+     r"|(?<!\d)\d{1,6}(?:[ \t\-/:№]{0,2}\d{1,6}){0,5}(?!\d))"),
+    # APP_DEVICE_ID, THE BARE ENGLISH CUE (G7 follow-up, 02.10.2026 — NOT one of
+    # the brief's six). The omission above is recorded as a measured over-mask
+    # risk: «device id» in a support chat names a printer or a handset at least
+    # as often as a person. That reasoning stands for the ENTRY ABOVE, whose
+    # digit alternative is a run of 1–36 digits and would type a model number;
+    # it does NOT stand for the record, which the corpus writes 34 times behind
+    # exactly this cue and which scored 0% coverage. So the cue is admitted with
+    # the record's OWN two forms and nothing wider: the numeric bound is
+    # `_TELECOM_DIGIT_COUNTS["APP_DEVICE_ID"]` (15–18 digits, the registry's own
+    # «пример — 18 цифр»), and the UUID form is the record's other half — the
+    # corpus writes that one too (`device id E944AD90…`). A 32-hex run is ALSO
+    # MOBILE_AD_ID's form, and the family resolves that by asking the vault for
+    # every reading the spelling permits, never by guessing here.
+    ("APP_DEVICE_ID", r"\bdevice id\b|\bdevice[_-]?id\b",
+     r"(?:(?<![0-9A-Fa-fАВЕСКМНОРТУХавескмнортух])"
+     r"[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{8}"
+     r"(?:[ \t.\-/:№]{0,2}[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{4}){3}"
+     r"[ \t.\-/:№]{0,2}[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{12}"
+     r"(?![0-9A-Fa-fАВЕСКМНОРТУХавескмнортух])"
+     r"|(?<!\d)\d{15,18}(?!\d))"),
+    # METRICA_CLIENT_ID: the issuer's 18-digit sample. The `_ym_uid` cookie NAME
+    # is a cue of its own — it appears in a payload as a key and the value beside
+    # it is the ClientID.
+    ("METRICA_CLIENT_ID", r"ClientID|client id|_ym_uid|ym[_-]?client[_-]?id",
+     r"(?<!\d)\d{1,6}(?:[ \t\-/:№]{0,2}\d{1,6}){0,5}(?!\d)"),
+    # SUBSCRIBER_ACCOUNT: «операторский цифровой прогон, типично 8–12 цифр (НЕ из
+    # первоисточника)». The bound IS that observation — and until 03.10.2026 the
+    # SHAPE did not carry it: `\d{1,6}(…){0,5}` accepted any run at all, while the
+    # module's own `TELECOM_DIGIT_COUNTS["SUBSCRIBER_ACCOUNT"]` has said 8–12 from
+    # the start. The shape now counts the digits the record counts, separators being
+    # presentation, and that is what gives the SHARED cue a decision to make: the
+    # registry's UTILITY_ACCOUNT starts at SIX, so a 6–7-digit account under
+    # «лицевой счёт» is the utility record's alone (see the entry below).
+    ("SUBSCRIBER_ACCOUNT", r"лицев\w* счёт|л/с|номер договора абонента",
+     r"(?<!\d)(?:\d[ \t\-/:№]{0,2}){7,11}\d(?!\d)"),
+    # --- the v6 utility/account/education/travel family: cue -> shape ---------
+    #
+    # THE SHAPES ARE THE SHAPES `pseudex/ru_pii_v6.py §utility` COMPILES, and
+    # `test_pii_v6` measures that the two readings of a value cannot drift (the
+    # same pin the telecom family put on its own pair). None of the twelve records
+    # carries a checksum and `bare_typed=False` on every one, so the CUE OR THE
+    # FIELD KEY IS THE WHOLE EVIDENCE — which is also why the shapes carry their
+    # own `(?<!…)`/`(?!…)` boundaries: the builder's `\D{0,20}?` gap may sit
+    # anywhere, and a shape without a left boundary would read the tail of a
+    # longer number.
+    #
+    # ONE COLLISION IS RECORDED RATHER THAN WON: the registry gives BOTH
+    # `SUBSCRIBER_ACCOUNT` (telecom, above) and `UTILITY_ACCOUNT` (below) the cues
+    # «лицевой счёт», «л/с», «ЛС» and the same 6–12 digit space. The entries below
+    # stand AFTER the telecom one, and `_resolve` breaks an exact tie by the order
+    # the spans were appended — so the shared cues answer `SUBSCRIBER_ACCOUNT` and
+    # this family answers for the letter-bearing form the telecom shape cannot
+    # read. `test_utility_shared_cue_arbitration_is_recorded` pins that decision;
+    # changing it is a PRIORITY question for the Lead's table, not an edit here.
+    #
+    # GIS_ZHKH_ELS: the registry's grammar — 2 + 2 letters + 6, then optional «-2»
+    # and «-4» groups — WIDENED IN TWO WAYS THAT THE RECORD'S OWN FACTS LICENCE,
+    # both measured on the frozen corpus (03.10.2026, 29 of 34 spans masked by
+    # nothing at all):
+    #
+    #   * THE SERIES ACCEPTS A MIXED SCRIPT AND THE DASHES ARE OPTIONAL. The record
+    #     declares `value_notation: glyph_fold` and `needle_kinds: (whole, glyph,
+    #     digits)`: the two series letters are ONE series typed on two layouts, so
+    #     «20ЯM» (Cyrillic Я, Latin M — the layout accident the corpus renders) is
+    #     the same document as «20ЯМ», and the separator-squeezed form
+    #     «02TШ826055116346» is the registry's 18-character «...-02-1234» with the
+    #     dashes removed — the same squeeze every other v6 card in this table
+    #     already reads (ARBITRAZH, FSSP, CADASTRAL, EMPLOYMENT_CONTRACT).
+    #   * THE LETTER SLOTS STILL REQUIRE LETTERS. That is what keeps the
+    #     `normalize()` fold of a Cyrillic series («60ВВ…» → «6088…») out of the
+    #     normalized path, so the family's raw-text path (`ru_pii_v6`,
+    #     `ru_pii_v6.detect_cued_raw`) remains the reading of the customer's own series
+    #     while the folded spelling is not claimed twice.
+    ("GIS_ZHKH_ELS",
+     r"\bЕЛС\b|единый лицевой счёт|идентификатор ЖКУ|ИЖКУ|"
+     r"идентификатор платёжного документа|\bИПД\b",
+     r"(?<!\d)\d{2}[A-Za-zА-ЯЁа-яё]{2}\d{6}"
+     r"(?:-?\d{2})?(?:-?\d{4})?(?!\d)"),
+    # UTILITY_ACCOUNT: «обычно 6–12 цифр, иногда буквы/дефисы». TWO ENTRIES, and
+    # the split is the arbitration with the telecom family made concrete rather
+    # than argued:
+    #
+    #   * «ЖКХ» IS THIS FAMILY'S OWN CUE, so the full shape (digits AND the
+    #     letter-bearing form) stands behind it — the telecom family does not hold
+    #     this word, and «ЖКХ 1234567890» is a ЖКХ personal account, not an
+    #     operator's.
+    #   * THE SHARED CUES («лицевой счёт», «л/с», «ЛС», «номер лицевого счёта»)
+    #     KEEP ONLY THE LETTER-BEARING READING. A registry gives BOTH
+    #     `SUBSCRIBER_ACCOUNT` and `UTILITY_ACCOUNT` these words and the same 6–12
+    #     digit space, and the telecom entry stands earlier — so a plain digit run
+    #     under a shared cue stays `SUBSCRIBER_ACCOUNT` (its own test pins that)
+    #     while the form the telecom shape cannot read, «л/с 12-34АБ», is this
+    #     family's. Making this family win the digit run too is a PRIORITY
+    #     decision for the Lead's table, not an edit here.
+    #
+    # No dot and no colon anywhere: a dot is a date and a colon is a cadastral
+    # number, and both are already owned. THE MIXED READING ALLOWS NO SPACE AT
+    # ALL: with one allowed it matched «договор 875» — a word and a number —
+    # behind any of these cues.
+    ("UTILITY_ACCOUNT", r"\bЖКХ\b",
+     r"(?:(?<!\d)\d(?:[ \t\-/]?\d){5,11}(?!\d)"
+     r"|(?<![0-9A-Za-zА-Яа-яЁё\-/])"
+     r"(?=[0-9А-ЯЁа-яёA-Za-z\-/]*\d)"
+     r"(?=[\-/0-9]*[А-ЯЁA-Zа-яё])"
+     r"[0-9А-ЯЁа-яёA-Za-z](?:[-/]?[0-9А-ЯЁа-яёA-Za-z]){4,11}"
+     r"(?![0-9A-Za-zА-Яа-яЁё\-/]))"),
+    ("UTILITY_ACCOUNT", r"лицев\w* счёт|л/с|\bЛС\b|номер лицевого счёта",
+     r"(?<![0-9A-Za-zА-Яа-яЁё\-/])"
+     r"(?=[0-9А-ЯЁа-яёA-Za-z\-/]*\d)"
+     r"(?=[\-/0-9]*[А-ЯЁA-Zа-яё])"
+     r"[0-9А-ЯЁа-яёA-Za-z](?:[-/]?[0-9А-ЯЁа-яёA-Za-z]){4,11}"
+     r"(?![0-9A-Za-zА-Яа-яЁё\-/])"),
+    # …AND THE ONE DIGIT COUNT THE TWO RECORDS DO NOT SHARE (03.10.2026). The
+    # registry gives UTILITY_ACCOUNT «обычно 6–12 цифр» and SUBSCRIBER_ACCOUNT
+    # «типично 8–12», so a SIX- or SEVEN-digit account under the shared cue is the
+    # utility record's ALONE — 14 of the corpus's 35 utility mentions. That is the
+    # id BOTH sides need: the value was already masked (the shared cue answers
+    # either way), and the benchmark's `typed` axis reads the registry record. The
+    # 8–12 half stays SUBSCRIBER_ACCOUNT's and is NOT decidable here; TYPES.md and
+    # DELTA.json record it as the declared cluster the registry's CLUSTERS section
+    # exists for.
+    ("UTILITY_ACCOUNT", r"лицев\w* счёт|л/с|\bЛС\b|номер лицевого счёта",
+     r"(?<!\d)(?:\d[ \t\-/:№]{0,2}){5,6}\d(?!\d)"),
+    # …AND THE ONE CUE THAT IS THIS FAMILY'S ALONE. The registry's own
+    # «абонентский номер (ЖКХ)» is kept, but the shape is the LETTER-BEARING
+    # reading only — the annotation in the registry is the industry, and a phone
+    # stands after this phrase far more often than a personal account.
+    ("UTILITY_ACCOUNT",
+     r"абонентск\w* номер",
+     r"(?<![0-9A-Za-zА-Яа-яЁё\-/])"
+     r"(?=[0-9А-ЯЁа-яёA-Za-z\-/]*\d)"
+     r"(?=[\-/0-9]*[А-ЯЁA-Zа-яё])"
+     r"[0-9А-ЯЁа-яёA-Za-z](?:[-/]?[0-9А-ЯЁа-яёA-Za-z]){4,11}"
+     r"(?![0-9A-Za-zА-Яа-яЁё\-/])"),
+    # CDP_CUSTOMER_ID: three readings — a code («c-000184523»), a UUID (the
+    # telecom family's own two shapes with their Cyrillic hex twins, so one
+    # device-id reading cannot drift), and a digit run whose floor is the
+    # registry's SAMPLE (nine digits; a shorter CDP id is reached by the field
+    # key, see TYPES.md). THE TEXT IS `ru_pii_v6._UT_CDP` VERBATIM — the same
+    # string the module compiles — so the lease and the mint cannot disagree.
+    ("CDP_CUSTOMER_ID",
+     r"\bID клиента\b|клиентский ID|\bcustomer id\b|\buser id\b|"
+     r"идентификатор клиента|идентификатор пользователя",
+     r"(?:(?:(?<![0-9A-Fa-fАВЕСКМНОРТУХ])[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{8}[ \t.\-/:№]{0,2}[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{4}[ \t.\-/:№]{0,2}[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{4}[ \t.\-/:№]{0,2}[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{4}[ \t.\-/:№]{0,2}[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{12}(?![0-9A-Fa-fАВЕСКМНОРТУХ])|(?<![0-9A-Fa-fАВЕСКМНОРТУХ])[0-9A-Fa-fАВЕСКМНОРТУХавескмнортух]{32}(?![0-9A-Fa-fАВЕСКМНОРТУХ]))|(?<![0-9A-Za-zА-Яа-яЁё])[A-Za-zА-Яа-яЁё]{1,3}[-/]?\d{3,20}(?![0-9A-Za-zА-Яа-яЁё])|(?<!\d)\d{9,20}(?!\d))"),
+    # LOGIN: `[A-Za-z0-9._-]{3,}`, bounded to a handle's length and requiring ONE
+    # LETTER — the over-mask guard («логин 2024» is a year, and no sample in the
+    # registry's industries is an all-digit handle).
+    ("LOGIN", r"логин|имя пользователя|\busername\b|учётная запись|учетная запись",
+     r"(?<![0-9A-Za-z._\-])(?=[0-9._\-]*[A-Za-z])"
+     r"[A-Za-z0-9][A-Za-z0-9._\-]{2,31}(?![0-9A-Za-z._\-])"),
+    # DIPLOMA_NUMBER: 6 series characters on 1[0-4] + 7 number digits, one
+    # optional space. The registry's `grammar` VERBATIM.
+    ("DIPLOMA_NUMBER", r"диплом|серия и номер диплома|бланк диплома|"
+                       r"документ об образовании",
+     r"(?<!\d)1[0-4]\d{4}[ \t]?\d{7}(?!\d)"),
+    # SCHOOL_CERT_NUMBER: `\b\d{14}\b`, the registry's own grammar.
+    ("SCHOOL_CERT_NUMBER", r"аттестат|номер аттестата|"
+                           r"аттестат о среднем общем образовании",
+     r"(?<!\d)\d{14}(?!\d)"),
+    # STUDENT_ID_NUMBER — `ГРАММАТИКА?`. The registry's sample family «NN-NNNN»
+    # plus the «или цифры» the card names; the digit-only reading starts at five
+    # so a four-digit year after «студенческий билет» stays a year.
+    ("STUDENT_ID_NUMBER", r"студенческий билет|студбилет|номер студенческого",
+     r"(?<!\d)(?:\d{2}[ \t\-/]?\d{4}|\d{5,10})(?!\d)"),
+    # ACCESS_PASS_NUMBER: the printed pass's digits and the RFID UID in hex (8 or
+    # 14, the registry's own note). THE DIGIT FLOOR IS FOUR (03.10.2026): six was
+    # the reference sample's («0034561») own length, five was the previous floor,
+    # and the registry states no floor at all («цифры печатного пропуска»). The
+    # type's entire remaining message-level leak was three FOUR-digit printed passes
+    # behind an undamaged «пропуск» — 8178, 7177, 0763 — and a four-digit pass is
+    # the record's own reading, not a widening past it. THE YEAR IS THE NEW DENY:
+    # «пропуск на 2024 год» is the one negative the old five-digit floor held up,
+    # and the leased gap may hold the preposition, so a run followed by «год»/«г.»
+    # is refused INSIDE the shape. That is narrower than a 19xx/20xx range check —
+    # «пропуск 1985» is still a pass. The ceiling stays 12 — the registry's own
+    # «цифры» with the sample's spread, never an unbounded `\d+`.
+    ("ACCESS_PASS_NUMBER", r"пропуск|номер пропуска|карта доступа|бейдж",
+     r"(?:(?<!\d)\d{4,12}(?!\d)(?!\s*г(?:од|\.))"
+     r"|(?<![0-9A-Fa-f])(?:[0-9A-Fa-f]{14}|[0-9A-Fa-f]{8})(?![0-9A-Fa-f]))"),
+    # EMPLOYEE_TAB_NUMBER: the employer's digit run (6–10, leading zeros are the
+    # norm) plus the 1С ЗУП grouping «0000-00412». The grouped form needs five
+    # digits after the separator so «2024-2025» — a date range in prose — is not a
+    # tab number.
+    ("EMPLOYEE_TAB_NUMBER", r"табельный номер|таб\.? ?№|табельный|таб номер",
+     r"(?<!\d)(?:\d{4}[ \t\-/]\d{5,6}|\d{6,10})(?!\d)"),
+    # EMPLOYMENT_CONTRACT_NUMBER: the registry's two samples («145-ТД»,
+    # «ТД-2024/017») read as letters and digits held together by `-` or `/`.
+    #
+    # G7 (02.10.2026): the GLUED «ТД2024» was «deliberately not claimed (no
+    # registry sample is glued)» — and the corpus writes exactly that, after its
+    # separator squeeze and glyph fold turn «ТД-2025/69917» into «TД202569917»
+    # (0/35, 0% coverage). The glued alternative is ADMITTED and bounded: 1–3
+    # letters, then 4–12 digits, both ends `[0-9A-Za-zА-Яа-яЁё]`-guarded, so a
+    # word followed by a year («договор 2025») still needs the separator form to
+    # be read as a contract number. The Cyrillic/Latin twins of the letters are
+    # already inside the class — the fold is what the corpus writes.
+    ("EMPLOYMENT_CONTRACT_NUMBER", r"трудовой договор|ТД №|номер трудового договора",
+     r"(?<![0-9A-Za-zА-Яа-яЁё])"
+     r"(?:\d{1,6}[-/][А-ЯЁA-Zа-яё]{1,3}(?:[-/]\d{1,6})*"
+     r"|[А-ЯЁA-Zа-яё]{1,3}[-/]\d{1,6}(?:[-/]\d{1,6})*"
+     r"|[А-ЯЁA-Zа-яё]{1,3}\d{4,12})"
+     r"(?![0-9A-Za-zА-Яа-яЁё])"),
+    # PNR — `ГРАММАТИКА?`: five or six alphanumerics per GDS, and the registry
+    # notes «Сирена» locators may be Cyrillic. BOTH a letter and a digit are
+    # required: «бронь отеля» is five Cyrillic letters and must not become a
+    # booking locator. An all-digit locator is reached by the field key, not by the
+    # cue (TYPES.md).
+    ("PNR", r"\bPNR\b|номер брони|код бронирования|номер бронирования|бронь",
+     r"(?<![0-9A-Za-zА-Яа-яЁё])"
+     r"(?=[0-9А-ЯЁа-яёA-Za-z]{0,5}[А-ЯЁа-яёA-Za-z])"
+     r"(?=[А-ЯЁа-яёA-Za-z]*\d)"
+     r"[0-9А-ЯЁа-яёA-Za-z]{5,6}(?![0-9A-Za-zА-Яа-яЁё])"),
+    # PNR, THE ALL-LETTER LOCATOR (03.10.2026 — 4 gold occurrences, 2 cases).
+    # «pnr VGBBS» and «pnr ZXLGUT» are GDS locators that carry no digit at all, and
+    # the entry above refused both: the corpus wrote them, the value reached the
+    # model, and they were the type's whole remaining leak.
+    #
+    # THE CUE IS THE SECOND HALF OF THE GUARD. It is deliberately the LATIN set
+    # only — never «бронь», «номер брони» or «код бронирования» — so the one
+    # over-mask shape a Russian cue could reach, «бронь HOTEL», is unreachable
+    # while the register the corpus writes is covered. The value is Latin CAPITALS
+    # 5–6 (`(?-i:[A-Z]{5,6})` inside the family's `(?i:…)`): «бронь отеля» and
+    # «PNR не найден» carry no all-caps Latin token, so the three negatives
+    # `test_pii_v6` holds are untouched. A Cyrillic locator keeps the field-key
+    # path it always had.
+    ("PNR", r"\bPNR\b|record\s*locator|booking\s*reference|booking\s*code",
+     r"(?<![0-9A-Za-zА-Яа-яЁё])(?-i:[A-Z]{5,6})"
+     r"(?![._\-/][0-9A-Za-zА-Яа-яЁё._\-/])(?![0-9A-Za-zА-Яа-яЁё])"),
+    # E_TICKET_NUMBER — `ГРАММАТИКА?`: the AIR form only («3 + 10» digits). The
+    # rail numbering is «не установлена», so nothing is claimed for it.
+    ("E_TICKET_NUMBER", r"электронный билет|номер билета|e-ticket|"
+                        r"маршрутная квитанция",
+     r"(?<!\d)\d{13}(?!\d)"),
+    # --- the temporary-secret family: cue -> shape ---------------------------
+    #
+    # C1 (O-SECRET). THE SECONDARY DISCRIMINATOR, and the window is the engine's
+    # existing one (`pseudex/assets.py:432`: cue, at most 20 non-digit characters,
+    # value). The field keys are above in `KEY_TYPE`; these entries are what
+    # reaches the same classes in PROSE, where there is no schema.
+    #
+    # THE CARD VERIFICATION CODE IS THREE OR FOUR DIGITS BY ALIAS, and it is
+    # written as TWO entries rather than one `\d{3,4}` on purpose: a single
+    # bounded set per alias is what the contract requires, an unbounded `{3,4}`
+    # widens the three-digit false-positive surface, and a fixed `\d{3}` silently
+    # loses the Amex CID variant. The lookarounds `(?<!\d)`/`(?!\d)` are the
+    # difference between «the value is three digits» and «the value STARTS with
+    # three digits»: without them «cvv 0420» would match its own first three
+    # digits — a wrong value masked, the fourth digit left in the clear.
+    ("CARD_VERIFICATION_CODE",
+     r"\bcvv2?\b|\bcvc2?\b|\bcsc\b|\bcav2\b|\bcv2\b|\bcvv-?код\b|"
+     r"\bкод\s*cvv\b|\bкод\s*cvc\b|\bцвс\b|\bцсв\b|"
+     r"защитн\w*\s+код(?:\s+карты)?|"
+     r"код\s+безопасности\s+карты|код\s+проверки\s+карты|"
+     r"security\s+code|card\s+security\s+code",
+     r"(?<!\d)\d{3}(?!\d)"),
+    # CID / 4DBC (American Express) — FOUR digits, the other half of the declared
+    # set. «cid» is a whole word here and nowhere a head: a stem would claim
+    # «cidnumber» in prose, where `_key_type` already answers for the key.
+    ("CARD_VERIFICATION_CODE",
+     r"\bcid\b|\b4dbc\b|\bcid-?код\b|\bкод\s*cid\b|amex\s+cid",
+     r"(?<!\d)\d{4}(?!\d)"),
+    # ISSUER_OTP — THE LENGTH IS UNASSERTED, so the shape claims the RUN, not a
+    # width: the cue is the whole evidence and the value is taken as it is
+    # written. Declaring 4, 6 or «4..8» here would invent exactly the answer the
+    # owner recorded as RESEARCH_GAP (CONTEXT-MATRIX `known_coverage_gaps`;
+    # EX-O-SECRET-1). NEG-OTP-1/2 (`номер заказа 991991`, `артикул 042042`) carry
+    # the same glyphs and no cue of this class; NEG-PROSE-3 (`код 314`) shows why
+    # bare «код» is absent from the list below — it names an order at least as
+    # often as a secret, and P05 forbids buying recall that way.
+    #
+    # BARE «КОД ПОДТВЕРЖДЕНИЯ» IS DELIBERATELY NOT A CUE, and this is a MEASURED
+    # boundary rather than a preference. Two independent suites already pin the
+    # same sentence as a business code and not a secret — `test_hard_cases`
+    # («код подтверждения 112233», MUST_NOT_DETECT) and `test_pii_v6`
+    # (FINANCE_NEGATIVES, «код подтверждения 4521») — and the C0 contract itself
+    # leaves this fork OWNER_PENDING (O-SECRET-2: is the accepted recall boundary
+    # the field only, or the field OR a bounded cue?). Until the owner rules, the
+    # engine keeps the boundary those cases fixed: the ONE-TIME or CHANNEL
+    # qualifier is required («из смс», «одноразовый», «операции», «3-D Secure»).
+    # Recorded in TYPES.md §boundary and in DELTA.json.
+    ("ISSUER_OTP",
+     r"\botp\b|\botp-?код\b|\bкод\s*otp\b|одноразов\w*\s+код|"
+     r"код\s+подтверждения\s+(?:из\s+)?(?:смс|sms|почт\w*|email|пуш\w*|push)|"
+     r"код\s+подтверждения\s+операции|"
+     r"sms-?код|смс-?код|код\s+(?:смс|sms)|"
+     r"3-?d\s?secure|\b3ds\b|\b3ds-?код\b|код\s*3ds\b|"
+     r"\bverification\s+code\b|one[-\s]?time\s+(?:code|password)",
+     r"(?<!\d)\d+(?!\d)"),
 )
 # Context words that upgrade a weak INN-10 into a real one. INN-10 has a single
 # check digit (~10% of random 10-digit numbers pass), so the checksum alone is
@@ -1398,6 +2802,103 @@ PRIORITY: dict[str, int] = {
     # замаскированная как «дата», теряет то единственное, что делает её
     # персональными данными.
     "NAME": 3, "DOB": 3, "DATE": 2, "PASSPORT": 2, "LOC": 2,
+    # --- the v6 labels: the composition the N1 families handed to this table ---
+    #
+    # THE v5 CORE ABOVE IS NOT RENUMBERED. SNILS/INN/CARD keep 6, PHONE/EMAIL/
+    # IP/PLATE keep 5, PASSPORT keeps 2 — every entry below is an ADDITION, and
+    # a v6 label that already carried a v5 rank (ACCOUNT/OMS/OGRN/VIN/
+    # DRIVER_LICENSE/VEHICLE_DOC/INTL_PASSPORT/BIRTH_CERT/MAC/IP) is left where
+    # it was. A v6 label with no entry defaults to 1, which is BELOW every bare
+    # v5 shape; each entry here exists because a handoff measured a concrete
+    # case where that default lost the arbitration.
+    #
+    # DMS_POLICY 8 — ABOVE OMS (7). «полис» is the v5 ОМС cue and «ДМС» is this
+    # record's own; both fire on «полис ДМС <16 digits>», the two spans share
+    # their boundaries, and at equal priority `_resolve` keeps the one appended
+    # first (the ОМС entry). At 7 — a tie — the label stayed ОМС; the value was
+    # masked either way, the LABEL and the minted form were a medical policy's.
+    # 8 is above the checksum tier on purpose: the cue says ОМС is not what this
+    # is, and the alternative is a fake ОМС ENP in the customer's ДМС field.
+    "DMS_POLICY": 8,
+    # THE G7 LABEL ALIGNMENT (02.10.2026): the eight ids a span now carries where
+    # it used to carry a v5-internal label. Each one REPLACES a rank that was
+    # already taken by the old spelling — `VEHICLE_DOC`/`OGRN`/`OMS`/`ACCOUNT`
+    # were 7, `IP` was 5 — so this is the same arbitration with the name the
+    # benchmark reads, and NOT a renumbering: at the old rank the span would lose
+    # its overlap to a bare v5 shape the moment the label changed (`STS_NUMBER`
+    # is a ten-digit 2-2-6 run, i.e. exactly what libphonenumber reads as a
+    # PHONE, so a default of 1 would have traded a label fix for a label
+    # regression). `EPTS_NUMBER` and `LOYALTY_CARD_NUMBER` join the document tier
+    # their old labels never had — they defaulted to 1 and covered 97% only
+    # because nothing overlapped them.
+    "BANK_ACCOUNT": 7, "OGRNIP": 7, "OMS_ENP": 7, "EPTS_NUMBER": 7,
+    "LOYALTY_CARD_NUMBER": 7, "PTS_NUMBER": 7, "STS_NUMBER": 7,
+    # THE LEGAL FAMILY'S SQUEEZED SHAPES AND THE DEVICE ID (G7 follow-up,
+    # 02.10.2026). Three of them are cue-typed DIGIT RUNS, and the default rank of
+    # 1 hands a run to any bare v5 shape that also matches — a nine-to-twelve-digit
+    # case number beginning with 7 IS libphonenumber's phone, which is exactly how
+    # «дело № 77298282030» was lost (`COURT_CASE_NO_SOU -> PHONE` in the sweep's
+    # desync list). The three take the document tier (7) their sibling legal
+    # records earn by being cue-typed; the device id takes 6 for the same reason.
+    "ARBITRAZH_CASE_NO": 7, "COURT_CASE_NO_SOU": 7, "CADASTRAL_NUMBER": 7,
+    "APP_DEVICE_ID": 6,
+    # IP_ADDRESS 6, ONE ABOVE PHONE. The v5 `IP` sat at 5, a tie with PHONE, and
+    # that was harmless while the only v5 reading was a DOTTED quad — libphonenumber
+    # never calls `95.165.12.34` a number. The squeezed v6 reading is a bare digit
+    # run (`159131204150`), and at a TIE `_resolve` keeps the span appended first,
+    # which is `detect_pii`'s PHONE: 3 of 35 addresses went to the model as phone
+    # numbers. The CUE is the evidence here («ip» names the type), so it outranks
+    # a shape that only recognises a digit run.
+    "IP_ADDRESS": 6,
+    # MILITARY_ID 7 — the `№` form was already typed; the SEPARATOR-FREE
+    # variants («военник АК1234567», «АК 1234567») are ALSO a v5 plate shape
+    # (type 1А trailers, PLATE=5), so at the default 1 the whole value was
+    # labelled and minted as a plate. 7 is the document-ID tier this family's
+    # neighbours already sit in (INTL_PASSPORT, DRIVER_LICENSE, BIRTH_CERT).
+    "MILITARY_ID": 7,
+    # CIVIL_ACT_CERT 7 — ITS OWN LINE, AND THE SPLIT IT WAS
+    # WRITTEN FOR LANDED ON 03.10.2026. The record has its own cue entry and its
+    # own registry id, and the v5 BARE recognizer (`ru_pii._BIRTH_CERT_RE`) types
+    # the same characters BIRTH_CERT at this same rank — so the two spans tie and
+    # `_resolve` breaks the tie by the order the cue path was built in, which is
+    # first. A rank below 7 would hand every civil act back to the bare reading.
+    "CIVIL_ACT_CERT": 7,
+    # OGRNIP 8, ONE ABOVE THE v5 BARE «OGRN» (7). The bare fifteen-digit ОГРН path
+    # (`ru_pii._OGRNIP_RE`) still emits its old label at rank 7 and covers the SAME
+    # characters, so an exact tie used to be settled by append order — and the raw
+    # cue pass (03.10.2026) re-appends the cued span, which flipped «ОГРНИП
+    # 231948757491188» back to the bare label. The CUE is the evidence, so the cued
+    # reading outranks the shape that merely also matches.
+    "OGRNIP": 8,
+    # INSURANCE_CLAIM_NUMBER 6 — ONE ABOVE PHONE, MEASURED ON THE FROZEN CORPUS.
+    # The registry's own form («У-671-475136/25») STARTS WITH A CYRILLIC LETTER,
+    # and `normalize()` folds «В» to «8» inside a digit-dense run — so the
+    # normalized reading of «В-576-918947/36» is «8-576-918947/36», which
+    # libphonenumber reads as a PHONE at rank 5. The raw cue path hands the span
+    # the customer's own characters, but the PHONE span stands on the same
+    # characters at a HIGHER rank and won: 4 of the 5 misses of this type went to
+    # the model as phone numbers. The cue is the evidence («номер убытка»), so 6.
+    "INSURANCE_CLAIM_NUMBER": 6,
+    # ESIA_OID 6, ONE ABOVE PHONE, for the argument IP_ADDRESS already states: the
+    # record's identifier is a bare DIGIT RUN («\d+; длина не установлена») and a
+    # ten-digit one is exactly what libphonenumber reads as a number. The cue
+    # («oid», «ЕСИА», «идентификатор ЕСИА») names the type, and at the default rank
+    # of 1 seven of the corpus's spans were typed PHONE — masked, but handed to the
+    # customer's tool as a phone number.
+    "ESIA_OID": 6,
+    # THE TWELVE UTILITY LABELS, 6 — the document-ID tier, below the checksum
+    # IDs (SNILS/INN/CARD/VIN, 6) only in the sense that they share it. They are
+    # cue- or key-typed and carry no checksum, so a bare v5 shape must not take
+    # the span from them: «логин ivan.petrov» was read as NAME «ivan» (3) and
+    # left «.petrov» to the model, and every digit run of 6–12 behind its own cue
+    # («табельный номер …», «пропуск …», «ЖКХ …») could be re-read as a PHONE
+    # (5). 6 keeps them below the v5 documents (7) they never overlap and above
+    # every bare shape they do.
+    "GIS_ZHKH_ELS": 6, "UTILITY_ACCOUNT": 6, "CDP_CUSTOMER_ID": 6,
+    "LOGIN": 6, "DIPLOMA_NUMBER": 6, "SCHOOL_CERT_NUMBER": 6,
+    "STUDENT_ID_NUMBER": 6, "ACCESS_PASS_NUMBER": 6,
+    "EMPLOYEE_TAB_NUMBER": 6, "EMPLOYMENT_CONTRACT_NUMBER": 6,
+    "PNR": 6, "E_TICKET_NUMBER": 6,
 }
 
 # --- normalization -------------------------------------------------------

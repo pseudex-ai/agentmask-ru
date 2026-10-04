@@ -24,6 +24,7 @@
     python3 test_derived_forms.py
 """
 import json
+from unittest.mock import patch
 
 import testkit
 
@@ -38,7 +39,7 @@ from pseudex.vault import Vault  # noqa: E402
 # ю→yu, й→y, ё→e, soft sign dropped. Not one of the four standards.
 MODEL_STYLE: dict[str, str] = {"щ": "shch", "я": "ya", "ю": "yu", "й": "y", "ё": "e",
                                "ь": "", "х": "kh", "ц": "ts", "ий": "iy", "ия": "iya"}
-AMBIGUOUS = set("юяйёщхцъ") | {"ий", "ый", "ия", "кс"}
+AMBIGUOUS = set("юяйёщхцъ") | {"ий", "ый", "ия", "кс", "йя"}
 
 
 def _check(label: str, got: object, want: object) -> bool:
@@ -97,6 +98,36 @@ def main() -> int:
         got = _restore(vault, {"contact": {"name_latin": latin}})
         failures += not _check(f"ю, которого в подмене не было → «yu» ({label})",
                                got["name_latin"], "BITYUKOVA ZINAIDA")
+
+    # C05: a saved random draw whose units passed the old filter but whose
+    # Latin rendering resolved only the surname. The fake must not reach CRM.
+    with patch("pseudex.vault._fake_name", return_value="Майя Устинова"):
+        pinned = Vault(":memory:", "c05-mayya").for_conversation("one")
+        assert pinned.tokenize(real, "NAME") == "Майя Устинова"
+    for latin in ("USTINOVA MAIIA", "USTINOVA MAJYA", "USTINOVA MAYYA"):
+        got = _restore(pinned, {"contact": {"name_latin": latin}})
+        failures += not _check(f"зафиксированная Майя {latin} не оставляет fake-имя в CRM",
+                               got["name_latin"], "BITYUKOVA ZINAIDA")
+
+    # C05, THE SAME CLASS ONE UNIT OVER. «йя» was one hole in the derived-form
+    # INDEX, and it was not the only one: the index held the fold of the
+    # DEFAULT rendering only, while `UNITS` declares several spellings per unit
+    # and a string-level fold cannot unify some of them («j» is both ГОСТ's «й»
+    # and the everyday «ж»). Each of these came back as a FAKE given name
+    # beside a real surname — «MIHAIL PETROV» for a person who does not exist.
+    # Pinning only the «йя» literal would have left the class open, so the fix
+    # is the index closure and these are its fixtures.
+    for real_name, fake_name, latin_name, expected_name in (
+        ("александр петров", "Михаил Жуков", "MIHAIL ZHUKOV", "ALEKSANDR PETROV"),
+        ("пётр соколов", "Фёдор Кузнецов", "FIODOR KUZNETSOV", "PIOTR SOKOLOV"),
+        ("николай егоров", "Надежда Жукова", "NADEJDA ZHUKOVA", "NIKOLAY EGOROV"),
+    ):
+        with patch("pseudex.vault._fake_name", return_value=fake_name):
+            pinned = Vault(":memory:", f"c05-{latin_name}").for_conversation("one")
+            assert pinned.tokenize(real_name, "NAME") == fake_name
+        got = _restore(pinned, {"contact": {"name_latin": latin_name}})
+        failures += not _check(f"зафиксированная {fake_name} как {latin_name} не оставляет fake-имя",
+                               got["name_latin"], expected_name)
 
     # (2b) the ending the fake DID carry is carried over: Dmitry → Yury
     real = "юрий савельев"

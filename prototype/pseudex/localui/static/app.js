@@ -823,24 +823,349 @@ function PeriodReport({ org, data, days, onClose }) {
     </div>`;
 }
 
+/* One per-type table — the masked counts, or the suppressed near-masks. Both
+ * are COUNTS of a closed type vocabulary, so neither can carry a token or a
+ * value even by accident.
+ *
+ * Inline styles rather than a class: the only per-type table in `app.css` is
+ * `.report-table`, which is the LIGHT sheet meant for paper (white background,
+ * #bbb rules) and would be unreadable on this dark screen. The stylesheet beside
+ * this file is vendored and not rebuilt for a UI change, and inventing classes
+ * it does not contain would be a class that renders nothing. */
+const TYPE_TH = 'font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;'
+  + 'color:var(--dim-2);font-weight:600;text-align:left;padding:7px 9px;'
+  + 'border-bottom:1px solid var(--line-2);white-space:nowrap';
+const TYPE_TD = 'font-size:12.5px;padding:7px 9px;border-bottom:1px solid var(--line-3)';
+const TYPE_TD_NAME = TYPE_TD + ';font-family:var(--mono);color:var(--text-3);letter-spacing:.06em;'
+  + 'overflow:hidden;text-overflow:ellipsis';
+const TYPE_TD_NUM = TYPE_TD + ';font-family:var(--mono);color:var(--text-2);text-align:right;'
+  + 'white-space:nowrap';
+
+function TypeTable({ heading, subtitle, rows, fill, empty }) {
+  const total = rows.reduce((sum, [, count]) => sum + count, 0);
+  const peak = Math.max(1, ...rows.map(([, count]) => count));
+  return html`
+    <div class="cell" style="min-width:0">
+      <div class="label mb">${heading}</div>
+      <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+        <thead>
+          <tr>
+            <th style=${TYPE_TH}>ТИП</th>
+            <th style=${TYPE_TH + ';text-align:right;width:92px'}>ЗНАЧЕНИЙ</th>
+            <th style=${TYPE_TH + ';width:78px'}>ДОЛЯ</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(([name, count]) => html`
+            <tr key=${name}>
+              <td style=${TYPE_TD_NAME} title=${name}>${name}</td>
+              <td style=${TYPE_TD_NUM}>${num(count)}</td>
+              <td style=${TYPE_TD}>
+                <div style=${`height:6px;width:${Math.round((count / peak) * 100)}%;background:${fill}`}></div>
+              </td>
+            </tr>`)}
+          ${!rows.length && html`
+            <tr><td colspan="3" style=${TYPE_TD + ';color:var(--dim-3)'}>${empty}</td></tr>`}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td style=${TYPE_TD_NAME + ';color:var(--text-2)'}>ВСЕГО</td>
+            <td style=${TYPE_TD_NUM + ';color:var(--text)'}>${num(total)}</td>
+            <td style=${TYPE_TD}></td>
+          </tr>
+        </tfoot>
+      </table>
+      <div class="hint">${subtitle}</div>
+    </div>`;
+}
+
+/* THE IDENTITY READOUT (D-081) — «одна сущность = одна подмена», per type.
+ *
+ * WHY IT BELONGS ON THIS SCREEN, BESIDE THE COUNTS. «Защищено значений» grows
+ * whether one identity was masked once or five times, so the exact failure this
+ * product treats as unacceptable — the model meeting one person as two — is
+ * invisible in every number on the page. This table is the counter-evidence:
+ * the engine writes one identity in several forms (separators, case, a
+ * patronymic, dictation) and reports how many of those form-groups minted ONE
+ * substitute.
+ *
+ * WHAT IT IS NOT. Not traffic: it is a synthetic probe of this build's own
+ * canonicalisation, the same GROUPS the free metric `bench/identity_invariant.py`
+ * runs and fails on. Nothing here comes from the customer's data, and nothing
+ * here is a value: the payload carries a type name from a closed vocabulary and
+ * counts, so this table cannot leak even by accident.
+ *
+ * The engine computes it once and caches it (see `operator.identity_stability`),
+ * so the 5-second poll costs a JSON field rather than a re-run. `available:
+ * false` means the probe could not run at all (an unleased or degraded engine) —
+ * rendered as «недоступно», never as «0/0, всё хорошо». */
+function IdentityTable({ identity }) {
+  const byType = Object.entries(identity?.by_type || {}).map(([type, row]) => ({
+    type,
+    groups: row.collapse_groups || 0,
+    stable: row.collapse_stable || 0,
+    differ: row.differ_groups || 0,
+    differOk: row.differ_ok || 0,
+  }));
+  // WORST FIRST: the screen exists to show the type that broke, not the one
+  // that is fine, and a stable 100% row shouldn't push it below the fold.
+  byType.sort((a, b) => {
+    const ra = a.groups ? a.stable / a.groups : 2;
+    const rb = b.groups ? b.stable / b.groups : 2;
+    return ra - rb || a.type.localeCompare(b.type);
+  });
+  const rateOf = (row) => (row.groups ? row.stable / row.groups : null);
+  const tone = (row) => (rateOf(row) === null ? 'var(--dim-3)'
+    : rateOf(row) === 1 ? 'var(--green)' : 'var(--pink)');
+  return html`
+    <div class="cell" style="min-width:0">
+      <div class="label mb">ИДЕНТИЧНОСТЬ · ОДНА ПОДМЕНА НА СУЩНОСТЬ</div>
+      <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+        <thead>
+          <tr>
+            <th style=${TYPE_TH}>ТИП</th>
+            <th style=${TYPE_TH + ';text-align:right;width:110px'}>СТАБИЛЬНО</th>
+            <th style=${TYPE_TH + ';width:78px'}>ДОЛЯ</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${byType.map((row) => html`
+            <tr key=${row.type}>
+              <td style=${TYPE_TD_NAME} title=${row.differ
+                  ? `негативных контролей: ${row.differOk}/${row.differ}`
+                  : row.type}>${row.type}</td>
+              <td style=${TYPE_TD_NUM + ';color:' + tone(row)}>
+                ${row.groups ? `${row.stable}/${row.groups}` : '—'}</td>
+              <td style=${TYPE_TD}>
+                ${rateOf(row) === null
+                  ? html`<span class="hint" style="margin:0">не элемент</span>`
+                  : html`<div style=${`height:6px;width:${Math.round(rateOf(row) * 100)}%;background:${tone(row)}`}></div>`}
+              </td>
+            </tr>`)}
+          ${!byType.length && html`
+            <tr><td colspan="3" style=${TYPE_TD + ';color:var(--dim-3)'}>
+              ${identity && identity.available === false
+                ? 'недоступно: движок не ответил на пробу идентичности'
+                : 'движок не ответил.'}</td></tr>`}
+        </tbody>
+      </table>
+      <div class="hint">
+        Синтетическая проба канонизации этого сборки (та же, что в бесплатной
+        метрике «bench/identity_invariant.py»): сколько групп форм одной
+        сущности дали ОДНУ подмену. «—» — у типа нет collapse-групп (DATE —
+        неэлементная дата: её запись сохраняется как написана). В таблице
+        только типы и счётчики, значений и токенов в ней нет.
+      </div>
+    </div>`;
+}
+
+/* THE ENGINE'S OWN LATENCY — what the masking costs the agent waiting on it.
+ *
+ * WHY IT IS ON THIS SCREEN. Every other number here counts VALUES: «защищено
+ * значений», by type, by agent. A value has no duration, so the one question an
+ * operator asks before sizing a gateway — «сколько движок добавляет к ответу» —
+ * was unanswerable from this page. The profiler has measured it into a bounded
+ * ring buffer since `profiling.py` existed; this table is its view.
+ *
+ * THE PERCENTILES COME FROM THE RING BUFFER, NOT FROM THE PERIOD. They describe
+ * RECENT traffic in THIS engine process (the window is capped, so a burst an hour
+ * ago ages out), which is why the caption says so instead of sitting under the
+ * «за N дней» heading. The four percentile columns are generated from the
+ * server's own `latency.percentiles` list, so adding p90 on the engine side
+ * cannot leave a screen that still renders three columns.
+ *
+ * A DURATION, NEVER A VALUE. What crosses `/stats` is a stage name we chose, a
+ * float in milliseconds and a count. Nothing here can carry a token or a
+ * personal value, which is what makes it safe on a screen the operator leaves
+ * open.
+ *
+ * THE STAGES NEST, AND THE TABLE SAYS SO. `normalize` sits inside `detect.total`,
+ * and `detect.total` sits inside `mask.one` — `_mask_one` masks a whole TEXT (a
+ * message content or an entire tool-arguments JSON) and runs the detection pass
+ * for it in its own `_compute`. So «МАСКИРОВАНИЕ» is the enclosing row, and the
+ * two above it break that row down rather than sitting beside it. The relationship
+ * arrives from the server (`groups[..].nested_in`) and is printed in each tooltip,
+ * so the screen cannot drift from the pipeline.
+ *
+ * `total` ADDS ONLY NON-OVERLAPPING PHASES, AND STILL SAYS IT IS AN ESTIMATE.
+ * Its sources are `mask.one` + `unmask.total` — the two legs a caller waits on —
+ * never `detect.total`, which is already inside `mask.one`; adding it would count
+ * detection twice. It remains a planning figure: quantiles do not add, so it is
+ * not the percentile of one operation. The server marks it `derived`, the row is
+ * labelled «маскирование + восстановление», and the caption repeats it. The exact
+ * cumulative figure — time in `mask.one` since this worker started, one enclosing
+ * stage rather than a prefix sum over nested ones — is printed below the table.
+ *
+ * «—» IS THE ONLY THING SHOWN WHEN THE PROFILER IS OFF. Not 0, and not a dash
+ * that could be mistaken for «too fast to measure»: `PSEUDEX_PROFILE=1` is what
+ * fills the buffer, and a screen that printed 0.000 would certify an unmeasured
+ * engine as instant. The note names the variable, and the table still renders
+ * its shape so the operator learns where the number will appear. An ABSENT block
+ * is a third state — an engine that did not answer or one too old to carry
+ * `latency` — and it must not be reported as «profiling is off», which is a
+ * configuration fact we do not have.
+ */
+const LATENCY_ROWS = [
+  ['normalize', 'НОРМАЛИЗАЦИЯ', 'detect.normalize', 'свёртка входа, 1:1 по длине'],
+  ['detect', 'ДЕТЕКЦИЯ', 'detect.total', 'весь проход детекции, включает нормализацию'],
+  ['mask', 'МАСКИРОВАНИЕ', 'mask.one', 'один текст (сообщение или аргумент целиком), включая его детекцию'],
+  ['unmask', 'ВОССТАНОВЛЕНИЕ', 'unmask.total', 'один вызов раскрытия'],
+  ['total', 'ИТОГО · МАСКИРОВАНИЕ + ВОССТАНОВЛЕНИЕ', null, 'mask.one + unmask.total'],
+];
+
+/* ms with a resolution matched to the magnitude: the whole point is to see a
+ * 0.4 ms stage and a 400 ms one on the same table, and a fixed precision either
+ * rounds the first to zero or prints noise on the second. */
+function msFmt(value) {
+  if (value === null || value === undefined || typeof value !== 'number' || !isFinite(value)) {
+    return '—';
+  }
+  if (value >= 100) return value.toFixed(1);
+  if (value >= 10) return value.toFixed(2);
+  return value.toFixed(3);
+}
+
+const pctLabel = (key) => key.replace(/_ms$/, '');
+
+function LatencyTable({ latency }) {
+  // THREE STATES, not two. `present` false means /stats carried no latency block
+  // at all (engine unreachable, or an engine older than this screen): the screen
+  // must not turn that into the CONFIGURATION claim «профилирование выключено».
+  const present = latency !== null && latency !== undefined && typeof latency === 'object';
+  const enabled = present && latency.enabled === true;
+  const percentiles = latency?.percentiles?.length
+    ? latency.percentiles
+    : ['p50_ms', 'p90_ms', 'p95_ms', 'p99_ms'];
+  const groups = latency?.groups || {};
+  const total = latency?.total || null;
+  const rows = LATENCY_ROWS.map(([key, label, stage, what]) => {
+    const row = key === 'total' ? total : (groups[key] || null);
+    return { key, label, stage, what, row };
+  });
+  const measured = rows.filter((entry) => entry.row).length;
+  // The tooltip carries the nesting the server reported, so the containment is
+  // visible where the number is, not only in a paragraph.
+  const titleOf = (entry) => {
+    const nested = entry.row && entry.row.nested_in ? ` · входит в ${entry.row.nested_in}` : '';
+    const stage = entry.stage ? ` · ${entry.stage}` : '';
+    const window = entry.row && entry.row.window !== undefined
+      ? ` · в окне ${num(entry.row.window)}` : '';
+    return `${entry.what}${stage}${nested}${window}`;
+  };
+
+  return html`
+    <div class="cell" style="border:1px solid var(--line-2);padding:22px 24px 26px;margin-top:18px">
+      <div class="label mb">ЗАДЕРЖКА ДВИЖКА · ПРОЦЕНТИЛИ, мс · ОКНО ЭТОГО ПРОЦЕССА</div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead>
+          <tr>
+            <th style=${TYPE_TH}>СТАДИЯ</th>
+            ${percentiles.map((key) => html`
+              <th key=${key} style=${TYPE_TH + ';text-align:right;width:80px'}>${pctLabel(key).toUpperCase()}</th>`)}
+            <!-- «СУММА» and «ЗАМЕРОВ» are PROCESS-LIFETIME, while the percentile
+                 columns describe the retained window only. Naming the difference
+                 in the headers is cheaper than a footnote, and without it a row
+                 could read «ЗАМЕРОВ 1 000 000» beside a percentile computed from
+                 the last 4096 samples. -->
+            <th style=${TYPE_TH + ';text-align:right;width:96px'}>СУММА · ПРОЦЕСС</th>
+            <th style=${TYPE_TH + ';text-align:right;width:104px'}>ЗАМЕРОВ · ПРОЦЕСС</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((entry) => html`
+            <tr key=${entry.key}>
+              <td style=${TYPE_TD_NAME} title=${titleOf(entry)}>
+                ${entry.label}${entry.stage ? html`<span style="color:var(--dim-3)"> ${entry.stage}</span>` : ''}
+              </td>
+              ${percentiles.map((key) => html`
+                <td key=${key} style=${TYPE_TD_NUM + ';color:' + (entry.row ? 'var(--text-2)' : 'var(--dim-3)')}>
+                  ${entry.row ? msFmt(entry.row[key]) : '—'}</td>`)}
+              <td style=${TYPE_TD_NUM}>${entry.row ? msFmt(entry.row.total_ms) : '—'}</td>
+              <td style=${TYPE_TD_NUM}>${entry.row ? num(entry.row.count) : '—'}</td>
+            </tr>`)}
+        </tbody>
+      </table>
+      <div class="hint" style="margin-top:8px">
+        ${!present
+          ? 'Данных нет: движок не ответил или не отдаёт блок задержки. Это не утверждение о настройке профилирования.'
+          : (!enabled
+              ? html`Профилирование выключено. Числа появятся после запуска контейнера с <span class="mono">PSEUDEX_PROFILE=1</span> — до этого здесь «—», а не нули: неизмеренное нельзя показывать как мгновенное.`
+              : (measured
+                  ? 'Процентили — по удержанному окну этого процесса (старые замеры вытесняются), «сумма» и «замеров» — за всё время процесса. Стадии вложены: нормализация внутри детекции, детекция внутри маскирования. «ИТОГО» складывает только непересекающиеся фазы — планировочная оценка, а не процентиль одной операции.'
+                  : 'Профилирование включено, но замеров ещё нет: с момента запуска процесса движка не было трафика маскирования.'))}
+      </div>
+      <div class="hint" style="margin-top:4px">
+        Накопленное время маскирования текстов (стадия mask.one, объемлющая) за жизнь этого процесса:
+        ${enabled ? `${msFmt(latency?.total_mask_ms)} мс` : '—'}.
+        Счётчики и длительности; ни значений, ни токенов здесь нет и быть не может.
+      </div>
+    </div>`;
+}
+
+/* The stats screen polls. WHY POLL AT ALL: this is the screen an operator leaves
+ * open while an agent run is in flight, and a number that only moves on a manual
+ * reload answers the question minutes late. 5 s is short enough to watch a run
+ * and long enough that the read is a rounding error beside the traffic itself —
+ * and it is a COUNT query, never a scan of values.
+ *
+ * The interval is torn down by the effect's cleanup when the screen closes (the
+ * tab unmounts it) and restarted when the period or the org changes, so exactly
+ * one poller runs at a time; two would double every read and race each other. */
+const STATS_REFRESH_MS = 5000;
+
 function Stats({ org }) {
   const [data, setData] = useState(null);
   const [days, setDays] = useState(14);
   const [report, setReport] = useState(false);
   const [error, setError] = useState('');
+  const [updatedAt, setUpdatedAt] = useState(null);
+  // Guards the poll against its own last answer: `days` can change while a fetch
+  // for the old window is still in flight, and without this the slower reply
+  // lands last and renders the period the operator already left.
+  const seq = useRef(0);
+
+  const load = useCallback(async () => {
+    const mine = ++seq.current;
+    try {
+      const body = await engineGet('/stats', { org_id: org, days });
+      if (mine !== seq.current) return;
+      setData(body);
+      setUpdatedAt(Date.now() / 1000);
+      setError('');
+    } catch (problem) {
+      if (mine !== seq.current) return;
+      setError('движок не отвечает');
+    }
+  }, [org, days]);
 
   useEffect(() => {
-    let live = true;
-    engineGet('/stats', { org_id: org, days })
-      .then((body) => { if (live) { setData(body); setError(''); } })
-      .catch(() => { if (live) setError('движок не отвечает'); });
-    return () => { live = false; };
-  }, [org, days]);
+    load();
+    const timer = setInterval(load, STATS_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [load]);
 
   const series = data?.days || [];
   const peak = Math.max(1, ...series.map((day) => day.requests));
-  const types = Object.entries(data?.by_type || {}).sort((a, b) => b[1] - a[1]);
-  const topType = Math.max(1, ...types.map(([, count]) => count));
+  const masked = Object.entries(data?.by_type || {}).sort((a, b) => b[1] - a[1]);
+  const suppressed = Object.entries(data?.suppressed_by_type || {}).sort((a, b) => b[1] - a[1]);
+  const maskedTotal = masked.reduce((sum, [, count]) => sum + count, 0);
+  const suppressedTotal = data?.suppressed_total
+    ?? suppressed.reduce((sum, [, count]) => sum + count, 0);
+  const suppressedSince = data?.suppressed_since;
+
+  // THE IDENTITY READOUT, from the engine's cached probe (counts only).
+  const identity = data?.identity;
+  const identityAvailable = identity?.available === true;
+  const identityValue = identityAvailable
+    ? `${num(identity.collapse_stable)}/${num(identity.collapse_groups)}`
+    : '—';
+  const identityTone = !identityAvailable ? 'var(--dim-3)'
+    : identity.collapse_stable === identity.collapse_groups ? 'var(--green)'
+      : 'var(--pink)';
+  const identityCaption = !identityAvailable ? 'проба недоступна'
+    : (identity.collapse_stable === identity.collapse_groups
+        ? `типов стабильно ${identity.types_stable}/${identity.types_with_groups} · проба сборки, не трафик`
+        : `ВНИМАНИЕ: типов стабильно ${identity.types_stable}/${identity.types_with_groups}`);
 
   return html`
     <div class="page">
@@ -877,7 +1202,69 @@ function Stats({ org }) {
 
       ${error && html`<div class="foot-note" style="color:var(--pink);margin-bottom:12px">${error}</div>`}
 
-      <div class="cell" style="border:1px solid var(--line-2);padding:22px 24px 26px">
+      <!-- THE HEADER CARRIES BOTH DENOMINATORS AND THE TWO HALVES OF THE TYPE
+           PICTURE: requests and protected values belong to the audit window
+           below; the suppressed total belongs to THIS engine process, and its
+           own «с …» says so. Reading them as one period would be the lie. -->
+      <div class="cell" style="border:1px solid var(--line-2);padding:22px 24px"
+           title="Обращения и защищённые значения — за выбранный период. Оставленное открытым — счётчик этого процесса движка.">
+        <div class="label" style="margin-bottom:14px">
+          ЗА ПЕРИОД · АВТООБНОВЛЕНИЕ КАЖДЫЕ ${STATS_REFRESH_MS / 1000} С
+        </div>
+        <div style="display:flex;gap:40px;flex-wrap:wrap;align-items:flex-end">
+          <div>
+            <div class="label">ОБРАЩЕНИЙ</div>
+            <div class="stat">${num(data?.requests_total)}</div>
+          </div>
+          <div>
+            <div class="label">ЗАЩИЩЕНО ЗНАЧЕНИЙ</div>
+            <div class="stat green">${num(maskedTotal)}</div>
+          </div>
+          <div>
+            <div class="label">ОСТАВЛЕНО ОТКРЫТЫМ УМЫШЛЕННО</div>
+            <div class="stat" style="color:var(--accent)">${num(suppressedTotal)}</div>
+            <div class="stat-cap">
+              ${suppressedSince
+                ? `в этом процессе с ${clock(suppressedSince)}`
+                : 'в этом процессе: ещё не срабатывало'}
+            </div>
+          </div>
+          <!-- THE THIRD COUNTER, AND THE ONE THAT CANNOT BE READ OFF THE OTHER
+               TWO: «защищено значений» is identical whether an identity was
+               protected once or five times. The number is a synthetic probe of
+               THIS build, so it has no period and no org — the caption says so
+               rather than letting it sit beside the windowed figures as though
+               it shared their denominator. -->
+          <div>
+            <div class="label">ИДЕНТИЧНОСТЬ: ОДНА ПОДМЕНА</div>
+            <div class="stat" style=${`color:${identityTone}`}>${identityValue}</div>
+            <div class="stat-cap">${identityCaption}</div>
+          </div>
+          <div style="margin-left:auto;text-align:right">
+            <div class="label">ОБНОВЛЕНО</div>
+            <div class="stat" style="font-size:20px">${updatedAt ? clock(updatedAt) : '—'}</div>
+            <div class="stat-cap">${error ? 'движок не отвечает' : 'свежие счётчики без перезагрузки'}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid cols-fit-md attach">
+        <${TypeTable} heading="ЗАМАСКИРОВАНО ПО ТИПАМ"
+          subtitle=${`Защищённые значения за последние ${days} дней, по убыванию. Счётчики журнала аудита: v5, v6 и временные секреты (CVC/OTP) — одной таблицей, как их называет движок.`}
+          rows=${masked} fill="var(--accent)" empty="За период данных нет." />
+        <${TypeTable} heading="НЕ ЗАМАСКИРОВАНО · ЗАЩИТА ОТ ИЗБЫТОЧНОСТИ"
+          subtitle=${'Срабатывания deny-слоя: near-mask, который контекст признал НЕ персональными данными — номер заказа, версия, реквизит организации. Считается в этом процессе движка с момента запуска, поэтому окно у него своё и период сверху к нему не применяется.'}
+          rows=${suppressed} fill="var(--green)" empty="Защита от избыточности ещё не срабатывала." />
+        <${IdentityTable} identity=${identity} />
+      </div>
+
+      <!-- THE ENGINE'S OWN COST, after the three count tables and before the
+           per-day bars: it shares no denominator with the period figures above
+           (it is THIS process's recent window), so it gets its own block and its
+           own caption rather than a place in the «ЗА ПЕРИОД» header. -->
+      <${LatencyTable} latency=${data?.latency} />
+
+      <div class="cell" style="border:1px solid var(--line-2);padding:22px 24px 26px;margin-top:18px">
         <div class="label mb">ЗАПРОСЫ ПО ДНЯМ</div>
         <div class="bars">
           ${series.map((day, index) => html`
@@ -889,17 +1276,7 @@ function Stats({ org }) {
         </div>
       </div>
 
-      <div class="grid cols-fit-md attach">
-        <div class="cell" style="padding:22px 24px">
-          <div class="label mb">ПО ТИПАМ СУЩНОСТЕЙ</div>
-          ${types.map(([name, count]) => html`
-            <div class="tbar">
-              <div class="n">${name}</div>
-              <div class="track"><div class="fill" style=${`width:${Math.round((count / topType) * 100)}%`}></div></div>
-              <div class="c">${num(count)}</div>
-            </div>`)}
-          ${!types.length && html`<div class="foot-note">Пока пусто.</div>`}
-        </div>
+      <div class="grid cols-fit-md" style="margin-top:18px">
         <div class="cell">
           <div class="label mb">ПО АГЕНТАМ</div>
           ${(data?.by_agent || []).map((row) => html`

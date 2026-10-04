@@ -1,0 +1,249 @@
+{
+  "arm": "C",
+  "calls": [
+    {
+      "name": "crm_find_contact",
+      "parsed": {
+        "query": {
+          "phone": "+79129876543"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "query": {
+          "phone": "+79129876543"
+        }
+      },
+      "seq": 1,
+      "written": {
+        "query": {
+          "phone": "+79129876543"
+        }
+      }
+    },
+    {
+      "name": "delivery_quote",
+      "parsed": {
+        "city": "новосибирск",
+        "weight": 1000
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "city": "Новосибирск",
+        "weight": 1000
+      },
+      "seq": 2,
+      "written": {
+        "city": "Новосибирск",
+        "weight": 1000
+      }
+    },
+    {
+      "name": "delivery_create_order",
+      "parsed": {
+        "comment": "",
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Джонсон Майкл",
+          "phones": [
+            "+79852821196"
+          ]
+        },
+        "to_location": {
+          "address": "проспект Толстого, 20, кв. 109",
+          "city": "новосибирск",
+          "postal_code": "630008"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Джонсон Майкл",
+          "phones": [
+            {
+              "number": "+79852821196"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "проспект Толстого, 20, кв. 109",
+          "city": "Новосибирск",
+          "postal_code": "630008"
+        }
+      },
+      "seq": 3,
+      "written": {
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Джонсон Майкл",
+          "phones": [
+            {
+              "number": "+79852821196"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "проспект Толстого, 20, кв. 109",
+          "city": "Новосибирск",
+          "postal_code": "630008"
+        }
+      }
+    },
+    {
+      "name": "crm_add_note",
+      "parsed": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Оформила отправку посылки: Новосибирск, проспект Толстого 20, кв. 109 (индекс 630008), получатель Джонсон Майкл, тел. +79852821196, вес 1 кг. Стоимость 370 ₽, срок 2 дня. Заказ ord-1."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Оформила отправку посылки: Новосибирск, проспект Толстого 20, кв. 109 (индекс 630008), получатель Джонсон Майкл, тел. +79852821196, вес 1 кг. Стоимость 370 ₽, срок 2 дня. Заказ ord-1."
+      },
+      "seq": 4,
+      "written": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Оформила отправку посылки: Новосибирск, проспект Толстого 20, кв. 109 (индекс 630008), получатель Джонсон Майкл, тел. +79852821196, вес 1 кг. Стоимость 370 ₽, срок 2 дня. Заказ ord-1."
+      }
+    },
+    {
+      "name": "order_reschedule",
+      "parsed": {
+        "date": "2026-09-10",
+        "order_id": "ord-1"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "date": "2026-09-10",
+        "order_id": "ord-1"
+      },
+      "seq": 5,
+      "written": {
+        "date": "2026-09-10",
+        "order_id": "ord-1"
+      }
+    },
+    {
+      "name": "notify_sms",
+      "parsed": {
+        "number": "+79129876543",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен. Куда: Новосибирск, проспект Толстого 20, кв. 109. Получатель: Джонсон Майкл, +79852821196. Вес 1 кг. Стоимость 370 руб. Дата доставки: 10.09.2026."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "number": "+79129876543",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен. Куда: Новосибирск, проспект Толстого 20, кв. 109. Получатель: Джонсон Майкл, +79852821196. Вес 1 кг. Стоимость 370 руб. Дата доставки: 10.09.2026."
+      },
+      "seq": 6,
+      "written": {
+        "number": "+79129876543",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен. Куда: Новосибирск, проспект Толстого 20, кв. 109. Получатель: Джонсон Майкл, +79852821196. Вес 1 кг. Стоимость 370 руб. Дата доставки: 10.09.2026."
+      }
+    }
+  ],
+  "case_id": "long_order-015",
+  "cluster": "PHONE:9129876543",
+  "cost_usd": 0.004002,
+  "key": "long_order-015|C|0",
+  "kind": "long_order",
+  "masked_spans": {},
+  "meta": {
+    "api_error_status": null,
+    "cap_usd": 0.48,
+    "duration_ms": 22221,
+    "errors": [],
+    "is_error": false,
+    "model": "deepseek-flash",
+    "reason": "",
+    "session_id": "deepseek-1790433494439928000",
+    "subtype": "success",
+    "turns": 47
+  },
+  "register": "voice_raw",
+  "repeat": 0,
+  "reply": "Отправила СМС с подтверждением на ваш номер +7 912 987-65-43 📩\n\n**Заказ ord-1** — Новосибирск, проспект Толстого 20, кв. 109, получатель Джонсон Майкл, 1 кг, 370 ₽, доставка 10.09.2026. Если что-то ещё нужно — обращайтесь!",
+  "state": [
+    {
+      "fields": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Оформила отправку посылки: Новосибирск, проспект Толстого 20, кв. 109 (индекс 630008), получатель Джонсон Майкл, тел. +79852821196, вес 1 кг. Стоимость 370 ₽, срок 2 дня. Заказ ord-1."
+      },
+      "id": "note-1",
+      "seq": 4,
+      "table": "notes",
+      "tool": "crm_add_note"
+    },
+    {
+      "fields": {
+        "comment": "",
+        "date": "2026-09-10",
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Джонсон Майкл",
+          "phones": [
+            "+79852821196"
+          ]
+        },
+        "status": "RESCHEDULED",
+        "to_location": {
+          "address": "проспект Толстого, 20, кв. 109",
+          "city": "новосибирск",
+          "postal_code": "630008"
+        }
+      },
+      "id": "ord-1",
+      "seq": 5,
+      "table": "orders",
+      "tool": "order_reschedule"
+    },
+    {
+      "fields": {
+        "number": "+79129876543",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен. Куда: Новосибирск, проспект Толстого 20, кв. 109. Получатель: Джонсон Майкл, +79852821196. Вес 1 кг. Стоимость 370 руб. Дата доставки: 10.09.2026."
+      },
+      "id": "sms-1",
+      "seq": 6,
+      "table": "sms",
+      "tool": "notify_sms"
+    }
+  ],
+  "substitutes": {},
+  "termination": "done"
+}

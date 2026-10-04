@@ -1,0 +1,35 @@
+# D0 harness smoke — bounded known-diagnostic slices, read-only
+# cmd: cd prototype && PYTHONDONTWRITEBYTECODE=1 .venv/bin/python ../research/quality-sprint-2026-09-30/work/D0/d0_arm_compare.py --out ../research/quality-sprint-2026-09-30/work/D0/out
+# start: 2026-09-30T20:12:15Z
+python          3.12.12
+bundle          2a07cebae2b050ec 1524582B 01c19f4689450b54…
+bundle vs B0    {'version_match': True, 'sha256_match': True, 'bytes_match': True}
+source pins     63/63 match B0, drift=[]
+holdout read    False (file present: False)
+controls        {'positive': {'text': 'Позвоните Иванову Ивану по телефону +79261234567', 'spans': [{'start': 10, 'end': 23, 'type': 'NAME'}, {'start': 36, 'end': 48, 'type': 'PHONE'}], 'required': '>=2', 'pass': True, 'golden_full_whole_recall': 0.9597}, 'negative': {'text': '<empty>', 'required': '0 spans in every arm', 'pass': True}}
+
+== FULL (PRODUCT) 12.35 ms/text over 791 unique texts ==
+  golden   gold=  298 overlap= 0.960 whole= 0.960 wrong_type= 0.040 miss= 0.000 pred=  288 fp(other/decl/place/public)=0/0/0/0
+  dirty    gold=  134 overlap= 1.000 whole= 1.000 wrong_type= 0.000 miss= 0.000 pred=  134 fp(other/decl/place/public)=0/0/0/0
+  gatectx  gold=  295 overlap= 0.807 whole= 0.807 wrong_type= 0.010 miss= 0.183 pred=  372 fp(other/decl/place/public)=104/0/7/25
+
+== RAW_NER (ABLATION) 0.89 ms/text over 791 unique texts ==
+  golden   gold=  298 overlap= 0.329 whole= 0.285 wrong_type= 0.000 miss= 0.671 pred=   98 fp(other/decl/place/public)=0/0/0/0
+  dirty    gold=  134 overlap= 0.119 whole= 0.104 wrong_type= 0.000 miss= 0.881 pred=   23 fp(other/decl/place/public)=7/0/0/0
+  gatectx  gold=  295 overlap= 0.000 whole= 0.000 wrong_type= 0.000 miss= 1.000 pred=    1 fp(other/decl/place/public)=1/0/0/0
+
+== RAW_NER_REGEX (ABLATION) 0.73 ms/text over 791 unique texts ==
+  golden   gold=  298 overlap= 0.604 whole= 0.560 wrong_type= 0.084 miss= 0.312 pred=  233 fp(other/decl/place/public)=0/0/0/0
+  dirty    gold=  134 overlap= 0.440 whole= 0.425 wrong_type= 0.306 miss= 0.254 pred=  126 fp(other/decl/place/public)=7/2/0/0
+  gatectx  gold=  295 overlap= 0.000 whole= 0.000 wrong_type= 0.000 miss= 1.000 pred=    1 fp(other/decl/place/public)=1/0/0/0
+
+== RULES_ONLY (ABLATION) 5.25 ms/text over 791 unique texts ==
+  golden   gold=  298 overlap= 0.899 whole= 0.899 wrong_type= 0.040 miss= 0.060 pred=  270 fp(other/decl/place/public)=0/0/0/0
+  dirty    gold=  134 overlap= 1.000 whole= 1.000 wrong_type= 0.000 miss= 0.000 pred=  134 fp(other/decl/place/public)=0/0/0/0
+  gatectx  gold=  295 overlap= 0.807 whole= 0.807 wrong_type= 0.010 miss= 0.183 pred=  372 fp(other/decl/place/public)=104/0/7/25
+
+== HYBRID_UNION (ABLATION) 6.70 ms/text over 791 unique texts ==
+  golden   gold=  298 overlap= 0.960 whole= 0.960 wrong_type= 0.040 miss= 0.000 pred=  288 fp(other/decl/place/public)=0/0/0/0
+  dirty    gold=  134 overlap= 1.000 whole= 1.000 wrong_type= 0.000 miss= 0.000 pred=  141 fp(other/decl/place/public)=7/0/0/0
+  gatectx  gold=  295 overlap= 0.807 whole= 0.807 wrong_type= 0.010 miss= 0.183 pred=  372 fp(other/decl/place/public)=104/0/7/25
+EXIT=0

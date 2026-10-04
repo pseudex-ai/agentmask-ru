@@ -1,0 +1,53 @@
+{
+  "task": "M1a",
+  "stage": "new truth-condition RED against preserved prototype, no patch",
+  "git_head": "890c50849a326f882eac336ba4e38c91171de473",
+  "product_basis": "0bfda2363ef1a1d552e2ac093129b1026a86ad68; B0 commit890c508 changes research only",
+  "files": [
+    {
+      "path": "prototype/bench/agentpii5/answer_restoration.py",
+      "sha256": "0fe7ec381e5d870ce2b2eacbf7fe09f7cebfdaf44f89012bc81c071484a51ff5"
+    },
+    {
+      "path": "prototype/bench/agentpii5/test_answer_restoration.py",
+      "sha256": "7bab1d4500bb920781d6c192bb7a624d4f70b2547fc04f009b971572cb55de0f"
+    },
+    {
+      "path": "prototype/bench/agentpii5/metrics.py",
+      "sha256": "f372cd18fb0ac3a4f5a95d85895002bd9f73204bd0804a8c90aa5d18d5f6ab60"
+    },
+    {
+      "path": "prototype/bench/agentpii5/observe.py",
+      "sha256": "5d111351345642480052ecd11fe8000d9d1a14c4c00a451b94b3646429b29a90"
+    },
+    {
+      "path": "prototype/bench/agentpii5/contracts.py",
+      "sha256": "d616610137519d261e0d25d8517ad82d348d83103b54ae6cd7d7ee357fb46800"
+    },
+    {
+      "path": "prototype/bench/agentpii5/form.py",
+      "sha256": "e76f2824fccc53e0acc9508d459bcd5918f3b4c95e3f0c1250ff16fade892699"
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/work/M1a/red_truth_conditions.py",
+      "sha256": "9cf2a0856f2a89a9aec61beccb7753f852f966e55772520c2fbab2b87bd9f6a3"
+    }
+  ],
+  "baseline_tests": {
+    "command": "PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m bench.agentpii5.test_answer_restoration",
+    "workdir": "prototype",
+    "exit": 0,
+    "passed": 28,
+    "total": 28
+  },
+  "new_red": {
+    "command": "PYTHONDONTWRITEBYTECODE=1 prototype/.venv/bin/python research/quality-sprint-2026-09-30/work/M1a/red_truth_conditions.py",
+    "exit": 1,
+    "passed": 3,
+    "red": 5,
+    "total": 8
+  },
+  "independent_review": "pending work/M1a/DESIGN-REVIEW.md",
+  "old_answer_real_unchanged": true,
+  "fixture_revision_note": "After independent review: request_count>=mention.request_index; gateway push and provider clocks still not compared. Revised suite retains 3PASS/5RED."
+}

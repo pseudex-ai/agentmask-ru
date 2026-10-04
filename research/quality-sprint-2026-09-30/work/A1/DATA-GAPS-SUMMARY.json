@@ -1,0 +1,1130 @@
+{
+  "target_units_per_main_type_slice": 300,
+  "main_types": [
+    "NAME",
+    "LOC",
+    "PHONE",
+    "EMAIL",
+    "PASSPORT",
+    "SNILS",
+    "INN",
+    "CARD",
+    "PLATE",
+    "DOB"
+  ],
+  "rows": 511,
+  "per_type": {
+    "ACCESS_PASS_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "ADDRESS": {
+      "occurrences_across_sources": 200,
+      "independent_units_naive_sum": 200,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "gate_instrument",
+        "piibench"
+      ],
+      "blind_status": [
+        "external_already_measured_strict_only",
+        "known_diagnostic_hand_labeled"
+      ]
+    },
+    "ALL": {
+      "occurrences_across_sources": 3054,
+      "independent_units_naive_sum": 3054,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "gate_instrument"
+      ],
+      "blind_status": [
+        "known_diagnostic_hand_labeled"
+      ]
+    },
+    "APP_DEVICE_ID": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "ARBITRAZH_CASE_NO": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "BANK_ACCOUNT": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "BANK_CARD_NUMBER": {
+      "occurrences_across_sources": 92,
+      "independent_units_naive_sum": 92,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "piibench"
+      ],
+      "blind_status": [
+        "external_already_measured_strict_only"
+      ]
+    },
+    "BIRTH_CERT": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "CADASTRAL_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "CARD": {
+      "occurrences_across_sources": 1202,
+      "independent_units_naive_sum": 1061,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "legacy_dataset",
+        "legacy_dirty",
+        "legacy_stress",
+        "legacy_stress2",
+        "run_2026_09_30_813",
+        "v5_corpus_1800"
+      ],
+      "blind_status": [
+        "known_diagnostic",
+        "known_diagnostic_measured"
+      ]
+    },
+    "CDP_CUSTOMER_ID": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "CID": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "temporary_secrets"
+      ],
+      "blind_status": [
+        "not_built_synthetic_only"
+      ]
+    },
+    "CIVIL_ACT_CERT": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "COURT_CASE_NO_SOU": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "COURT_CASE_UID": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "CREDIT_SUBJECT_CODE": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "CVC": {
+      "occurrences_across_sources": 77,
+      "independent_units_naive_sum": 77,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "piibench",
+        "temporary_secrets"
+      ],
+      "blind_status": [
+        "external_already_measured_strict_only",
+        "not_built_synthetic_only"
+      ]
+    },
+    "CVV": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "temporary_secrets"
+      ],
+      "blind_status": [
+        "not_built_synthetic_only"
+      ]
+    },
+    "DATE": {
+      "occurrences_across_sources": 12,
+      "independent_units_naive_sum": 12,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "legacy_dataset"
+      ],
+      "blind_status": [
+        "known_diagnostic"
+      ]
+    },
+    "DIPLOMA_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "DMS_POLICY": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "DOB": {
+      "occurrences_across_sources": 7246,
+      "independent_units_naive_sum": 4073,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "legacy_dataset",
+        "legacy_dirty",
+        "run_2026_09_30_813",
+        "v5_corpus_1800"
+      ],
+      "blind_status": [
+        "known_diagnostic",
+        "known_diagnostic_measured"
+      ]
+    },
+    "DRIVER_LICENSE": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "ELN_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "EMAIL": {
+      "occurrences_across_sources": 6286,
+      "independent_units_naive_sum": 3725,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "legacy_dataset",
+        "massive",
+        "piibench",
+        "run_2026_09_30_813",
+        "v5_corpus_1800"
+      ],
+      "blind_status": [
+        "external_already_measured_slot_not_pii",
+        "external_already_measured_strict_only",
+        "known_diagnostic",
+        "known_diagnostic_measured"
+      ]
+    },
+    "EMPLOYEE_TAB_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "EMPLOYMENT_CONTRACT_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "EPTS_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "ESIA_OID": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "EXEC_DOC_NO": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "E_TICKET_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "FSSP_IP_NO": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "GIS_ZHKH_ELS": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "HARD_NEGATIVE": {
+      "occurrences_across_sources": 2906,
+      "independent_units_naive_sum": 2906,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "legacy_dataset",
+        "legacy_dirty",
+        "legacy_stress",
+        "legacy_stress2",
+        "run_2026_09_30_813",
+        "v5_corpus_1800"
+      ],
+      "blind_status": [
+        "known_diagnostic",
+        "known_diagnostic_measured"
+      ]
+    },
+    "IBAN": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "ICCID": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "IMEI": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "IMSI": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "INN": {
+      "occurrences_across_sources": 1487,
+      "independent_units_naive_sum": 1032,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "legacy_dataset",
+        "legacy_dirty",
+        "legacy_stress",
+        "legacy_stress2",
+        "piibench",
+        "run_2026_09_30_813",
+        "v5_corpus_1800"
+      ],
+      "blind_status": [
+        "external_already_measured_strict_only",
+        "known_diagnostic",
+        "known_diagnostic_measured"
+      ]
+    },
+    "INSURANCE_CLAIM_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "INTL_PASSPORT": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "IP_ADDRESS": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "KASKO_POLICY": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "KPP": {
+      "occurrences_across_sources": 94,
+      "independent_units_naive_sum": 94,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "piibench"
+      ],
+      "blind_status": [
+        "external_already_measured_strict_only"
+      ]
+    },
+    "LOAN_CONTRACT_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "LOAN_UID": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "LOC": {
+      "occurrences_across_sources": 13817,
+      "independent_units_naive_sum": 7495,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "legacy_dataset",
+        "legacy_dirty",
+        "massive",
+        "run_2026_09_30_813",
+        "v5_corpus_1800"
+      ],
+      "blind_status": [
+        "external_already_measured_slot_not_pii",
+        "known_diagnostic",
+        "known_diagnostic_measured"
+      ]
+    },
+    "LOGIN": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "LOYALTY_CARD_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "MAC": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "MEDCARD_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "METRICA_CLIENT_ID": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "MILITARY_ID": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "MOBILE_AD_ID": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "NAME": {
+      "occurrences_across_sources": 31142,
+      "independent_units_naive_sum": 9631,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "legacy_dataset",
+        "legacy_dirty",
+        "legacy_stress",
+        "legacy_stress2",
+        "massive",
+        "piibench",
+        "run_2026_09_30_813",
+        "v5_corpus_1800"
+      ],
+      "blind_status": [
+        "external_already_measured_slot_not_pii",
+        "external_already_measured_strict_only",
+        "known_diagnostic",
+        "known_diagnostic_measured"
+      ]
+    },
+    "OGRN": {
+      "occurrences_across_sources": 93,
+      "independent_units_naive_sum": 93,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "piibench"
+      ],
+      "blind_status": [
+        "external_already_measured_strict_only"
+      ]
+    },
+    "OGRNIP": {
+      "occurrences_across_sources": 87,
+      "independent_units_naive_sum": 87,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "piibench",
+        "v6_registry"
+      ],
+      "blind_status": [
+        "external_already_measured_strict_only",
+        "not_built"
+      ]
+    },
+    "OMS_ENP": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "OSAGO_POLICY": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "OTHER": {
+      "occurrences_across_sources": 209,
+      "independent_units_naive_sum": 209,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "gate_instrument"
+      ],
+      "blind_status": [
+        "known_diagnostic_hand_labeled"
+      ]
+    },
+    "OTP": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "temporary_secrets"
+      ],
+      "blind_status": [
+        "not_built_synthetic_only"
+      ]
+    },
+    "PASSPORT": {
+      "occurrences_across_sources": 529,
+      "independent_units_naive_sum": 372,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "legacy_dataset",
+        "legacy_dirty",
+        "legacy_stress",
+        "legacy_stress2",
+        "run_2026_09_30_813",
+        "v5_corpus_1800"
+      ],
+      "blind_status": [
+        "known_diagnostic",
+        "known_diagnostic_measured"
+      ]
+    },
+    "PASSPORT_NUMBER": {
+      "occurrences_across_sources": 120,
+      "independent_units_naive_sum": 120,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "piibench"
+      ],
+      "blind_status": [
+        "external_already_measured_strict_only"
+      ]
+    },
+    "PERSON": {
+      "occurrences_across_sources": 2179,
+      "independent_units_naive_sum": 453,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "gate_instrument",
+        "nerel"
+      ],
+      "blind_status": [
+        "external_already_measured_strict_only",
+        "known_diagnostic_hand_labeled"
+      ]
+    },
+    "PHONE": {
+      "occurrences_across_sources": 15162,
+      "independent_units_naive_sum": 6631,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "legacy_dataset",
+        "legacy_dirty",
+        "legacy_stress",
+        "legacy_stress2",
+        "run_2026_09_30_813",
+        "v5_corpus_1800"
+      ],
+      "blind_status": [
+        "known_diagnostic",
+        "known_diagnostic_measured"
+      ]
+    },
+    "PHONE_NUMBER": {
+      "occurrences_across_sources": 217,
+      "independent_units_naive_sum": 217,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "piibench"
+      ],
+      "blind_status": [
+        "external_already_measured_strict_only"
+      ]
+    },
+    "PLACE": {
+      "occurrences_across_sources": 26,
+      "independent_units_naive_sum": 26,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "gate_instrument"
+      ],
+      "blind_status": [
+        "known_diagnostic_hand_labeled"
+      ]
+    },
+    "PLATE": {
+      "occurrences_across_sources": 1149,
+      "independent_units_naive_sum": 607,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "run_2026_09_30_813",
+        "v5_corpus_1800"
+      ],
+      "blind_status": [
+        "known_diagnostic",
+        "known_diagnostic_measured"
+      ]
+    },
+    "PNR": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "PRESCRIPTION_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "PTS_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "PUBLIC": {
+      "occurrences_across_sources": 57,
+      "independent_units_naive_sum": 57,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "gate_instrument"
+      ],
+      "blind_status": [
+        "known_diagnostic_hand_labeled"
+      ]
+    },
+    "REFERRAL_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "RESIDENCE_PERMIT": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "SCHOOL_CERT_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "SMS_CODE": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "temporary_secrets"
+      ],
+      "blind_status": [
+        "not_built_synthetic_only"
+      ]
+    },
+    "SNILS": {
+      "occurrences_across_sources": 1367,
+      "independent_units_naive_sum": 1047,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "legacy_dataset",
+        "legacy_dirty",
+        "legacy_stress",
+        "legacy_stress2",
+        "piibench",
+        "run_2026_09_30_813",
+        "v5_corpus_1800"
+      ],
+      "blind_status": [
+        "external_already_measured_strict_only",
+        "known_diagnostic",
+        "known_diagnostic_measured"
+      ]
+    },
+    "STS_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "STUDENT_ID_NUMBER": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "SUBSCRIBER_ACCOUNT": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "THREEDS": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "temporary_secrets"
+      ],
+      "blind_status": [
+        "not_built_synthetic_only"
+      ]
+    },
+    "TOKEN": {
+      "occurrences_across_sources": 95,
+      "independent_units_naive_sum": 95,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "piibench"
+      ],
+      "blind_status": [
+        "external_already_measured_strict_only"
+      ]
+    },
+    "UIN": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "UTILITY_ACCOUNT": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "VIN": {
+      "occurrences_across_sources": 0,
+      "independent_units_naive_sum": 0,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "v6_registry"
+      ],
+      "blind_status": [
+        "not_built"
+      ]
+    },
+    "АДРЕС С НОМЕРОМ": {
+      "occurrences_across_sources": 197,
+      "independent_units_naive_sum": 197,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "rudevices_addresses",
+        "voice_addresses"
+      ],
+      "blind_status": [
+        "external_already_measured_strict_only"
+      ]
+    },
+    "НЕ АДРЕС": {
+      "occurrences_across_sources": 1772,
+      "independent_units_naive_sum": 1772,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "rudevices_addresses",
+        "voice_addresses"
+      ],
+      "blind_status": [
+        "external_already_measured_strict_only"
+      ]
+    },
+    "НЕОДНОЗНАЧНО": {
+      "occurrences_across_sources": 25,
+      "independent_units_naive_sum": 25,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "rudevices_addresses",
+        "voice_addresses"
+      ],
+      "blind_status": [
+        "external_already_measured_strict_only"
+      ]
+    },
+    "УЛИЦА БЕЗ НОМЕРА": {
+      "occurrences_across_sources": 29,
+      "independent_units_naive_sum": 29,
+      "note": "sum across sources double-counts reused authored templates; use the per-slice rows, not this sum, for support claims",
+      "sources": [
+        "rudevices_addresses",
+        "voice_addresses"
+      ],
+      "blind_status": [
+        "external_already_measured_strict_only"
+      ]
+    }
+  },
+  "main_type_gap_from_single_largest_known_source": {
+    "NAME": {
+      "v5_corpus_1800_unique_identities": 1188,
+      "run_813_unique_identities": 667,
+      "gap_to_target_using_v5_corpus": 0
+    },
+    "LOC": {
+      "v5_corpus_1800_unique_identities": 985,
+      "run_813_unique_identities": 506,
+      "gap_to_target_using_v5_corpus": 0
+    },
+    "PHONE": {
+      "v5_corpus_1800_unique_identities": 883,
+      "run_813_unique_identities": 467,
+      "gap_to_target_using_v5_corpus": 0
+    },
+    "EMAIL": {
+      "v5_corpus_1800_unique_identities": 459,
+      "run_813_unique_identities": 269,
+      "gap_to_target_using_v5_corpus": 0
+    },
+    "PASSPORT": {
+      "v5_corpus_1800_unique_identities": 63,
+      "run_813_unique_identities": 29,
+      "gap_to_target_using_v5_corpus": 237
+    },
+    "SNILS": {
+      "v5_corpus_1800_unique_identities": 128,
+      "run_813_unique_identities": 60,
+      "gap_to_target_using_v5_corpus": 172
+    },
+    "INN": {
+      "v5_corpus_1800_unique_identities": 144,
+      "run_813_unique_identities": 53,
+      "gap_to_target_using_v5_corpus": 156
+    },
+    "CARD": {
+      "v5_corpus_1800_unique_identities": 123,
+      "run_813_unique_identities": 67,
+      "gap_to_target_using_v5_corpus": 177
+    },
+    "PLATE": {
+      "v5_corpus_1800_unique_identities": 154,
+      "run_813_unique_identities": 45,
+      "gap_to_target_using_v5_corpus": 146
+    },
+    "DOB": {
+      "v5_corpus_1800_unique_identities": 544,
+      "run_813_unique_identities": 318,
+      "gap_to_target_using_v5_corpus": 0
+    }
+  }
+}

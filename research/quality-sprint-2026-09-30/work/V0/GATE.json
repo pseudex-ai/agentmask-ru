@@ -1,0 +1,94 @@
+{
+  "task": "V0",
+  "gate": "G3",
+  "gate_clause": "Design/RED",
+  "status": "PARTIAL",
+  "status_reason": "The reproducible RED and the counterexamples exist on the pinned unchanged source; the disputed semantic choices are NOT approved. G3's last clause ('спорный выбор утверждён') is unmet, so this is not a G3 PASS.",
+  "owner_decision_point": "O-V6",
+  "o_v6_status": "OWNER_PENDING",
+  "scope": "Read-only semantic compatibility matrix v5 0bfda236 vs v6 fad9c746: 24 overlap paths, 55 type contracts, 9 grammar-uncertain, executed pure checks on frozen snapshot data, owner forks.",
+  "g3_clauses": {
+    "reproducible_red_on_pinned_unchanged_build": "PASS — 7 declared-RED checks executed on frozen refs; product source unchanged (prototype/ diff 0bfda236..890c508 = 0 files)",
+    "causal_mechanism_only_where_state_recovered": "PASS — every conflict is a schema/contract difference read from frozen source, with blob hashes; no engine runtime state is claimed",
+    "shared_measure_and_counterexample": "PASS — REDorchecks.log lines carry the exact v5/v6 values per diverging table",
+    "disputed_choice_approved": "NOT_MET — O-V6-1..O-V6-5 are OWNER_PENDING"
+  },
+  "inputs_read": [
+    "research/quality-sprint-2026-09-30/work/B0/GATE.json",
+    "research/quality-sprint-2026-09-30/work/B0/REVIEW.md",
+    "research/quality-sprint-2026-09-30/GOAL-BRIEF.md",
+    "research/quality-sprint-2026-09-30/OWNER-DECISIONS.md",
+    "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md",
+    "research/quality-sprint-2026-09-30/SPRINT-PLAN.md",
+    "research/quality-sprint-2026-09-30/work/FIRST-WAVE-SCOPES.md",
+    "research/quality-sprint-2026-09-30/work/FIRST-WAVE-TASKS.json",
+    "research/hop-format-audit/next-sprint-review/v6-snapshot/*"
+  ],
+  "refs": {
+    "v5": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "v6": "fad9c7466ea1221282214e6c747ca373ee7e6a55",
+    "base": "3be526a2bfb8a9b9e86a9b14b3e11758f723f3a8",
+    "evidence_commit": "890c50849a326f882eac336ba4e38c91171de473",
+    "source_head_used_by_task_prompt": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "git_head_at_execution": "890c50849a326f882eac336ba4e38c91171de473",
+    "git_head_is_research_only": true
+  },
+  "checks": {
+    "total": 9,
+    "green": 2,
+    "declared_red_reproduced": 7,
+    "unexpected": 0,
+    "script_exit": 0,
+    "note": "exit 0 means every check landed on its DECLARED expectation (a RED that turned GREEN would exit 1). It is not a suite PASS."
+  },
+  "artifacts": [
+    "INPUTS.json",
+    "SPEC.md",
+    "COMPATIBILITY24.json",
+    "TYPE55.json",
+    "OWNER-QUESTIONS.md",
+    "DELTA.json",
+    "REDorchecks.log",
+    "OUTPUT-HASHES.txt",
+    "checks/v0_checks.py",
+    "checks/v0_checks.result.json",
+    "checks/extract_compat.py",
+    "checks/probe_checksum_samples.py",
+    "checks/build_artifacts.py",
+    "evidence/compat_raw.json",
+    "evidence/extract_compat.log",
+    "evidence/frozen/**",
+    "evidence/v5__*.diff",
+    "evidence/v6__*.diff"
+  ],
+  "boundaries_respected": {
+    "wrote_only_under": "research/quality-sprint-2026-09-30/work/V0/",
+    "no_merge": true, "no_checkout": true, "no_worktree": true, "no_stash": true,
+    "no_reset": true, "no_revert": true, "no_install": true, "no_model_download": true,
+    "no_provider_or_production_call": true, "no_benchmark_run": true,
+    "no_engine_licensing_scorer_corpus_wiki_write": true, "no_source_patch": true,
+    "no_broad_secret_path_search": true,
+    "execution_json_and_usage_journal_untouched": true
+  },
+  "skills": {
+    "consulted": [],
+    "note": "No skill in the session catalog matches a read-only v5/v6 benchmark-contract compatibility matrix (the engine/detection skills target code changes; the corpus/gate skills run suites this task forbids). The two skills that carry `git stash` steps (measure, debug-leak) are inapplicable here AND their stash step is explicitly forbidden by this task, so they were not applied."
+  },
+  "owner_forks": ["O-V6-1", "O-V6-2", "O-V6-3", "O-V6-4", "O-V6-5"],
+  "blocked_by_v0": ["V1 checksum clauses", "V1 status-funnel clauses"],
+  "not_claimed": [
+    "product quality passed",
+    "G3 full PASS",
+    "G8 integration PASS",
+    "any of the 55 types is supported by the engine",
+    "the RF/ПД registry is complete",
+    "production artifact or digest verified",
+    "release or paid benchmark GO",
+    "any source or benchmark patch is correct or approved"
+  ],
+  "production_artifact_gate": {
+    "status": "NOT_MEASURED",
+    "reason": "Inherited from B0; no production access was made. RG stays blocked on a separately verified installed artifact."
+  },
+  "paid_runs_authorized": false
+}

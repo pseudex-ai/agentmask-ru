@@ -1,0 +1,715 @@
+{
+ "run_id": "1db763e9-aea5-4ad7-9371-b9e1e724f9f1",
+ "excluded_total": 54,
+ "excluded_cases": [
+  "long_bank-000",
+  "long_bank-014",
+  "long_bank-038",
+  "long_bank-039",
+  "long_clinic-002",
+  "long_clinic-004",
+  "long_clinic-010",
+  "long_clinic-013",
+  "long_clinic-031",
+  "long_clinic-034",
+  "long_clinic-035",
+  "long_order-008",
+  "long_order-017",
+  "long_order-026",
+  "long_order-053",
+  "long_order-059",
+  "long_support-005",
+  "long_support-009",
+  "long_support-018",
+  "long_support-032",
+  "long_support-038",
+  "memory_anaphora-002",
+  "memory_anaphora-004",
+  "memory_anaphora-007",
+  "memory_anaphora-013",
+  "memory_anaphora-020",
+  "memory_anaphora-026",
+  "memory_anaphora-028",
+  "memory_anaphora-031",
+  "memory_anaphora-033",
+  "memory_anaphora-035",
+  "memory_anaphora-037",
+  "memory_anaphora-040",
+  "memory_anaphora-045",
+  "memory_anaphora-047",
+  "memory_anaphora-049",
+  "memory_anaphora-051",
+  "memory_anaphora-054",
+  "memory_anaphora-066",
+  "memory_anaphora-073",
+  "memory_anaphora-079",
+  "memory_anaphora-081",
+  "memory_anaphora-099",
+  "memory_anaphora-101",
+  "memory_anaphora-112",
+  "memory_anaphora-121",
+  "prompt_rule-012",
+  "tool_chain-005",
+  "tool_chain-009",
+  "tool_chain-013",
+  "tool_chain-015",
+  "tool_chain-018",
+  "tool_chain-020",
+  "tool_chain-025"
+ ],
+ "excluded": [
+  {
+   "case_id": "long_order-008",
+   "status": "excluded",
+   "kind": "long_order",
+   "behaviour": "sequential_chain",
+   "register": "voice_raw",
+   "cluster": "PHONE:9999024314",
+   "reason": "I: HarnessError: long_order-008: маскирование разошлось — производственный путь '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": ', счётный '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '",
+   "arm_reasons": {
+    "I": "HarnessError: long_order-008: маскирование разошлось — производственный путь '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": ', счётный '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '"
+   }
+  },
+  {
+   "case_id": "long_order-017",
+   "status": "excluded",
+   "kind": "long_order",
+   "behaviour": "sequential_chain",
+   "register": "voice_itn",
+   "cluster": "PHONE:9264874897",
+   "reason": "I: HarnessError: long_order-017: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac'",
+   "arm_reasons": {
+    "I": "HarnessError: long_order-017: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+   }
+  },
+  {
+   "case_id": "long_order-026",
+   "status": "excluded",
+   "kind": "long_order",
+   "behaviour": "sequential_chain",
+   "register": "voice_itn",
+   "cluster": "PHONE:9872829875",
+   "reason": "I: HarnessError: long_order-026: маскирование разошлось — производственный путь '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": ', счётный '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '",
+   "arm_reasons": {
+    "I": "HarnessError: long_order-026: маскирование разошлось — производственный путь '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": ', счётный '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '"
+   }
+  },
+  {
+   "case_id": "long_order-059",
+   "status": "excluded",
+   "kind": "long_order",
+   "behaviour": "sequential_chain",
+   "register": "voice_itn",
+   "cluster": "PHONE:9827937994",
+   "reason": "I: HarnessError: long_order-059: маскирование разошлось — производственный путь '{\\n  \"uuid\": \"ord-2\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": ', счётный '{\\n  \"uuid\": \"ord-2\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '",
+   "arm_reasons": {
+    "I": "HarnessError: long_order-059: маскирование разошлось — производственный путь '{\\n  \"uuid\": \"ord-2\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": ', счётный '{\\n  \"uuid\": \"ord-2\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '"
+   }
+  },
+  {
+   "case_id": "long_clinic-002",
+   "status": "excluded",
+   "kind": "long_clinic",
+   "behaviour": "user_in_loop",
+   "register": "chat",
+   "cluster": "PHONE:9647923456",
+   "reason": "I: HarnessError: long_clinic-002: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDc03402\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-02\",\\n  \"slo'",
+   "arm_reasons": {
+    "I": "HarnessError: long_clinic-002: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDc03402\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-02\",\\n  \"slo'"
+   }
+  },
+  {
+   "case_id": "long_order-053",
+   "status": "excluded",
+   "kind": "long_order",
+   "behaviour": "sequential_chain",
+   "register": "voice_raw",
+   "cluster": "PHONE:9053721989",
+   "reason": "I: HarnessError: long_order-053: маскирование разошлось — производственный путь '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": ', счётный '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '",
+   "arm_reasons": {
+    "I": "HarnessError: long_order-053: маскирование разошлось — производственный путь '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": ', счётный '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '"
+   }
+  },
+  {
+   "case_id": "long_clinic-004",
+   "status": "excluded",
+   "kind": "long_clinic",
+   "behaviour": "user_in_loop",
+   "register": "sloppy",
+   "cluster": "PHONE:9055555944",
+   "reason": "I: HarnessError: long_clinic-004: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDc03402\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-02\",\\n  \"slo'",
+   "arm_reasons": {
+    "I": "HarnessError: long_clinic-004: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDc03402\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-02\",\\n  \"slo'"
+   }
+  },
+  {
+   "case_id": "long_clinic-010",
+   "status": "excluded",
+   "kind": "long_clinic",
+   "behaviour": "user_in_loop",
+   "register": "chat",
+   "cluster": "PHONE:9037654321",
+   "reason": "I: HarnessError: long_clinic-010: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDb10ebd\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-03\",\\n  \"slo'",
+   "arm_reasons": {
+    "I": "HarnessError: long_clinic-010: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDb10ebd\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-03\",\\n  \"slo'"
+   }
+  },
+  {
+   "case_id": "long_clinic-013",
+   "status": "excluded",
+   "kind": "long_clinic",
+   "behaviour": "user_in_loop",
+   "register": "voice_itn",
+   "cluster": "PHONE:9191649625",
+   "reason": "I: HarnessError: long_clinic-013: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDb10ebd\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-03\",\\n  \"slo'",
+   "arm_reasons": {
+    "I": "HarnessError: long_clinic-013: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDb10ebd\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-03\",\\n  \"slo'"
+   }
+  },
+  {
+   "case_id": "long_clinic-031",
+   "status": "excluded",
+   "kind": "long_clinic",
+   "behaviour": "user_in_loop",
+   "register": "voice_raw",
+   "cluster": "PHONE:9636569828",
+   "reason": "I: HarnessError: long_clinic-031: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDc03402\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-02\",\\n  \"slo'",
+   "arm_reasons": {
+    "I": "HarnessError: long_clinic-031: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDc03402\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-02\",\\n  \"slo'"
+   }
+  },
+  {
+   "case_id": "long_clinic-035",
+   "status": "excluded",
+   "kind": "long_clinic",
+   "behaviour": "user_in_loop",
+   "register": "voice_raw",
+   "cluster": "PHONE:9777778899",
+   "reason": "I: HarnessError: long_clinic-035: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDb10ebd\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-03\",\\n  \"slo'",
+   "arm_reasons": {
+    "I": "HarnessError: long_clinic-035: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDb10ebd\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-03\",\\n  \"slo'"
+   }
+  },
+  {
+   "case_id": "long_clinic-034",
+   "status": "excluded",
+   "kind": "long_clinic",
+   "behaviour": "user_in_loop",
+   "register": "voice_raw",
+   "cluster": "PHONE:9503344404",
+   "reason": "I: HarnessError: long_clinic-034: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDc03402\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-02\",\\n  \"slo'",
+   "arm_reasons": {
+    "I": "HarnessError: long_clinic-034: маскирование разошлось — производственный путь '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"REDACTEDc03402\",\\n  ', счётный '{\\n  \"speciality\": \"невролог\",\\n  \"date\": \"2026-09-02\",\\n  \"slo'"
+   }
+  },
+  {
+   "case_id": "long_support-005",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "single",
+   "register": "voice_raw",
+   "cluster": "PHONE:9261234567",
+   "reason": "I: HarnessError: long_support-005: маскирование разошлось — производственный путь '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {', счётный '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {'",
+   "arm_reasons": {
+    "I": "HarnessError: long_support-005: маскирование разошлось — производственный путь '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {', счётный '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {'"
+   }
+  },
+  {
+   "case_id": "long_support-009",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "single",
+   "register": "voice_raw",
+   "cluster": "PHONE:9262707887",
+   "reason": "I: HarnessError: long_support-009: маскирование разошлось — производственный путь '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {', счётный '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {'",
+   "arm_reasons": {
+    "I": "HarnessError: long_support-009: маскирование разошлось — производственный путь '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {', счётный '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {'"
+   }
+  },
+  {
+   "case_id": "long_support-018",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "single",
+   "register": "sloppy",
+   "cluster": "PHONE:9163509752",
+   "reason": "I: HarnessError: long_support-018: маскирование разошлось — производственный путь '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-1\",\\n      \"last_name\"', счётный '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-1\",\\n      \"last_name\"'",
+   "arm_reasons": {
+    "I": "HarnessError: long_support-018: маскирование разошлось — производственный путь '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-1\",\\n      \"last_name\"', счётный '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-1\",\\n      \"last_name\"'"
+   }
+  },
+  {
+   "case_id": "long_support-032",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "single",
+   "register": "voice_raw",
+   "cluster": "PHONE:9881825655",
+   "reason": "I: HarnessError: long_support-032: маскирование разошлось — производственный путь '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {', счётный '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {'",
+   "arm_reasons": {
+    "I": "HarnessError: long_support-032: маскирование разошлось — производственный путь '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {', счётный '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {'"
+   }
+  },
+  {
+   "case_id": "long_support-038",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "single",
+   "register": "chat",
+   "cluster": "PHONE:9858217352",
+   "reason": "I: HarnessError: long_support-038: маскирование разошлось — производственный путь '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-1\",\\n      \"last_name\"', счётный '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-1\",\\n      \"last_name\"'",
+   "arm_reasons": {
+    "I": "HarnessError: long_support-038: маскирование разошлось — производственный путь '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-1\",\\n      \"last_name\"', счётный '{\\n  \"contacts\": [\\n    {\\n      \"id\": \"c-1\",\\n      \"last_name\"'"
+   }
+  },
+  {
+   "case_id": "long_bank-000",
+   "status": "excluded",
+   "kind": "long_bank",
+   "behaviour": "single",
+   "register": "voice_raw",
+   "cluster": "PHONE:9164021187",
+   "reason": "C: harness_error ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "C": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "long_bank-014",
+   "status": "excluded",
+   "kind": "long_bank",
+   "behaviour": "single",
+   "register": "voice_raw",
+   "cluster": "PHONE:9162561776",
+   "reason": "C: harness_error ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "C": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "long_bank-038",
+   "status": "excluded",
+   "kind": "long_bank",
+   "behaviour": "single",
+   "register": "chat",
+   "cluster": "PHONE:9886117466",
+   "reason": "I: HarnessError: long_bank-038: маскирование разошлось — производственный путь '{\\n  \"id\": \"pay-1\",\\n  \"status\": \"pending\",\\n  \"receipt\": {\\n   ', счётный '{\\n  \"id\": \"pay-1\",\\n  \"status\": \"pending\",\\n  \"receipt\": {\\n   '",
+   "arm_reasons": {
+    "I": "HarnessError: long_bank-038: маскирование разошлось — производственный путь '{\\n  \"id\": \"pay-1\",\\n  \"status\": \"pending\",\\n  \"receipt\": {\\n   ', счётный '{\\n  \"id\": \"pay-1\",\\n  \"status\": \"pending\",\\n  \"receipt\": {\\n   '"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-002",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "voice_raw",
+   "cluster": "PHONE:9129731175",
+   "reason": "C2: ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "C2": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-004",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "voice_raw",
+   "cluster": "PHONE:9504859338",
+   "reason": "I: ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "I": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "long_bank-039",
+   "status": "excluded",
+   "kind": "long_bank",
+   "behaviour": "single",
+   "register": "voice_raw",
+   "cluster": "PHONE:9220912095",
+   "reason": "C2: ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "C2": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-013",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "chat",
+   "cluster": "PHONE:9121545102",
+   "reason": "I: ConnectorError: DeepSeek response ended incomplete: None · C2: ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "C2": "ConnectorError: DeepSeek response ended incomplete: None",
+    "I": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-007",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "voice_itn",
+   "cluster": "PHONE:9856800143",
+   "reason": "I: ConnectorError: DeepSeek response ended incomplete: None · C2: ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "C2": "ConnectorError: DeepSeek response ended incomplete: None",
+    "I": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-026",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "clean",
+   "cluster": "PHONE:9039810982",
+   "reason": "I: ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "I": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-031",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "chat",
+   "cluster": "PHONE:9095102336",
+   "reason": "C: harness_error ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "C": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-035",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "sloppy",
+   "cluster": "PHONE:9777778899",
+   "reason": "I: HarnessError: memory_anaphora-035: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'",
+   "arm_reasons": {
+    "I": "HarnessError: memory_anaphora-035: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-020",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "voice_raw",
+   "cluster": "PHONE:9221112233",
+   "reason": "I: HarnessError: memory_anaphora-020: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac'",
+   "arm_reasons": {
+    "I": "HarnessError: memory_anaphora-020: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-1\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-028",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "clean",
+   "cluster": "PHONE:9252387434",
+   "reason": "C: harness_error ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "C": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-033",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "chat",
+   "cluster": "PHONE:9257075459",
+   "reason": "I: HarnessError: memory_anaphora-033: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac' · C2: ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "C2": "ConnectorError: DeepSeek response ended incomplete: None",
+    "I": "HarnessError: memory_anaphora-033: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-037",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "chat",
+   "cluster": "PHONE:9829869785",
+   "reason": "C: harness_error ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "C": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-047",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "voice_raw",
+   "cluster": "PHONE:9626737328",
+   "reason": "I: HarnessError: memory_anaphora-047: маскирование разошлось — производственный путь '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {', счётный '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {'",
+   "arm_reasons": {
+    "I": "HarnessError: memory_anaphora-047: маскирование разошлось — производственный путь '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {', счётный '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {'"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-051",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "chat",
+   "cluster": "PHONE:9038720395",
+   "reason": "C2: ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "C2": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-054",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "voice_raw",
+   "cluster": "PHONE:9225372579",
+   "reason": "I: ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "I": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-045",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "voice_itn",
+   "cluster": "PHONE:9261234567",
+   "reason": "I: HarnessError: memory_anaphora-045: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'",
+   "arm_reasons": {
+    "I": "HarnessError: memory_anaphora-045: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-049",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "chat",
+   "cluster": "PHONE:9655020791",
+   "reason": "I: ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "I": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-066",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "voice_itn",
+   "cluster": "PHONE:9874493399",
+   "reason": "C2: ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "C2": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-040",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "chat",
+   "cluster": "PHONE:9164021187",
+   "reason": "I: ConnectorError: DeepSeek response ended incomplete: None · C2: ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "C2": "ConnectorError: DeepSeek response ended incomplete: None",
+    "I": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-079",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "clean",
+   "cluster": "PHONE:9778736058",
+   "reason": "C: harness_error ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "C": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-081",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "voice_raw",
+   "cluster": "PHONE:9897015145",
+   "reason": "I: HarnessError: memory_anaphora-081: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'",
+   "arm_reasons": {
+    "I": "HarnessError: memory_anaphora-081: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-073",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "voice_itn",
+   "cluster": "PHONE:9227130131",
+   "reason": "I: ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "I": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-101",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "voice_raw",
+   "cluster": "PHONE:9625257002",
+   "reason": "I: HarnessError: memory_anaphora-101: маскирование разошлось — производственный путь '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {', счётный '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {'",
+   "arm_reasons": {
+    "I": "HarnessError: memory_anaphora-101: маскирование разошлось — производственный путь '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {', счётный '{\\n  \"ticket_id\": \"t-1\",\\n  \"status\": \"open\",\\n  \"requester\": {'"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-112",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "sloppy",
+   "cluster": "PHONE:9169879944",
+   "reason": "I: HarnessError: memory_anaphora-112: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac' · C2: ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "C2": "ConnectorError: DeepSeek response ended incomplete: None",
+    "I": "HarnessError: memory_anaphora-112: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-099",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "voice_itn",
+   "cluster": "PHONE:9628498626",
+   "reason": "I: HarnessError: memory_anaphora-099: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'",
+   "arm_reasons": {
+    "I": "HarnessError: memory_anaphora-099: маскирование разошлось — производственный путь '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac', счётный '{\\n  \"claim_id\": \"clm-2\",\\n  \"status\": \"estimating\",\\n  \"contac'"
+   }
+  },
+  {
+   "case_id": "tool_chain-005",
+   "status": "excluded",
+   "kind": "tool_chain",
+   "behaviour": "sequential_chain",
+   "register": "chat",
+   "cluster": "PHONE:9261234567",
+   "reason": "I: HarnessError: tool_chain-005: маскирование разошлось — производственный путь '{\\n  \"suggestions\": [\\n    {\\n      \"value\": \"г Екатеринбург, у', счётный '{\\n  \"suggestions\": [\\n    {\\n      \"value\": \"г Екатеринбург, у'",
+   "arm_reasons": {
+    "I": "HarnessError: tool_chain-005: маскирование разошлось — производственный путь '{\\n  \"suggestions\": [\\n    {\\n      \"value\": \"г Екатеринбург, у', счётный '{\\n  \"suggestions\": [\\n    {\\n      \"value\": \"г Екатеринбург, у'"
+   }
+  },
+  {
+   "case_id": "memory_anaphora-121",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "clean",
+   "cluster": "PHONE:9621121922",
+   "reason": "C: harness_error ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "C": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "tool_chain-009",
+   "status": "excluded",
+   "kind": "tool_chain",
+   "behaviour": "sequential_chain",
+   "register": "chat",
+   "cluster": "PHONE:9881242038",
+   "reason": "I: ConnectorLimit: tool call limit reached",
+   "arm_reasons": {
+    "I": "ConnectorLimit: tool call limit reached"
+   }
+  },
+  {
+   "case_id": "tool_chain-013",
+   "status": "excluded",
+   "kind": "tool_chain",
+   "behaviour": "sequential_chain",
+   "register": "voice_raw",
+   "cluster": "PHONE:9274968907",
+   "reason": "I: ConnectorError: DeepSeek response ended incomplete: None",
+   "arm_reasons": {
+    "I": "ConnectorError: DeepSeek response ended incomplete: None"
+   }
+  },
+  {
+   "case_id": "tool_chain-015",
+   "status": "excluded",
+   "kind": "tool_chain",
+   "behaviour": "sequential_chain",
+   "register": "voice_raw",
+   "cluster": "PHONE:9129876543",
+   "reason": "I: ConnectorLimit: tool call limit reached",
+   "arm_reasons": {
+    "I": "ConnectorLimit: tool call limit reached"
+   }
+  },
+  {
+   "case_id": "tool_chain-020",
+   "status": "excluded",
+   "kind": "tool_chain",
+   "behaviour": "sequential_chain",
+   "register": "sloppy",
+   "cluster": "PHONE:9221112233",
+   "reason": "I: HarnessError: tool_chain-020: маскирование разошлось — производственный путь '{\\n  \"suggestions\": [\\n    {\\n      \"value\": \"г Ижевск, ул Ивов', счётный '{\\n  \"suggestions\": [\\n    {\\n      \"value\": \"г Ижевск, ул Ивов'",
+   "arm_reasons": {
+    "I": "HarnessError: tool_chain-020: маскирование разошлось — производственный путь '{\\n  \"suggestions\": [\\n    {\\n      \"value\": \"г Ижевск, ул Ивов', счётный '{\\n  \"suggestions\": [\\n    {\\n      \"value\": \"г Ижевск, ул Ивов'"
+   }
+  },
+  {
+   "case_id": "tool_chain-025",
+   "status": "excluded",
+   "kind": "tool_chain",
+   "behaviour": "sequential_chain",
+   "register": "voice_raw",
+   "cluster": "PHONE:9505556677",
+   "reason": "I: ConnectorLimit: tool call limit reached",
+   "arm_reasons": {
+    "I": "ConnectorLimit: tool call limit reached"
+   }
+  },
+  {
+   "case_id": "tool_chain-018",
+   "status": "excluded",
+   "kind": "tool_chain",
+   "behaviour": "sequential_chain",
+   "register": "chat",
+   "cluster": "PHONE:9193181632",
+   "reason": "I: ConnectorLimit: tool call limit reached",
+   "arm_reasons": {
+    "I": "ConnectorLimit: tool call limit reached"
+   }
+  },
+  {
+   "case_id": "prompt_rule-012",
+   "status": "excluded",
+   "kind": "prompt_rule",
+   "behaviour": "branching",
+   "register": "chat",
+   "cluster": "PHONE:9091679688",
+   "reason": "I: HarnessError: prompt_rule-012: маскирование разошлось — производственный путь '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": ', счётный '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '",
+   "arm_reasons": {
+    "I": "HarnessError: prompt_rule-012: маскирование разошлось — производственный путь '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": ', счётный '{\\n  \"uuid\": \"ord-1\",\\n  \"status\": \"ACCEPTED\",\\n  \"recipient\": '"
+   }
+  }
+ ]
+}

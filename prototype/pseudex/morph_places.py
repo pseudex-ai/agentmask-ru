@@ -43,7 +43,9 @@ _INDECLINABLE_GENERIC = frozenset({"шоссе"})
 # words that are PARTS of an address rather than TYPES of street can say so.
 _NOT_A_STREET_TYPE = frozenset({
     "квартира", "квартиры", "квартире", "квартиру", "квартирой", "кв",
-    "подъезд", "подъезда", "подъезде", "этаж", "этажа", "этаже",
+    "подъезд", "подъезда", "подъезде",
+    "подьезд", "подьезда", "подьезде",
+    "этаж", "этажа", "этаже",
     "корпус", "корпуса", "строение", "строения", "офис", "офиса",
     "помещение", "помещения", "комната", "комнаты",
 })
@@ -55,7 +57,7 @@ _NOT_A_STREET_TYPE = frozenset({
 _ADDRESS_FIXED = frozenset({
     "дом", "дома", "д", "корпус", "корп", "кор", "к", "строение", "стр",
     "владение", "вл", "квартира", "кв", "офис", "оф", "помещение", "пом",
-    "комната", "комн", "литер", "лит", "подъезд", "под", "этаж",
+    "комната", "комн", "литер", "лит", "подъезд", "подьезд", "под", "этаж",
 })
 
 _STREET_MARKER = re.compile(
@@ -77,7 +79,7 @@ _SPOKEN_HOUSE = re.compile(rf"(?i)\b{_NUMERAL_WORD}\b")
 # «квартира пятнадцать», «подъезд первый» — the marker decides, and the ordinal
 # is admitted because an entrance is named with one.
 _SPOKEN_FLAT = re.compile(
-    rf"(?i)\b(?:кв|квартир\w*|офис\w*|оф|подъезд\w*|этаж\w*)\.?\s*"
+    rf"(?i)\b(?:кв|квартир\w*|офис\w*|оф|под[ъь]езд\w*|этаж\w*)\.?\s*"
     rf"(?:{_NUMERAL_WORD}|перв\w+|втор\w+|трет\w+|четв[её]рт\w+|пят\w+|шест\w+"
     rf"|седьм\w+|восьм\w+|девят\w+|десят\w+|последн\w+|углов\w+)\b")
 
@@ -164,12 +166,19 @@ def _is_genitive(word: str) -> bool:
     Frozen rather than inflected: it is a possessive, not an agreeing adjective,
     and the single most visible failure of naive address inflection is turning
     `улица Ленина` into `улицы Лениной`.
+
+    ONLY A DICTIONARY-KNOWN GENITIVE. pymorphy guesses a `Geox` genitive for an
+    unknown word before it guesses the adjective — «Зацепская»'s top parse was a
+    NOUN-genitive of a place nobody has heard of, and freezing it there left
+    `на улице Зацепская` instead of `…Зацепской` (E05). «Ленина»/«Комиссарова»
+    are real genitives in the dictionary and stay frozen.
     """
     parses = MORPH.parse(word)
     if not parses:
         return False
     best = max(parses, key=lambda p: p.score)
-    return best.tag.case == "gent" and "ADJF" not in best.tag.grammemes
+    return (best.is_known and best.tag.case == "gent"
+            and "ADJF" not in best.tag.grammemes)
 
 
 def phrase_to_nominative(phrase: str) -> str:
@@ -243,14 +252,6 @@ def _inflect_word(word: str, case: str, gender: str | None) -> str:
     parses = MORPH.parse(word)
     if not parses:
         return word
-    # ALREADY IN THE TARGET CASE — leave it, and check that against EVERY
-    # reading, before the geographic and gender filters below. Those filters
-    # exist to pick which paradigm to inflect along, and either of them can
-    # discard the very parse that proves no inflection is needed: «Ленинском»
-    # has a masculine locative reading that a feminine filter drops, and the
-    # word was then inflected a second time into «Ленинске».
-    if any(parse.tag.case == case for parse in parses):
-        return word
     # ONLY A FULL FORM THE DICTIONARY KNOWS IS INFLECTED. «ленна» — a typo of
     # «Ленина» admitted by the fuzzy arm — is in the dictionary as the SHORT
     # adjective of «ленный», and bending it through that lemma restored the
@@ -258,6 +259,32 @@ def _inflect_word(word: str, case: str, gender: str | None) -> str:
     # is the same guess from the other side. A word with no full-form reading
     # (adjective, noun, participle) from the dictionary is left as written.
     if not any(parse.is_known and parse.tag.POS in _INFLECTABLE_POS for parse in parses):
+        # …UNLESS THE GUESS IS A REGULAR ADJECTIVE. «Зацепская» is absent from
+        # OpenCorpora, but -ская declines like every other feminine adjective,
+        # so the guessed ADJF parse is not the same gamble as a noun's paradigm
+        # (nouns are unpredictable, adjectives are not). The short-form trap
+        # above is `ADJS`, which this explicitly excludes — only the FULL
+        # adjective `ADJF` is admitted here.
+        guessed = [p for p in parses if p.tag.POS == "ADJF"]
+        if not guessed:
+            return word
+        parses = guessed
+    return _inflect_parses(word, case, gender, parses)
+
+
+def _inflect_parses(word: str, case: str, gender: str | None, parses) -> str:
+    """Inflect `word` to `case` along the best of `parses` (already filtered).
+
+    The ALREADY-IN-TARGET-CASE check lives HERE, over the parses that survived
+    the trust gate, and against EVERY one of them before the geographic and
+    gender filters: those filters exist to pick which paradigm to inflect along,
+    and either can discard the very parse that proves no inflection is needed
+    («Ленинском» has a masculine locative reading a feminine filter drops). The
+    gate matters — «Зацепская» carries a spurious `Geox` genitive GUESS that the
+    old check saw as "already genitive" and froze, leaving `на улице Зацепская`
+    (E05).
+    """
+    if any(parse.tag.case == case for parse in parses):
         return word
     # A geographic reading first, for the same reason `to_nominative` does it:
     # `Луга` is a town and also the genitive of `луг`, and the meadow does not
@@ -451,6 +478,7 @@ _SLOT_ALIASES: dict[str, str] = {
     "дом": "", "дома": "", "д": "", "владение": "", "вл": "",
     "квартира": "кв", "кв": "кв", "офис": "кв", "оф": "кв",
     "помещение": "кв", "пом": "кв", "комната": "кв", "комн": "кв",
+    "кабинет": "кв", "каб": "кв",
     # NO BARE «к» AND NO BARE «с». Both are prepositions before they are
     # «корпус» and «строение», and aliasing them turned «с Ленинского
     # проспекта» into a key that began with a building section.
@@ -462,6 +490,97 @@ _SLOT_ALIASES: dict[str, str] = {
 # it. Left in, «на Ленинском проспекте» and «Ленинский проспект» were two rows.
 _PREPOSITIONS = frozenset({"на", "в", "во", "по", "с", "со", "у", "до", "от",
                            "из", "за", "к", "ко", "о", "об", "при", "около"})
+
+# МЕЛКИЕ ЧАСТИ АДРЕСА — ИЗМЕНЯЕМЫЕ, И КЛЮЧ ДЕРЖИТ ИХ РОЛЬ, А НЕ ИХ ЗНАЧЕНИЕ.
+#
+# D-081: тождество подмены адреса — улица И дом, а квартира, подъезд, этаж и
+# корпус/строение это ИЗМЕНЯЕМЫЕ ЧАСТИ. Человек сменил квартиру — это не новый
+# фейк, поэтому ЗНАЧЕНИЕ мелкой части из ключа уходит: «Лермонтова 38 кв 7» и
+# «Лермонтова 38 кв 42» дают один ключ и одну подмену, а диктовка «дом тридцать
+# восемь» встречается с «дом 38».
+#
+# РОЛЬ ПРИ ЭТОМ ОСТАЁТСЯ В КЛЮЧЕ, И ЭТО НЕ НЕДОСМОТР. Три вещи держатся на ней
+# одновременно, и каждая измерена:
+#   * «мира семь» и «Мира 7 кв 3» — одна улица, но РАЗНАЯ конкретность: первое
+#     упоминание не назвало квартиры, и подмена не смеет её показать
+#     (`strip_flat`, test_product: «two short candidates mean a guess»);
+#   * связывание полного и короткого написания (`_linked_place`,
+#     `_extends_linked_place`) требует РОВНО ОДНОГО короткого владельца, а
+#     владельцев различает именно набор ролей;
+#   * поиск владельца фрагмента (`place_owner`) несёт роль в вопросе, поэтому
+#     «дом 41» и «кв 41» — разные вопросы.
+# ИЗМЕНЯЕМАЯ ЧАСТЬ НЕ ВХОДИТ В ТОЖДЕСТВО ВООБЩЕ (D-081): ни маркер, ни значение.
+# «энгельса 54» и «энгельса 54 кв 189» — одно ядро, квартира рендерится отдельной
+# частью (place_parts); иначе «система подтвердила другой адрес» и модель дублирует
+# заказ. «корп»/«кор»/«строен» — корпус/строение, та же изменяемая часть.
+_MUTABLE_KEY_MARKERS = frozenset({"кв", "к", "стр", "корп", "кор", "строен",
+                                   "подъезд", "подьезд", "этаж"})
+# A lone Cyrillic letter (not «я» — the pronoun), the house litera «145 а».
+_LONE_LITERA = re.compile(r"[а-ё](?![а-яё])")
+
+# СЛОВА, ПОСЛЕ КОТОРЫХ ЧИСЛО-СЛОВО — ЭТО НОМЕР ДОМА. Список тот же, что
+# `_SLOT_ALIASES` отправляет в пустоту («дом» в ключе не остаётся: голое число
+# за улицей и есть дом), и он читается здесь ДО выкидывания маркера — иначе
+# «дом восемь» и «дом 8» остались бы двумя тождествами.
+_HOUSE_KEY_MARKERS = frozenset({"дом", "дома", "д", "владение", "вл"})
+
+
+def _fold_spoken_cardinals(tokens: list[str]) -> list[str]:
+    """Продиктованные числа — в цифры, но НЕ любой ценой.
+
+    D-081 требует, чтобы «дом тридцать восемь» и «дом 38» были одним
+    тождеством. Свернуть при этом ЛЮБОЕ число-слово нельзя: `test_product`
+    держит пин `address_key("центральная сто") == "центральный сто"` —
+    «сохранённая каноническая форма не двигается», потому что смена ключа
+    переразмечает строки, отчеканенные раньше. Поэтому правило узкое и
+    позиционное:
+
+      * РЯД из двух и более числительных («тридцать восемь», «сорок два»)
+        сворачивается всегда — сам по себе он и есть одно число, и как голое
+        число за улицей он читается однозначно;
+      * ОДИНОЧНОЕ числительное («восемь», «сто») сворачивается только тогда,
+        когда перед ним стоит МАРКЕР ДОМА («дом восемь», «д. восемь»): там
+        написание само говорит, что это номер дома, и слова-числительного в
+        ключе быть не должно.
+
+    Числа, записанные цифрами, не трогаются вовсе.
+    """
+    out: list[str] = []
+    index = 0
+    while index < len(tokens):
+        word = tokens[index]
+        if not spoken.is_numeral_word(word):
+            out.append(word)
+            index += 1
+            continue
+        stop = index
+        while stop < len(tokens) and spoken.is_numeral_word(tokens[stop]):
+            stop += 1
+        run = tokens[index:stop]
+        after_house = (index > 0
+                       and tokens[index - 1].strip(",.").casefold() in _HOUSE_KEY_MARKERS)
+        if len(run) > 1 or after_house:
+            folded = spoken.run_to_digits(run) or " ".join(run)
+            # D-081: a dictated house with a litera folds to the SAME key as the
+            # digit form. The phrase-level regexes glue «145 а» only where a
+            # DIGIT sits before the letter; a dictated «сто сорок пять а» folds
+            # to «145» HERE and the «а» is the next token, so it must glue here
+            # too, or «дом сто сорок пять а» and «дом 145а» stay two identities.
+            # Glued only when the run was a HOUSE number (after_house) and the
+            # letter is a lone non-«я», followed by a mutable-part marker (short
+            # or full) or by the end — the same license the digit path grants.
+            if (after_house and isinstance(folded, str) and folded.isdigit()
+                    and stop < len(tokens) and _LONE_LITERA.fullmatch(tokens[stop])):
+                nxt = tokens[stop + 1].strip(",.").casefold() if stop + 1 < len(tokens) else ""
+                if (not nxt or nxt in _MUTABLE_KEY_MARKERS
+                        or nxt.startswith(("квартир", "строен", "подъезд", "подьезд", "этаж", "корп"))):
+                    folded += tokens[stop]
+                    stop += 1
+            out.append(folded)
+        else:
+            out.extend(run)
+        index = stop
+    return out
 # NOT split on «-»: «пр-т» and «б-р» are single words in the abbreviation table,
 # and splitting them meant they never matched it — so «пр-т» and «проспект»
 # stayed two different addresses.
@@ -525,14 +644,45 @@ def address_key(phrase: str) -> str:
     for every type except NAME: what the customer's tool receives is still the
     string they wrote. Only the row it finds changes.
 
-    Built by SLOT, not by sorting words: the city goes first if there is one,
-    then the street type, then the name, then the numbers in the order they were
-    written. House 42 flat 118 and house 118 flat 42 are different addresses.
+    Built by SLOT, not by sorting words: the city goes first if there is one, then
+    the street NAME, the numbers in the order they were written, and the street
+    TYPE word LAST.
+
+    РОДОВОЕ СЛОВО — ЧАСТЬ ТОЖДЕСТВА, И ЭТО РЕШЕНИЕ ВЛАДЕЛЬЦА. «переулок
+    Пушкина» и «улица Пушкина» — ДВА РАЗНЫХ МЕСТА (в Казани так и есть), и
+    сливать их в одну строку значит отдать инструменту чужой адрес без права
+    это заметить. Обратная сторона — «то же место, написанное с типом и без» —
+    закрывается ОТДЕЛЬНЫМ правилом связывания (`_same_place_written_differently`
+    ищет строку по той же основе, тому же дому и тому же типу, а не по ключу),
+    поэтому одно место по-прежнему получает одну подмену, а два разных с
+    одинаковым названием — две. Раньше тип выбрасывался из ключа, и это ровно
+    то, что владелец отменил.
+
+    ТИП СТОИТ ПОСЛЕДНИМ, И ЭТО НЕ КОСМЕТИКА. Написание БЕЗ типа — это префикс
+    написания с типом («…мончегорский 10 кв 54» ⊂ «…мончегорский 10 кв 54
+    переулок»), поэтому связывание пары читается ДИАПАЗОНОМ по индексу
+    `(customer, canonical)` (`vault._place_family_owner`) и работает даже там,
+    где разговора нет вовсе: «одно место — одна подмена навсегда и между
+    разговорами» — записанный контракт, а не свойство разговора. Со слотом в
+    середине того же вопроса без перебора всех строк заказчика не задать.
+    `street_house_key` и `_place_identity` читают ключ по-прежнему: обе
+    выбрасывают родовые слова, где бы те ни стояли.
     """
     # Prepositions come off BEFORE normalisation: they are what makes
     # `phrase_to_nominative` read «на Ленинском» as a stem rather than an
     # adjective, so stripping them afterwards would be too late.
     phrase = phrase[region_prefix_end(phrase):] or phrase
+    # ЛИТЕРА, НАПИСАННАЯ ОТДЕЛЬНЫМ СЛОВОМ, — ЧАСТЬ НОМЕРА ДОМА, А НЕ ПРЕДЛОГ.
+    # «толстого 34 в» и «г Краснодар, ул Толстого, д 34» — РАЗНЫЕ дома, а список
+    # предлогов ниже съедал «в» (и «с», «к», «о» — ровно те буквы, которыми
+    # пишут литеру), и оба дома получали один ключ. Дальше уже никакое сравнение
+    # не может их различить: ключ тождества слил разные дома, и курьер поехал на
+    # 34 вместо 34в (g06 P4, search_rank-008).
+    #
+    # Правило узкое и позиционное: буква, стоящая СРАЗУ ЗА ЦИФРОЙ и за которой
+    # нет ничего, кроме конца строки или разделителя, — литера. «в квартиру» и
+    # «с Ленинского» не трогаются: за буквой там идёт слово, а не разделитель.
+    phrase = _SPACED_LITERA_RE.sub(r"\1", phrase)
     # «152кв7» and «152 кв 7» are one flat: the glued marker is split before the
     # key is built, so both writings meet in one row.
     phrase = _SPACED_LITERA_GLUED_RE.sub(r"\1\2", phrase)
@@ -545,6 +695,10 @@ def address_key(phrase: str) -> str:
     stripped = " ".join(word for word in phrase.strip().split()
                         if word.strip(",.").casefold() not in _PREPOSITIONS)
     parts: list[str] = []
+    # РОДОВЫЕ СЛОВА СТРОКИ, РАЗРЕШЁННЫЕ К ПОЛНОЙ ФОРМЕ: отдельный слот ключа
+    # (см. доккомментарий). «ул» и «улица» дают одно «улица», «пр-т» и
+    # «проспект» — одно «проспект», поэтому сокращение не расщепляет место.
+    types: list[str] = []
     # THE CITY IS FOUND BY STRUCTURE, NOT ONLY BY THE LIST BELOW. A settlement
     # marker names the next word («г Можга»), and a leading word morphology
     # knows only as a place is one too («можга проезд пушкина 89»). `_CITY_RE`
@@ -560,6 +714,13 @@ def address_key(phrase: str) -> str:
     if trailing_city and not _is_settlement_word(trailing_city):
         trailing_city = ""
     tokens = _KEY_SPLIT_RE.split((stripped or phrase.strip()).casefold().replace("ё", "е"))
+    # ДИКТОВКА — ТА ЖЕ АДРЕСНАЯ ФРАЗА, ЧТО И ЦИФРЫ (D-081). «дом тридцать
+    # восемь» и «дом 38» — один дом, и пока числа-слова оставались словами,
+    # это были два тождества и две подмены. Свёртка идёт ДО разбора по слотам
+    # (`_fold_spoken_cardinals`: ряд числительных сворачивается всегда, одиночное
+    # — за маркером дома, см. её доккомментарий и пин `test_product`).
+    # Числа, записанные цифрами, свёртка не трогает.
+    tokens = _fold_spoken_cardinals(tokens)
     # ДВУСЛОВНЫЙ ГОРОД БЕЗ ЗАПЯТОЙ. Городом считался только ПЕРВЫЙ токен, и
     # «нижний новгород проезд калашникова 12» разбиралось как улица «нижний
     # новгород проезд калашникова»: город уезжал в поле `street` карточки
@@ -577,9 +738,24 @@ def address_key(phrase: str) -> str:
         if (parses and all(parse.tag.POS == "ADJF" for parse in parses[:3])
                 and not _is_settlement_word(tokens[0])):
             compound_city = 1
+    # Идёт ли за только что прочитанным маркером изменяемой части её значение.
+    drop_value = False
     for index, raw in enumerate(tokens):
         if not raw or raw in _PREPOSITIONS:
             continue
+        if drop_value:
+            # ЗНАЧЕНИЕ ИЗМЕНЯЕМОЙ ЧАСТИ В ТОЖДЕСТВО НЕ ВХОДИТ (D-081), и
+            # выбрасывается оно ЗДЕСЬ, сразу за своим маркером. Значение может
+            # быть и ДИКТОВАННЫМ («кв семь»), поэтому числом-словом оно тоже
+            # отбрасывается — иначе «квартира семь» и «квартира 7» разошлись бы
+            # ключами ровно там, где D-081 требует их встречи. Токен, который
+            # ни цифра, ни числительное, значит маркер стоял без значения
+            # («…, кв»), и тогда не выбрасывается ничего: следующий токен — уже
+            # другая часть.
+            if raw[:1].isdigit() or spoken.is_numeral_word(raw):
+                previous = raw
+                continue
+            drop_value = False
         names_city = (previous in _CITY_MARKERS or (index == 0 and _is_settlement_word(raw))
                       or (compound_city == 1 and index in (0, 1))
                       or (raw == trailing_city))
@@ -587,11 +763,36 @@ def address_key(phrase: str) -> str:
         alias = _SLOT_ALIASES.get(raw)
         if alias is not None:
             if alias:
-                parts.append(alias)
+                # «второй подъезд» — порядковое ПЕРЕД маркером это та же
+                # изменяемая часть, а не улица: `street_house_key` снимает его
+                # ровно так же, иначе «…второй подъезд 3» и «…подъезд 3» — два
+                # написания одного места.
+                if (alias in _MUTABLE_KEY_MARKERS and parts
+                        and _ORDINAL_ONLY.fullmatch(parts[-1])
+                        and not spoken.is_numeral_word(parts[-1])):
+                    parts.pop()
+                if alias in _MUTABLE_KEY_MARKERS:
+                    # ИЗМЕНЯЕМАЯ ЧАСТЬ НЕ ВХОДИТ В ТОЖДЕСТВО (D-081): ни маркер
+                    # «кв», ни значение. Квартира/подъезд/этаж рендерятся
+                    # отдельной частью поверх того же ядра (place_parts).
+                    drop_value = True
+                else:
+                    parts.append(alias)
+            continue
+        if raw in _MUTABLE_KEY_MARKERS:
+            # «подъезд»/«этаж» в `_SLOT_ALIASES` не лежат и до этой строки
+            # доезжают как обычное слово; они тоже не входят в тождество.
+            if (parts and _ORDINAL_ONLY.fullmatch(parts[-1])
+                    and not spoken.is_numeral_word(parts[-1])):
+                parts.pop()
+            drop_value = True
             continue
         full = _GENERIC_SHORT.get(raw)
         if full:
-            parts.append(full[0])
+            types.append(full[0])
+            continue
+        if raw in _GENERIC:
+            types.append(raw)
             continue
         # THE LEMMA, not `phrase_to_nominative`. A key does not need a correct
         # nominative, it needs a STABLE one — and the lemma is stable where the
@@ -608,7 +809,7 @@ def address_key(phrase: str) -> str:
                 stem = raw[:-len(generic)]
                 parses = MORPH.parse(stem)
                 parts.append(parses[0].normal_form if parses else stem)
-                parts.append(generic)
+                types.append(generic)
                 break
         else:
             # A DIGIT-LED TOKEN IS A NUMBER, whatever letter is glued to it.
@@ -632,20 +833,43 @@ def address_key(phrase: str) -> str:
             if names_city:
                 cities.append(parts[-1])
     # A city named anywhere goes to the front, so «Москва, X» and «X, Москва»
-    # are one address. Everything else keeps the order it was written in.
-    # The city first, then the street TYPE, then everything else in the order it
-    # was written. Russian puts the type on either side — «улица Тверская» and
-    # «Тверская улица» are one street — so its position cannot be part of the
-    # key. The numbers keep their order: house 42 flat 118 is not house 118
-    # flat 42.
+    # are one address. Everything else keeps the order it was written in, and the
+    # TYPE word closes the key. The numbers keep their order: house 42 flat 118
+    # is not house 118 flat 42.
     city = [part for part in parts if part in cities or _CITY_RE.match(part)]
     rest = [part for part in parts if part not in city]
-    generic = [part for part in rest if part in _GENERIC]
     tail = [part for part in rest if part not in _GENERIC]
+    # РОДОВОЕ СЛОВО В КЛЮЧЕ — ЭТО СЛОТ, А НЕ ОФОРМЛЕНИЕ (решение владельца):
+    # «переулок Пушкина» и «улица Пушкина» — два места и две подмены, а одно
+    # место, написанное с типом и без, связывается отдельным правилом
+    # (`vault._same_place_written_differently` по разговору и
+    # `vault._place_family_owner` по самому ключу: написание без типа — префикс
+    # написания с типом, потому что тип стоит ПОСЛЕДНИМ). Слово хранится
+    # РАЗРЕШЁННЫМ («ул» и «улица» — одно «улица»), иначе сокращение расщепило бы
+    # одно место на два.
+    #
     # ё IS FOLDED IN THE KEY, AFTER lemmatisation too: the input was folded
     # before the lemma and pymorphy handed back «вишнёвый» with its ё, so the
     # customer's «вишенвая» and the register's «Вишнёвая» never met.
-    return " ".join(city + generic[:1] + tail).replace("ё", "е")
+    return " ".join(city + tail + types).replace("ё", "е")
+
+
+def key_type(canonical: str) -> tuple[str, ...]:
+    """Родовые слова КЛЮЧА адреса — слот тождества, добавленный решением владельца.
+
+    `address_key` уже разрешил их к полной форме («ул» → «улица»), поэтому
+    сравнение здесь — сравнение самих типов, а не их написаний. Читается тем,
+    кто решает вопрос СВЯЗЫВАНИЯ (`vault._same_place_written_differently`):
+    «переулок Пушкина» и «улица Пушкина» — два места, а «переулок Мончегорская
+    10» и «Мончегорская 10» — одно, написанное с типом и без.
+
+    ХВОСТ-ПОДПИСЬ ЧАСТЕЙ СНИМАЕТСЯ (W8): строка второй квартиры того же дома
+    несёт «…\\x1fflat=42», и без снятия последнее слово («улица\\x1fflat=42») не
+    было бы родовым — тип этого места пропадал бы, и связывание связало бы
+    разные места.
+    """
+    canonical = strip_parts_key(canonical)
+    return tuple(word for word in canonical.split() if word in _GENERIC)
 
 
 def _has_city(phrase: str) -> bool:
@@ -815,17 +1039,53 @@ def street_house_key(phrase: str) -> str:
     return " ".join(_fold_cardinals(kept))
 
 
-_SHORT_KEY_STOP = frozenset({"кв", "к", "стр", "подъезд", "под", "этаж"})
+# «ПОДЬЕЗД» — ТО ЖЕ СЛОВО БЕЗ ТВЁРДОГО ЗНАКА, и для КЛЮЧА это не мелочь:
+# `address_key` обрывается на первой мелкой части, и «Победы 81 подьезд 3»
+# ключевалось «победа 81 подьезд 3» вместо «победа 81». Ключ подмены,
+# отчеканенной с запятой («…, подъезд 22»), обрывается правильно, поэтому
+# длинное окно восстановления не находило владельца, побеждало короткое —
+# на «доме», — и в инструмент уезжал НАСТОЯЩИЙ дом с ФАЛЬШИВЫМ подъездом.
+_SHORT_KEY_STOP = frozenset({"кв", "к", "стр", "подъезд", "подьезд", "под", "этаж"})
+# ЛИТЕРА ДОМА ОТДЕЛЬНЫМ СЛОВОМ: «34 в» — это дом 34в, а не предлог «в». Буква
+# склеивается с числом ДО выкидывания предлогов, и только когда за ней нет
+# ничего, кроме конца строки или разделителя: «в квартиру» и «с Ленинского»
+# остаются предлогами, потому что за буквой там стоит слово.
+_SPACED_LITERA_RE = re.compile(r"(?i)(?<=\d)\s+([а-яё])(?=\s*(?:$|[,;.]))")
 _GLUED_MARKER_RE = re.compile(r"(?i)(\d[а-яё]?)(кв|к|стр|корп)\.?(\d)")
-_SPACED_LITERA_GLUED_RE = re.compile(r"(?i)(\d)\s+([а-яё])(?=(?:кв|к|стр|корп)\.?\d)")
+# ЛИТЕРА ПЕРЕД МАРКЕРОМ В ЛЮБОЙ ПОЗИЦИИ: «34 в кв 9» — дом 34в, квартира 9, а
+# не «34» и предлог «в». Буква склеивается с числом ДО выкидывания предлогов и
+# тогда, когда за ней стоит маркер с пробелом — раньше lookahead требовал маркер
+# ВПЛОТНУЮ («34 вкв 9») и цифру вплотную («кв9»), и отдельно написанная литера
+# перед «кв»/«корп» съедалась списком предлогов, сливая два разных дома в один
+# ключ (g06 P4). Пробел разрешён по обе стороны маркера («в кв 9», «в кв. 9»,
+# «вкв9»), потому что все три — одна и та же литера и один и тот же маркер.
+_SPACED_LITERA_GLUED_RE = re.compile(r"(?i)(\d)\s+([а-яё])(?=\s*(?:кв|к|стр|корп)\.?\s*\d)")
 _MARKER_BETWEEN_NUMBERS_RE = re.compile(r"(?i)(\d[а-яё]?)[\s,]+([кс])\.?\s+(\d)")
+
+
+def _settlement_gaz() -> frozenset[str]:
+    """The leased settlements pymorphy reads only as a surname — «одоев», «венёв»,
+    «белёв». Morphology says «surname», but a word on this list is a real town, so
+    `_is_settlement_word` and `_leading_settlement` accept it where an address
+    structure licenses it. Empty without a bundle, so `address_key` and
+    `street_house_key` degrade to morphology-only outside a lease (the same
+    fallback `address._fuzzy_intent` takes)."""
+    from pseudex.assets import ASSETS
+    return ASSETS.get().address.settlement_gaz if ASSETS.is_loaded else frozenset()
 
 
 def _is_settlement_word(word: str) -> bool:
     """`_leading_settlement` for one already-lowered token: a place to
-    morphology and nothing else — no surname, no adjective, no street type."""
+    morphology and nothing else — no surname, no adjective, no street type.
+
+    The dictionary overrides the surname veto: «одоев» carries `Surn` and no
+    `Geox`, yet it names a town, so a word on the leased settlement gazetteer is a
+    settlement even though morphology reads it as a surname. The caller still
+    demands the address structure, so the override cannot promote a bare word."""
     if word in _GENERIC or _GENERIC_STEMS.match(word) or word[:1].isdigit():
         return False
+    if word in _settlement_gaz():
+        return True
     parses = MORPH.parse(word)
     if not any("Geox" in parse.tag.grammemes for parse in parses):
         return False
@@ -851,7 +1111,7 @@ def _fold_cardinals(tokens: list[str]) -> list[str]:
 
 _FLAT_TAIL = re.compile(
     r"(?i)[\s,]*(?:\b|(?<=\d))(?:кв|квартир\w*|оф|офис\w*|пом|помещени\w*|комн\w*"
-    r"|под[ъь]езд\w*|эт|этаж\w*)\.?\s*\d+[а-яё]?\s*$")
+    r"|каб|кабинет\w*|под[ъь]езд\w*|эт|этаж\w*)\.?\s*\d+[а-яё]?\s*$")
 
 
 def strip_flat(phrase: str) -> str:
@@ -925,6 +1185,14 @@ def place_shape(phrase: str) -> dict[str, object]:
     has_flat = "flat" in roles
     has_entrance = "entrance" in roles
     has_building = "building" in roles
+    # ЭТАЖ — ТАКАЯ ЖЕ ЧАСТЬ, КАК ПОДЪЕЗД, и он обязан доехать до подмены.
+    # Без него `_decorate_place` его НЕ ЧЕКАНИЛ, `in_form_of` выкладывал на
+    # место этажа одну маркерную строку («…, 87, этаж»), и номер этажа
+    # ИСЧЕЗАЛ из маскированного текста: схема инструмента просит `floor`,
+    # модель видит «этаж» без числа и кладёт в поле пустоту. 2 значения
+    # PII-Bench и та же дыра в инструменте, что была у подъезда (см.
+    # `_fake_place`).
+    has_floor = "floor" in roles
     generic = ""
     gender = "femn"
     # A HOUSE NUMBER SAID ALOUD IS STILL A HOUSE NUMBER. Every question below
@@ -949,6 +1217,7 @@ def place_shape(phrase: str) -> dict[str, object]:
                 "has_flat": has_flat,
                 "has_entrance": has_entrance,
                 "has_building": has_building,
+                "has_floor": has_floor,
             }
     for token in re.findall(r"[А-Яа-яЁё]+", phrase):
         lowered = token.lower()
@@ -971,6 +1240,7 @@ def place_shape(phrase: str) -> dict[str, object]:
         "has_flat": has_flat,
         "has_entrance": has_entrance,
         "has_building": has_building,
+        "has_floor": has_floor,
     }
 
 
@@ -1079,7 +1349,7 @@ _SIGNATURE_NOISE = frozenset({
     "пл", "мкр", "туп",
     "дом", "д", "корпус", "корп", "кор", "к", "строение", "стр", "владение",
     "вл", "квартира", "кв", "офис", "оф", "помещение", "пом", "комната",
-    "комн", "литер", "лит", "подъезд", "под", "этаж",
+    "комн", "литер", "лит", "подъезд", "подьезд", "под", "этаж",
 })
 
 
@@ -1155,12 +1425,36 @@ _DIGIT_NUMBER = re.compile(r"\d+(?:/\d+)?(?:[а-яёА-ЯЁ](?=$|[\s,.;]|кв\d|
 _ORDINAL_ONLY = re.compile(rf"(?i)\b{_ORDINAL_WORD}\b")
 _HOUSE_MARKER = re.compile(r"(?i)\b(?:дом|д|влад\w*|вл)\.?")
 _HOUSE_MARKER_TAIL = re.compile(r"(?i)\b(?:дом|д|влад\w*|вл)\.?[\s,.]*$")
+# «ПОДЬЕЗД» — ТО ЖЕ СЛОВО, ЧТО «ПОДЪЕЗД», И ЧАТ ПИШЕТ ЕГО БЕЗ ТВЁРДОГО ЗНАКА.
+# «ул. Чехова 30 корпус 5 кв 12 подьезд 1» — живая строка PII-Bench: маркер
+# узнавался только с «ъ», подъезд не становился РОЛЬЮ, и `_trim_landmark` резал
+# спан на «кв 12» — десять символов настоящего адреса уезжали к модели
+# открытым текстом. `_FLAT_TAIL` и `_SPOKEN_FLAT` мягкий знак знают давно;
+# здесь его не было.
+#
+# «ЭТАЖ» ЗНАЛ ТОЛЬКО МАРКЕР-ПЕРЕД-ЧИСЛОМ («3 этаж» не разбиралось вовсе), а
+# «кв. 87, 3 подъезд» — это ХВОСТ-ЧИСЛО-ПЕРЕД-МАРКЕРОМ, основная форма
+# диспетчерской речи рядом с «подъезд 3». Обе формы разбирает `role_spans`
+# ниже; маркер тут тот же, что у `_ADDRESS_FIXED` и `_SIGNATURE_NOISE`.
 _PART_MARKERS: tuple[tuple[str, str], ...] = (
-    ("flat", r"кв|кварт\w*|офис\w*|оф"),
-    ("entrance", r"подъезд\w*|под"),
+    ("flat", r"кв|кварт\w*|офис\w*|оф|помещени\w*|пом|комн\w*|кабинет\w*|каб"),
+    ("entrance", r"под[ъь]езд\w*|под"),
     ("floor", r"этаж\w*"),
     ("building", r"корп\w*|кор|стр|строен\w*|литер\w*|лит|к(?=\.?\s*\d)|с(?=\.?\s*\d)"),
 )
+# ЧИСЛО ПЕРЕД МАРКЕРОМ И ЕГО ПРАВАЯ ГРАНИЦА. Порядковое окончание допущено
+# («3-й подъезд»), потому что так пишут и в чате. ПРОБЕЛ В ГРУППУ НЕ ВХОДИТ:
+# он стоял в ней (`\s*$`), и граница роли съедала его — `in_form_of` выкладывал
+# подмену на «3 » вместо «3», маскированная строка приходила «24подъезд», а
+# восстановление клало настоящее число В ТУ ЖЕ слитную форму. Круг расходился на
+# одном пробеле, и это 8 значений PII-Bench.
+_NUMBER_THEN_MARKER = re.compile(
+    r"(?i)(\d{1,3})(?:\s*-\s*(?:ый|ий|ой|ая|ое|ья|й|я|е))?(?=\s*,?\s*$)")
+# РОЛЬ ХВОСТА, НАЗВАННАЯ ЧИСЛОМ ПЕРЕД МАРКЕРОМ, СЧИТАЕТСЯ ТОЛЬКО ПОСЛЕ
+# РАЗДЕЛИТЕЛЯ. «, 3 подъезд» — роль; «Победы 81 подьезд 3» — дом 81 и подъезд
+# 3, и без этого условия «81 подъезд» забрал бы СЕБЕ роль подъезда, домом стало
+# бы «3», а настоящий дом уехал бы в инструмент как номер подъезда.
+_TAIL_AFTER_SEPARATOR = re.compile(r"[,.;:]\s*$")
 
 
 # ПОРЯДКОВОЕ ОКОНЧАНИЕ ПОСЛЕ ЧИСЛА. Длинное перед коротким — иначе «ый»
@@ -1191,6 +1485,12 @@ def _heads_a_numbered_street(text: str, position: int) -> bool:
     улицы — «3-я линия 5» и «5-я просека 12» существуют, поэтому следующее
     слово НЕ проверяется на родовое: там оно и есть название.
     """
+    # CARDINAL «N лет X» — «40 лет Победы», «30 лет Октября»: число возглавляет
+    # НАЗВАНИЕ улицы, а не дом. Без этого «40» читалось домом, «лет» сворачивалось
+    # в «год» внутри ключа, а age-gate маскировал «40 лет» как возраст — адрес
+    # разрывался на AGE «40 лет» + LOC «Победы 12» (P2).
+    if re.match(r"\d+\s*(?:лет|года|год)\b[\s,]*[А-Яа-яЁё]", text[position:]):
+        return _HOUSE_MARKER_WORD_TAIL.search(text[:position]) is None
     ordinal = _ORDINAL_SUFFIX.match(text, position)
     if ordinal is None:
         return False
@@ -1211,7 +1511,7 @@ def _number_at(text: str, position: int) -> re.Match[str] | None:
 
 
 def split_roles(phrase: str) -> dict[str, str]:
-    """Настоящий адрес, разложенный на street / house / flat / entrance / …
+    """Настоящий адрес, разложенный на street / street_type / street_name / house / …
 
     ЗАЧЕМ. Схема инструмента просит части адреса отдельными полями, и вернуть
     туда целую фразу нельзя: в `house` поедет улица, а в `street` — улица с
@@ -1226,9 +1526,38 @@ def split_roles(phrase: str) -> dict[str, str]:
 
     Дом — первое число, которое не забрал ни один маркер. Улица — всё, что
     стоит до него.
+
+    РОДОВОЕ СЛОВО — СВОЯ РОЛЬ, А НЕ ПОЗИЦИЯ (Б-1). У фразы, которую написал
+    клиент, оно ЕСТЬ или его НЕТ — это содержание, а не оформление, — и схема
+    инструмента спрашивает его отдельным полем (`street_type`, `streetType`).
+    Пока роли не было, лист `street_type` читался как лист УЛИЦЫ
+    (`field_role('street_type') == ('street','street')`) и получал всю улицу
+    целиком, тогда как соседний лист `street` получал её же без типа: одна
+    улица уезжала в инструмент дважды, а тип терялся (g02/m-112). `street`
+    остаётся ЦЕЛОЙ фразой — её читают все, кому форма нужна целиком (рендерер
+    улицы, ключи, сплайс), — а `street_type`/`street_name` выделяются из неё
+    как под-роли; потребитель, который сплайсит по `role_spans`, их не видит
+    вовсе, поэтому подстановка целой роли не ломается.
     """
-    return {role: phrase[start:end].strip()
-            for role, (start, end) in role_spans(phrase).items()}
+    roles = {role: phrase[start:end].strip()
+             for role, (start, end) in role_spans(phrase).items()}
+    street = roles.get("street", "")
+    if street:
+        words = street.split()
+        types = [word for word in words if is_generic_word(word)]
+        if types:
+            roles["street_type"] = " ".join(types)
+        name = " ".join(word for word in words if not is_generic_word(word))
+        if name:
+            roles["street_name"] = name
+    return roles
+
+
+# ПОД-РОЛИ УЛИЦЫ: они не самостоятельные части схемы, а половины роли `street`.
+# Тот, кто собирает роль из `role_spans` (рендерер формы), их пропускает — тип
+# едет внутри самой улицы, — а тот, кто раскладывает адрес по ПОЛЯМ схемы, их
+# и спрашивает.
+_STREET_SUB_ROLES = ("street_type", "street_name")
 
 
 def role_spans(phrase: str) -> dict[str, tuple[int, int]]:
@@ -1258,6 +1587,20 @@ def role_spans(phrase: str) -> dict[str, tuple[int, int]]:
             if before and not text[before[-1].end():hit.start()].strip():
                 claimed.append((before[-1].start(), hit.end()))
                 out.setdefault(role, (before[-1].start(), before[-1].end()))
+                continue
+            # ЧИСЛО ПЕРЕД МАРКЕРОМ: «, 3 подъезд», «, 2 под», «, 3-й этаж».
+            # Порядковое слово ветка выше берёт с самого начала; здесь —
+            # ЦИФРА, и потому нужно ещё одно свидетельство, что число называет
+            # ЧАСТЬ, а не дом: РАЗДЕЛИТЕЛЬ перед ним. «кв. 87, 3 подъезд» —
+            # роль; «Победы 81 подьезд 3» — дом 81 (число стоит за словом
+            # улицы, без разделителя) и подъезд 3, который забрала ветка
+            # «число после маркера» выше.
+            if role not in ("entrance", "floor"):
+                continue
+            number = _NUMBER_THEN_MARKER.search(text[:hit.start()])
+            if number is not None and _TAIL_AFTER_SEPARATOR.search(text[:number.start()]):
+                claimed.append((number.start(), hit.end()))
+                out.setdefault(role, (number.start(), number.end()))
     house = None
     for pattern in (_DIGIT_NUMBER, _word_number()):
         for number in pattern.finditer(text):
@@ -1307,10 +1650,31 @@ def role_spans(phrase: str) -> dict[str, tuple[int, int]]:
                 out["city"] = (s_start + settlement.start(1), s_start + settlement.end(1))
                 rest = street_text[settlement.end():]
                 out["street"] = (s_start + settlement.end() + (len(rest) - len(rest.lstrip())), s_end)
+    # ГОРОД В КОНЦЕ — ТОЖЕ ЧАСТЬ АДРЕСА, И ЭТО УЖЕ БЫЛО РЕШЕНО РЯДОМ.
+    #
+    # «ул. Садовая 23, Екатеринбург»: адрес найден, а последнее слово ушло
+    # открытым текстом — `_trim_landmark` считает всё после последней роли
+    # ориентиром и резал город. Ключ волта (`address_key`) читает ровно этот
+    # хвост с самого начала: `trailing_city` — одно слово после последней
+    # запятой, принятое `_is_settlement_word`. Читатель ролей не читал, и одна
+    # фраза давала КЛЮЧ С ГОРОДОМ и СПАН БЕЗ НЕГО — то самое расхождение,
+    # которое доккомментарий `split_roles` называет «один разбор на всех».
+    #
+    # Признак тот же и он узкий: одно слово, после последней запятой,
+    # морфология знает его ТОЛЬКО как место. «ленина 14, Пушкин» городом не
+    # станет (у «Пушкин» есть разбор-фамилия), поэтому человек после адреса
+    # по-прежнему остаётся человеком.
+    if "city" not in out:
+        head, sep, tail = text.rpartition(",")
+        word = tail.strip()
+        if sep and word and " " not in word and _is_settlement_word(
+                word.casefold().replace("ё", "е")):
+            at = len(head) + len(sep) + tail.index(word)
+            out["city"] = (at, at + len(word))
     return {role: (start + offset, end + offset) for role, (start, end) in out.items()}
 
 
-_LEADING_WORD = re.compile(r"^\s*([А-ЯЁа-яё][а-яё-]+),?(?=\s|$)")
+_LEADING_WORD = re.compile(r"^\s*([А-ЯЁа-яё][А-ЯЁа-яё-]+),?(?=\s|$)")
 
 
 def _leading_settlement(phrase: str) -> re.Match[str] | None:
@@ -1349,7 +1713,14 @@ def _leading_settlement(phrase: str) -> re.Match[str] | None:
                                      + second.group(1)) + r")").match(phrase)
         return None
     parses = MORPH.parse(word)
-    if not any("Geox" in parse.tag.grammemes for parse in parses):
+    # A SURNAME-COLLIDING SETTLEMENT MAY PASS WITHOUT `Geox`. «одоев», «венёв»,
+    # «белёв» are towns pymorphy reads only as a surname, so the Geox gate below
+    # refused them and the city never joined its street. The leased gazetteer
+    # admits them, and the checks BELOW — a street-type word or a comma right
+    # after — are what still keep a bare «одоев» from being read as a place:
+    # without either signal the surname veto at the bottom returns None.
+    if (not any("Geox" in parse.tag.grammemes for parse in parses)
+            and word.lower() not in _settlement_gaz()):
         return None
     # A PREDICTED place reading — the word is not in the dictionary — counts
     # only with the structure a settlement stands in: a comma or a street-type
@@ -1386,7 +1757,7 @@ def _leading_settlement(phrase: str) -> re.Match[str] | None:
 
 
 _LEADING_CITY = re.compile(
-    r"^(?:г\.?\s*)?([А-ЯЁ][а-яё]+(?:-[А-ЯЁа-яё]+)*(?:\s[А-ЯЁ][а-яё]+)?),\s*(?=\S)")
+    r"^(?:[гГ]\.?\s*)?([А-ЯЁ][А-ЯЁа-яё]+(?:-[А-ЯЁа-яё]+)*(?:\s[А-ЯЁ][А-ЯЁа-яё]+)?),\s*(?=\S)")
 _STREET_TYPE_LEAD = re.compile(
     r"(?i)^(?:ул\.?|улица|улице|улицу|пр-т|пр\.?|просп\.?|проспект\w*|пер\.?|переулок|переулк\w*|"
     r"б-р|бульвар\w*|ш\.?|шоссе|пл\.?|площад\w*|наб\.?|набережн\w*|проезд\w*|тупик\w*|аллея|аллее)\s+")
@@ -1404,17 +1775,76 @@ FIELD_ROLES: tuple[tuple[str, str], ...] = (
     # `city`, Yandex `locality`); without a role here a bare fake city in it
     # was never asked about and reached the tool as «Сортавала».
     ("city", "city"), ("locality", "city"), ("town", "city"), ("settlement", "city"),
+    # THE NAMES THE SAME PART GOES BY IN THE SCHEMAS PEOPLE ACTUALLY WRITE (W1).
+    # `_join_one_address` rewrites only the leaves whose role it can READ FROM
+    # THE FIELD NAME, so a part spelled in a name this table does not carry is
+    # never rewritten — it stays the FAKE while its neighbours are restored, and
+    # the tool receives half a real address under a 200. Measured: `build` and
+    # `corpus` (`{"street","build","corpus","entrance","floor","flat"}`) stayed
+    # fake in both legs. The list stays NARROW and word-for-word: every entry is
+    # a spelling of an address part — a transliteration of the Russian word, an
+    # abbreviation the delivery schemas use, or the CDEK/DaData spelling — and
+    # not an English word that merely CAN mean one. `block`, `case`, `room` and
+    # `home` are DELIBERATELY absent for that reason: in a legal or hotel schema
+    # they name a case number, a corridor and a hotel room, and typing them as
+    # an address part is how a customer's own number becomes a house.
+    ("build", "house"), ("dom", "house"), ("sbuild", "house"), ("nbuild", "house"),
+    ("housenumber", "house"), ("house_number", "house"),
+    ("kv", "flat"), ("kvartira", "flat"), ("nflat", "flat"),
+    ("corpus", "building"), ("korpus", "building"),
+    ("podezd", "entrance"), ("etazh", "floor"),
+    ("ulica", "street"), ("ulitsa", "street"), ("sstreet", "street"),
+    ("streetname", "street"), ("street_name", "street"),
+)
+# СОСТАВНОЕ ИМЯ РОЛИ: «street_type» / «streetType» — ДВА СЛОВА, А НЕ ОДНО, и по
+# одному слову его не узнать. `FIELD_ROLES` держит одиночные слова, поэтому
+# составное имя проверяется парой соседних токенов; «type» само по себе роли НЕ
+# получает — в объекте с адресом оно с тем же успехом значит «тип заявки».
+_COMPOUND_ROLES: tuple[tuple[str, str, str], ...] = (
+    ("street", "type", "street_type"), ("street", "kind", "street_type"),
 )
 _CAMEL_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
 
+def field_tokens(name: str) -> list[str]:
+    """Имя поля токенами: `_`, `.` и camelCase — все три разделителя схем.
+
+    ТОЧКА ТОЖЕ РАЗДЕЛИТЕЛЬ. `courier_book.address.street` — путь, а не имя:
+    пока точка не резалась, `field_role` возвращал («», «») для целого листа,
+    роль у него не находилась, он восстанавливался одиночным текстовым проходом
+    мимо соединения адреса — и тип улицы терялся (g02/m-112). Тот же лист,
+    написанный вложенным объектом, соединение находило.
+    """
+    return [token for token in _CAMEL_RE.sub("_", name).lower()
+            .replace(".", "_").split("_") if token]
+
+
 def field_role(name: str) -> tuple[str, str]:
     """(the schema word that names the part, its role) for a field, or ("", "")."""
-    parts = _CAMEL_RE.sub("_", name).lower().split("_")
+    parts = field_tokens(name)
+    for index, word in enumerate(parts):
+        for first, second, role in _COMPOUND_ROLES:
+            if word == first and index + 1 < len(parts) and parts[index + 1] == second:
+                return f"{first}_{second}", role
     for word, role in FIELD_ROLES:
         if word in parts:
             return word, role
     return "", ""
+
+
+def field_prefix(name: str) -> str:
+    """Приставка, которой схема различает ДВА адреса в одном вызове.
+
+    `book_ride` просит `pickup_street`/`pickup_house` и
+    `dropoff_street`/`dropoff_house`: скопом они дают двух владельцев, правило
+    единственного отказывает, и не разрешается ни один адрес. Приставка — это
+    то, что остаётся от имени, когда из него вынуто СЛОВО РОЛИ; считается она
+    по тем же токенам, что и роль, поэтому `address.street`,
+    `address.street_type` и `streetType` попадают в одну группу, а `pickup_*`
+    и `dropoff_*` — в разные.
+    """
+    words = frozenset(word for word, _ in FIELD_ROLES) | {"type", "kind"}
+    return "_".join(token for token in field_tokens(name) if token not in words)
 
 
 def role_of_field(name: str) -> str:
@@ -1479,6 +1909,21 @@ def part_in_form_of(agent_part: str, real_part: str, role: str) -> str:
         # content the customer either wrote or did not, so it comes from the
         # record, not from the substitute the model happened to copy.
         return real_part.strip()
+    if role == "street_type":
+        # РОДОВОЕ СЛОВО — СВОЯ ЧАСТЬ, И СОДЕРЖИМОЕ ЕЁ — ИЗ ЗАПИСИ. Клиент написал
+        # «переулок» или не написал ничего; подмена, которую скопировал агент,
+        # несёт НАШ тип — но он зеркалит клиентский, поэтому в поле уезжает
+        # именно слово записи («переулок»), а не «бульвар» из подмены. Форма
+        # (сокращение ли) — агентская, как и у всякой части адреса: написал он
+        # «ул» — уходит сокращение той же полной формы; написал полное слово —
+        # уходит полное.
+        written = agent_part.strip().strip(".")
+        real = real_part.strip()
+        if written and written.lower() in _GENERIC_SHORT and real:
+            for short, (full, _sex) in _GENERIC_SHORT.items():
+                if full == real.lower().strip("."):
+                    return short
+        return real
     # CITY AND ANY OTHER TEXT ROLE — the customer's part as written. A city
     # («Самара») has no marker to strip and no digits to convert; it goes to
     # the tool verbatim, in the agent's case (the caller applies it). Without
@@ -1586,48 +2031,69 @@ def _like(part: str, model: str) -> str:
     return agent_form.cased_like(part, model)
 
 
-def _leading_generic(text: str) -> str:
-    """Ведущий тип улицы в строке агента, дословно: «улица Вязовая» -> «улица»,
-    «ул. Вязовая» -> «ул.», голое «Вязовая» -> «». Только с начала: тип стоит
-    перед названием, и «Садовая улица» (тип в конце — редкость) не в счёт."""
-    marker: list[str] = []
-    for word in text.split():
+def _agent_type(model: str) -> tuple[int, str]:
+    """(позиция родового слова в строке писавшего, само слово) или (-1, "").
+
+    ЗАМЕНИЛ `_leading_generic`, КОТОРЫЙ ЧИТАЛ ТОЛЬКО НАЧАЛО СТРОКИ. «Садовая
+    улица» (тип в конце) считалась отсутствием типа — а «название первым» это
+    обычная форма подмены, которую чеканит `_fake_place` для «проспекта» и
+    «бульвара» (голова собирается как `<название> <тип>`). На такой строке типа
+    не находилось ни у подмены, ни у настоящей улицы, и обе ноги теряли его
+    СИММЕТРИЧНО: клиенту показывали «Барбарисовый» вместо «Барбарисовый
+    переулок», инструменту отдавали «Светлый» вместо «Светлый переулок» — то
+    есть «переулок Пушкина» и «улица Пушкина» становились неразличимы для CRM
+    (g02/m-074, m-112).
+    """
+    for index, word in enumerate(model.split()):
         if is_generic_word(word):
-            marker.append(word)
-        else:
-            break
-    return " ".join(marker)
+            return index, word
+    return -1, ""
 
 
 def _street_like(street: str, model: str) -> str:
     """Настоящая улица в форме АГЕНТА: его тип (или его отсутствие) + название.
 
     Форма принадлежит агенту, СОДЕРЖИМОЕ — записи клиента, и тип улицы —
-    содержимое: клиент либо написал «улица», либо нет. Отсюда два правила, и
-    оба измерены на публичном бенчмарке:
+    содержимое: клиент либо написал «улица», либо нет. Отсюда три правила, и
+    все три измерены:
 
     * Клиент написал улицу БЕЗ типа («бисертская», «луговая») — типа в аргументе
       не будет, даже если агент скопировал наш фейк «улица Вязовая» дословно.
       Мы не дописываем слово, которого в записи клиента нет: «улица Бисертская»
       на голую «бисертскую» — это МЫ добавили «улица» (25 адресов «по полям»).
-    * Клиент написал улицу С типом («улица Ленина») — тип остаётся, но в
-      МАРКЕРЕ АГЕНТА: клиент «улица», агент сократил до «ул.» — уходит «ул.».
-      Агент вовсе опустил тип (взял одно название) — уходит одно название.
+    * Агент поставил тип ПЕРЕД названием — уходит ЕГО маркер: клиент «улица»,
+      агент сократил до «ул.» — уходит «ул.». Это его нотация, и она несёт его
+      сокращение и его регистр.
+    * Агент поставил тип ПОСЛЕ названия (или написал улицу без типа) — слово
+      берётся ИЗ ЗАПИСИ, в позиции агента. Позиция «название первым» — обычная
+      для подмены, и тип в ней стоит на своём естественном месте; слово же —
+      содержание записи, а не то, что агент скопировал из нашей подмены.
+      Агент вовсе опустил тип — уходит одно название (запись его не добавит).
 
     `street` — роль настоящего адреса (тип у неё есть ⇔ клиент его написал);
     `model` — та же роль в строке агента (несёт его маркер, сокращение и
     РЕГИСТР: агент написал подмену «Вязовая» с заглавной — настоящее «мончгорская»
     уходит «Мончгорская», как и всякая часть адреса через `_like`).
+
+    ВЕДУЩИЙ МАРКЕР — ВСЕГДА МАРКЕР АГЕНТА, и он остаётся даже тогда, когда в
+    записи клиента типа нет вовсе: «ул. Родниковой, д. 9» модель собрала сама,
+    из голого листа «родниковой», и «ул.» — её собственное обозначение, а не
+    наше (E04/tool_chain-017). Тип в СЕРЕДИНЕ строки так не работает: там он
+    стоит на месте, которое запись занимает своим словом.
     """
-    words = street.split()
+    case: str | None = street_case(model)
+    inflected: str = inflect_place(street, case) if case not in (None, "nomn") else street
+    words = inflected.split()
     named = [w for w in words if not is_generic_word(w)]
     real_name = " ".join(named) if named else street
-    if len(named) == len(words):
-        # У клиента типа нет — не навязываем свой, что бы агент ни скопировал.
-        result = real_name
+    record_type = [w for w in words if is_generic_word(w)]
+    position, agent_word = _agent_type(model)
+    if position == 0:
+        result = f"{agent_word} {real_name}"
+    elif position > 0 and record_type:
+        result = f"{real_name} {record_type[-1]}"
     else:
-        agent_marker = _leading_generic(model)
-        result = f"{agent_marker} {real_name}" if agent_marker else real_name
+        result = real_name
     return agent_form.cased_like(result, model)
 
 def in_form_of(value: str, surface: str) -> str:
@@ -1661,7 +2127,9 @@ def in_form_of(value: str, surface: str) -> str:
         return value
     theirs = role_spans(surface)
     ours = split_roles(value)
-    if "street" not in theirs or "street" not in ours:
+    # A resolved address can be projected onto numeric roles alone. Requiring
+    # a street on the sender side expands a lone flat into the entire address.
+    if not theirs or "street" not in ours:
         return value
     spans: list[tuple[int, int, str]] = []
     for role, (start, end) in sorted(theirs.items(), key=lambda item: item[1][0]):
@@ -1679,7 +2147,8 @@ def in_form_of(value: str, surface: str) -> str:
 
 
 _MARKER_BEFORE = re.compile(
-    r"(?i),?\s*\b(?:кв|кварт\w*|офис\w*|оф|под[ъь]езд\w*|под|этаж\w*"
+    r"(?i),?\s*\b(?:кв|кварт\w*|офис\w*|оф|помещени\w*|пом|комн\w*|кабинет\w*|каб"
+    r"|под[ъь]езд\w*|под|этаж\w*"
     r"|корп\w*|кор|стр|строен\w*|литер\w*|лит|дом|д)\.?\s*$")
 
 
@@ -1703,7 +2172,8 @@ def _splice_parts(text: str, spans: list[tuple[int, int, str]]) -> str:
 
 _CITY_LEAD = re.compile(r"^[А-ЯЁ][а-яё-]+,\s+")
 _TAIL_MARKER = re.compile(
-    r"(?i),?\s*\b(?:кв|кварт\w*|офис\w*|оф|подъезд\w*|под|этаж\w*)\b")
+    r"(?i),?\s*\b(?:кв|кварт\w*|офис\w*|оф|помещени\w*|пом|комн\w*|кабинет\w*|каб"
+    r"|под[ъь]езд\w*|под|этаж\w*)\b")
 
 
 def reduce_address(phrase: str, keep_city: bool, keep_tail: bool) -> str:
@@ -1724,3 +2194,130 @@ def reduce_address(phrase: str, keep_city: bool, keep_tail: bool) -> str:
         if tail is not None:
             out = out[:tail.start()]
     return out.strip().strip(" ,.")
+
+
+# =====================================================================================
+# D-081 (W8): АДРЕС — ЯДРО И РАСТУЩИЕ НА НЁМ ЧАСТИ.
+# =====================================================================================
+# РЕШЕНИЕ ВЛАДЕЛЬЦА (OWNER-DECISIONS-PHASE4B.md, кластер A): тождество адреса —
+# УЛИЦА И ДОМ, и оно ОДНО. Корпус/строение, подъезд, этаж и квартира — ИЗМЕНЯЕМЫЕ
+# ЧАСТИ на том же ядре: две квартиры в одном доме получают ОДНУ подменную улицу и
+# дом, но РАЗНЫЕ подменные квартиры, поэтому два разных человека в одном доме
+# остаются различимыми, а поправка «ой не та квартира» не чеканит новый адрес.
+#
+# ЧИТАТЕЛЬ ОДИН. Части разбирает `split_roles` (та же пара `role_spans` +
+# маркеры, которой `in_form_of` выкладывает подмену в форму клиента), а диктовку
+# сворачивает `house_digits` — вторая читалка той же фразы разошлась бы с первой,
+# как расходятся в этом файле все вторые читалки.
+MUTABLE_PLACE_ROLES: tuple[str, ...] = ("building", "entrance", "floor", "flat")
+# РАЗДЕЛИТЕЛЬ ХВОСТА-ПОДПИСИ ЧАСТЕЙ. \x1f не встречается в адресной фразе, а
+# хвост стоит ПОСЛЕ обычного ключа, поэтому диапазонные чтения по
+# `(customer, canonical)` — и префиксные (`vault._real_place_with_stem_locked`:
+# «canonical LIKE <основа>%»), и слотовые (`vault._place_family_owner`) — видят
+# строку там же, где видели её без частей. Читатели тождества и типа снимают
+# хвост сами (`strip_parts_key`), поэтому тип места не теряется.
+PART_SEPARATOR = "\x1f"
+# МАРКЕР, СТОЯЩИЙ ПОСЛЕ ЧИСЛА. «3 подъезд», «2 корпус» — основная форма
+# диспетчерской речи, и без неё `core_phrase` оставлял бы маркер в ядре.
+_MARKER_AFTER = re.compile(
+    r"(?i)^[\s,]*\b(?:под[ъь]езд\w*|под|этаж\w*|эт|корп\w*|кор|стр\w*|строен\w*"
+    r"|литер\w*|лит|кабинет\w*|каб)\.?")
+
+
+def mutable_parts(phrase: str) -> dict[str, str]:
+    """Изменяемые части адреса: роль -> значение ЦИФРАМИ («семь» -> «7»).
+
+    Пустая часть (маркер без числа) ролью не становится: «…, кв» не называет
+    квартиры, и подмены ей не чеканится.
+    """
+    roles = split_roles(phrase)
+    out: dict[str, str] = {}
+    for role in MUTABLE_PLACE_ROLES:
+        value = house_digits((roles.get(role) or "").strip())
+        if value:
+            out[role] = value
+    return out
+
+
+def core_phrase(phrase: str) -> str:
+    """Тот же адрес БЕЗ изменяемых частей: город, улица, дом.
+
+    Хвост, названный ролью, вырезается ЦЕЛИКОМ — и маркер, стоящий перед числом
+    («, квартира 7»), и маркер, стоящий после него («3 подъезд»): оставленный
+    маркер сделал бы из ядра второе тождество.
+    """
+    spans = role_spans(phrase)
+    drops: list[tuple[int, int]] = []
+    for role in MUTABLE_PLACE_ROLES:
+        span = spans.get(role)
+        if span is None:
+            continue
+        start, end = span
+        start = min(start, _marker_start(phrase, start))
+        after = _MARKER_AFTER.match(phrase[end:])
+        if after is not None:
+            end += after.end()
+        drops.append((start, end))
+    if not drops:
+        return phrase
+    out: list[str] = []
+    last = 0
+    for start, end in sorted(drops):
+        if start < last:
+            continue
+        out.append(phrase[last:start])
+        last = end
+    out.append(phrase[last:])
+    text = "".join(out)
+    text = re.sub(r"[ \t]*,[ \t]*(?=[,;]|$)", "", text)
+    text = re.sub(r"[\s,;]+$", "", text)
+    text = re.sub(r"^[\s,;]+", "", text)
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
+def place_core_key(phrase: str) -> str:
+    """ТОЖДЕСТВО адреса (D-081): улица и дом, и ничего кроме.
+
+    Ключ улицы, дома и города — тот же `address_key`, построенный на фразе без
+    изменяемых частей, поэтому упоминание без частей («улица Лермонтова дом 38»)
+    даёт РОВНО этот ключ и встречается со своей полной формой, а упоминание с
+    квартирой или корпусом — тот же ключ, но строка волта у него своя
+    (`place_parts_key`).
+    """
+    core = core_phrase(phrase)
+    return address_key(core if core.strip() else phrase)
+
+
+def parts_signature(parts: dict[str, str]) -> str:
+    """Подпись изменяемых частей: роль=значение, в русском порядке.
+
+    Она и есть то, чем различаются строки одного дома: «flat=7» и «flat=42» —
+    разные строки, а одно значение дважды — одна и та же.
+    """
+    return PART_SEPARATOR.join(f"{role}={parts[role]}"
+                               for role in MUTABLE_PLACE_ROLES if role in parts)
+
+
+def place_parts_key(phrase: str) -> str:
+    """КЛЮЧ СТРОКИ ВОЛТА, КОГДА ЧАСТИ НАЗВАНЫ: обычный ключ адреса + подпись.
+
+    Ключ адреса (`address_key`) значения частей выбрасывает — по решению
+    владельца это тождество. Но СТРОКЕ волта их мало: два человека в одном доме
+    обязаны быть ДВУМЯ строками, и упоминание БЕЗ частей обязано отличаться от
+    упоминания С частями — иначе короткое «Энгельса 54» наследует фантомную
+    квартиру от «Энгельса 54 кв 189» (тот же обычный ключ после identity-split).
+    Поэтому КАЖДАЯ подпись частей получает хвост-подпись. ХВОСТ, А НЕ ПРЕФИКС:
+    `canonical LIKE «<основа>%»` (`vault._real_place_with_stem_locked`) обязан эту
+    строку видеть.
+    """
+    plain = address_key(phrase)
+    parts = mutable_parts(phrase)
+    if not parts:
+        return plain
+    return f"{plain}{PART_SEPARATOR}{parts_signature(parts)}"
+
+
+def strip_parts_key(canonical: str) -> str:
+    """Ключ строки волта без хвоста-подписи частей — то, что читают тождество и тип."""
+    head, separator, _rest = canonical.partition(PART_SEPARATOR)
+    return head if separator else canonical

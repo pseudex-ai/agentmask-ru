@@ -1,0 +1,10 @@
+diff --git a/prototype/bench/agentpii5/test_cli.py b/prototype/bench/agentpii5/test_cli.py
+index 42d46dd..eca3a79 100644
+--- a/prototype/bench/agentpii5/test_cli.py
++++ b/prototype/bench/agentpii5/test_cli.py
+@@ -40,4 +40,5 @@ NOT_COMMANDS: dict[str, str] = {
+     "reportjson": "печатается командой report (--public); отдельной командой была бы "
+                   "вторая дверь к одному отчёту",
++    "frozen_oracle": "замороженный эталон скоринга: приёмка, гоняется как test_frozen_oracle",
+ }
+ 

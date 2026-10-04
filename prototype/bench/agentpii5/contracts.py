@@ -43,6 +43,9 @@ from bench.agentpii4.schema import (  # noqa: F401 - re-exported on purpose
 from bench.agentpii4.stats import clopper_pearson, zero_failure_floor
 from bench.agentpii4.tools import REGISTRY, FieldSpec, Refusal, ToolSpec  # noqa: F401
 
+from bench.agentpii5 import contracts_v6
+from bench.agentpii5 import pii_types
+
 # --- §0 package rules ------------------------------------------------------------
 
 V4_PACKAGE: str = "bench.agentpii4"
@@ -51,15 +54,34 @@ V5_PACKAGE: str = "bench.agentpii5"
 # not. `test_contracts.py` checks `sys.modules` after importing this file; each
 # component's test does the same for its own modules.
 FORBIDDEN_IMPORT_PREFIX: str = "pseudex"
-# The ONE module allowed to import the engine: it runs the gateway arm on the
-# production path. Everything it learns is written to the run files (§8) so
-# every other module reads records, never the engine.
-PSEUDEX_ALLOWED_MODULES: tuple[str, ...] = ("bench.agentpii5.harness",)
+# The two modules allowed to import the engine: `harness` runs the gateway arm
+# on the production path, and `regress_print` prints the SAME path offline
+# (bundle + GatewayV5 + mock, no model) for G4/L9. Everything each learns is
+# written to the run files (§8) or printed, so every other module reads records,
+# never the engine.
+PSEUDEX_ALLOWED_MODULES: tuple[str, ...] = ("bench.agentpii5.harness",
+                                            "bench.agentpii5.regress_print")
 # Never published. The public harness lives in `public/agentmask-ru/`; this
 # package shares no file with it and writes nothing under `public/`.
 PUBLISHED: bool = False
 
-TYPES: tuple[str, ...] = v4.TYPES
+TYPES: tuple[str, ...] = v4.TYPES + pii_types.NEW_ITEM_TYPES
+# Re-exported so `schema.R02` and the orchestrator's `reg_types` read the same
+# set from the one home (pii_types), never a copy.
+NEW_ITEM_TYPES: tuple[str, ...] = pii_types.NEW_ITEM_TYPES
+# The v6 tables, re-exported from their home (contracts_v6) — one definition,
+# never a copy. `INDUSTRIES`/`V6_AXES`/`V6_PROVENANCE_KINDS`/`V6_DIR` are the
+# axis vocabulary, `CaseV6Meta`/`ProcedureRecord` the shapes a v6 case carries.
+INDUSTRIES: tuple[str, ...] = contracts_v6.INDUSTRIES
+V6_AXES: tuple[str, ...] = contracts_v6.V6_AXES
+V6_PROVENANCE_KINDS: tuple[str, ...] = contracts_v6.V6_PROVENANCE_KINDS
+V6_DIR: str = contracts_v6.V6_DIR
+CaseV6Meta = contracts_v6.CaseV6Meta
+ProcedureRecord = contracts_v6.ProcedureRecord
+# The v6 negative families (§1.6 of tz-agentpii6-registry.md). R02 admits a
+# v4.validate «negative family … unknown» line for exactly these; the list
+# lives in `contracts_v6.py`.
+V6_NEGATIVE_FAMILIES: tuple[str, ...] = contracts_v6.V6_NEGATIVE_FAMILIES
 REGISTERS: tuple[str, ...] = v4.REGISTERS
 SPEECH_REGISTERS: tuple[str, ...] = v4.SPEECH_REGISTERS
 V4_SCENARIO_KINDS: tuple[str, ...] = v4.SCENARIO_KINDS
@@ -151,12 +173,26 @@ class Hop:
     `FieldSpec.path`); "" for user, memory, answer.
 
     `optional` is True only for a hop the agent MAY legitimately skip (a
-    retry it did not need because its first attempt was accepted). An
-    optional hop that did not happen is not observed and counts nowhere; a
-    required hop that did not happen is `absent` and counts as a miss in
-    `multi_all_out` / `chain_value`. Defaulting everything to optional would
-    let an agent that calls nothing pass every form line — the v4 D3 defect
-    («did the arm act at all») in a new coat.
+    retry it did not need because its first attempt was accepted, or a leaf the
+    TOOL SCHEMA does not require). An optional hop that did not happen is not
+    observed and counts nowhere; a required hop that did not happen is `absent`
+    and counts as a miss in `multi_all_out` / `chain_value`. Defaulting
+    everything to optional would let an agent that calls nothing pass every form
+    line — the v4 D3 defect («did the arm act at all») in a new coat.
+
+    «DID NOT HAPPEN» IS A FACT ABOUT THE LEAF, NOT ABOUT THE CALL (SPIKE-Е,
+    Е-2). The observer read `optional` only when the CALL was missing, so a
+    declared optional hop whose call WAS made with an empty slot went into every
+    denominator — the promise on this field, broken by the branch one file away
+    that did not read it (`_out_answer` already obeyed it). A hop is skipped
+    when its leaf was left empty, whether or not a call was made.
+
+    AND THE CORPUS'S OWN BUILDERS READ THE ROLE. `scenarios5.common.arg_hop`
+    and `revise._arguments` set `optional = (not spec.required) or spec.role in
+    GENERIC_PIECE_ROLES`: `courier_book.address.locality` and
+    `delivery_create_order.to_location.city` are `required=True, role='city'`,
+    and the engine keeps the settlement real by product decision — a REQUIRED
+    hop there is a promise no correct gateway can keep.
     """
 
     kind: str            # HOP_KINDS
@@ -495,6 +531,19 @@ class CaseV5:
     has_result: bool
     streaming: bool
     revised_from_v4: bool            # True for the 834; False for a case a v5 generator built
+    # v6 industry + provenance; None for every v5-authored case.
+    #
+    # DEFAULTED, and the default is what keeps the KEEP_V5 row working (S2
+    # `scenarios5/common.py`, decision C13: `checkout_v5`, v6's `v6=None` line
+    # deliberately dropped because it sits next to the `optional` fix that keeps
+    # a required hop off a settlement). That file builds `CaseV5` with no `v6`
+    # keyword and `test_schema` drives it: with no default the constructor raises
+    # `TypeError: missing 1 required positional argument: 'v6'` — a red that is
+    # not about the contract but about a builder that never heard of v6.
+    # `schema.py` (corpus JSON) and `fixtures.py`/`revise.py`/`test_judge.py`
+    # (the S2 rows) pass it explicitly either way, so the default changes no
+    # reading and only admits the v5-only construction path.
+    v6: CaseV6Meta | None = None
 
 
 MIN_STREAMING_CASES: int = 60
@@ -524,6 +573,8 @@ V5_CASE_RULES: tuple[str, ...] = (
     "R19 every ReturnExpectation names a tool in base.tools, a return_form in RETURN_FORMS declared by that tool's ToolSpecV5 (a tool declares EVERY form it can return — a state-decided one like address_suggest canon/list is declared as both — and the case's return_form says which one THIS seeded state yields; the observer compares the mock's actual form with it), and result_item_ids that are seed items",
     "R20 streaming cases are register voice_raw or voice_itn",
     "R21 the items of every OUT hop with owner in ('template','summary') are named by TEMPLATE_FIELDS / SUMMARY_FIELDS of its tool",
+    "R22 the OUT hops of one (turn, item, semantic leaf) declare ONE (tool, path): two DIFFERENT leaves of one class on one transition would let one written leaf satisfy both, and one crossing would read two `observed`",
+    "R23 a REQUIRED OUT hop must not name an item superseded by a LATER message item of the same (type, identity, message) with a DIFFERENT value: the correct agent writes the corrected value, so the hop on the cancelled one can never become `observed`",
 )
 V5_CORPUS_RULES: tuple[str, ...] = (
     "K01 size in CORPUS_SIZE_BAND_V5 and every case id unique (two cases under one id are one case counted twice in every share below)",
@@ -614,6 +665,10 @@ NEW_TOOL_NAMES: tuple[str, ...] = (
     "mail_read", "mail_search", "mail_send", "calendar_invite",
     "tracker_find_user", "tracker_issue_create", "crm_upsert_card",
     "sheet_append_row", "doc_append", "memory_save", "reminder_set")
+# The 55 tool names v5 shipped, PINNED so the old-corpus checks keep reading
+# them after v6 tools land (F17/F13). `REGISTRY_V5` grows to 55 + v6; this tuple
+# never does, and `test_tools` pins the count at 55.
+V5_TOOL_NAMES: tuple[str, ...] = (*V4_TOOL_NAMES, *NEW_TOOL_NAMES)
 # The suite a tool belongs to. Lookup, not a column: 44 of the 55 belong to none.
 TOOL_SUITE: dict[str, str] = {
     "mail_read": "office", "mail_search": "office", "mail_send": "office",
@@ -805,24 +860,42 @@ class ResultRenderer(Protocol):
 
 # --- §4 the form comparator (spec §1.1, §8.4) ----------------------------------------
 
-# EXACTLY the feature names of spec §8.4, per type. `DATE` is a non-birth date
-# the engine substituted (an appointment slot, a document date): same features
-# as DOB, listed separately because the spec lists «DOB/DATE» and a metric
-# slice by type must not fold the two.
-FORM_FEATURES: dict[str, tuple[str, ...]] = {
-    "NAME": ("case_class", "gram_case", "order", "parts", "initials", "script", "hyphen_particle"),
-    "PHONE": ("prefix", "grouping", "separators", "parens"),
-    "LOC": ("case_class", "generic", "generic_position", "house_marker", "flat_marker", "commas",
-            "city_present", "city_position", "by_fields", "building_entrance_markers"),
-    "DOB": ("notation", "separator", "padding", "year_len", "month_form"),
-    "DATE": ("notation", "separator", "padding", "year_len", "month_form"),
-    "EMAIL": ("case_class",),
-    "CARD": ("grouping", "separator"),
-    "SNILS": ("separators",),
-    "INN": ("length", "separators"),
-    "PASSPORT": ("series_number_split",),
-    "PLATE": ("case_class", "spaces", "region_sep"),
-}
+# THE FORM TABLES ARE NOW ONE PLAIN REGISTRY READ (V1 S4). They used to be the
+# eleven v5 records written out HERE, with the 55 v6 records added from
+# `pii_types`; the v5 rows were then transcribed into `pii_types` and the two
+# copies could drift — exactly the failure `INSTRUMENT-FIX-LEAF-READINGS` and
+# SPEC §3.2 O-V6-4 named. S4 migrated the v5 NAME record WITH the
+# `script`/`translit` split into the registry, so `pii_types.TYPE_REGISTRY` is
+# the ONE home of every form table and `_V6_RECORDS` is gone.
+#
+# WHY THE SPLIT SURVIVES THE MIGRATION (SPEC §2.1 C04 adopt_gate, §5.1). The
+# NAME record carries `script` — THE ALPHABET, `cyrillic`/`latin`/`mixed`/`none`
+# — AND `translit` — THE ROMANIZATION, `latin:gost|icao|bgn|unknown`, abstaining
+# through `latin:unknown`. One feature used to answer both: `form.name_script`
+# returned `latin:gost|icao|bgn|unknown`, so two LATIN strings whose letters no
+# published table spells differently — `unknown`, which is the extractor saying
+# «no opinion» — were charged a `script` difference. That is 50 of the 62
+# `form OUT/answer` misses of g07 (17 cases), and it punishes the instrument's
+# own resolution limit, exactly as `order` → `other` already abstains next door.
+# The alphabet is a real question and stays (3 Cyrillic-versus-Latin hops in the
+# archives, 202 in g06, are class Г and MUST remain a difference); the
+# romanization system is a separate one and abstains when no table speaks. The
+# pinned v6 record transcribed the PRE-SPLIT table (alphabet and romanization
+# merged into one `script`, `translit` absent); adopting it as-is would delete
+# the v5 decision silently — G8's red condition «Скопирована старая
+# script/translit таблица» — and make `form.FEATURE_EXTRACTORS[('NAME',
+# 'translit')]` unreachable.
+#
+# THE PIN is `test_pii_types.test_live_contracts_tables_derive_from_registry`:
+# it imports THIS module and asserts the four tables equal the registry-derived
+# ones, so a hand copy reintroduced here is RED instead of silently green
+# (SPEC §5.2 RED acceptance).
+#
+# `FORM_FEATURES[type]` is EXACTLY the feature names of spec §8.4, and `DATE`
+# keeps its own record: it is the non-birth date the engine substituted (an
+# appointment slot, a document date), with DOB's features but a type a metric
+# sliced by type must not fold into DOB.
+FORM_FEATURES: dict[str, tuple[str, ...]] = pii_types.form_features(pii_types.TYPE_REGISTRY)
 FORM_TYPES: tuple[str, ...] = tuple(FORM_FEATURES)
 # The closed label set each feature extractor returns. Two strings with the
 # same label agree on the feature; anything else is a difference named by the
@@ -832,49 +905,18 @@ FORM_TYPES: tuple[str, ...] = tuple(FORM_FEATURES)
 # adversarial fixtures of `form_hIN`/`form_hOUT` can name the label they
 # expect, and so two extractors written by two people cannot disagree about
 # what «title case» means.
-FEATURE_LABELS: dict[tuple[str, str], tuple[str, ...]] = {
-    ("NAME", "case_class"): ("lower", "title", "upper", "mixed", "none"),
-    ("NAME", "gram_case"): ("nomn", "gent", "datv", "accs", "ablt", "loct", "unknown"),
-    ("NAME", "order"): ("F-I-O", "I-F", "I-O-F", "single", "other"),
-    ("NAME", "parts"): ("1", "2", "3", "4+"),
-    ("NAME", "initials"): ("none", "given", "given_patronymic"),
-    ("NAME", "script"): ("cyrillic", "latin:gost", "latin:icao", "latin:bgn", "latin:unknown", "mixed", "none"),
-    ("NAME", "hyphen_particle"): ("none", "hyphen", "particle", "both"),
-    ("PHONE", "prefix"): ("plus7", "eight", "seven", "bare", "other"),
-    ("PHONE", "grouping"): ("3-3-2-2", "3-3-4", "solid", "other"),
-    ("PHONE", "separators"): ("none", "space", "hyphen", "dot", "mixed"),
-    ("PHONE", "parens"): ("yes", "no"),
-    ("LOC", "case_class"): ("lower", "title", "upper", "mixed", "none"),
-    ("LOC", "generic"): ("none", "full:*", "abbr:*"),
-    ("LOC", "generic_position"): ("before", "after", "none"),
-    ("LOC", "house_marker"): ("none", "d_dot_space", "d_dot_nospace", "d_nodot", "dom", "other"),
-    ("LOC", "flat_marker"): ("none", "kv_dot_space", "kv_dot_nospace", "kv_nodot", "kvartira", "other"),
-    ("LOC", "commas"): ("yes", "no"),
-    ("LOC", "city_present"): ("yes", "no"),
-    ("LOC", "city_position"): ("first", "last", "middle", "none"),
-    ("LOC", "by_fields"): ("fields", "string"),
-    ("LOC", "building_entrance_markers"): ("none", "markers:*"),
-    ("DOB", "notation"): ("dmy_dots", "dmy_slashes", "iso", "words", "solid", "other"),
-    ("DOB", "separator"): ("dot", "slash", "hyphen", "space", "none"),
-    ("DOB", "padding"): ("padded", "unpadded"),
-    ("DOB", "year_len"): ("2", "4", "none"),
-    ("DOB", "month_form"): ("number", "word_nominative", "word_genitive"),
-    ("DATE", "notation"): ("dmy_dots", "dmy_slashes", "iso", "words", "solid", "other"),
-    ("DATE", "separator"): ("dot", "slash", "hyphen", "space", "none"),
-    ("DATE", "padding"): ("padded", "unpadded"),
-    ("DATE", "year_len"): ("2", "4", "none"),
-    ("DATE", "month_form"): ("number", "word_nominative", "word_genitive"),
-    ("EMAIL", "case_class"): ("lower", "upper", "mixed", "none"),
-    ("CARD", "grouping"): ("4x4", "solid", "other"),
-    ("CARD", "separator"): ("space", "hyphen", "none", "other"),
-    ("SNILS", "separators"): ("canonical", "solid", "other"),
-    ("INN", "length"): ("10", "12", "other"),
-    ("INN", "separators"): ("none", "space", "other"),
-    ("PASSPORT", "series_number_split"): ("2-2-6", "4-6", "solid", "other"),
-    ("PLATE", "case_class"): ("lower", "upper", "mixed", "none"),
-    ("PLATE", "spaces"): ("yes", "no"),
-    ("PLATE", "region_sep"): ("space", "none", "other"),
-}
+# READ FROM THE REGISTRY, in registry order — every type's feature_labels in the
+# order the record declares them, the eleven v5 records first (S4). The v6 rows
+# are added by the same read (SPEC §2.1 C02: keep_v5 + adopt_v6), and `NAME`'s
+# TWO ROMANIZATION-ADJACENT ROWS COME FROM THE MIGRATED RECORD: the four-label
+# alphabet and the romanization table with its `latin:unknown` abstention. A
+# registry NAME that still declared the seven-label pre-split `script` and no
+# `translit` would (a) drop that abstention, (b) re-open the 50-of-62 g07 form
+# misses the split removed, and (c) leave `contracts.FORM_ABSTAIN` with a key no
+# label set declares — `test_form.test_abstain_is_closed_and_one_sided` reads
+# exactly that (SPEC §2.1 C04 adopt_gate, §5.1).
+FEATURE_LABELS: dict[tuple[str, str], tuple[str, ...]] = pii_types.feature_labels(
+    pii_types.TYPE_REGISTRY)
 
 # ABSTAIN (ruling 2026-09-22 on the comparator's question): `form_match` adds a
 # feature to `differs` iff a != b AND neither side carries the feature's abstain
@@ -897,16 +939,18 @@ FEATURE_LABELS: dict[tuple[str, str], tuple[str, ...]] = {
 # (Ирина, Марина, Дмитрий, Аркадий) is surname-shaped — so comparing `other`
 # as a reading made a PERFECT restoration a form MISS whenever the real value
 # and the minted substitute fell on opposite sides of the guess.
-FORM_ABSTAIN: dict[tuple[str, str], str] = {
-    ("NAME", "gram_case"): "unknown",
-    ("LOC", "generic_position"): "none",
-    ("NAME", "case_class"): "none",
-    ("LOC", "case_class"): "none",
-    ("EMAIL", "case_class"): "none",
-    ("PLATE", "case_class"): "none",
-    ("NAME", "script"): "none",
-    ("NAME", "order"): "other",
-}
+# READ FROM THE REGISTRY (S4). Every v5 row above is now the record's own
+# `abstain` tuple, including the one the split added:
+#   ("NAME", "translit") → "latin:unknown"
+# THE ROMANIZATION SYSTEM ABSTAINS WHEN THERE IS NO OPINION, and the label
+# `latin:unknown` IS that opinion's absence — the extractor's own words in
+# `form_tables.TRANSLIT_SIGNATURES` («nothing discriminating»). Comparing it as
+# though it were a CONVENTION is what made `DMITRIY KUZNETSOV` against
+# `EGOR BOBROV` differ; the same shape as `order` → `other`. `test_form` pins
+# the two abstentions together; a registry that dropped the row would leave
+# `FEATURE_LABELS` declaring `latin:unknown` with no abstention, which
+# `test_form.test_abstain_is_closed_and_one_sided` reads (SPEC §2.1 C04).
+FORM_ABSTAIN: dict[tuple[str, str], str] = pii_types.form_abstain(pii_types.TYPE_REGISTRY)
 # LEXEME-DEPENDENT FEATURES, and why a label is not enough for them.
 #
 # `form_match` is handed two DIFFERENT LEXEMES on the OUT leg — `observe.
@@ -1059,39 +1103,180 @@ class FeatureComparator(Protocol):
 #   squeezed  — the surface with every separator dropped, for the one type
 #               whose notation carries no other robust needle (see
 #               SQUEEZED_TYPES)
-NEEDLE_KINDS: tuple[str, ...] = ("whole", "stem", "digits", "date", "initials", "squeezed")
+NEEDLE_KINDS: tuple[str, ...] = pii_types.NEEDLE_KINDS
 
 # WHAT A PIECE OF A VALUE IS, BY TYPE. The roles named here are the ones whose
 # survival in free text is evidence that THIS value stood there; a role not
 # named is either generic (N4) or too short to identify (a house number, a
 # passport series — every street has a 79 and the leaf that holds one is judged
 # by N6 instead).
-IDENTIFYING_ROLES: dict[str, tuple[str, ...]] = {
-    "NAME": ("surname", "given", "patronymic"),
-    "LOC": ("street",),
-    "EMAIL": ("local",),
-    "PHONE": ("digits",),
-    "CARD": ("digits",),
-    "SNILS": ("digits",),
-    "INN": ("digits",),
-    "PASSPORT": ("digits",),
-    "DOB": ("iso",),
-    "DATE": ("iso",),
-    # Every part `parts_of` reads off a plate is one to three characters — a
-    # letter, three digits, a letter pair, a region — so a plate has no piece
-    # that identifies on its own and the whole is matched instead, respacing
-    # included (SQUEEZED_TYPES). Leaving the tuple empty and saying why is the
-    # point: a silent absence read as «no needles» is how the fake plate came
-    # to be invisible to `residual` for three rounds.
-    "PLATE": (),
-}
+IDENTIFYING_ROLES: dict[str, tuple[str, ...]] = pii_types.identifying_roles(pii_types.TYPE_REGISTRY)
+# A plate carries no identifying role: every part `parts_of` reads off it is one
+# to three characters — a letter, three digits, a letter pair, a region — so a
+# plate has no piece that identifies on its own and the whole is matched instead,
+# respacing included (SQUEEZED_TYPES). Leaving the tuple empty and saying why is
+# the point: a silent absence read as «no needles» is how the fake plate came to
+# be invisible to `residual` for three rounds.
 # Roles that belong to EVERYBODY, so a needle built from one proves nothing
 # about which value stood in a string: the settlement (a place reference every
 # Russian city shares), the grammatical gender, the mail domain, the street's
 # generic word. ONE list, where there used to be two that disagreed —
 # `observe.EXEMPT_ROLES` (what is not a LEAK) left `domain` in while the
 # comment beside it said a surviving «yandex.ru» is not a leak.
+#
+# IT DECIDES TWO THINGS AND THEY ARE THE SAME FACT READ TWICE. N4 says such a
+# piece is not a leak; the OUT funnel says the engine LEFT IT TRUE on purpose
+# (`pseudex/vault.py::_settlement_of`, «what the law does not protect stays
+# true»), so a leaf whose role is here is `engine_kept` rather than `not_masked`
+# when the mint record proves the engine was awake for that entity. And the
+# corpus's own builders must not demand a hop there
+# (`scenarios5.common.arg_hop`): a city inside an address cannot become
+# `observed` by any correct gateway, and a REQUIRED hop on it is a promise no
+# product can keep (g07, g01, g03, g04, g14).
 GENERIC_PIECE_ROLES: frozenset[str] = frozenset({"city", "gender", "domain", "street_type"})
+
+# --- the authorial leaf equivalence (SPIKE-Е, Е-6) ------------------------------------
+#
+# THE SAME DATUM UNDER TWO TOOL SCHEMAS IS ONE LEAF SEMANTICALLY, and the
+# instrument used to miss it because it looked for the corpus's TOOL NAME. The
+# corpus declares `courier_book.address.locality` and the agent writes
+# `crm_upsert_contact.contact.address.city` in the same turn: the settlement
+# crossed once and came back once, and the hop read `absent` (g08: 25 of the 30
+# `absent` of the group). The reading was about the corpus's spelling of the
+# leaf, not about the crossing.
+#
+# IT IS A TABLE AND NOT A MATCHER, deliberately. `actual_hops.py` warns that
+# matching events by TOOL NAME «can tie a re-search, a second delivery, or data
+# the agent had not been given to the wrong event»; the same warning applies to
+# a guess off a path's spelling. Every class below is AUTHORED, closed, and
+# grounded in the registry's own `FieldSpec.pii_type` / `.role` — the class key
+# IS the role the members declare, so a member of another role is refused (see
+# `equivalence_problems`). A class of one leaf folds nothing and is refused too.
+#
+# WHAT IS NOT HERE, AND WHY. `delivery_create_order.to_location.address` (the
+# whole address) and `courier_book.address` (the container) are not folded into
+# the parts: a whole is not a part, and counting a city leaf for an address leaf
+# would credit a value the agent never carried. `crm_find_contact.query.phone`
+# is not folded into `crm_upsert_contact.contact.phone`: both hold E.164 digits,
+# but a LOOKUP and a WRITE are different acts, and the spike's own warning is
+# about exactly that reading.
+LEAF_EQUIVALENCE: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("city", ("courier_book.address.locality",
+              "crm_upsert_contact.contact.address.city",
+              "crm_upsert_card.contact.address.city",
+              "delivery_create_order.to_location.city")),
+    ("street", ("courier_book.address.street",
+                "crm_upsert_contact.contact.address.street",
+                "crm_upsert_card.contact.address.street")),
+    ("house", ("courier_book.address.building",
+               "crm_upsert_contact.contact.address.house",
+               "crm_upsert_card.contact.address.house")),
+    ("flat", ("courier_book.address.sflat",
+              "crm_upsert_contact.contact.address.flat",
+              "crm_upsert_card.contact.address.flat")),
+)
+# `"tool.path"` → the class that folds it. A leaf in no class is equivalent to
+# no other leaf and the observer reads it exactly as it always has.
+LEAF_SEMANTICS: dict[str, str] = {leaf: name for name, leaves in LEAF_EQUIVALENCE
+                                  for leaf in leaves}
+# The FIRST leaf of each class — the canonical spelling the corpus keeps when a
+# family reaches the same semantic leaf through two tool schemas (R22 forbids
+# declaring both, so the builder must know which one to KEEP). The first member
+# is `courier_book.address.*` in every landed class, and that order is the
+# decision, not an accident of authoring: `courier_book` is the class's own
+# READ tool, the others are WRITES into another CRM's spelling.
+LEAF_CANONICAL: dict[str, str] = {name: leaves[0] for name, leaves in LEAF_EQUIVALENCE}
+
+
+def semantic_leaf(tool: str, path: str) -> str:
+    """The semantic leaf `(tool, path)` carries, or "" when it is in no class.
+
+    "" and not the path itself on purpose: a caller that treated «no class» as
+    a class of its own would fold every unknown leaf into one."""
+    return LEAF_SEMANTICS.get(f"{tool}.{path}", "")
+
+
+def is_canonical_leaf(tool: str, path: str) -> bool:
+    """Whether `(tool, path)` is the FIRST leaf its class folds — the one the
+    corpus KEEPS when a family reaches the same semantic leaf twice (R22). A
+    leaf in no class is canonical of nothing and answers False."""
+    name = semantic_leaf(tool, path)
+    return name != "" and LEAF_CANONICAL[name] == f"{tool}.{path}"
+
+
+def equivalent_leaves(tool: str, path: str) -> tuple[tuple[str, str], ...]:
+    """Every OTHER `(tool, path)` that carries the same semantic leaf, in the
+    table's own order. Empty for a leaf in no class — including the declared
+    leaf itself, which the caller already holds and must not be handed back as
+    its own alternative."""
+    name = semantic_leaf(tool, path)
+    if not name:
+        return ()
+    own = f"{tool}.{path}"
+    out: list[tuple[str, str]] = []
+    for group, leaves in LEAF_EQUIVALENCE:
+        if group != name:
+            continue
+        for leaf in leaves:
+            if leaf == own:
+                continue
+            other_tool, other_path = leaf.split(".", 1)
+            out.append((other_tool, other_path))
+    return tuple(out)
+
+
+def equivalence_problems(spec_for: "Callable[[str, str], FieldSpec | None]",
+                         table: Sequence[tuple[str, tuple[str, ...]]] | None = None) -> list[str]:
+    """Every violation of the leaf-equivalence table, never the first one only.
+
+    THE LOOKUP IS A PARAMETER, the shape `tools.registry_problems` uses and for
+    the same reason: `tools` imports THIS module, so a checker that read
+    `REGISTRY_V5` itself would close the cycle — and a rule that cannot be shown
+    to fail is not a rule. `table` defaults to the landed one so the test can
+    hand a deliberately broken copy and demand a red.
+
+    WHAT IS CHECKED, and each clause is a way the table could lie: every member
+    names a leaf the registry knows; a member appears in exactly one class (a
+    leaf in two classes would make equivalence intransitive); every member
+    declares the class's own role; every member of a class declares ONE pii_type
+    (folding a LOC and a NAME leaf would let one value answer for another); and
+    no class folds fewer than two leaves (a class of one proves nothing and
+    would make `semantic_leaf` a lookup with no partner)."""
+    problems: list[str] = []
+    rows = LEAF_EQUIVALENCE if table is None else table
+    seen: dict[str, str] = {}
+    for name, leaves in rows:
+        if len(leaves) < 2:
+            problems.append(f"class {name!r} folds {len(leaves)} leaf — a class of one "
+                            f"folds nothing")
+        types: set[str] = set()
+        for leaf in leaves:
+            if "." not in leaf:
+                problems.append(f"class {name!r}: {leaf!r} is not a «tool.path» pair")
+                continue
+            if leaf in seen:
+                problems.append(f"class {name!r}: {leaf} is already in class {seen[leaf]!r}; "
+                                f"equivalence would not be transitive")
+                continue
+            seen[leaf] = name
+            tool, path = leaf.split(".", 1)
+            try:
+                spec = spec_for(tool, path)
+            except Exception as error:  # noqa: BLE001 - the exception IS the verdict
+                # A lookup that RAISES on an unknown tool (v4's `spec_for` indexes
+                # its registry) says the same thing a None does: the table names
+                # a leaf no tool carries, which is a typo in the table.
+                problems.append(f"class {name!r}: {leaf} resolves to nothing ({error!r})")
+                continue
+            if spec is None:
+                problems.append(f"class {name!r}: {leaf} is no argument leaf of {tool!r}")
+                continue
+            if spec.role != name:
+                problems.append(f"class {name!r}: {leaf} declares role {spec.role!r}")
+            types.add(spec.pii_type)
+        if len(types) > 1:
+            problems.append(f"class {name!r}: members carry several types {sorted(types)}")
+    return problems
 # A piece of a value short enough to stand inside an unrelated word is not
 # evidence that the value was there. Four characters is v4's own floor in
 # `residual` detection and the public harness's; a shorter one matched «Лев»
@@ -1119,14 +1304,27 @@ PHONE_SIGNATURE_DIGITS: int = 10
 # Types whose identity is a DIGIT SIGNATURE and never a spelling: the model
 # reformats «+79990001122» as «8 999 000-11-22» and a letters-and-stems test
 # finds nothing at all.
-DIGIT_PIECE_TYPES: frozenset[str] = frozenset({"PHONE", "CARD", "SNILS", "INN", "PASSPORT"})
+DIGIT_PIECE_TYPES: frozenset[str] = pii_types.digit_piece_types(pii_types.TYPE_REGISTRY)
 # A date is neither: «14.03.1987» and «1987-03-14» share no substring at all.
-DATE_PIECE_TYPES: frozenset[str] = frozenset({"DOB", "DATE"})
-# Types whose value a model rewrites in another ALPHABET or squeezes to
-# initials. NAME only, and deliberately: `FORM_FEATURES` declares `script` and
-# `initials` for NAME alone, and a transliterated STREET needle would fire on
-# ordinary Latin text in an address field with no derived form present.
-DERIVED_PIECE_TYPES: frozenset[str] = frozenset({"NAME"})
+DATE_PIECE_TYPES: frozenset[str] = pii_types.date_piece_types(pii_types.TYPE_REGISTRY)
+# Types whose value a model rewrites in another ALPHABET, ROMANIZES, or squeezes
+# to initials.
+#
+# THE WIDENING IS AN ACCEPTED, RECORDED DECISION (V1-F3, SPEC §5.2, D-080), NOT
+# A SILENT CONSEQUENCE OF THE registry EDGE. The v5 literal was {NAME} and the
+# v5 comment said so deliberately; the predicate now fires for every record that
+# declares `script` or `translit` or `initials`, and it is called with the FULL
+# 66-record registry, so the live set is NAME + 15 v6 alphanumeric identifiers.
+# The same read widens DIGIT_PIECE_TYPES 5 → 45 and SQUEEZED_TYPES 1 → 22 (DATE
+# stays 2). `observe.py` binds these at import (`DERIVED_TYPES`/`DIGIT_TYPES`/
+# `SQUEEZED_TYPES`) and uses them to GENERATE needles and to decide survival, so
+# the widening moves measurement behaviour: for an alphanumeric identifier a
+# `script` question is legitimate, which is why the decision is accept-and-pin
+# rather than refuse. The v6 test could not see it because it compared the v5
+# SLICE against hand-copied literals; `test_pii_types.test_accepted_widening`
+# pins the live cardinalities against the decision and prints the per-registry
+# values, so a silent move is RED until the decision is re-taken.
+DERIVED_PIECE_TYPES: frozenset[str] = pii_types.derived_piece_types(pii_types.TYPE_REGISTRY)
 # The one type matched with every separator dropped. A plate is a letter, three
 # digits, a letter pair and a region: the four groups cannot form by accident
 # across a word boundary, which is why the squeeze is safe HERE and is not
@@ -1134,7 +1332,67 @@ DERIVED_PIECE_TYPES: frozenset[str] = frozenset({"NAME"})
 # needle. Without it a gateway that left the fake plate in the tool argument
 # RESPACED was invisible to all 29 lines while the same fake written verbatim
 # was caught — the critical-defect line defeated by inserting spaces.
-SQUEEZED_TYPES: frozenset[str] = frozenset({"PLATE"})
+SQUEEZED_TYPES: frozenset[str] = pii_types.squeezed_types(pii_types.TYPE_REGISTRY)
+
+# --- THE ONE READING OF «IS THIS THE SAME VALUE» (SPIKE-Ж, Ж-1) ----------------
+#
+# ONE TABLE, AND EVERY QUESTION ABOUT A VALUE'S IDENTITY READS IT. The spike
+# measured the same question answered by THREE copies — `metrics.value_matches`
+# (byte equality with a LOC exception), `observe.part_matches` (digits / ISO /
+# squeeze), `revise._same_value` (a third fold) — and which copy a hop got was
+# decided by whether its `FieldSpec.role` was empty: `calendar_free.person`
+# (NAME), `vehicle_check.plate` (PLATE) and `snils_verify.snils` (SNILS) all
+# declare `role=''` and took the strict one. 24 PLATE and 9 NAME hops then read
+# as the GATEWAY's miss on values the tool's own parser had ACCEPTED
+# (`tools._vehicle_check_parse` strips spaces and upper-cases; the
+# `_calendar_free_parse` takes one to three words in any order). Two copies are
+# one drift away, and the third had already left.
+#
+# THE QUESTION IS NOTATION-TOLERANT ON PURPOSE. `observe.part_matches`'s own
+# docstring states the doctrine — «the spacing is `form_hOUT`'s question, and
+# charging the value line for it would make one defect two» — and the owner
+# ruling for class Ж is the same doctrine one level up: the value line is
+# notation-BLIND (it mirrors the agent's form and does not judge the tool's
+# schema), while the field's declared notation stays an authoritative marker for
+# the substitution on the OUT leg (`tools.LEAF_NOTATION`). So separators,
+# spaces, case class, word order and the dotted notation the tool happens to
+# want are NOT this table's business: only what makes two spellings ONE VALUE.
+#
+# A NAMED READING, NOT A LAMBDA, because a closed vocabulary is what a test can
+# hold: `test_contracts` pins every value here to a reading the implementation
+# declares and every type of `TYPES` to a row, and `test_spike_zh` pins that the
+# three former copies answer alike on a shared pair set.
+#
+# WHY `PHONE` IS NOT THE NEEDLE RULE, and why «just call `part_matches`» would
+# be wrong: the needle layer asks IDENTIFICATION — «did this value survive being
+# rewritten», where the last ten digits are the signature that the rewrite left
+# the number intact. A LEAF asks EQUALITY, and there `+1 916…` and `+7 916…`
+# share those ten digits while being two different numbers. Hence a reading that
+# carries the PREFIX CLASS beside them. This is the one place where the value
+# line deliberately does NOT reduce to the needle layer, and the reason is
+# written here rather than rediscovered (SPIKE-Ж, risk 3).
+VALUE_READINGS: tuple[str, ...] = (
+    "fold",         # case- and ё-folded text — the default
+    "squeeze",      # every separator dropped (PLATE)
+    "digits",       # the type IS its digits (SNILS / INN / CARD / PASSPORT)
+    "phone",        # the last ten digits AND the prefix class (+7 ≡ 8 ≢ +1)
+    "iso",          # the ISO fold of a date, whatever notation wrote it
+    "name_parts",   # the parts as a MULTISET: «Евгений Вольнов» ≡ «вольнов евгений»
+    "place_roles",  # the roles street / house / flat; the settlement is excluded
+)
+VALUE_NORMALISERS: dict[str, str] = {
+    "NAME": "name_parts",
+    "LOC": "place_roles",
+    "PHONE": "phone",
+    "EMAIL": "fold",
+    "DOB": "iso",
+    "DATE": "iso",
+    "CARD": "digits",
+    "SNILS": "digits",
+    "INN": "digits",
+    "PASSPORT": "digits",
+    "PLATE": "squeeze",
+}
 
 
 @dataclass(frozen=True)
@@ -1303,9 +1561,17 @@ METRICS: tuple[MetricSpec, ...] = (
     MetricSpec("leak", "IN hops the gateway ALTERED before the model saw them", "IN hops shown to the model (observed ∪ leaked; `absent` was shown to nobody)", "hop", "public", False),
     MetricSpec("coverage", "IN hops of which NO piece survived — by the span the gateway replaced where the value stood in a MESSAGE, by what the model read where it did not (a seed value stood in no message, so «was its span masked» is a question about nothing); city / generic word / marker are not PII", "IN hops shown to the model (observed ∪ leaked)", "hop", "public", False),
     MetricSpec("typed", "IN/tool and IN/document hops the gateway typed as the declared type (DOB and DATE are ONE answer)", "IN/tool and IN/document hops whose slot a replaced piece covers, so a type was exposed", "hop", "public", False),
-    MetricSpec("round_trip", "OUT/tool_arg leaves the gateway RESTORED to the real value of THAT leaf (absolute, not paired); a leaf it never masked (`unmasked`) is a miss, and so is one the agent never wrote", "OUT/tool_arg leaves of items altered on the way in", "leaf", "public", False),
-    MetricSpec("round_trip_repaired", "the same, counting a value that arrived REPAIRED (the same `unmasked` and `absent` misses)", "OUT/tool_arg leaves of items altered on the way in", "leaf", "public", True),
-    MetricSpec("end_to_end", "declared OUT/tool_arg leaves the gateway RESTORED to the real value of THAT leaf — a leaf that carried no substitute (`unmasked`) is a MISS, so a passthrough scores 0 here and not 100 (F1.3)", "all declared OUT/tool_arg leaves", "leaf", "public", False),
+    MetricSpec("round_trip", "OUT/tool_arg leaves the gateway RESTORED to the real value of THAT leaf (absolute, not paired); a leaf it never masked (`engine_kept` / `not_masked` / `leaf_foreign`) is a miss, and so is one the agent never wrote", "OUT/tool_arg leaves of items altered on the way in", "leaf", "public", False),
+    MetricSpec("round_trip_repaired", "the same, counting a value that arrived REPAIRED (the same unmasked-and-`absent` misses)", "OUT/tool_arg leaves of items altered on the way in", "leaf", "public", True),
+    MetricSpec("end_to_end", "declared OUT/tool_arg leaves the gateway RESTORED to the real value of THAT leaf — a leaf that carried no substitute (now `engine_kept` / `not_masked`) is a MISS, so a passthrough scores 0 here and not 100 (F1.3)", "all declared OUT/tool_arg leaves", "leaf", "public", False),
+    # THE HONEST SHARE, BESIDE THE STRICT ONE AND NEVER INSTEAD OF IT (SPIKE-Е,
+    # Е-3). The strict line is the protection against a passthrough and the
+    # lesson of v4's D3; this one answers the question the strict denominator
+    # buries — of the leaves the ENGINE had something to do on, how many came
+    # back right. The two differ by the population and by NOTHING else: both
+    # read `metrics.leaf_value_ok` (Е-7), so a reader may print them side by
+    # side, and the strict line is printed FIRST (`report.beside_of`).
+    MetricSpec("end_to_end_written", "declared OUT/tool_arg leaves of the RESTORABLE population the gateway restored to the real value of THAT leaf — the engine's honest share; the strict `end_to_end` is its headline and prints first", "declared OUT/tool_arg leaves with status observed / residual / leaf_foreign (`absent` is the agent's, `engine_kept` and `not_masked` had nothing to restore and are printed by `out_no_mint`)", "leaf", "public", False),
     MetricSpec("overmask", "negatives NOT altered", "all negatives", "negative", "public", False),
     MetricSpec("consistency", "items whose every mention carried ONE substitute", "items the model met in more than one PLACE — a distinct (`msg`, `result_seq`) pair, so a message is a place and so is EACH tool result; keying on `msg` alone made every result one place and left the population empty on the whole corpus", "item", "public", False),
     MetricSpec("stability", "items whose substitute did not change between requests", "items mentioned in more than one request", "item", "public", False),
@@ -1328,8 +1594,18 @@ METRICS: tuple[MetricSpec, ...] = (
     # benchmark's). The `spoken` axis is where a reader sees that, so the
     # sub-100 figure is never read as an instrument defect.
     MetricSpec("form_hIN", "IN hops where form_match == same", "IN hops observed (not leaked); read on the `spoken` axis — the whole residue is dictated values against written substitutes (Б27), an ENGINE finding", "hop", "v5_new", False),
-    MetricSpec("form_hOUT", "OUT hops where form_match == same", "OUT hops the agent WROTE (observed ∪ unmasked; `absent` is printed beside the line by `out_absent`)", "hop", "v5_new", False),
+    MetricSpec("form_hOUT", "OUT hops where form_match == same", "OUT hops the agent WROTE (`contracts.OUT_HOP_WRITTEN_STATUSES`; `absent` is printed beside the line by `out_absent`, and the funnel's own counts by `out_written` / `out_no_mint`)", "hop", "v5_new", False),
     MetricSpec("out_absent", "declared OUT hops the agent never wrote", "all declared OUT hops", "hop", "v5_new", True),
+    # THE FUNNEL PRINTED, COUNT BY COUNT. `unmasked` used to be one cell for
+    # three facts and the report had no cell in which any of them was named:
+    # these are the four statuses the split created plus the population they
+    # were carved out of. They are DIAGNOSTIC the way `out_absent` is — a count
+    # beside the line it explains, not a success criterion of its own.
+    MetricSpec("out_written", "declared OUT hops the agent WROTE something in (`absent` is the only status outside) — the population `form_hOUT` counts and `out_absent` leaves out", "all declared OUT hops", "hop", "v5_new", True),
+    MetricSpec("out_no_mint", "declared OUT hops the engine had NOTHING to restore on — `engine_kept` (a generic part left real on purpose, with the mint recorded) plus `not_masked` (the leaf already held the real value); what `end_to_end_written` subtracts, printed as one count", "all declared OUT hops", "hop", "v5_new", True),
+    MetricSpec("out_engine_kept", "declared OUT hops where the engine DELIBERATELY left the real value: a generic role (settlement / generic word / domain / gender) and the mint record proves it was awake", "all declared OUT hops", "hop", "v5_new", True),
+    MetricSpec("out_not_masked", "declared OUT hops where the leaf already held the real value and no substitute was minted for it (a passthrough, or a leaf naming no generic role)", "all declared OUT hops", "hop", "v5_new", True),
+    MetricSpec("out_leaf_foreign", "declared OUT hops where a THIRD value stands: neither this datum's substitute nor its real value — invisible to `form_match` (`produced == reference`, no verdict)", "all declared OUT hops", "hop", "v5_new", True),
     MetricSpec("toolresult_masked", "declared tool results where no real value reached the model", "results the case DECLARES personal data in (`returns[].result_item_ids`) and the agent obtained", "result", "v5_new", False),
     MetricSpec("answer_real", "answers where every REQUIRED datum is the real value — any inflection of the part(s) the answer names — in the agent's form, and no substitute is left anywhere in the reply", "answers the case declares a REQUIRED OUT/answer hop for; an answer with nothing to require is outside it and counted by `answer_optional_only`", "answer", "v5_new", False),
     # THE V4 DISEASE, CAUGHT IN A NEW PLACE (J1.1). `all([])` is True, and 720
@@ -1345,7 +1621,16 @@ METRICS: tuple[MetricSpec, ...] = (
     MetricSpec("answer_optional_only", "answers whose case declares answer hops and obliges NONE of them — what `answer_real`'s denominator leaves out", "answers the case declares an OUT/answer hop for", "answer", "v5_new", True),
     MetricSpec("chain_value", "A→B transitions where the real value in B equals the real value from A", "all A→B transitions", "transition", "v5_new", False),
     MetricSpec("chain_form", "A→B transitions with form_match == same on OUT(B)", "all A→B transitions", "transition", "v5_new", False),
+    MetricSpec("chain_value_written", "the same, over the transitions whose OUT(B) leaf is RESTORABLE — the hand-over the engine was asked to perform", "A→B transitions with a restorable OUT(B) leaf (observed / residual / leaf_foreign)", "transition", "v5_new", False),
+    MetricSpec("chain_form_written", "the same, the FORM question", "A→B transitions with a restorable OUT(B) leaf", "transition", "v5_new", False),
     MetricSpec("multi_all_out", "turns where EVERY OUT argument is right in value and form", "turns with N ≥ 2 OUT hops", "turn", "v5_new", False),
+    # THE SAME TURNS, THE HONEST POPULATION (SPIKE-Е witness g02: 55 of 56
+    # multi-hop turns had NEITHER leaf written, and the strict line printed
+    # 0/56 — a fact about the scene, read as a defect of the engine). A turn in
+    # which nothing was restorable is outside this denominator; a turn with one
+    # restorable leaf is judged on that leaf. The strict line still counts the
+    # turn nobody wrote as a miss.
+    MetricSpec("multi_all_out_written", "turns where EVERY RESTORABLE OUT argument is right in value and form (a turn with nothing restorable is outside the denominator)", "turns with N ≥ 2 declared non-optional OUT hops and ≥ 1 restorable leaf", "turn", "v5_new", False),
     MetricSpec("multi_consistency", "turns where one value → one substitute across all its calls", "turns with N ≥ 2 calls", "turn", "v5_new", False),
     MetricSpec("retry_form", "retries where OUT form matched the agent's form on EVERY attempt", "retries of one tool", "retry", "v5_new", False),
     MetricSpec("memory_consistency", "values a `MemorySpec` names, mentioned in > 1 turn with ONE substitute", "values a `MemorySpec` names", "value", "v5_new", False),
@@ -1530,6 +1815,55 @@ class AnswerSpan:
     restored_end: int
 
 
+# THE MODEL'S OWN CHRONOLOGY (Codex contract, 2026-09-27). `request_count` is
+# «how many pushes the connector made» and it stays exactly that — a historical
+# number is never reinterpreted by a later reader. `ModelTrace` is the ADDITIVE
+# record of what the PROVIDER actually returned: one `ModelResponse` per
+# completed provider response, in order, each carrying the request ordinal the
+# arm saw, the user turn it answered, how many tool results were ALREADY
+# available to it, the raw text it wrote and that text restored through the
+# gateway's current state. `call_requests` maps each ACCEPTED tool call, in call
+# order, to the `request` of the response that emitted it — the fact
+# `request_index` cannot express, because two tool calls of ONE response execute
+# sequentially while the second's result was NOT visible to the response that
+# asked for both.
+#
+# None means «this connector never called the `response` hook» (Claude, the
+# legacy paths, a perfect simulation), NEVER «no model was asked». A connector
+# that does not call `response` gets None rather than a manufactured per-call
+# model request: a guess would put a chronology in the record that nobody
+# observed, which is the defect class this instrument exists to avoid.
+MODEL_TRACE_FORMAT: int = 1
+
+
+@dataclass(frozen=True)
+class ModelResponse:
+    """One COMPLETED provider response of the model loop.
+
+    `available_results` is the count of accepted tool calls BEFORE this
+    response's OWN function calls are processed, so two calls of one response
+    both read 0 and the NEXT response reads 2. `raw`/`restored` are the
+    response's text as the provider wrote it and as the gateway's CURRENT state
+    restores it; an empty `raw` is a real observation (a pure tool-call turn),
+    which is why the hook fires even when the text is empty.
+    """
+
+    request: int
+    turn: int
+    available_results: int
+    raw: str
+    restored: str
+
+
+@dataclass(frozen=True)
+class ModelTrace:
+    """The provider chronology of one arm. `len(call_requests) == len(calls)`:
+    every accepted call is mapped to the response that emitted it, in order."""
+
+    responses: tuple[ModelResponse, ...]
+    call_requests: tuple[int, ...]
+
+
 @dataclass(frozen=True)
 class ArmRunV5:
     """v4 `ArmRun` + what the IN/tool, OUT/answer, memory and RAG questions
@@ -1581,6 +1915,27 @@ class ArmRunV5:
     # customer saw in turn 2 and not in the final answer was counted nowhere;
     # `residual` now takes `> 0` as a miss of the observation.
     turn_residual: int
+    # THE MODEL'S CHRONOLOGY, additive and explicit (see `ModelTrace`). It has
+    # NO default: every constructor states whether it observed the provider, so
+    # a path that forgot the field fails at construction instead of silently
+    # writing `None` and looking like «the connector has no chronology».
+    model_trace: ModelTrace | None
+    # OD-76 / TZ §14.3: the MESSAGE-span replacements with the engine's type
+    # label — the IN/user analogue of `ToolResultRecord.pieces`, which carry
+    # the same four fields for a TOOL RESULT's spans. Written ONLY on a run with
+    # a v6 case; empty (and omitted from the record) otherwise, so the
+    # old-corpus replay stays byte-identical and `typed_user` prints «н/п»
+    # (0/0) rather than a fabricated zero. Each entry is
+    # (msg index, start, end, engine_type) in the ORIGINAL message's offsets.
+    #
+    # BOTH FIELDS STAY (SPEC §2.1 C02 keep_v5 + adopt_v6, and the S2 rows' own
+    # cross-row dependency): `model_trace` is v5's field with NO default — S2's
+    # `test_judge` calls `ArmRunV5(..., model_trace=None)` and would raise
+    # TypeError without it — and `message_pieces` is v6's, defaulted so the 834
+    # old-corpus constructors that never heard of it keep building the same
+    # record. `message_pieces` is last on purpose: a defaulted field may not
+    # precede an undefaulted one in a dataclass.
+    message_pieces: tuple[tuple[int, int, int, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1589,22 +1944,46 @@ class HopObservation:
     False for a crossing the agent made that the case did not declare — an
     extra call; it is observed (it is a real crossing of real data) but
     counts in `form_h*` only, never in `chain_*` / `multi_*` whose
-    denominators are declared hops. `status`: `observed` (compared),
-    `leaked` (IN: the real value reached the model unaltered — no form to
-    compare, counted by `leak`/`toolresult_masked`), `residual` (OUT: a
-    substitute reached the consumer — counted by `residual`), `unmasked`
-    (OUT: the leaf the agent wrote carried no substitute at all, so there is
-    nothing to restore and nothing to compare — a MISS everywhere a form or a
-    value is asked for, never a hit, never dropped), `absent` (a required hop
-    that did not happen). `verdict` is set iff status == "observed".
+    denominators are declared hops.
 
-    WHY `unmasked` IS ITS OWN STATUS AND NOT `observed`. When the gateway
-    missed the value on the way IN, the agent writes the REAL value, the
-    engine restores nothing, and `produced == reference` — so `form_match`
-    said «same» and a gateway that masked NOTHING printed 100% on
-    `form_hOUT`, `chain_form`, `chain_value` and `multi_all_out`. The hop
-    happened; there was simply no substitute in it, and a comparison of a
-    string with itself is not evidence about the product."""
+    `status` IS ONE FACT, NEVER THREE. The OUT leaf funnel of
+    `observe._out_status` answers a single question at a time and the ORDER of
+    its branches is the contract:
+
+    * `observed` — the leaf carried the substitute and the engine restored the
+      real value of THAT leaf (the compared, earnable state).
+    * `residual` — the leaf carried the substitute and the substitute is still
+      there: a fake reached the consumer (counted by `residual`).
+    * `engine_kept` — the leaf does NOT carry the substitute, it carries the
+      CORRECT real value, its role is generic (`GENERIC_PIECE_ROLES`) and the
+      run's mint record proves the engine was awake for this entity: the
+      settlement inside an address, the generic street word, the mail domain,
+      the gender. `pseudex/vault.py::_settlement_of` leaves those real BY
+      PRODUCT DECISION — «what the law does not protect stays true» — so this
+      is the engine working, and it is a MISS nowhere.
+    * `not_masked` — the same shape WITHOUT that proof: the agent wrote the
+      real value because the gateway never minted a substitute (a passthrough),
+      or the leaf names no generic role. There was nothing to restore.
+    * `leaf_foreign` — a THIRD value stands in the leaf: neither this datum's
+      substitute nor its real value. `form_match` cannot see it (`verdict` is
+      None, `produced == reference`), so before the split it was invisible.
+    * `absent` — the agent wrote NOTHING at the leaf: a required hop inside a
+      made call whose slot is empty, or a call the case declared and the agent
+      never made. A fact about the AGENT, counted by `out_absent`.
+    * `leaked`, `unmasked` — IN hops and the ANSWER leg, unchanged. `unmasked`
+      is still EMITTED by `_out_answer` (the reply held the real value because
+      the gateway never minted) and is still READ off every artifact on disk:
+      `records.py` checks this vocabulary on READ, so removing it would take a
+      saved replay down three weeks after the run that cost the money.
+
+    `verdict` is set iff status == "observed".
+
+    WHY `not_masked` IS NOT `observed`. When the gateway missed the value on
+    the way IN, the agent writes the REAL value, the engine restores nothing,
+    and `produced == reference` — so `form_match` said «same» and a gateway that
+    masked NOTHING printed 100% on `form_hOUT`, `chain_form`, `chain_value` and
+    `multi_all_out`. The hop happened; there was simply no substitute in it, and
+    a comparison of a string with itself is not evidence about the product."""
 
     case_id: str
     repeat: int
@@ -1617,7 +1996,105 @@ class HopObservation:
     verdict: FormVerdict | None
 
 
-HOP_STATUSES: tuple[str, ...] = ("observed", "leaked", "residual", "unmasked", "absent")
+# EVERY STATUS THE OBSERVER MAY EMIT, and the closed vocabulary a saved row is
+# READ against. The OUT funnel no longer emits `unmasked` (the three facts it
+# hid are `engine_kept` / `not_masked` / `leaf_foreign` now); the answer leg
+# still does, and so does every artifact written before this round.
+HOP_STATUSES: tuple[str, ...] = ("observed", "leaked", "residual", "unmasked", "absent",
+                                 "engine_kept", "not_masked", "leaf_foreign")
+# THE LEAVES THE AGENT WROTE SOMETHING IN: what `form_hOUT` counts, and what
+# `absent` is not. `residual` belongs here and used to be left out of that line
+# only because the old funnel spelled the pair from the other end («observed ∪
+# unmasked»); a leaf holding a fake the agent wrote IS written, and leaving it
+# out let the one state where a fake reached the customer's tool be the one
+# state the form line did not judge.
+OUT_HOP_WRITTEN_STATUSES: frozenset[str] = frozenset({
+    "observed", "residual", "engine_kept", "not_masked", "leaf_foreign"})
+# THE LEAVES THE ENGINE HAD SOMETHING TO DO ON — the honest denominator of
+# `end_to_end_written` and its siblings. `observed`/`residual` put a substitute
+# in the agent's hand, so the restoration was the engine's to perform;
+# `leaf_foreign` says a third value arrived where a datum was at stake, which is
+# a failure the strict line counts and a denominator that dropped it would hide.
+# `engine_kept` (nothing to restore) and `not_masked` (the leaf already held the
+# real value) are OUT: counting either would let a gateway that protected
+# nothing earn a share of the round trip, and both are printed beside the line
+# as counts (`out_engine_kept`, `out_not_masked`, `out_no_mint`).
+OUT_HOP_RESTORABLE_STATUSES: frozenset[str] = frozenset({
+    "observed", "residual", "leaf_foreign"})
+
+
+# --- THE v6 FUNNEL IS A SEPARATE, NAMED PROJECTION ------------------------------
+#
+# V1 SPEC §4 (`COV-INTEGRATION-KEEP-V5`). The live conflict between the two
+# branches is a DENOMINATOR, not a vocabulary: the v6 five names are a STRICT
+# SUBSET of the eight above. The resolution is three statements that this block
+# makes mechanical rather than remembered:
+#
+#   1. `HOP_STATUSES` stays the eight-entry READ vocabulary. It is not edited
+#      here, and a saved row keeps reading — legacy `unmasked` included.
+#   2. The v5 write funnel and its denominators (`OUT_HOP_WRITTEN_STATUSES`,
+#      `OUT_HOP_RESTORABLE_STATUSES`) stay exactly as they are. The eight
+#      status-split diagnostic rows keep printing.
+#   3. The v6 five-status funnel is adopted as THIS projection: named, total
+#      over the read vocabulary, with its OWN declared denominator — never by
+#      editing the v5 line and never by silently re-mapping one label into
+#      three.
+#
+# WHY THE THREE v5-ONLY OUT STATUSES LAND ON `unmasked`, STATED HONESTLY. v6 has
+# ONE name for «no substitute of ours was restored at this leaf»; the v5 split
+# names THREE causes (`engine_kept` nothing to restore, `not_masked` the leaf
+# already held the real value, `leaf_foreign` a third value arrived). The v6
+# funnel cannot recover that distinction, and the projection does NOT pretend
+# to: it folds them into the one v6 name and the v5 split counts keep being
+# printed beside it (`l9.statuses` beside `l9.read_split` in the v6 report). The
+# forbidden move is the REVERSE one — inventing `engine_kept` / `not_masked` /
+# `leaf_foreign` for an old row whose information was destroyed at the status
+# assignment. Nothing here does that, and no caller re-derives this by hand:
+# `v6_funnel_status` is the only door.
+V6_FUNNEL_STATUSES: tuple[str, ...] = ("observed", "leaked", "residual", "unmasked",
+                                       "absent")
+# THE PROJECTION'S OWN DECLARED DENOMINATOR — the population the v6 `form_hOUT`
+# line counts, written down here so it cannot be borrowed from the v5 line. It
+# is NOT `OUT_HOP_WRITTEN_STATUSES`: the v6 line counts the write as
+# `observed ∪ unmasked`, while the v5 line counts
+# `observed ∪ residual ∪ engine_kept ∪ not_masked ∪ leaf_foreign`. The two
+# populations are incomparable and both are printed.
+V6_FUNNEL_DENOMINATOR: frozenset[str] = frozenset({"observed", "unmasked"})
+V6_FUNNEL_READ_TO_FUNNEL: dict[str, str] = {
+    "observed": "observed",
+    "leaked": "leaked",
+    "residual": "residual",
+    "unmasked": "unmasked",
+    "absent": "absent",
+    # the three v5-only OUT statuses — folded, declared, and never invented back
+    "engine_kept": "unmasked",
+    "not_masked": "unmasked",
+    "leaf_foreign": "unmasked",
+}
+
+
+def v6_funnel_status(read_status: str) -> str:
+    """The one door from the eight-entry READ vocabulary into the v6 five.
+
+    Raises on a status outside `HOP_STATUSES` rather than inventing a sixth
+    funnel name: a reader that met an unknown label must be repaired, not
+    silently bucketed."""
+    if read_status not in HOP_STATUSES:
+        raise ValueError(f"v6_funnel_status: {read_status!r} is not one of "
+                         f"contracts.HOP_STATUSES {list(HOP_STATUSES)}")
+    return V6_FUNNEL_READ_TO_FUNNEL[read_status]
+
+
+def v6_funnel_split(statuses: dict[str, int]) -> dict[str, int]:
+    """The five v6 counts for one hop-status histogram, beside the read split.
+
+    `statuses` is keyed by the READ vocabulary (what the observer emits); the
+    return is keyed by `V6_FUNNEL_STATUSES`. An unknown key raises through
+    `v6_funnel_status`."""
+    out = {name: 0 for name in V6_FUNNEL_STATUSES}
+    for read_status, count in statuses.items():
+        out[v6_funnel_status(read_status)] += count
+    return out
 
 
 @dataclass(frozen=True)

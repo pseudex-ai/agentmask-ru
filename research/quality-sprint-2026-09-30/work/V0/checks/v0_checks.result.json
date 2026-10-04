@@ -1,0 +1,61 @@
+{
+ "v5_ref": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+ "v6_ref": "fad9c7466ea1221282214e6c747ca373ee7e6a55",
+ "results": [
+  {
+   "check": "overlap-24",
+   "verdict": "GREEN",
+   "expected": "GREEN",
+   "detail": "recomputed=24 declared=24 identical=True"
+  },
+  {
+   "check": "type-55",
+   "verdict": "GREEN",
+   "expected": "GREEN",
+   "detail": "ORIGIN_V6=55 NEW_ITEM_TYPES=55 grammar_uncertain=9 -> ['BIRTH_CERT', 'CIVIL_ACT_CERT', 'RESIDENCE_PERMIT', 'OSAGO_POLICY', 'EXEC_DOC_NO', 'REFERRAL_NUMBER', 'STUDENT_ID_NUMBER', 'PNR', 'E_TICKET_NUMBER']"
+  },
+  {
+   "check": "v5-tables-reproduced",
+   "verdict": "RED",
+   "expected": "RED",
+   "detail": "tables_diverging=['FEATURE_LABELS', 'FORM_ABSTAIN', 'FORM_FEATURES'] detail=FEATURE_LABELS: ('NAME', 'script'): v5=('cyrillic', 'latin', 'mixed', 'none') v6=('cyrillic', 'latin:gost', 'latin:icao', 'latin:bgn', 'latin:unknown', 'mixed', 'none'); FORM_ABSTAIN: ('NAME', 'translit'): v5='latin:unknown' v6=None; FORM_FEATURES: NAME: v5=('case_class', 'gram_case', 'order', 'parts', 'initials', 'script', 'translit', 'hyphen_particle') v6=('case_class', 'gram_case', 'order', 'parts', 'initials', 'script', 'hyphen_particle')"
+  },
+  {
+   "check": "v6-test-literal-copy",
+   "verdict": "RED",
+   "expected": "RED",
+   "detail": "copied_tables_diverging_from_live_v5=['FEATURE_LABELS', 'FORM_ABSTAIN', 'FORM_FEATURES'] live_v5_matches_copy=False"
+  },
+  {
+   "check": "status-funnel",
+   "verdict": "RED",
+   "expected": "RED",
+   "detail": "v5_live_statuses=['absent', 'engine_kept', 'leaf_foreign', 'leaked', 'not_masked', 'observed', 'residual'] v6_HOP_STATUSES=['absent', 'leaked', 'observed', 'residual', 'unmasked'] v6_missing_from_v5=['unmasked'] v5_missing_from_v6=['engine_kept', 'leaf_foreign', 'not_masked']"
+  },
+  {
+   "check": "checksum-policy",
+   "verdict": "RED",
+   "expected": "RED",
+   "detail": "generated_checksum_types=11 samples_valid=11/11 owner_Q2_line=0/11 M8_mutant_line=0/11 Q2_equals_M8=True boundary_1.0_met_under_Q2=False (the perfect arm is indistinguishable from the mutant on this line)"
+  },
+  {
+   "check": "script-translit",
+   "verdict": "RED",
+   "expected": "RED",
+   "detail": "v6_NAME_features_has_translit=False v6_script_labels=('cyrillic', 'latin:gost', 'latin:icao', 'latin:bgn', 'latin:unknown', 'mixed', 'none') v6_translit_abstain=None v5_live_NAME_features=('case_class', 'gram_case', 'order', 'parts', 'initials', 'script', 'translit', 'hyphen_particle')"
+  },
+  {
+   "check": "v5-leaf-and-readings",
+   "verdict": "RED",
+   "expected": "RED",
+   "detail": "v5_live_tables=['LEAF_EQUIVALENCE', 'VALUE_NORMALISERS', 'VALUE_READINGS'] present_in_v6_snapshot=[] unrepresented=['LEAF_EQUIVALENCE', 'VALUE_NORMALISERS', 'VALUE_READINGS']"
+  },
+  {
+   "check": "v5-corpus-rules",
+   "verdict": "RED",
+   "expected": "RED",
+   "detail": "v5_case_rules=23 v6_case_rules=21 v5_only_rules=['R22', 'R23']"
+  }
+ ],
+ "unexpected": []
+}

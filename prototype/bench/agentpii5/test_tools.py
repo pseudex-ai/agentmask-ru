@@ -687,9 +687,9 @@ def test_mail_notations() -> list[str]:
     if "From: " not in text or "Subject: " not in text:
         problems.append(f"the raw form is not an RFC 5322 source: {text[:80]!r}")
     if "\n" in text:
-        # `writer._escape_free` refuses a control character inside a slot, so a
-        # composed string is one line — the same constraint `_document_pieces`
-        # carries, and the reason the headers are joined with spaces.
+        # A composed string's inner spans are laid down in source-character
+        # offsets, so the raw letter keeps headers on one line — the same
+        # constraint `_document_pieces` carries.
         problems.append("the raw letter carries a newline, which no span survives")
     return problems
 

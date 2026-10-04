@@ -1,0 +1,5 @@
+SENT TO MODEL: Найди заказ по телефону +7 919 342-66-96 и почте jwpabdjb@example.ru
+MODEL TOOL CALL (tokens): {"phone": "+7 919 342-66-96", "email": "jwpabdjb@example.ru"}
+TOOL EXECUTES WITH: {"phone": "+7 999 123-45-67", "email": "ivan@mail.ru"}
+
+PASS — model saw only tokens; tool received real values.

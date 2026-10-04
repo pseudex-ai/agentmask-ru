@@ -1,0 +1,244 @@
+{
+  "arm": "C2",
+  "calls": [
+    {
+      "name": "crm_find_contact",
+      "parsed": {
+        "query": {
+          "phone": "+79777778899"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "query": {
+          "phone": "+79777778899"
+        }
+      },
+      "seq": 1,
+      "written": {
+        "query": {
+          "phone": "+79777778899"
+        }
+      }
+    },
+    {
+      "name": "address_suggest",
+      "parsed": {
+        "count": 5,
+        "query": "Брянск, ул. Пушкина, 145а"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "count": 5,
+        "query": "Брянск, ул. Пушкина, 145а"
+      },
+      "seq": 2,
+      "written": {
+        "count": 5,
+        "query": "Брянск, ул. Пушкина, 145а"
+      }
+    },
+    {
+      "name": "delivery_create_order",
+      "parsed": {
+        "comment": "",
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Соколова Анна Игоревна",
+          "phones": [
+            "+79777778899"
+          ]
+        },
+        "to_location": {
+          "address": "ул. Пушкина, д. 145а, кв. 44",
+          "city": "брянск",
+          "postal_code": "241434"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Соколова Анна Игоревна",
+          "phones": [
+            {
+              "number": "+79777778899"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "ул. Пушкина, д. 145а, кв. 44",
+          "city": "Брянск",
+          "postal_code": "241434"
+        }
+      },
+      "seq": 3,
+      "written": {
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Соколова Анна Игоревна",
+          "phones": [
+            {
+              "number": "+79777778899"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "ул. Пушкина, д. 145а, кв. 44",
+          "city": "Брянск",
+          "postal_code": "241434"
+        }
+      }
+    },
+    {
+      "name": "crm_add_note",
+      "parsed": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Входящий звонок. Оформлен заказ на доставку как обычно: получатель — Соколова Анна Игоревна, +79777778899; адрес — г. Брянск, ул. Пушкина, д. 145а, кв. 44 (индекс 241434, сверен по справочнику). Вес 1000 г. Заказ ord-1, статус ACCEPTED."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Входящий звонок. Оформлен заказ на доставку как обычно: получатель — Соколова Анна Игоревна, +79777778899; адрес — г. Брянск, ул. Пушкина, д. 145а, кв. 44 (индекс 241434, сверен по справочнику). Вес 1000 г. Заказ ord-1, статус ACCEPTED."
+      },
+      "seq": 4,
+      "written": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Входящий звонок. Оформлен заказ на доставку как обычно: получатель — Соколова Анна Игоревна, +79777778899; адрес — г. Брянск, ул. Пушкина, д. 145а, кв. 44 (индекс 241434, сверен по справочнику). Вес 1000 г. Заказ ord-1, статус ACCEPTED."
+      }
+    },
+    {
+      "name": "notify_sms",
+      "parsed": {
+        "number": "+79777778899",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен. Получатель: Соколова Анна Игоревна. Адрес: г. Брянск, ул. Пушкина, д. 145а, кв. 44. Вес 1000 г. Статус: принят."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "number": "+79777778899",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен. Получатель: Соколова Анна Игоревна. Адрес: г. Брянск, ул. Пушкина, д. 145а, кв. 44. Вес 1000 г. Статус: принят."
+      },
+      "seq": 5,
+      "written": {
+        "number": "+79777778899",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен. Получатель: Соколова Анна Игоревна. Адрес: г. Брянск, ул. Пушкина, д. 145а, кв. 44. Вес 1000 г. Статус: принят."
+      }
+    },
+    {
+      "name": "order_status",
+      "parsed": {
+        "order_id": "ord-1"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "order_id": "ord-1"
+      },
+      "seq": 6,
+      "written": {
+        "order_id": "ord-1"
+      }
+    }
+  ],
+  "case_id": "tool_chain-035",
+  "cluster": "PHONE:9777778899",
+  "cost_usd": 0.00533,
+  "key": "tool_chain-035|C2|0",
+  "kind": "tool_chain",
+  "masked_spans": {},
+  "meta": {
+    "api_error_status": null,
+    "cap_usd": 0.28,
+    "duration_ms": 23460,
+    "errors": [],
+    "is_error": false,
+    "model": "deepseek-flash",
+    "reason": "",
+    "session_id": "deepseek-1790440074763460000",
+    "subtype": "success",
+    "turns": 35
+  },
+  "register": "voice_raw",
+  "repeat": 0,
+  "reply": "Сейчас по заказу **ord-1** статус — **ACCEPTED (принят)**. Как только он изменится, я вам сообщу. Слежу за заказом! 🙂",
+  "state": [
+    {
+      "fields": {
+        "comment": "",
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Соколова Анна Игоревна",
+          "phones": [
+            "+79777778899"
+          ]
+        },
+        "to_location": {
+          "address": "ул. Пушкина, д. 145а, кв. 44",
+          "city": "брянск",
+          "postal_code": "241434"
+        }
+      },
+      "id": "ord-1",
+      "seq": 3,
+      "table": "orders",
+      "tool": "delivery_create_order"
+    },
+    {
+      "fields": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Входящий звонок. Оформлен заказ на доставку как обычно: получатель — Соколова Анна Игоревна, +79777778899; адрес — г. Брянск, ул. Пушкина, д. 145а, кв. 44 (индекс 241434, сверен по справочнику). Вес 1000 г. Заказ ord-1, статус ACCEPTED."
+      },
+      "id": "note-1",
+      "seq": 4,
+      "table": "notes",
+      "tool": "crm_add_note"
+    },
+    {
+      "fields": {
+        "number": "+79777778899",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен. Получатель: Соколова Анна Игоревна. Адрес: г. Брянск, ул. Пушкина, д. 145а, кв. 44. Вес 1000 г. Статус: принят."
+      },
+      "id": "sms-1",
+      "seq": 5,
+      "table": "sms",
+      "tool": "notify_sms"
+    }
+  ],
+  "substitutes": {},
+  "termination": "done"
+}

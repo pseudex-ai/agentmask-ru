@@ -1,0 +1,48 @@
+schema: snapshot of /var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex-schema-yjjaq7xz/vault.db before migration 0→9: /var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex-schema-yjjaq7xz/vault.db.pre-0-9.db (20480 bytes)
+schema: /var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex-schema-yjjaq7xz/vault.db brought from user_version 0 to 9 (digit_signatures, name_keys, original_form, first_seen, place_created, place_has_city, fold_key, minted_in, extends); snapshot /var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex-schema-yjjaq7xz/vault.db.pre-0-9.db
+PASS  schema_lock.json has a line for the minor in version.txt  version 0.3.19, lock keys ['0.3']
+PASS  the image's maxima equal the lock for this minor — a new step means a new minor  lock {'vault': 9, 'audit': 1, 'tenants': 1} image {'vault': 9, 'audit': 1, 'tenants': 1}
+PASS  vault: steps numbered 1…9 in order, no gaps  [1, 2, 3, 4, 5, 6, 7, 8, 9]
+PASS  audit: steps numbered 1…1 in order, no gaps  [1]
+PASS  tenants: steps numbered 1…1 in order, no gaps  [1]
+PASS  vault steps keep the historical order the constructor called them in  ['digit_signatures', 'name_keys', 'original_form', 'first_seen', 'place_created', 'place_has_city', 'fold_key', 'minted_in', 'extends']
+PASS  a fresh vault is stamped with the image's maximum and its application id  user_version=9 application_id=0x50535856
+PASS  a fresh store gets no snapshot — there is nothing to restore to  []
+PASS  /status sees what this process verified  {'vault': 9, 'audit': None, 'tenants': None}
+PASS  a legacy volume is brought through every step and stamped  user_version=9 columns=['canonical', 'canonical_fold', 'customer', 'digits', 'digits10', 'entity_type', 'extends', 'first_seen', 'minted_in', 'name_key', 'original', 'token']
+PASS  and its application id is set
+PASS  the rows written before the numbering still detokenize  '+79991112233' 'Иванов Пётр'
+PASS  a snapshot named <store>.pre-<from>-<to>.db was written first  ['vault.db.pre-0-9.db']
+PASS  the snapshot opens with the same key and holds the pre-migration rows  [('acme', '+79991112233', '+79995550101'), ('acme', 'Иванов Пётр', 'Сидоров Олег')]
+PASS  the snapshot is the BEFORE state: no migrated columns, user_version 0  columns=['canonical', 'customer', 'entity_type', 'token'] user_version=0
+PASS  the snapshot is encrypted on disk, like the store
+PASS  a second open is a no-op: same one snapshot, untouched
+PASS  a volume stamped above the image's maximum is refused with both numbers and the file  /var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex-schema-_h69voym/vault.db: схема user_version 10, этот образ (vault) понимает до 9. Том писал более новы
+PASS  and nothing was touched: the stamp stands, the file bytes are the same
+PASS  PSEUDEX_ROLE=probe exits 2 on a volume from the future and names it  rc=2 x-schema-_h69voym/vault.db: схема user_version 10, этот образ (vault) понимает до 9. Том писал более новый образ. Нужен образ не старше того, что его писал, либо восстановите снимок <store>.pre-<from>-<to>.db, если он есть. Этот образ том не тронул.
+  audit.db     нет файла
+  tenants.db   нет файла
+ pseudex hardening: core=ok dumpable=unsupported (non-linux) mlock=unsupported (non-linux) tracer=none
+
+PASS  PSEUDEX_ROLE=migrate brings a legacy volume forward, names the snapshot, exits 0  rc=0 5mg60_tttt6crzf40000gn/T/pseudex-schema-ttggvru7
+  vault.db     схема 0 → 9: digit_signatures, name_keys, original_form, first_seen, place_created, place_has_city, fold_key, minted_in, extends; снимок /var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex-schema-ttggvru7/vault.db.pre-0-9.db
+  audit.db     схема 0 → 1: agent_id
+  tenants.db   нет файла — создаст первый процесс, которому он нужен
+ me_keys, original_form, first_seen, place_created, place_has_city, fold_key, minted_in, extends); snapshot /var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex-schema-ttggvru7/vault.db.pre-0-9.db
+
+PASS  migrate created and stamped the audit log too  ['vault.db.pre-0-9.db']
+PASS  probe after migrate: exit 0, the stamp shown, the snapshot listed with the advice  rc=0 pseudex probe: /var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex-schema-ttggvru7
+  том: зашифрован   ключ: PSEUDEX_VAULT_KEY
+  vault.db     encrypted открывается  схема 9 (образ до 9)
+  audit.db     encrypted открывается  схема 1 (образ до 1)
+  tenants.db   нет файла
+  снимки перед миграциями (удалите, когда новая версия поработала и откат больше не нужен):
+    vault.db.pre-0-9.db  20 КиБ
+
+PASS  no room for the snapshot: refused, with the numbers  /var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex-schema-wv8fn5dz/vault.db: для снимка перед миграцией нужно 40960 байт свободного места в /var/folders/_
+PASS  and refused BEFORE touching: user_version still 0, no column added, no file
+PASS  a file carrying another store's application id is refused  /var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex-schema-467820qb/vault.db: application_id 0x50535841 — это не va
+PASS  audit and tenants stores are stamped with their maxima and ids  {'audit.db': (1, '0x50535841'), 'tenants.db': (1, '0x50535854')}
+PASS  describe() reports the header numbers for probe and doctor  {'path': '/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/pseudex-schema-etiwe3d1/audit.db', 'state': 'encrypted', 'opens': True, 'error': '', 'tables': ['detoks', 'events', 'meta', 'requests', 'reveals'], 'user_version': 1, 'application_id': 1347639361}
+
+schema OK — a volume is numbered, snapshotted before it moves, and refused when it is from the future

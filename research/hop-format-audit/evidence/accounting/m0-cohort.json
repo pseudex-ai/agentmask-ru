@@ -1,0 +1,47 @@
+{
+  "taskId": "hop-m0-cohort-20260927",
+  "sessionId": "7e766744-d915-444b-a5d2-754ec9396c79",
+  "status": "idle",
+  "durationMs": 568995,
+  "usage": {
+    "inputTokens": 82692,
+    "outputTokens": 108068,
+    "freshTokens": 190760,
+    "totalTokens": 7999784,
+    "cacheReadTokens": 7809024,
+    "cacheWriteTokens": 0,
+    "reasoningTokens": 51434,
+    "modelCalls": 60,
+    "toolCalls": 80,
+    "estimatedCostUsd": 0.201343344,
+    "accountingComplete": true,
+    "bySession": {
+      "7e766744-d915-444b-a5d2-754ec9396c79": {
+        "inputTokens": 82692,
+        "outputTokens": 108068,
+        "freshTokens": 190760,
+        "totalTokens": 7999784,
+        "cacheReadTokens": 7809024,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 51434,
+        "modelCalls": 60,
+        "toolCalls": 80,
+        "estimatedCostUsd": 0.201343344
+      }
+    }
+  },
+  "budget": {
+    "maxCostUsd": 0.7
+  },
+  "pricing": {
+    "basis": "deepseek-flash-peak-upper-bound",
+    "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+    "inputUsdPerMillion": 0.3,
+    "cacheReadUsdPerMillion": 0.006,
+    "cacheWriteUsdPerMillion": 0.3,
+    "outputUsdPerMillion": 1.2
+  },
+  "budgetExceeded": null,
+  "budgetOverrun": null,
+  "accountingNote": "Complete for usage-bearing durable assistant messages observed by this bridge."
+}

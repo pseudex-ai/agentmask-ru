@@ -1,0 +1,36 @@
+{
+  "stage": "M1a v2-dev: literal-gaps text_status + boundary/duplication gap-flag; live.py snapshot cache mtime-keyed",
+  "declared_source_changes": {
+    "m1a_metric": [
+      "prototype/bench/agentpii5/answer_restoration.py",
+      "prototype/bench/agentpii5/test_answer_restoration.py"
+    ],
+    "live_ui_cpu_fix": [
+      "prototype/bench/agentpii5/live.py"
+    ]
+  },
+  "files": [
+    {
+      "path": "prototype/bench/agentpii5/answer_restoration.py",
+      "sha256": "b6472f455cd603a6475d9cbc1be53cb8acb915f97317725871a6a78693866e7b"
+    },
+    {
+      "path": "prototype/bench/agentpii5/test_answer_restoration.py",
+      "sha256": "be574f298f9a30817ad1075bc2656e9e5ee48e82aef39d87f7b965c72e0bcae4"
+    },
+    {
+      "path": "prototype/bench/agentpii5/live.py",
+      "sha256": "f8fa072499c123a5fa39839ee732414954bf8dd37b3c73d83adffbf8ed3deb75"
+    }
+  ],
+  "m04_controls": {
+    "passed": 63,
+    "total": 63
+  },
+  "legacy_suites": 6,
+  "reviewer_probe_fixes": "7/7 PASS",
+  "other_source_run_pins_unchanged": 195,
+  "engine_changed": false,
+  "raw_paid_run_changed": false,
+  "g2": "pending re-review"
+}

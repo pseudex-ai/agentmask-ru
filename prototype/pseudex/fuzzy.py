@@ -24,6 +24,7 @@ separate functions because they are used where different evidence is available:
 import hashlib
 from array import array
 from bisect import bisect_left
+from typing import NamedTuple
 
 import numpy
 
@@ -206,8 +207,88 @@ def build_index(words) -> DeletionIndex:
 
 def lookup(word: str, index: DeletionIndex) -> bool:
     """Whether one Damerau edit reaches something in the index."""
+    return recover_one_edit(word, index) is not None
+
+
+def recover_one_edit(word: str, index: DeletionIndex) -> str | None:
+    """The FIRST dictionary word one Damerau edit from `word`, or None.
+
+    `lookup` needs only the yes/no; the mint needs the word itself, because
+    the edit that turns the canonical into the damaged form is what the fake
+    must inherit (class А — a substitute carries the customer's own typo).
+    """
     for key in deletion_keys(word):
         for candidate in index.candidates(key):
             if candidate != word and within_one_typo(word, candidate):
-                return True
-    return False
+                return candidate
+    return None
+
+
+class Edit(NamedTuple):
+    """One edit that turns a canonical word into its damaged spelling.
+
+    `op` is one of ``sub`` (one letter replaced), ``ins`` (one letter added),
+    ``del`` (one letter dropped), ``swap`` (two adjacent letters exchanged).
+    `pos` is an index into the CANONICAL word; `char` is the damaged letter for
+    ``sub``/``ins``, the dropped letter for ``del``, and the left letter of the
+    swapped pair for ``swap``. Applying `Edit` to a DIFFERENT word of the same
+    shape reproduces the same typo there.
+    """
+
+    op: str
+    pos: int
+    char: str
+
+
+def edit_from(canonical: str, damaged: str) -> Edit | None:
+    """The single edit that turns `canonical` into `damaged`, or None.
+
+    Built to agree with `within_one_typo`: one substitute, insert, delete or
+    adjacent swap. The diff runs on the two strings directly (both sides have
+    already been case-folded by the caller), so it is exact, not approximate.
+    """
+    if abs(len(canonical) - len(damaged)) > 1:
+        return None
+    if len(canonical) == len(damaged):
+        diffs = [i for i in range(len(canonical)) if canonical[i] != damaged[i]]
+        if len(diffs) == 1:
+            i = diffs[0]
+            return Edit("sub", i, damaged[i])
+        if (len(diffs) == 2 and diffs[1] == diffs[0] + 1
+                and canonical[diffs[0]] == damaged[diffs[1]]
+                and canonical[diffs[1]] == damaged[diffs[0]]):
+            return Edit("swap", diffs[0], damaged[diffs[0]])
+        return None
+    if len(canonical) + 1 == len(damaged):
+        for i in range(len(canonical) + 1):
+            if canonical[:i] == damaged[:i] and canonical[i:] == damaged[i + 1:]:
+                return Edit("ins", i, damaged[i])
+        return None
+    for i in range(len(damaged) + 1):
+        if canonical[:i] == damaged[:i] and canonical[i + 1:] == damaged[i:]:
+            return Edit("del", i, canonical[i])
+    return None
+
+
+def apply_edit(word: str, edit: Edit) -> str | None:
+    """`word` with the SAME typo `edit` applied, or None when it cannot land.
+
+    A deletion past the end, a substitution into a shorter word and a swap
+    against the last letter are not transferable — the word is a totally
+    different shape and the edit means nothing there. The caller keeps the
+    clean word and treats the un-transferable damage as its own signal.
+    """
+    if edit.op == "sub":
+        if edit.pos < len(word):
+            return word[:edit.pos] + edit.char + word[edit.pos + 1:]
+    elif edit.op == "ins":
+        if edit.pos <= len(word):
+            return word[:edit.pos] + edit.char + word[edit.pos:]
+    elif edit.op == "del":
+        if edit.pos < len(word):
+            return word[:edit.pos] + word[edit.pos + 1:]
+    elif edit.op == "swap":
+        if edit.pos + 1 < len(word):
+            return (word[:edit.pos] + word[edit.pos + 1] + word[edit.pos]
+                    + word[edit.pos + 2:])
+    return None

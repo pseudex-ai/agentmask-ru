@@ -1813,5 +1813,53 @@ def main() -> int:
     return 1 if failures else 0
 
 
+# --------------------------------------------------------------------------- #
+# LEAF NOTATION (класс Ж, the owner's decision). The tool schema is the
+# authoritative marker for how a substitution on the OUT leg must be spelled.
+# It lives HERE (v4) because the schemas are v4's `FieldSpec`/`ToolSpec`, and the
+# production gateway (`gateway.py`) reads it — a v4 module may NOT import v5, so
+# the table cannot sit in `agentpii5.tools` and be read back from v4.
+#
+# THE DECLARATION IS NOT DECORATION: the v5 `notation_problems` proves it against
+# the leaf's OWN parser — the declared spelling must be ACCEPTED, and a demanding
+# notation must be the only spelling accepted.
+NOTATIONS: tuple[str, ...] = ("any", "snils", "e164", "gost")
+
+LEAF_NOTATION: dict[tuple[str, str], str] = {
+    # the parser strips spaces and upper-cases, so the leaf asks for ANY spelling
+    ("vehicle_check", "plate"): "any",
+    # «от одного до трёх слов», order free — the parser takes them in any order
+    ("calendar_free", "person"): "any",
+    # «Формат 112-233-445 95»: the parser enforces the ПФР spelling, dashes included
+    ("snils_verify", "snils"): "snils",
+    ("patient_find", "snils"): "snils",
+    # «Телефон в формате E.164, например +79161234567»: «8916…» is refused
+    ("patient_find", "phone"): "e164",
+}
+
+# THE EVIDENCE THAT MAKES EACH DECLARATION FALSIFIABLE: a call the parser
+# ACCEPTS in the declared notation, and the SAME value in the other notation a
+# Russian speaker writes it in. `any` means the parser accepts BOTH; a demanding
+# notation means the parser accepts the declared one and REFUSES the other.
+# The samples are the schema's own examples, not invented values.
+LEAF_NOTATION_EVIDENCE: dict[tuple[str, str], tuple[dict[str, object], dict[str, object]]] = {
+    ("vehicle_check", "plate"): ({"plate": "В163ОУ23"}, {"plate": "в 163 оу 23"}),
+    ("calendar_free", "person"): ({"person": "Евгений Вольнов", "date": "2026-09-10"},
+                                  {"person": "Вольнов Евгений", "date": "2026-09-10"}),
+    ("snils_verify", "snils"): ({"snils": "017-897-237 96"}, {"snils": "01789723796"}),
+    ("patient_find", "snils"): ({"snils": "017-897-237 96"}, {"snils": "01789723796"}),
+    ("patient_find", "phone"): ({"phone": "+79164021187"}, {"phone": "89164021187"}),
+}
+
+
+def leaf_notation(tool: str, path: str) -> str:
+    """The notation this leaf's schema declares, or "" when it declares none.
+
+    EMPTY IS «NOT DECLARED», never «any»: 38 of the 43 tools make no claim about
+    the spelling of a leaf, and inventing one for them would be exactly the
+    guessing the owner forbade."""
+    return LEAF_NOTATION.get((tool, path), "")
+
+
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -1406,7 +1406,7 @@ def test_the_result_pii_column_says_how_much_of_it_is_measured() -> list[str]:
     краснеет в обе стороны.
     """
     problems: list[str] = []
-    lines = b.result_pii_residue(CASES)
+    lines = b.result_pii_residue(CASES, b.c.V5_TOOL_NAMES)
     if any("ОТКАЗ" in line for line in lines):
         problems.append(f"остаток разошёлся с замороженным списком: {lines[1:3]}")
     # 183 И 116, НЕ 151 И 106: набор `office` добавил одиннадцать инструментов и
@@ -1426,7 +1426,7 @@ def test_the_result_pii_column_says_how_much_of_it_is_measured() -> list[str]:
                                          result_pii=(*spec.base.result_pii, leaf)))
     REGISTRY_V5[name] = widened
     try:
-        said = b.result_pii_residue(CASES)
+        said = b.result_pii_residue(CASES, b.c.V5_TOOL_NAMES)
         if not any("ОТКАЗ" in line and spare in line for line in said):
             problems.append(f"новое декоративное объявление принято молча: {said}")
     finally:
@@ -1441,7 +1441,8 @@ def test_the_result_pii_column_says_how_much_of_it_is_measured() -> list[str]:
     hop = next(one for one in donor.hops if one.kind == "IN" and one.owner == "tool")
     patched = replace(donor, hops=tuple(replace(one, tool_name=tool, path=path)
                                         if one is hop else one for one in donor.hops))
-    said = b.result_pii_residue([one if one is not donor else patched for one in CASES])
+    said = b.result_pii_residue([one if one is not donor else patched for one in CASES],
+                                b.c.V5_TOOL_NAMES)
     if not any("ОТКАЗ" in line and crossed_now in line for line in said):
         problems.append(f"пересечённое замороженное объявление принято молча: {said}")
     return problems

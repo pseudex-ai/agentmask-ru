@@ -1,0 +1,38 @@
+{
+  "action": {
+    "comparable": 382,
+    "IC_agree": 235,
+    "CC_agree": 280,
+    "effect_pp": -11.780104712041885
+  },
+  "tools": {
+    "comparable": 448,
+    "IC_agree": 85,
+    "CC_agree": 111,
+    "effect_pp": -5.803571428571429
+  },
+  "keys": {
+    "comparable": 448,
+    "IC_agree": 54,
+    "CC_agree": 93,
+    "effect_pp": -8.705357142857142
+  },
+  "state": {
+    "comparable": 389,
+    "IC_agree": 29,
+    "CC_agree": 79,
+    "effect_pp": -12.853470437017995
+  },
+  "values": {
+    "comparable": 448,
+    "IC_agree": 183,
+    "CC_agree": 322,
+    "effect_pp": -31.026785714285715
+  },
+  "verbatim": {
+    "comparable": 389,
+    "IC_agree": 28,
+    "CC_agree": 66,
+    "effect_pp": -9.768637532133676
+  }
+}

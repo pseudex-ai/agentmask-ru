@@ -1,0 +1,61 @@
+generated_utc = 2026-09-30T20:08:40.854465+00:00
+python = 3.12.12 (/Users/igor/Projects/Obscura-hop-audit/prototype/.venv/bin/python)
+git HEAD = 890c50849a326f882eac336ba4e38c91171de473 branch=research/hop-format-audit porcelain_lines=42
+
+[v5_corpus_1800] cases=1800 pii_items=16287 unique_identities=2201 clusters=1260 convs=663 negatives=1800
+    CARD       items=   200 unique_identities=   123 cases=  173
+    DOB        items=  1562 unique_identities=   544 cases= 1102
+    EMAIL      items=  1298 unique_identities=   459 cases=  961
+    INN        items=   263 unique_identities=   144 cases=  133
+    LOC        items=  2797 unique_identities=   985 cases= 1210
+    NAME       items=  6373 unique_identities=  1188 cases= 1747
+    PASSPORT   items=   100 unique_identities=    63 cases=   75
+    PHONE      items=  3181 unique_identities=   883 cases= 1425
+    PLATE      items=   289 unique_identities=   154 cases=  107
+    SNILS      items=   224 unique_identities=   128 cases=  145
+[v5_corpus_1800_plain] cases=1800 pii_items=16287 unique_identities=2201 clusters=1260 convs=663 negatives=1800
+    CARD       items=   200 unique_identities=   123 cases=  173
+    DOB        items=  1562 unique_identities=   544 cases= 1102
+    EMAIL      items=  1298 unique_identities=   459 cases=  961
+    INN        items=   263 unique_identities=   144 cases=  133
+    LOC        items=  2797 unique_identities=   985 cases= 1210
+    NAME       items=  6373 unique_identities=  1188 cases= 1747
+    PASSPORT   items=   100 unique_identities=    63 cases=   75
+    PHONE      items=  3181 unique_identities=   883 cases= 1425
+    PLATE      items=   289 unique_identities=   154 cases=  107
+    SNILS      items=   224 unique_identities=   128 cases=  145
+[run_2026_09_30_813] cases=813 pii_items=8191 unique_identities=1183 clusters=594 convs=303 negatives=813
+    CARD       items=    95 unique_identities=    67 cases=   83
+    DOB        items=   847 unique_identities=   318 cases=  594
+    EMAIL      items=   715 unique_identities=   269 cases=  534
+    INN        items=    98 unique_identities=    53 cases=   46
+    LOC        items=  1260 unique_identities=   506 cases=  588
+    NAME       items=  3322 unique_identities=   667 cases=  800
+    PASSPORT   items=    51 unique_identities=    29 cases=   31
+    PHONE      items=  1617 unique_identities=   467 cases=  683
+    PLATE      items=    94 unique_identities=    45 cases=   29
+    SNILS      items=    92 unique_identities=    60 cases=   59
+[run_dir_files_not_read] keys=['cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.agent.usage.jsonl', 'cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.arms.jsonl', 'cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.arms.v5.jsonl', 'cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl', 'cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.gate.json', 'cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.hops.jsonl', 'cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.judge.jsonl', 'cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.meta.json', 'cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.oracle.json', 'cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.public.json', 'cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.report.json', 'cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.report.txt', 'cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.spend.tsv', 'cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.triples.jsonl', 'repairs.json']
+[legacy_dataset] cases=100 entities=298 negatives=0 quasi=0 per_type={'CARD': 23, 'DATE': 12, 'DOB': 11, 'EMAIL': 30, 'INN': 25, 'LOC': 56, 'NAME': 52, 'PASSPORT': 12, 'PHONE': 52, 'SNILS': 25}
+[legacy_dirty] cases=150 entities=150 negatives=12 quasi=0 per_type={'CARD': 10, 'DOB': 8, 'INN': 23, 'LOC': 14, 'NAME': 21, 'PASSPORT': 10, 'PHONE': 51, 'SNILS': 13}
+[legacy_stress] cases=600 entities=1033 negatives=152 quasi=183 per_type={'CARD': 142, 'INN': 127, 'NAME': 268, 'PASSPORT': 34, 'PHONE': 320, 'SNILS': 142}
+[legacy_stress2] cases=600 entities=1033 negatives=129 quasi=198 per_type={'CARD': 142, 'INN': 111, 'NAME': 273, 'PASSPORT': 20, 'PHONE': 345, 'SNILS': 142}
+[gate] labelled=587 dist={'address': 24, 'other': 209, 'person': 271, 'place': 26, 'public': 57} candidates=3054 accepted=905 utts=None
+[voice_addresses] records=1373 labels={'адрес с номером': 43, 'не адрес': 1300, 'неоднозначно': 15, 'улица без номера': 15}
+[rudevices_addresses] records=650 labels={'адрес с номером': 154, 'не адрес': 472, 'неоднозначно': 10, 'улица без номера': 14}
+[speech_calls] 12950 exists=True
+[speech_rudevices] 42952 exists=True
+[ru_prose] 0 exists=True
+[nerel:dev] docs=94 rows=5590 person_rows=947 docs_with_person=91
+[nerel:test] docs=93 rows=5827 person_rows=961 docs_with_person=91
+[piibench:domain] rows=900 ids=900 entities=757
+[piibench:entity] rows=910 ids=910 entities=910
+[massive:train] rows=11514 slots={'email_address': 32, 'person': 864, 'place_name': 1086} unique={'email_address': 30, 'person': 576, 'place_name': 589}
+[massive:validation] rows=2033 slots={'email_address': 3, 'person': 132, 'place_name': 209} unique={'email_address': 3, 'person': 123, 'place_name': 158}
+[massive:test] rows=2974 slots={'email_address': 9, 'person': 219, 'place_name': 281} unique={'email_address': 9, 'person': 189, 'place_name': 189}
+[v6] entries=66 origins={'ORIGIN_V5': 11, 'ORIGIN_V6': 55} grammar={'ГОТОВ': 57, 'ГРАММАТИКА?': 9} industries=15 generated_cases_on_host=0
+[temporary_secrets_prior] keys=['context_matrix', 'episodes', 'primary_sources', 'probes']
+[name_label_proposal_prior] keys=['proposal_counts', 'raw_person_slots_lines', 'nerel_person_sample_lines', 'findings', 'proposed_labels']
+[name15_prior] keys=['findings', 'verified_rows', 'extract_summary']
+
+wrote /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/A1/INVENTORY.json

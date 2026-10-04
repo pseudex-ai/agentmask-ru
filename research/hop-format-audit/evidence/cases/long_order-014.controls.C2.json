@@ -1,0 +1,291 @@
+{
+  "arm": "C2",
+  "calls": [
+    {
+      "name": "crm_find_contact",
+      "parsed": {
+        "query": {
+          "phone": "+79500640017"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "query": {
+          "phone": "+79500640017"
+        }
+      },
+      "seq": 1,
+      "written": {
+        "query": {
+          "phone": "+79500640017"
+        }
+      }
+    },
+    {
+      "name": "delivery_quote",
+      "parsed": {
+        "city": "сарапул",
+        "weight": 5000
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "city": "Сарапул",
+        "weight": 5000
+      },
+      "seq": 2,
+      "written": {
+        "city": "Сарапул",
+        "weight": 5000
+      }
+    },
+    {
+      "name": "delivery_quote",
+      "parsed": {
+        "city": "сарапул",
+        "weight": 10000
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "city": "Сарапул",
+        "weight": 10000
+      },
+      "seq": 3,
+      "written": {
+        "city": "Сарапул",
+        "weight": 10000
+      }
+    },
+    {
+      "name": "delivery_create_order",
+      "parsed": {
+        "comment": "",
+        "packages": [
+          {
+            "weight": 5000
+          }
+        ],
+        "recipient": {
+          "name": "Саркисян Карен",
+          "phones": [
+            "+79279731845"
+          ]
+        },
+        "to_location": {
+          "address": "проспект Строительный, 46, кв. 239",
+          "city": "сарапул",
+          "postal_code": "427960"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "packages": [
+          {
+            "weight": 5000
+          },
+          {
+            "weight": 5000
+          }
+        ],
+        "recipient": {
+          "name": "Саркисян Карен",
+          "phones": [
+            {
+              "number": "+79279731845"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "проспект Строительный, 46, кв. 239",
+          "city": "Сарапул",
+          "postal_code": "427960"
+        }
+      },
+      "seq": 4,
+      "written": {
+        "packages": [
+          {
+            "weight": 5000
+          },
+          {
+            "weight": 5000
+          }
+        ],
+        "recipient": {
+          "name": "Саркисян Карен",
+          "phones": [
+            {
+              "number": "+79279731845"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "проспект Строительный, 46, кв. 239",
+          "city": "Сарапул",
+          "postal_code": "427960"
+        }
+      }
+    },
+    {
+      "name": "crm_add_note",
+      "parsed": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Оформил доставку в Сарапул (Саркисян Карен, +79279731845): проспект Строительный, 46, кв. 239, индекс 427960. Два места по 5 кг, итого 10 кг. Стоимость 1000 ₽, срок 2 дня. Заказ ord-1."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Оформил доставку в Сарапул (Саркисян Карен, +79279731845): проспект Строительный, 46, кв. 239, индекс 427960. Два места по 5 кг, итого 10 кг. Стоимость 1000 ₽, срок 2 дня. Заказ ord-1."
+      },
+      "seq": 5,
+      "written": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Оформил доставку в Сарапул (Саркисян Карен, +79279731845): проспект Строительный, 46, кв. 239, индекс 427960. Два места по 5 кг, итого 10 кг. Стоимость 1000 ₽, срок 2 дня. Заказ ord-1."
+      }
+    },
+    {
+      "name": "pickup_points_near",
+      "parsed": {
+        "address": "Сарапул, проспект Строительный, 46",
+        "limit": 5
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "address": "Сарапул, проспект Строительный, 46",
+        "limit": 5
+      },
+      "seq": 6,
+      "written": {
+        "address": "Сарапул, проспект Строительный, 46",
+        "limit": 5
+      }
+    },
+    {
+      "name": "pickup_points_near",
+      "parsed": {
+        "address": "Сарапул, проспект Строительный, 46",
+        "limit": 10
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "address": "Сарапул, проспект Строительный, 46",
+        "limit": 10
+      },
+      "seq": 7,
+      "written": {
+        "address": "Сарапул, проспект Строительный, 46",
+        "limit": 10
+      }
+    },
+    {
+      "name": "notify_sms",
+      "parsed": {
+        "number": "+79500640017",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен: Сарапул, проспект Строительный, 46, кв. 239. Получатель: Саркисян Карен. 2 места по 5 кг. Стоимость 1000 руб., срок 2 дня. Курьер доставит до двери."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "number": "+79500640017",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен: Сарапул, проспект Строительный, 46, кв. 239. Получатель: Саркисян Карен. 2 места по 5 кг. Стоимость 1000 руб., срок 2 дня. Курьер доставит до двери."
+      },
+      "seq": 8,
+      "written": {
+        "number": "+79500640017",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен: Сарапул, проспект Строительный, 46, кв. 239. Получатель: Саркисян Карен. 2 места по 5 кг. Стоимость 1000 руб., срок 2 дня. Курьер доставит до двери."
+      }
+    }
+  ],
+  "case_id": "long_order-014",
+  "cluster": "PHONE:9500640017",
+  "cost_usd": 0.006455,
+  "key": "long_order-014|C2|0",
+  "kind": "long_order",
+  "masked_spans": {},
+  "meta": {
+    "api_error_status": null,
+    "cap_usd": 0.48,
+    "duration_ms": 28241,
+    "errors": [],
+    "is_error": false,
+    "model": "deepseek-flash",
+    "reason": "",
+    "session_id": "deepseek-1790427403821699000",
+    "subtype": "success",
+    "turns": 135
+  },
+  "register": "voice_raw",
+  "repeat": 0,
+  "reply": "Отправил СМС на ваш номер +7 950 064-00-17 📩\n\nТекст: заказ **ord-1**, Сарапул, проспект Строительный, 46, кв. 239, получатель Саркисян Карен, 2 места по 5 кг, стоимость 1000 ₽, срок 2 дня.\n\nЧто-нибудь ещё?",
+  "state": [
+    {
+      "fields": {
+        "comment": "",
+        "packages": [
+          {
+            "weight": 5000
+          }
+        ],
+        "recipient": {
+          "name": "Саркисян Карен",
+          "phones": [
+            "+79279731845"
+          ]
+        },
+        "to_location": {
+          "address": "проспект Строительный, 46, кв. 239",
+          "city": "сарапул",
+          "postal_code": "427960"
+        }
+      },
+      "id": "ord-1",
+      "seq": 4,
+      "table": "orders",
+      "tool": "delivery_create_order"
+    },
+    {
+      "fields": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Оформил доставку в Сарапул (Саркисян Карен, +79279731845): проспект Строительный, 46, кв. 239, индекс 427960. Два места по 5 кг, итого 10 кг. Стоимость 1000 ₽, срок 2 дня. Заказ ord-1."
+      },
+      "id": "note-1",
+      "seq": 5,
+      "table": "notes",
+      "tool": "crm_add_note"
+    },
+    {
+      "fields": {
+        "number": "+79500640017",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен: Сарапул, проспект Строительный, 46, кв. 239. Получатель: Саркисян Карен. 2 места по 5 кг. Стоимость 1000 руб., срок 2 дня. Курьер доставит до двери."
+      },
+      "id": "sms-1",
+      "seq": 8,
+      "table": "sms",
+      "tool": "notify_sms"
+    }
+  ],
+  "substitutes": {},
+  "termination": "done"
+}

@@ -24,6 +24,7 @@ that set is bounded by trouble rather than by sales.
 """
 
 import threading
+import time
 
 
 def escape(value: str) -> str:
@@ -111,3 +112,82 @@ class Counter:
     def snapshot(self) -> dict:
         with self._lock:
             return dict(self._counts)
+
+
+class TypeCounter:
+    """Per-TYPE counts of a signal the DETECTOR produces, not the audit store.
+
+    WHY IT CANNOT BE A JOURNAL QUERY. An audit row is written per PROTECTED
+    VALUE — a span that was masked and minted. A span the deny layer DROPPED
+    produces no token, no event and no row (`context.suppress` simply returns a
+    shorter list), so the over-masking guard is invisible to every number the
+    journal can compute. The detector is the only place that fact exists, and
+    this counter is the shape it is handed over in.
+
+    PROCESS-LOCAL, AND THAT IS STATED RATHER THAN HIDDEN. It describes THIS
+    worker since it started: the engine holds no writable state of its own, the
+    audit schema is a numbered contract (D-058), and a per-type counter persisted
+    on disk would survive a rollback and describe a binary no longer running —
+    the same reason `Counter` above is process-local. `/stats` therefore carries
+    `since` beside the counts and the interface prints «в этом процессе с …»
+    rather than folding them into the windowed totals it would be lying about.
+    With N workers each holds its own share; the interface reads whichever
+    worker answered, which is named on the screen.
+
+    Locked for the same reason as `Counter`: `anyio.to_thread` moves detection
+    off the event loop, so increments arrive from several threads.
+    """
+
+    def __init__(self) -> None:
+        self._counts: dict[str, int] = {}
+        self._since: float | None = None
+        self._lock = threading.Lock()
+
+    def add_many(self, names) -> None:
+        """One span each, counted ONCE PER DENIED SPAN, not per request: the
+        question the screen asks is «how many near-masks did the guard fire on»,
+        and a request that denied three order numbers fired it three times.
+
+        Empty input returns BEFORE the clock and the lock — this sits on the
+        masking hot path and the common case is that nothing was denied.
+        """
+        names = list(names)
+        if not names:
+            return
+        stamp = time.time()
+        with self._lock:
+            if self._since is None:
+                self._since = stamp
+            for name in names:
+                self._counts[name] = self._counts.get(name, 0) + 1
+
+    def snapshot(self) -> dict[str, int]:
+        with self._lock:
+            return dict(self._counts)
+
+    def since(self) -> float | None:
+        """Unix seconds of the FIRST increment, or None. An absent value, not an
+        epoch: None says «nothing has fired yet», which is a different sentence
+        from «fired at 1970» — the rule `render` above already follows."""
+        with self._lock:
+            return self._since
+
+    def reset(self) -> None:
+        with self._lock:
+            self._counts.clear()
+            self._since = None
+
+
+# The over-masking guard's own tally, filled by `detect_all` with the spans
+# `context.suppress` DENIED. Named for what it measures, not for the endpoint
+# that reads it: these are the values deliberately LEFT IN THE CLEAR because the
+# evidence said they were not the customer's personal data.
+SUPPRESSED = TypeCounter()
+
+
+def suppressed_snapshot() -> dict[str, object]:
+    """One shape for `/stats` and `/metrics` to read, so the screen and the
+    scrape cannot drift into two different numbers for one fact."""
+    by_type = SUPPRESSED.snapshot()
+    return {"by_type": by_type, "total": sum(by_type.values()),
+            "since": SUPPRESSED.since()}

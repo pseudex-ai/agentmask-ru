@@ -1,0 +1,105 @@
+{
+  "task": "A1",
+  "gate": "O-DATA",
+  "status": "OWNER_PENDING",
+  "scope": "exact acceptance-manifest proposal and independent annotation protocol for the design/RED wave; no product implementation",
+  "revision": {
+    "git_head_current": "890c50849a326f882eac336ba4e38c91171de473",
+    "git_head_note": "research-only evidence commit",
+    "product_source_pin": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "product_source_untouched": true,
+    "bundle_version": "2a07cebae2b050ec",
+    "bundle_sha256": "01c19f4689450b54694b7aaa4070cbaf695efc3e98f0b59471486392a0348206",
+    "bundle_note": "recomputed IN MEMORY only; matches the B0 record; no file written",
+    "b0_gate": "work/B0/GATE.json G1 PASS (local/design scope only)",
+    "production_artifact_gate": "NOT_MEASURED — RG release-A/B remains blocked",
+    "requested_routing": {"provider": "deepseek-official", "model": "deepseek-flash"},
+    "effective_routing_metadata": "not available to this subagent; not self-attested; Lead's usage journal is authoritative"
+  },
+  "evidence": {
+    "inputs": "INPUTS.json (hashes of 21 binding inputs + 12 external corpora, git revision, inherited gates)",
+    "spec": "SPEC.md (owner decision ids, principle, exact requirement, unacceptable alternatives, open questions)",
+    "proposal": "ACCEPTANCE-PROPOSAL.json 1.0.0-draft (units, slices, CI/statuses, PPV, specificity, clusters, known-vs-blind, access log, cost)",
+    "gaps": "DATA-GAPS.csv (511 rows) + DATA-GAPS-SUMMARY.json",
+    "owner_questions": "OWNER-QUESTIONS.md (10 questions)",
+    "logs": ["INVENTORY.log", "DERIVE.log", "INPUTS.log", "PROPOSAL.log", "VALIDATION.log"],
+    "delta": "DELTA.json"
+  },
+  "checks": {
+    "commands_run": 5,
+    "command_failures_investigated": 1,
+    "command_failure_note": "make_inputs.py first exited 1 on a tuple-vs-path bug; fixed, re-run exit 0",
+    "inventory_exit": 0,
+    "derive_gaps_exit": 0,
+    "inputs_exit": 0,
+    "proposal_exit": 0,
+    "validation_exit": 0,
+    "v5_corpus_cases": 1800,
+    "v5_corpus_pii_items": 16287,
+    "v5_corpus_independent_identities": 2201,
+    "run_813_cases": 813,
+    "run_813_pii_items": 8191,
+    "native_types": 10,
+    "native_types_under_300_independent_units": 5,
+    "v6_new_types": 55,
+    "v6_generated_units_available": 0,
+    "temporary_secret_types": 6,
+    "gate_labelled_occurrences": 587,
+    "gate_labelled_claim_in_readme": 600,
+    "gate_candidates": 3054,
+    "known_diagnostic_sets_enumerated": 15,
+    "owner_questions": 10,
+    "final_gold_produced": false,
+    "detector_predictions_read": false,
+    "downloads_or_installs": 0,
+    "provider_calls": 0,
+    "git_mutations": 0,
+    "writes_outside_work_A1": 0,
+    "validation_assertions_passed": 72,
+    "input_hashes_reverified_by_validation": 32,
+    "self_found_defects_fixed": 2,
+    "self_found_defects_note": "own review found (a) revision.bundle injected empty and (b) the cost arithmetic double-counting v6/temporary-secret units; both corrected and re-validated before this gate file"
+  },
+  "sub_gates": {
+    "G0_evidence_within_A1": {
+      "status": "PASS",
+      "reason": "original pointers + source hashes + executed commands with exits + counts reproducible from INVENTORY.json; fact/hypothesis/unknown classified; the vault/bundle identity independently recomputed in memory",
+      "limit": "applies only to the A1 evidence package, not to engine or product claims"
+    },
+    "G3_design_RED": {
+      "status": "NOT_RUN",
+      "reason": "A1 produces a manifest/protocol proposal, not an engine RED; the RED of name/address/ID classes belongs to S1/D1"
+    },
+    "G7_detection": {
+      "status": "NOT_RUN",
+      "reason": "no quality measurement performed or implied"
+    },
+    "O-DATA": {
+      "status": "OWNER_PENDING",
+      "reason": "the manifest itself is what the owner must accept; 10 questions listed in OWNER-QUESTIONS.md"
+    },
+    "independent_review": {
+      "status": "NOT_RUN",
+      "reason": "an independent reviewer/verifier must read A1 before the Lead consumes the manifest; A1 does not self-certify"
+    }
+  },
+  "blocks": [
+    "D1 and Q1 must not declare quality gates on this protocol before O-DATA",
+    "no implementation of the acceptance protocol (splits, labels, sampling) may start before O-DATA"
+  ],
+  "allowed_next": [
+    "independent verification of A1 counts and pointers",
+    "O-DATA owner decision on the 10 questions",
+    "Lead may use DATA-GAPS.csv/DATA-GAPS-SUMMARY.json for planning corpus expansion",
+    "M1/S1/D0/V0/C0/S2 continue independently — A1 is not a barrier for them"
+  ],
+  "not_claimed": [
+    "product quality passed",
+    "acceptance manifest accepted",
+    "final gold produced",
+    "production artifact verified",
+    "holdout never seen",
+    "entire quality green or paid GO",
+    "release approved"
+  ]
+}

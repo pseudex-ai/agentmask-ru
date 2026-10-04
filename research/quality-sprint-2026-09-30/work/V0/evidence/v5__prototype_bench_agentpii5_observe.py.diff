@@ -1,0 +1,527 @@
+diff --git a/prototype/bench/agentpii5/observe.py b/prototype/bench/agentpii5/observe.py
+index fc270bc..eaca255 100644
+--- a/prototype/bench/agentpii5/observe.py
++++ b/prototype/bench/agentpii5/observe.py
+@@ -25,8 +25,12 @@ FOUR RULES DECIDE EVERYTHING HERE, AND THEY ARE NOT SYMMETRIC.
+     list and a triple that made no call passed five levels.
+   * NOTHING TO COMPARE IS NOT A PASS. An OUT leaf that carries no substitute
+-    is `unmasked`, never `observed`: `produced == reference` there, so
+-    `form_match` said «same» and a gateway that masked NOTHING printed 100%
+-    on `form_hOUT`, `chain_form`, `chain_value` and `multi_all_out`. The same
+-    rule, one level up, is why D1 was a defect at all.
++    is `engine_kept` / `not_masked` / `leaf_foreign` — never `observed`: the
++    comparison there is a string with itself (`produced == reference`), so
++    `form_match` said «same» and a gateway that masked NOTHING printed 100% on
++    `form_hOUT`, `chain_form`, `chain_value` and `multi_all_out`. One status
++    named that fact until class Е split it in three (the engine's deliberate
++    exception / nothing was minted / a third value arrived); all three are
++    still misses wherever a form or a value is asked. The same rule, one level
++    up, is why D1 was a defect at all.
+ 
+ WHY `difflib` FOR THE ANSWER. The engine restores the reply in one pass and
+@@ -46,5 +50,5 @@ Run the test: cd prototype && source .venv/bin/activate
+ import difflib
+ import re
+-from collections.abc import Sequence
++from collections.abc import Callable, Sequence
+ from dataclasses import dataclass
+ from functools import lru_cache
+@@ -574,30 +578,170 @@ def item_survives_in(item: PiiItem, surface: str, text: str) -> bool:
+ 
+ 
+-def part_matches(pii_type: str, produced: str, target: str) -> bool:
+-    """Two renderings of the SAME part, compared in the part's own notation.
++# --- THE ONE PREDICATE «is this the same value» (SPIKE-Ж, Ж-1) --------------------------
++#
++# THE TABLE IS IN `contracts.VALUE_NORMALISERS`; THIS IS ITS EXECUTABLE HALF, and
++# it is the ONLY half. Three copies of this question used to exist —
++# `observe.part_matches` (this one), `metrics.value_matches` (byte equality with a
++# LOC exception) and `revise._same_value` (a third fold, already drifted) — and a
++# hop got one of them by accident: `leaf_value_ok` took the strict copy whenever
++# `FieldSpec.role` was empty, which is exactly the three leaves the class-Ж
++# witnesses land on (`calendar_free.person`, `vehicle_check.plate`,
++# `snils_verify.snils`). One table, one predicate, three thin callers.
++#
++# A READING ANSWERS FOR ONE TYPE and cannot be chosen by its caller: a LOC leaf
++# compared as though it were a NAME would compare a street to a surname. The
++# `ValueReading` below is that answer named, so `form`/`metrics`/`revise` ask the
++# same question by construction rather than by discipline.
++
++ValueReading = Callable[[str, str], bool]
++
++
++def _fold_equal(produced: str, target: str) -> bool:
++    """Case- and ё-folded equality — the reading of everything not named below."""
++    return fold(produced.strip()) == fold(target.strip())
++
++
++def _squeeze_equal(produced: str, target: str) -> bool:
++    """Every separator dropped: the spacing is `form_hOUT`'s question."""
++    left, right = squeeze(produced), squeeze(target)
++    return bool(left) and left == right
++
++
++def _digits_equal(produced: str, target: str) -> bool:
++    """The type IS its digits: «XXX-XXX-XXX YY» and eleven bare digits."""
++    left, right = digits_of(produced), digits_of(target)
++    return bool(left) and left == right
++
++
++def _phone_signature(text: str) -> tuple[str, str]:
++    """(prefix class, last ten digits) — EQUALITY, not identification.
++
++    The needle layer's phone signature is the last ten digits alone, and that is
++    right for its own question («did the value survive a rewrite»); the value
++    line asks a different one, and there `+1 916…` and `+7 916…` share those ten
++    while being two numbers. So the class rides beside them: «+7», «8», «7» and
++    a bare national number are ONE class (they are what `pseudex.vault` folds
++    together), anything else is its own.
++    """
++    digits = digits_of(text) or spoken_digits_of(text)
++    if len(digits) < PHONE_SIGNATURE_DIGITS:
++        return "", ""
++    prefix = digits[:-PHONE_SIGNATURE_DIGITS]
++    if prefix in ("", "7", "8"):
++        prefix = "ru"
++    return prefix, digits[-PHONE_SIGNATURE_DIGITS:]
++
++
++def _phone_equal(produced: str, target: str) -> bool:
++    left, right = _phone_signature(produced), _phone_signature(target)
++    return bool(left[1]) and left == right
++
++
++def _iso_equal(produced: str, target: str) -> bool:
++    """A date compared as its ISO fold, whatever notation wrote it."""
++    left = parts_of("DOB", produced).get("iso", "")
++    right = parts_of("DOB", target).get("iso", "")
++    return bool(left) and left == right
++
++
++def _part_multiset(pii_type: str, text: str) -> tuple[tuple[str, str], ...]:
++    """The value's parts as a MULTISET of (role, folded word), order excluded.
++
++    «Евгений Вольнов» and the corpus canonical «вольнов евгений» are ONE value
++    written in two orders: the tool's own parser accepts either
++    (`_calendar_free_parse`), and the word order is `form_hOUT`'s `order`
++    feature, which does not even charge it. Identifying a part by its suffix
++    would be a second guess (see `metrics.leaf_value_ok_for_spec` on «заболотный»
++    and «миллер»), so the roles come from `parts_of` — the one reading the whole
++    package shares.
++    """
++    return tuple(sorted((role, fold(word))
++                        for role, word in parts_of(pii_type, text).items() if word))
++
+ 
+-    The part is stored in the type's canonical notation — a PHONE's part is ten
+-    digits, a DOB's is ISO — and the TOOL asks for its own: `contact.phone`
+-    parses «+7…», `patient.birth_date` parses ISO. Comparing the two strings
+-    byte for byte therefore says «wrong value» about a leaf that is right, and
+-    it did: a PERFECT gateway topped out at 76.8 % on `round_trip`,
+-    `end_to_end`, `multi_all_out`, `doc_extracted` and `chain_value`. A PLATE
+-    is compared squeezed for the same reason: the spacing is `form_hOUT`'s
+-    question, and charging the value line for it would make one defect two."""
++def _name_equal(produced: str, target: str) -> bool:
++    """A NAME is its parts as a multiset: the order is not the value."""
++    left, right = _part_multiset("NAME", produced), _part_multiset("NAME", target)
++    return bool(left) and left == right
++
++
++def _place_equal(produced: str, target: str) -> bool:
++    """LOC is the roles street / house / flat OF THE TARGET, settlement excluded.
++
++    An address is carried by several fields and joined with `FIELD_SEP`, so its
++    string can never equal a one-line canonical; a tool that keeps the city in
++    its own field is not a different address. This is `metrics.value_matches`'s
++    old exception MOVED here rather than lost (SPIKE-Ж, Ж-1) — and it is the
++    reading that answers `value_matches` and `part_matches` alike, which is why
++    «route one into the other» was never the fix: before the move the two copies
++    disagreed in BOTH directions on this type.
++    """
++    left = parts_of("LOC", produced.replace(contracts.FIELD_SEP, ", "))
++    right = parts_of("LOC", target)
++    roles = [role for role in ("street", "house", "flat") if role in right]
++    if not roles:
++        # A LEAF THAT ASKS FOR ONE PART WHOSE PART `parts_of` CANNOT TYPE ON ITS
++        # OWN. «85» is a house number with no street around it and the reader
++        # returns «no roles» for it — but `courier_book.address.building` asks
++        # for exactly that part, and calling a leaf right value wrong because the
++        # reader is context-hungry is the defect this class is about, one level
++        # down. The part's own comparison is the case's own answer (the old
++        # `role_matches` fold), and it is reached only when the TARGET names no
++        # role at all: a whole address never lands here.
++        return _fold_equal(produced, target)
++    return all(fold(left.get(role, "")) == fold(right[role]) for role in roles)
++
++
++VALUE_READINGS: dict[str, ValueReading] = {
++    "fold": _fold_equal,
++    "squeeze": _squeeze_equal,
++    "digits": _digits_equal,
++    "phone": _phone_equal,
++    "iso": _iso_equal,
++    "name_parts": _name_equal,
++    "place_roles": _place_equal,
++}
++
++
++def value_reading(pii_type: str) -> ValueReading:
++    """THE READING of `pii_type`, from the closed table — never from the caller."""
++    name = contracts.VALUE_NORMALISERS.get(pii_type, "fold")
++    return VALUE_READINGS[name]
++
++
++def values_equal(pii_type: str, produced: str, target: str) -> bool:
++    """Did this leaf receive THE SAME VALUE, whatever notation wrote it.
++
++    THE ONE PREDICATE. `metrics.value_matches`, `metrics.role_matches`,
++    `observe.part_matches` and `revise._same_value` are thin callers of it, and
++    the distinction between a role leaf and a role-less one is the TARGET the
++    caller builds (`tools.expected_leaf_value`), never the comparator (SPIKE-Ж,
++    Ж-3).
++
++    AN EMPTY SIDE IS A MISS AND NOT A MATCH. An empty target is «the value has
++    no such part» — the case the corpus was rebuilt to hold no more of, and the
++    one `fx_end_to_end_adversarial` point 4 pins: a made-up patronymic must not
++    become a hit by comparing nothing to nothing (the v4 defect «a triple with
++    nothing to compare passed all five levels»).
++    """
+     if not produced or not target:
+         return False
+-    if pii_type in DIGIT_TYPES:
+-        left, right = digits_of(produced), digits_of(target)
+-        if pii_type == "PHONE":
+-            left, right = left[-PHONE_SIGNATURE_DIGITS:], right[-PHONE_SIGNATURE_DIGITS:]
+-        return bool(left) and left == right
+-    if pii_type in DATE_TYPES:
+-        left = parts_of("DOB", produced).get("iso", "")
+-        right = parts_of("DOB", target).get("iso", "")
+-        return bool(left) and left == right
+-    if pii_type in SQUEEZED_TYPES:
+-        left, right = squeeze(produced), squeeze(target)
+-        return bool(left) and left == right
+-    return fold(produced.strip()) == fold(target.strip())
++    return value_reading(pii_type)(produced, target)
++
++
++def part_matches(pii_type: str, produced: str, target: str) -> bool:
++    """Two renderings of the SAME part, compared in the part's own notation.
++
++    THE NEEDLE LAYER'S NAME FOR THE ONE PREDICATE, kept because `leaf_holds` and
++    the actual-hop reader ask it by this name. The part is stored in the type's
++    canonical notation — a PHONE's part is ten digits, a DOB's is ISO — and the
++    TOOL asks for its own: `contact.phone` parses «+7…», `patient.birth_date`
++    parses ISO. Comparing the two strings byte for byte therefore says «wrong
++    value» about a leaf that is right, and it did: a PERFECT gateway topped out
++    at 76.8 % on `round_trip`, `end_to_end`, `multi_all_out`, `doc_extracted`
++    and `chain_value`. A PLATE is compared squeezed for the same reason: the
++    spacing is `form_hOUT`'s question, and charging the value line for it would
++    make one defect two."""
++    return values_equal(pii_type, produced, target)
+ 
+ 
+@@ -731,9 +875,79 @@ def calls_of_turn(run: ArmRunV5, turn: int) -> tuple[tuple[int, ObservedCall], .
+ 
+ def call_for_hop(run: ArmRunV5, hop: Hop) -> ObservedCall | None:
+-    """The `call_ordinal`-th call of `hop.tool_name` inside `hop.turn`."""
++    """The `call_ordinal`-th call of `hop.tool_name` inside `hop.turn`.
++
++    THE TIMETABLE IS THE CORPUS'S AND IS NOT TOUCHED (SPIKE-Е, Е-5). A call made
++    in ANOTHER turn is not this hop: widening the window would move a
++    denominator under its own name, and an estimator that does that «lets a
++    counting fix be read as an engine improvement» (`actual_hops.py`). The
++    equivalence of leaves below reaches across TOOLS inside the declared turn
++    and never across turns."""
+     same = [call for _index, call in calls_of_turn(run, hop.turn) if call.name == hop.tool_name]
+     return same[hop.call_ordinal] if 0 <= hop.call_ordinal < len(same) else None
+ 
+ 
++def call_ordinal_of(run: ArmRunV5, index: int) -> int:
++    """The ordinal of one call among the calls of the SAME tool in the SAME turn
++    — the number `Hop.call_ordinal` means and `_extra_call_hops` reads.
++
++    ONE DEFINITION, because the equivalence below has to name the leaf it
++    claimed in the SAME terms the undeclared-hop scan uses: two spellings of
++    «which call is this» would let a claimed leaf be counted a second time as an
++    undeclared crossing."""
++    call = run.base.calls[index]
++    turn = run.call_turns[index]
++    return sum(1 for other, one in enumerate(run.base.calls)
++               if other < index and one.name == call.name and run.call_turns[other] == turn)
++
++
++def equivalent_out_leaf(run: ArmRunV5, hop: Hop) -> tuple[int, ObservedCall, str] | None:
++    """(call index, call, path) of the SEMANTICALLY EQUAL leaf this run actually
++    wrote in this hop's turn, or None (SPIKE-Е, Е-6).
++
++    The corpus declares `courier_book.address.locality` and the agent writes
++    `crm_upsert_contact.contact.address.city`: one settlement, one crossing,
++    one restoration — and the instrument read `absent` because it looked for
++    the corpus's TOOL NAME (g08: 25 of the 30 `absent` of the group). The
++    classes are AUTHORED in `contracts.LEAF_EQUIVALENCE` and grounded in the
++    registry's own type and role, never guessed off a name; the declared leaf
++    itself is not a candidate, so the corpus's own ordinal still selects the
++    call it declares and only a MISSING/EMPTY leaf opens this search.
++
++    THE TURN IS THE DECLARED ONE, for `call_for_hop`'s reason: equivalence is a
++    fact about LEAVES, never about WHEN.
++
++    TWO EQUAL LEAVES WITH TWO DIFFERENT VALUES ARE A REFUSAL, NOT A CHOICE. A
++    rule that picked one would credit a value the agent may not have carried
++    (SPIKE-Е risk 5); a rule that quietly preferred the declared tool would keep
++    the defect it exists to remove.
++
++    THE CANDIDATES ARE DEDUPED BY `fold`, NOT BY THE BYTES. «Ижевск» and
++    «ижевск» in two equivalent leaves are one value written twice — refusing over
++    that would stop a live run on a case difference, and the rule would then be
++    measuring the tool's capitalisation rather than the datum. What falls is two
++    values that are not the same word at all."""
++    twins = contracts.equivalent_leaves(hop.tool_name, hop.path)
++    if not twins:
++        return None
++    found: dict[str, tuple[int, ObservedCall, str, str]] = {}
++    for index, call in calls_of_turn(run, hop.turn):
++        for tool, path in twins:
++            if call.name != tool:
++                continue
++            text = leaf_text(flatten(call.written), tool, path)
++            if text:
++                found.setdefault(fold(text), (index, call, path, text))
++    if not found:
++        return None
++    if len(found) > 1:
++        raise ObserveError(
++            f"{run.base.case_id}: hop {hop.hop_index} ({hop.tool_name}.{hop.path}) has no call "
++            f"of its own and {len(found)} semantically equal leaves in turn {hop.turn} carry "
++            f"DIFFERENT values {sorted(entry[3] for entry in found.values())}; the rule refuses "
++            f"to choose between them")
++    index, call, path, _text = next(iter(found.values()))
++    return index, call, path
++
++
+ def result_for_hop(run: ArmRunV5, hop: Hop) -> ToolResultRecord | None:
+     for record in run.tool_results:
+@@ -1124,17 +1338,53 @@ def _leaf_carries(item: PiiItem, spec: FieldSpec | None, surfaces: Sequence[str]
+ 
+ 
++def _leaf_value_ok(item: PiiItem, spec: FieldSpec | None, tool: str, path: str,
++                   produced: str) -> bool:
++    """`metrics.leaf_value_ok` — THE predicate that says «this leaf received what
++    it asks for» (R-53, and SPIKE-Е Е-7). Imported inside the call because
++    `metrics` imports THIS module: the cycle is real, and a second copy of the
++    predicate here is exactly what R-53 removed — two definitions of one fact
++    are one drift away from «the honest share» and «the headline» disagreeing
++    about the same leaf."""
++    from bench.agentpii5.metrics import leaf_value_ok
++
++    return leaf_value_ok(item, tool, path, produced)
++
++
+ def _out_status(item: PiiItem, spec: FieldSpec | None, surfaces: Sequence[str],
+                 minted: dict[str, str], written: str, restored: str,
+-                own: frozenset[str]) -> str:
++                own: frozenset[str], tool: str, path: str) -> str:
+     """The status of an OUT leaf, decided HERE and not by the engine's report.
+ 
+-    Two readings that used to come from elsewhere are made in this file now.
+-    `unmasked`: the leaf the agent wrote carried no substitute at all, so
+-    `restored == written` and `form_match` compared a string with itself — a
+-    gateway that masked NOTHING printed 100% on `form_hOUT`. `residual`: the
+-    engine's own `ObservedCall.residual` said whether a substitute survived,
+-    and a benchmark that asks the defendant whether it left a fake in the
+-    customer's CRM is not measuring anything; the scan of the restored leaf
+-    is the same one `residual_answer_items` runs on the reply.
++    ONE STATUS, ONE FACT, AND THE ORDER OF THE BRANCHES IS THE CONTRACT
++    (SPIKE-Е, Е-1). This function used to answer `unmasked` to three different
++    questions at once — the agent wrote nothing, the engine deliberately kept a
++    generic part real, a third value arrived — and the report had no cell in
++    which any of the three was named. The funnel now reads:
++
++      1. the leaf CARRIES the substitute → `residual` if the restoration left it
++         there, `observed` if the engine put the real value back;
++      2. the leaf does NOT carry it, and holds the CORRECT real value of this
++         leaf (`metrics.leaf_value_ok`, the ONE predicate the headline asks) →
++         `engine_kept` when the role is generic AND the mint record proves the
++         engine was awake for this entity (the settlement inside an address, the
++         generic street word, the domain, the gender — `vault._settlement_of`
++         keeps those real BY PRODUCT DECISION), else `not_masked` (nothing was
++         ever minted, or the leaf names no generic role: there was nothing to
++         restore);
++      3. neither → `leaf_foreign`: a third value stands where a datum was at
++         stake, and `form_match` cannot see it at all.
++
++    BOTH SIGNALS ARE NEEDED FOR `engine_kept`, and neither alone is enough.
++    The role alone would call every leaf of a passthrough gateway «deliberately
++    kept»; the mint record alone would excuse a city that leaked whole. This is
++    why a handwritten run with an empty `substitutes` cannot earn it — and why
++    the honest denominator must not be computed on one (SPIKE-Е risk 3).
++
++    `written` IS NON-EMPTY BY CONTRACT. The emptiness of the leaf is decided one
++    level up (`_out_call`, Е-2): a leaf the agent left blank is a fact about the
++    AGENT (`absent`, or nothing at all when the hop is optional), and no branch
++    here may be read as a gateway miss. The raise is the contract, not a
++    courtesy: an empty string reaching this funnel would be filed as
++    `leaf_foreign` and a slot nobody filled would read as a wrong value.
+ 
+     TWO QUESTIONS, ONE PER SHAPE OF LEAF (contracts §4bis, N6). A leaf the tool
+@@ -1142,17 +1392,47 @@ def _out_status(item: PiiItem, spec: FieldSpec | None, surfaces: Sequence[str],
+     `contact.first_name` — is asked `leaf_holds`: no needle of a whole address
+     can live in «79», so asking the whole value's needles made every decomposed
+-    leaf `unmasked` for ever, un-earnable and un-failable at once (632 of 2 449
+-    OUT leaves on a 400-case slice of the corpus, every LOC house, flat, city,
+-    entrance and every PASSPORT series and number among them). A leaf that
+-    carries the value WHOLE — a free-text SMS, a joined by-fields address — is
+-    asked the needles, which is the question that fits a string with prose
+-    around it."""
+-    if not _leaf_carries(item, spec, surfaces, minted, written, own):
+-        return "unmasked"
+-    return "residual" if _leaf_carries(item, spec, surfaces, minted, restored, own) else "observed"
++    leaf un-earnable (632 of 2 449 OUT leaves on a 400-case slice of the corpus,
++    every LOC house, flat, city, entrance and every PASSPORT series and number
++    among them). A leaf that carries the value WHOLE — a free-text SMS, a joined
++    by-fields address — is asked the needles, which is the question that fits a
++    string with prose around it."""
++    if not written:
++        raise ObserveError(
++            f"{item.id}: _out_status was handed an EMPTY leaf; the emptiness of a leaf belongs "
++            f"to `_out_call` (contracts.Hop.optional), and `leaf_foreign` would misname it")
++    if _leaf_carries(item, spec, surfaces, minted, written, own):
++        return "residual" if _leaf_carries(item, spec, surfaces, minted, restored, own) else "observed"
++    if not _leaf_value_ok(item, spec, tool, path, written):
++        return "leaf_foreign"
++    if spec is not None and spec.role in contracts.GENERIC_PIECE_ROLES and (surfaces or minted):
++        return "engine_kept"
++    return "not_masked"
+ 
+ 
+ def _out_call(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem,
+-              own: frozenset[str]) -> HopObservation | None:
++              own: frozenset[str], claimed: set[tuple[int, str, int, str]]) -> HopObservation | None:
++    """One declared OUT/tool_arg hop, from the CALL to the status.
++
++    TWO RULES LIVE HERE AND THEY ARE THE ONES THE OLD FUNNEL GOT WRONG. The
++    emptiness of the LEAF decides `optional` (`contracts.Hop.optional`), not the
++    absence of the call; and a declared leaf the run never wrote is satisfied by
++    the semantically equal leaf it DID write, inside the declared turn
++    (`equivalent_out_leaf`). Everything after that — which of the six statuses
++    the leaf carries — is `_out_status`'s single decision.
++
++    A CLAIMED LEAF IS ADDED TO `claimed`. The crossing the declared hop was
++    satisfied by is ONE crossing: leaving it in the undeclared scan as well
++    would count one datum twice in every hop-level denominator
++    (`form_hOUT`, `residual`, the `out_*` counts) — a doubling that grows exactly
++    with the family the equivalence was written for.
++
++    THE TWIN'S IDENTITY IS CHECKED AGAINST `claimed` BEFORE IT IS ADDED. R22
++    refuses the corpus that declares two equivalent leaves on one transition,
++    but a saved run or a handwritten case can still carry one; the run-side
++    backstop is that the SECOND declared hop whose equivalence resolves to a leaf
++    an earlier hop already claimed reads `absent` (or nothing when optional) —
++    never `observed`, or one written leaf would count as two crossings and
++    `end_to_end` would inflate toward the gateway.
++    """
+     expected_owner = contracts.hop_owner_of_leaf(hop.tool_name, hop.path)
+     if hop.owner != expected_owner:
+@@ -1162,11 +1442,33 @@ def _out_call(case: CaseV5, run: ArmRunV5, repeat: int, hop: Hop, item: PiiItem,
+             f"(contracts.TEMPLATE_FIELDS / SUMMARY_FIELDS decide, not the case)")
+     call = call_for_hop(run, hop)
+-    if call is None:
++    path = hop.path
++    written = "" if call is None else leaf_text(flatten(call.written), hop.tool_name, path)
++    restored = "" if call is None else leaf_text(flatten(call.restored), hop.tool_name, path)
++    if not written:
++        # Е-2. `optional` IS READ OFF THE LEAF AND NOT OFF THE CALL. A hop whose
++        # call was made and whose slot was left empty is a hop that did NOT
++        # HAPPEN: it counts nowhere when the case says the agent may skip it,
++        # and it is `absent` — the fact `out_absent` exists for — when it may
++        # not. Reading it only when the CALL was missing put an unwritten leaf
++        # into every denominator the moment the call existed.
++        twin = equivalent_out_leaf(run, hop)
++        if twin is not None:
++            index, call, path = twin
++            identity = (hop.turn, call.name, call_ordinal_of(run, index), path)
++            if identity in claimed:
++                # Е-6: the second declared hop on a leaf an earlier hop already
++                # satisfied. One crossing is one hop, so the second reads as not
++                # happened — `optional` decides between `absent` and nothing,
++                # exactly as the emptiness of the leaf would.
++                return None if hop.optional else _flat(case, repeat, hop, True, item.type,
++                                                       "", "", "absent")
++            claimed.add(identity)
++            written = leaf_text(flatten(call.written), call.name, path)
++            restored = leaf_text(flatten(call.restored), call.name, path)
++    if call is None or not written:
+         return None if hop.optional else _flat(case, repeat, hop, True, item.type, "", "", "absent")
+-    written = leaf_text(flatten(call.written), hop.tool_name, hop.path)
+-    restored = leaf_text(flatten(call.restored), hop.tool_name, hop.path)
+-    status = _out_status(item, spec_v5_for(hop.tool_name, hop.path),
+-                         substitute_surfaces(run, item.id), minted_parts(run, item.id),
+-                         written, restored, own)
++    spec = spec_v5_for(call.name, path)
++    status = _out_status(item, spec, substitute_surfaces(run, item.id), minted_parts(run, item.id),
++                         written, restored, own, call.name, path)
+     if status == "observed":
+         produced, reference = own_pair(item.type, restored, (item.canonical, item.value),
+@@ -1338,7 +1640,14 @@ def _synthetic(kind: str, owner: str, item_id: str, turn: int, tool_name: str,
+ 
+ def _extra_call_hops(case: CaseV5, run: ArmRunV5, repeat: int, declared: Sequence[Hop],
+-                     own: frozenset[str]) -> list[HopObservation]:
++                     own: frozenset[str],
++                     claimed: frozenset[tuple[int, str, int, str]]) -> list[HopObservation]:
++    """Crossings the agent made that the case never declared.
++
++    `claimed` NAMES THE LEAVES A DECLARED HOP WAS SATISFIED BY (they are declared
++    hops, read through `contracts.LEAF_EQUIVALENCE`): one crossing, one hop, and
++    a second reading of it as undeclared would double every hop-level
++    denominator by exactly the equivalence's own population."""
+     taken = {(hop.turn, hop.tool_name, hop.call_ordinal, hop.path)
+-             for hop in declared if hop.kind == "OUT" and hop.tool_name}
++             for hop in declared if hop.kind == "OUT" and hop.tool_name} | claimed
+     surfaces = {item.id: substitute_surfaces(run, item.id) for item in case.base.pii}
+     out: list[HopObservation] = []
+@@ -1347,6 +1656,5 @@ def _extra_call_hops(case: CaseV5, run: ArmRunV5, repeat: int, declared: Sequenc
+             continue
+         turn = run.call_turns[index]
+-        ordinal = sum(1 for other, one in enumerate(run.base.calls)
+-                      if other < index and one.name == call.name and run.call_turns[other] == turn)
++        ordinal = call_ordinal_of(run, index)
+         flat_written = flatten(call.written)
+         flat_restored = flatten(call.restored)
+@@ -1375,8 +1683,11 @@ def _extra_call_hops(case: CaseV5, run: ArmRunV5, repeat: int, declared: Sequenc
+             # No item's substitute is in this leaf: the agent wrote something
+             # the gateway never touched. It is still a crossing of the form
+-            # axis — and it has nothing to compare, so it is `unmasked`.
+-            status = ("unmasked" if not item_id
++            # axis — and the value it carries belongs to no datum of the case,
++            # which is `leaf_foreign` (the third value the split named) and not
++            # a gateway miss on this item's behalf.
++            status = ("leaf_foreign" if not item_id
+                       else _out_status(items_by_id(case)[item_id], spec, surfaces[item_id],
+-                                       minted_parts(run, item_id), written, restored, own))
++                                       minted_parts(run, item_id), written, restored, own,
++                                       call.name, path))
+             out.append(_observed(case, repeat, hop, False, spec.pii_type, restored, written)
+                        if status == "observed"
+@@ -1418,4 +1729,8 @@ def observe(case: CaseV5, run: ArmRunV5, ic: PairVerdict | None,
+     # own?») and the answer depends only on the case.
+     own = own_stems(case)
++    # The leaves a declared hop was satisfied by through the equivalence table:
++    # filled while the declared hops are read, so the undeclared scan below does
++    # not count the same crossing a second time.
++    claimed: set[tuple[int, str, int, str]] = set()
+     observations: list[HopObservation] = []
+     for hop in case.hops:
+@@ -1439,5 +1754,5 @@ def observe(case: CaseV5, run: ArmRunV5, ic: PairVerdict | None,
+             one = _out_answer(case, run, run.base.repeat, hop, item, spans, residual)
+         elif hop.kind == "OUT":
+-            one = _out_call(case, run, run.base.repeat, hop, item, own)
++            one = _out_call(case, run, run.base.repeat, hop, item, own, claimed)
+         else:
+             raise ObserveError(
+@@ -1446,5 +1761,5 @@ def observe(case: CaseV5, run: ArmRunV5, ic: PairVerdict | None,
+         if one is not None:
+             observations.append(one)
+-    observations += _extra_call_hops(case, run, run.base.repeat, case.hops, own)
++    observations += _extra_call_hops(case, run, run.base.repeat, case.hops, own, frozenset(claimed))
+     observations += _extra_answer_hops(case, run, run.base.repeat, case.hops, spans)
+     return RunObservation(case=case, repeat=run.base.repeat, hops=tuple(observations),

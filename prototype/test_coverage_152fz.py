@@ -46,16 +46,22 @@ _MUST_CATCH: tuple[tuple[str, str], ...] = (
     ("родился 7 июля 1988", "DOB"),
     ("клиенту 95 лет", "AGE"),
     ("диагноз сахарный диабет", "MEDICAL"),
-    ("полис ОМС 7712345678901234", "OMS"),
+    # THE EXPECTED STRINGS ARE THE v6 REGISTRY IDS (G7, 02.10.2026). The five
+    # rows below used to name the v5-internal labels the engine emitted; the span
+    # now carries the id the registry and the benchmark name, and
+    # `ru_pii_v6.engine_label` hands the old spelling back to the vault. The
+    # VALUES are unchanged and every one is still masked whole — the assertion's
+    # logic is untouched, only the label it compares against.
+    ("полис ОМС 7712345678901234", "OMS_ENP"),
     ("водительское удостоверение 99 12 345678", "DRIVER_LICENSE"),
-    ("СТС 99 12 345678", "VEHICLE_DOC"),
+    ("СТС 99 12 345678", "STS_NUMBER"),
     ("гос номер А123ВЕ777", "PLATE"),
     ("машина х456ор69", "PLATE"),
-    ("счёт 40817810099910004312", "ACCOUNT"),
+    ("счёт 40817810099910004312", "BANK_ACCOUNT"),
     # ОГРНИП only. The thirteen-digit ОГРН is on the other list — see there.
-    ("ОГРНИП 304500116000157", "OGRN"),
+    ("ОГРНИП 304500116000157", "OGRNIP"),
     ("загранпаспорт 750123456", "INTL_PASSPORT"),
-    ("подключался с IP 192.168.14.203", "IP"),
+    ("подключался с IP 192.168.14.203", "IP_ADDRESS"),
     ("свидетельство о рождении II-МЮ №123456", "BIRTH_CERT"),
 )
 

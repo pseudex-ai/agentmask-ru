@@ -52,6 +52,7 @@ import pymorphy3
 
 from bench.agentpii4.parts import _PATRONYMIC_TAIL
 from bench.agentpii5 import contracts
+from bench.agentpii5 import form_v6
 from bench.agentpii5.contracts import FORM_ABSTAIN, FormVerdict
 from bench.agentpii5.form_tables import (
     CYRILLIC_SURNAME_SUFFIX,
@@ -446,6 +447,17 @@ def name_initials_same(produced: str, reference: str) -> bool:
 
 
 def name_script(text: str) -> str:
+    """THE ALPHABET the name is written in — and nothing else (SPIKE-Ж, Ж-5).
+
+    It used to answer the ROMANIZATION SYSTEM (`latin:gost|icao|bgn|unknown`),
+    which is a different question wearing the same name: `latin:unknown` is the
+    extractor's own «no table speaks for these letters» (`form_tables:37`), and
+    comparing that absence as though it were a convention charged two Latin
+    strings a `script` difference — 50 of the 62 `form OUT/answer` misses of
+    g07. The alphabet question stays here and is a real one: a Cyrillic name
+    answered by a Latin substitute is a genuine difference (3 hops in the
+    archives, 202 in g06 — class Г). The system lives in `name_translit`.
+    """
     letters = _letters(text)
     if not letters:
         # A letterless NAME field («+7…» misrouted, an empty slot) is in no
@@ -458,6 +470,25 @@ def name_script(text: str) -> str:
         return "mixed"
     if cyrillic:
         return "cyrillic"
+    return "latin"
+
+
+def name_translit(text: str) -> str:
+    """WHICH ROMANIZATION SYSTEM these letters follow, or `latin:unknown`.
+
+    A SEPARATE FEATURE, and the abstention is the whole point (SPIKE-Ж, Ж-5):
+    `latin:unknown` is not «another convention», it is «no letter here is one
+    the three published tables spell differently» — the instrument's own
+    admission that it has no opinion (`form_tables.TRANSLIT_SIGNATURES`). The
+    value line's neighbouring feature `order` abstains on exactly this shape of
+    label (`other`), and `FORM_ABSTAIN[('NAME','translit')]` does the same.
+
+    TEXT THAT IS NOT A ROMANIZATION ANSWERS `latin:unknown`, and that is a
+    statement rather than a fallback: a Cyrillic name has no romanization
+    system to name, so the feature cannot charge a difference it cannot
+    support — «Ivanov Petr» against «Иванов Пётр» differs on `script` and on
+    nothing else, as its fixture demands.
+    """
     lowered = text.lower()
     words = [word.lower() for word in _words(text)]
     for label, alternatives in TRANSLIT_SIGNATURES:
@@ -949,6 +980,7 @@ FEATURE_EXTRACTORS: dict[tuple[str, str], contracts.FeatureExtractor] = {
     ("NAME", "parts"): name_parts,
     ("NAME", "initials"): name_initials,
     ("NAME", "script"): name_script,
+    ("NAME", "translit"): name_translit,
     ("NAME", "hyphen_particle"): name_hyphen_particle,
     ("PHONE", "prefix"): phone_prefix,
     ("PHONE", "grouping"): phone_grouping,
@@ -976,6 +1008,9 @@ FEATURE_EXTRACTORS: dict[tuple[str, str], contracts.FeatureExtractor] = {
     ("PLATE", "case_class"): plate_case_class,
     ("PLATE", "spaces"): plate_spaces,
     ("PLATE", "region_sep"): plate_region_sep,
+    # §5.1: the v6 extractors live in form_v6.py; this ONE unpack is the whole
+    # merge — the v5 extractors above stay the same objects, never re-ordered.
+    **form_v6.FEATURE_EXTRACTORS,
 }
 
 

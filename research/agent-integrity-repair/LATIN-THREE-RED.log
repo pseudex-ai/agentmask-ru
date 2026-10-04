@@ -1,0 +1,2 @@
+FAIL test_full_transliterated_name_keeps_all_roles_and_script AssertionError 
+Failures: 1 ['test_full_transliterated_name_keeps_all_roles_and_script']

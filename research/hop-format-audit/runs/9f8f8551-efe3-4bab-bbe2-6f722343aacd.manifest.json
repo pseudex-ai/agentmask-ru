@@ -1,0 +1,126 @@
+{
+ "run_id": "9f8f8551-efe3-4bab-bbe2-6f722343aacd",
+ "source_dir": "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/runs/2026-09-29/v5-live-rerun-remaining-79",
+ "archived_at": "2026-09-29T09:07:09+00:00",
+ "archived_on": "MacBook-Pro-Igor.local",
+ "files": [
+  {
+   "path": "9f8f8551-efe3-4bab-bbe2-6f722343aacd.agent.usage.jsonl",
+   "bytes": 74102,
+   "sha256": "e3005158d35233ed7a444c397e9425efc819a4f9990a34d31ac458b556c9bde5"
+  },
+  {
+   "path": "9f8f8551-efe3-4bab-bbe2-6f722343aacd.arms.jsonl",
+   "bytes": 1158320,
+   "sha256": "8a4ed2069a58239fb68e4fd2b568eaa7a1aa26fdddfa42eac2bc969fa822e155"
+  },
+  {
+   "path": "9f8f8551-efe3-4bab-bbe2-6f722343aacd.arms.v5.jsonl",
+   "bytes": 1509369,
+   "sha256": "6a9976a7761571c3f4f036df49cdc9a68ca7b3f8218c01834d602d467f75d91b"
+  },
+  {
+   "path": "9f8f8551-efe3-4bab-bbe2-6f722343aacd.canary.jsonl",
+   "bytes": 6073477,
+   "sha256": "1bdb570ebfc1af7827bc69ac9005c901a7004f82439f51938bafda8f1e8cfff1"
+  },
+  {
+   "path": "9f8f8551-efe3-4bab-bbe2-6f722343aacd.gate.json",
+   "bytes": 1799,
+   "sha256": "d9878839461b14bba6d4c51acaaf04450ec4e9b03eb33dc26c1ee7af7936e1cc"
+  },
+  {
+   "path": "9f8f8551-efe3-4bab-bbe2-6f722343aacd.hops.jsonl",
+   "bytes": 720181,
+   "sha256": "0e474360b268007421b50c1a344b34709514a533cfd94bbc06e7a78251e6980d"
+  },
+  {
+   "path": "9f8f8551-efe3-4bab-bbe2-6f722343aacd.judge.jsonl",
+   "bytes": 18539,
+   "sha256": "d4e090730206216e5dc5400cd0517aae82ebfa8473720a5ad60bb03e2297d244"
+  },
+  {
+   "path": "9f8f8551-efe3-4bab-bbe2-6f722343aacd.meta.json",
+   "bytes": 3166,
+   "sha256": "cf09c484a5bb2cd7995a07d9c1f22608582decaaac41a057a5053b7b733c23eb"
+  },
+  {
+   "path": "9f8f8551-efe3-4bab-bbe2-6f722343aacd.oracle.json",
+   "bytes": 751,
+   "sha256": "070d7fbbc8dca73d05ff31f5129783d27b93d0d08d56f9a5dbd6397055e8d815"
+  },
+  {
+   "path": "9f8f8551-efe3-4bab-bbe2-6f722343aacd.public.json",
+   "bytes": 2548,
+   "sha256": "eaf6e43cf161bd3931fc54930e65ce297fd336f56e1afba6244e0f12423cb7fb"
+  },
+  {
+   "path": "9f8f8551-efe3-4bab-bbe2-6f722343aacd.report.json",
+   "bytes": 435317,
+   "sha256": "40f1f73b2cbb8dffadcdcb499c7d6adfc1d227692f0258e6c7e06dfdbb818130"
+  },
+  {
+   "path": "9f8f8551-efe3-4bab-bbe2-6f722343aacd.report.txt",
+   "bytes": 117193,
+   "sha256": "fd6d25f6ba7b2e295e5eead982d9d6e53886c496de2cdeedd766d0834b1fd73f"
+  },
+  {
+   "path": "9f8f8551-efe3-4bab-bbe2-6f722343aacd.spend.tsv",
+   "bytes": 7667,
+   "sha256": "ed75180ae838e27313ed121010270b10390b782601a455fe204a9ce1a42325f4"
+  },
+  {
+   "path": "9f8f8551-efe3-4bab-bbe2-6f722343aacd.triples.jsonl",
+   "bytes": 52463,
+   "sha256": "a05a852b80038787c6134e412e4dec37c3813f5c57d865dd4cf842b44b298ca7"
+  },
+  {
+   "path": "corpus.json",
+   "bytes": 733079,
+   "sha256": "497d3990611970df8141e621c4d30fbb51b9df521254347573292ca0a9048ba7"
+  },
+  {
+   "path": "corpus.v5.json",
+   "bytes": 1016758,
+   "sha256": "822ea9219d04c14660073a0a72cbbc9608788eb8976e8157eac97b4c7aad4233"
+  },
+  {
+   "path": "repairs.json",
+   "bytes": 34055,
+   "sha256": "3b56ac9ff2c081cb4d10262a2f91d67f9ba2f69f3b22c378b11cb36732d893d1"
+  }
+ ],
+ "files_total": 17,
+ "bytes_total": 11958784,
+ "run_sha256": "49f5e43155309c1cd7e91f2c15e010b161c15263a600ef699166e0d2f60d77c8",
+ "label": "rerun-remaining-79",
+ "tarball": {
+  "path": "9f8f8551-efe3-4bab-bbe2-6f722343aacd.tar.gz",
+  "bytes": 742558,
+  "sha256": "9887900cae47542bdd834cbd972e356f22b43c27e48fa53e0e39d5a3ed94045f"
+ },
+ "excluded_total": 18,
+ "excluded_cases": [
+  "memory_anaphora-028",
+  "memory_anaphora-079",
+  "memory_anaphora-121",
+  "rag-004",
+  "rag-006",
+  "sequential_chain:mail-000",
+  "sequential_chain:mail-003",
+  "sequential_chain:mail-004",
+  "sequential_chain:mail-006",
+  "sequential_chain:mail-007",
+  "sequential_chain:mail-009",
+  "sequential_chain:mail-010",
+  "sequential_chain:mail-011",
+  "sequential_chain:mailfind-002",
+  "sequential_chain:mailfind-003",
+  "sequential_chain:tracker-005",
+  "sequential_chain:tracker-006",
+  "tool_chain-025"
+ ],
+ "archive_dir": "/Users/igor/pseudex-run-archives/9f8f8551-efe3-4bab-bbe2-6f722343aacd",
+ "verified_files": 17,
+ "verify_failures": []
+}

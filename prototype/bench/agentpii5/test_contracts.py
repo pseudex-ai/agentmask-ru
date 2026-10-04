@@ -25,9 +25,17 @@ import sys
 
 def _spec_features() -> dict[str, tuple[str, ...]]:
     """docs/tz-agentpii5.md §8.4, copied by hand. Do not import it from
-    contracts — the point is that the two are written twice."""
+    contracts — the point is that the two are written twice.
+
+    `script` AND `translit` ARE TWO FEATURES SINCE CLASS Ж. The row of the spec
+    now names both («`script` (кириллица/латиница/смешанная — АЛФАВИТ) ·
+    `translit` (gost/icao/bgn/unknown — СИСТЕМА РОМАНИЗАЦИИ, воздерживается на
+    `unknown`)»), and the copy here moves with it in the same change: a spec that
+    still showed one feature would make this check pass on the old contract,
+    which is exactly what «written twice» is for."""
     return {
-        "NAME": ("case_class", "gram_case", "order", "parts", "initials", "script", "hyphen_particle"),
+        "NAME": ("case_class", "gram_case", "order", "parts", "initials", "script", "translit",
+                 "hyphen_particle"),
         "PHONE": ("prefix", "grouping", "separators", "parens"),
         "LOC": ("case_class", "generic", "generic_position", "house_marker", "flat_marker", "commas",
                 "city_present", "city_position", "by_fields", "building_entrance_markers"),
@@ -90,6 +98,8 @@ def _spec_metrics() -> tuple[str, ...]:
         "multi_all_out", "multi_consistency", "retry_form", "memory_consistency",
         "rag_masked", "rag_identity_kept", "doc_masked", "doc_extracted", "residual",
         "stream_fidelity",
+        "end_to_end_written", "multi_all_out_written", "chain_value_written", "chain_form_written",
+        "out_written", "out_no_mint", "out_engine_kept", "out_not_masked", "out_leaf_foreign",
     )
 
 
@@ -102,13 +112,26 @@ def main() -> int:
     if loaded:
         failures.append(f"importing contracts loaded {sorted(loaded)}")
 
-    # 1. features, per type, exactly
+    # 1. features, per type, exactly — over the v5 spec's own keys, read from the
+    # LIVE contract (C16 adopt_gate / V1-F2). Two corrections meet here and the
+    # auto-merge got only one of them:
+    #   * F15 — the v6 records add form rows the v5 spec never knew, so the
+    #     literal comparison stays a comparison about the v5 baseline;
+    #   * V1-F2 — it must read `contracts.FORM_FEATURES`, not the registry.
+    #     The registry's NAME record still transcribes the PRE-SPLIT table
+    #     (alphabet and romanization collapsed into `script`, no `translit`), so
+    #     comparing `pii_types` against this table was red for a reason that is
+    #     not the contract's: S4 migrates that record, and until then the LIVE
+    #     table is the only place the split can be pinned. A test that reads the
+    #     copy it is supposed to police cannot police it.
     spec = _spec_features()
-    if set(c.FORM_FEATURES) != set(spec):
-        failures.append(f"form types {sorted(c.FORM_FEATURES)} != spec {sorted(spec)}")
+    live = {kind: c.FORM_FEATURES.get(kind) for kind in spec}
+    missing = [kind for kind, features in live.items() if features is None]
+    if missing:
+        failures.append(f"v5 form types missing from contracts.FORM_FEATURES: {missing}")
     for kind, features in spec.items():
-        if tuple(c.FORM_FEATURES.get(kind, ())) != features:
-            failures.append(f"{kind}: contracts {c.FORM_FEATURES.get(kind)} != spec {features}")
+        if tuple(live.get(kind) or ()) != features:
+            failures.append(f"{kind}: contracts {live.get(kind)} != spec {features}")
     pairs = c.feature_pairs()
     if set(c.FEATURE_LABELS) != set(pairs):
         failures.append(f"FEATURE_LABELS keys differ from feature pairs: "
@@ -252,6 +275,25 @@ def main() -> int:
         failures.append("mail_send.to[] is an address, not the letter a person reads")
     if c.hop_owner_of_leaf("sheet_append_row", "values[0][2]") != "tool_arg":
         failures.append("a spreadsheet cell is an ordinary argument leaf")
+
+    # 5bis. the authorial leaf equivalence and its canonical spelling (Е-6). R22
+    # forbids declaring two leaves of one class on one transition, and the
+    # corpus's own builder keeps the CANONICAL one — so the canonical must be a
+    # member of the class, its FIRST member, and `is_canonical_leaf` must agree.
+    if set(c.LEAF_CANONICAL) != {name for name, _leaves in c.LEAF_EQUIVALENCE}:
+        failures.append("LEAF_CANONICAL must name exactly the classes LEAF_EQUIVALENCE folds")
+    for name, leaves in c.LEAF_EQUIVALENCE:
+        if c.LEAF_CANONICAL.get(name) != leaves[0]:
+            failures.append(f"class {name!r}: the canonical leaf is not its first member")
+        canonical_tool, canonical_path = c.LEAF_CANONICAL[name].split(".", 1)
+        if not c.is_canonical_leaf(canonical_tool, canonical_path):
+            failures.append(f"class {name!r}: its first member is not is_canonical_leaf")
+        for leaf in leaves[1:]:
+            other_tool, other_path = leaf.split(".", 1)
+            if c.is_canonical_leaf(other_tool, other_path):
+                failures.append(f"class {name!r}: non-first member {leaf} reads canonical")
+    if c.is_canonical_leaf("crm_find_contact", "query.phone"):
+        failures.append("a leaf in no class must not read canonical")
 
     # 6. Line is the public one
     line = c.Line("x", 3, 3)

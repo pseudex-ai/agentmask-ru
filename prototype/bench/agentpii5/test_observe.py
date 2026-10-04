@@ -17,8 +17,10 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from bench.agentpii4.schema import Locus
+from bench.agentpii4.parts import parts_of
 from bench.agentpii5 import contracts
 from bench.agentpii5.contracts import ArmRunV5, CaseV5, Hop
+from bench.agentpii5.pii_types import TYPE_REGISTRY
 from bench.agentpii5.fixtures import (
     FAKE_NAME,
     OTHER_NAME,
@@ -28,6 +30,7 @@ from bench.agentpii5.fixtures import (
     _case,
     _hop,
     _in_message,
+    _in_seed,
     _item,
     _result,
     _run,
@@ -307,8 +310,8 @@ def test_out_unmasked_has_nothing_to_compare() -> list[str]:
         {"contact": {"last_name": REAL_NAME}}, {}, "", 0),), (0,)), {"p1": FAKE_NAME})
     problems: list[str] = []
     got = _one(case, missed).hops[0]
-    if got.status != "unmasked" or got.verdict is not None:
-        problems.append(f"a leaf with no substitute in it must be `unmasked`, got {got.status}")
+    if got.status != "leaf_foreign" or got.verdict is not None:
+        problems.append(f"a leaf with no substitute in it must be `leaf_foreign`, got {got.status}")
     if _one(case, worked).hops[0].status != "observed":
         problems.append("a leaf that DID carry a substitute must stay observed — the fixture "
                         "would otherwise separate on nothing")
@@ -587,6 +590,33 @@ def test_extra_hop_undeclared() -> list[str]:
     return problems
 
 
+def test_second_declared_hop_on_a_claimed_leaf_is_absent() -> list[str]:
+    """Е-6, the run-side backstop of R22. A saved run or a handwritten case may
+    still declare two equivalent leaves on one transition; the observer must not
+    read two `observed` from one written leaf. The FIRST declared hop claims the
+    equivalent leaf the agent wrote, and the SECOND declared hop that resolves to
+    the SAME leaf reads `absent` (or nothing when optional)."""
+    loc = _item("p4", "LOC", "Ижевск, улица Клубная, 85", "Ижевск, улица Клубная, 85",
+                "i1", _in_seed("s1", "address"))
+    first = _hop("OUT", "tool_arg", "p4", 0, 0, "courier_book", 0, -1, "address.locality")
+    second = _hop("OUT", "tool_arg", "p4", 1, 0, "delivery_create_order", 0, -1,
+                  "to_location.city")
+    case = _case("obs-claimed", "single", ("адрес",), (loc,), (first, second))
+    run = _with_subs(_with_calls(_run("obs-claimed"), (_call(
+        "crm_upsert_contact", {"contact": {"address": {"city": "Самара"}}},
+        {"contact": {"address": {"city": "Ижевск"}}}, {}, "", 0),), (0,)),
+        {"p4": "Самара, улица Луговая, 10"})
+    by_index = {hop.hop.hop_index: hop for hop in _one(case, run).hops if hop.declared}
+    problems: list[str] = []
+    if 0 not in by_index or by_index[0].status != "observed":
+        problems.append(f"the first hop must be observed; got "
+                        f"{by_index.get(0).status if 0 in by_index else 'not emitted'!r}")
+    if 1 not in by_index or by_index[1].status != "absent":
+        problems.append(f"the second hop on the claimed leaf must be absent; got "
+                        f"{by_index.get(1).status if 1 in by_index else 'not emitted'!r}")
+    return problems
+
+
 def test_parent_path_joins_the_leaves_in_field_order() -> list[str]:
     """One value carried by SEVERAL leaves is ONE hop.
 
@@ -640,25 +670,21 @@ def test_seed_item_has_no_message_span() -> list[str]:
 
 # --- contracts §4bis: the needle layer, rule by rule ------------------------------------
 
-# One value per type, in the notation the corpus writes it in. The list is the
-# closed `contracts.FORM_TYPES` minus nothing: a type left out of it would be a
-# type whose leak check nobody ever ran.
-_VALUES: tuple[tuple[str, str, dict[str, str]], ...] = (
-    ("NAME", "Иванова Елена Петровна",
-     {"surname": "Иванова", "given": "Елена", "patronymic": "Петровна"}),
-    ("LOC", "омск переулок барышникова 7кв111",
-     {"city": "омск", "street": "барышникова", "house": "7", "flat": "111"}),
-    ("PHONE", "+7 999 000-11-22", {"digits": "9990001122"}),
-    ("CARD", "2200 2334 2029 7500", {"digits": "2200233420297500"}),
-    ("SNILS", "168-408-927 05", {"digits": "16840892705"}),
-    ("INN", "500 100 732 259", {"digits": "500100732259"}),
-    ("PASSPORT", "6942 474016", {"series": "6942", "number": "474016"}),
-    ("DOB", "05.06.1988", {"iso": "1988-06-05"}),
-    ("DATE", "05.06.1988", {"iso": "1988-06-05"}),
-    ("EMAIL", "voronina96@gmail.com", {"local": "voronina96", "domain": "gmail.com"}),
-    ("PLATE", "А220ММ96",
-     {"letter": "А", "digits": "220", "pair": "ММ", "region": "96"}),
-)
+def _registry_values() -> tuple[tuple[str, str, dict[str, str]], ...]:
+    """One value per registry type, read from the record's OWN `sample` field
+    (F.5). A hand-picked v5-only list stopped being the closed list the moment
+    the v6 records joined the registry, and a type left out of it would be a
+    type whose leak check nobody ever ran. `parts` is `parts_of`'s reading of
+    the sample — the corpus's decomposition for the v5 types it knows, empty
+    for a v6 type whose splitter no one has written; N1 needs only the `whole`
+    needle, which every type builds, so an unknown type still proves the
+    tripwire."""
+    return tuple((record.id, record.sample, parts_of(record.id, record.sample))
+                 for record in TYPE_REGISTRY)
+
+
+# One value per type, in the notation the record writes it in.
+_VALUES: tuple[tuple[str, str, dict[str, str]], ...] = _registry_values()
 
 
 def _typed_item(pii_type: str, surface: str, parts: dict[str, str]):  # noqa: ANN202
@@ -824,7 +850,7 @@ def test_a_decomposed_leaf_is_judged_by_its_own_role() -> list[str]:
     for label, written, restored, want in (
             ("restored", "79", "46", "observed"),
             ("fake left standing", "79", "79", "residual"),
-            ("never masked", "46", "46", "unmasked")):
+            ("never masked", "46", "46", "not_masked")):
         got = _status(written, restored)
         if got != want:
             problems.append(f"house leaf, {label}: read {got!r}, must be {want!r}")
@@ -862,6 +888,11 @@ def test_an_unknown_needle_kind_raises() -> list[str]:
         pass
     found = {needle.kind for _type, surface, parts in _VALUES
              for needle in value_needles(_type, surface)}
+    # IP_ADDRESS's registry sample is IPv4, so the loop above proves `octets`
+    # but never `ipv6` — an ipv6 needle is built only from an IPv6 surface.
+    # Probe one explicitly: a kind the builder knows how to build must not read
+    # as «nothing ever builds» for want of a sample in the loop.
+    found |= {needle.kind for needle in value_needles("IP_ADDRESS", "2001:db8::1")}
     missing = set(contracts.NEEDLE_KINDS) - found - {"initials"}
     if missing:
         problems.append(f"declared needle kinds nothing ever builds: {sorted(missing)}")
@@ -1049,6 +1080,8 @@ def main() -> int:
         ("leaked_in_partial_cover", test_leaked_in_partial_cover),
         ("optional_absent_not_emitted", test_optional_absent_not_emitted),
         ("extra_hop_undeclared", test_extra_hop_undeclared),
+        ("second_declared_hop_on_a_claimed_leaf_is_absent",
+         test_second_declared_hop_on_a_claimed_leaf_is_absent),
         ("parent_path_joins_the_leaves_in_field_order",
          test_parent_path_joins_the_leaves_in_field_order),
         ("seed_item_has_no_message_span", test_seed_item_has_no_message_span),

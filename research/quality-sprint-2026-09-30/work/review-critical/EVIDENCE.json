@@ -1,0 +1,656 @@
+{
+  "scope": "independent read-only M1b/S1 review; no original output files rewritten",
+  "inputs_sha256_before": {
+    "prototype/bench/agentpii5/__init__.py": "6248d47c8a3502b9d9506858529395ca360203b2b673a808b82029b6902a3c01",
+    "prototype/bench/agentpii5/__main__.py": "f0c822084be9f0f1222a075516fca8f64732f461a64d01c590d565ace6a0c56f",
+    "prototype/bench/agentpii5/actual_hops.py": "4f8a0db3c39d0a302d76b48b86b966139e883d7aa5dbd609ef09648402b5aeb8",
+    "prototype/bench/agentpii5/answer_restoration.py": "3e62809f48666e763f5dc348829b8b57eb42089fe809ffd4ae7e5c1af26ec9d7",
+    "prototype/bench/agentpii5/build.py": "c7d5d9785993d83536b7153de70c4dd9daa24bfcdce9895941dfecbf0cb36a8b",
+    "prototype/bench/agentpii5/calibration.py": "e22de34c8891c662433501368d7538944e93960d1d704bb84ddd46a65dd60889",
+    "prototype/bench/agentpii5/causal_hops.py": "f69cec1912d36ca86a6e38471350059579033842a6aaa6fc587733363a2cb1dd",
+    "prototype/bench/agentpii5/codex_connector.py": "fa07c3e0392d2a0a14f59734a41fe0a527fcd6c30ad68c00223e4d77f4a70aea",
+    "prototype/bench/agentpii5/cohort.py": "0368ede46a71c55bfee21be8382f655c35deffcb44b26f195f2b3f266a20bd15",
+    "prototype/bench/agentpii5/compare.py": "c8296e03f801f5304d93d01ba9e1212dc8c6b9b95b751c569597acfc085be8a2",
+    "prototype/bench/agentpii5/connectors.py": "ff4df2e62ac0098f5ee44beea28363d41d5a2895bee41888d04902f1a7739ccf",
+    "prototype/bench/agentpii5/contracts.py": "d616610137519d261e0d25d8517ad82d348d83103b54ae6cd7d7ee357fb46800",
+    "prototype/bench/agentpii5/deepseek_connector.py": "a750838a95b1e2ac36f1f93048fcd0d26b42f6d4cd47bc95f638fa7613c3b727",
+    "prototype/bench/agentpii5/fixtures.py": "40461e7ee8a57687f4b0a8b2b096da70a51a7f47e2e1d020277d2d04bec38bda",
+    "prototype/bench/agentpii5/form.py": "e76f2824fccc53e0acc9508d459bcd5918f3b4c95e3f0c1250ff16fade892699",
+    "prototype/bench/agentpii5/form_tables.py": "98fe80c06d170699eb0a06c12eb0c9a5a5d5e2e1481c11f7e642d1087a69a5c1",
+    "prototype/bench/agentpii5/frozen_oracle.py": "44b6ee89ffc66498504dac37e951a61204af05ca481d326c4d7f858026dd8140",
+    "prototype/bench/agentpii5/harness.py": "0cc7f9144ad8a7bdd6463ff0b5daa94d8f3711453ea4e1064056d013eb7d1eeb",
+    "prototype/bench/agentpii5/hop_report.py": "881edd6220a100b251b126b4ce68c3332884c2bf7a7813ee7c900723078f8ea4",
+    "prototype/bench/agentpii5/judge.py": "5510aa2fc444b6fad2ee9fc3058b0c78849202ed6508246e7d6972ca847ce59d",
+    "prototype/bench/agentpii5/live.py": "b6c494adbaa70bbe30e3400bec9591dd415733503cd7eb231f72504339500597",
+    "prototype/bench/agentpii5/metrics.py": "f372cd18fb0ac3a4f5a95d85895002bd9f73204bd0804a8c90aa5d18d5f6ab60",
+    "prototype/bench/agentpii5/microscope.py": "dfe0d7e1022ad33c3bddc42afd916d275282c3fbff0d2febc641ec8b6148903b",
+    "prototype/bench/agentpii5/mock.py": "ca7793fda74412536a2e07e6b3d89e96212b26ceeb36a2d65e0d41aba1d245b9",
+    "prototype/bench/agentpii5/observe.py": "5d111351345642480052ecd11fe8000d9d1a14c4c00a451b94b3646429b29a90",
+    "prototype/bench/agentpii5/payload_canaries.py": "ed2e605f94cb02c8233a75ebfb6a7531fcc4c84c2a0b30e138d49c8c447ea631",
+    "prototype/bench/agentpii5/perfect.py": "122217b9dac9d0fe46e7aff734c0802ff63f8f8d7ac287c595b99968df171976",
+    "prototype/bench/agentpii5/provider.py": "2f3c5a441b2ca82ada6ec613c14a8a9578505ae596a81fd646b21e84b95cff4c",
+    "prototype/bench/agentpii5/quarantine.py": "0cbb8203b6d007cc1f1010f523fc4be3471702befd0334ffa75ac28cfed60419",
+    "prototype/bench/agentpii5/records.py": "0c19ca6de6885331ea677d8d1776b29b22b64901a830afa4003d7fa76593fede",
+    "prototype/bench/agentpii5/report.py": "0558694f37cc1ae418ce857782aba4a233aa109d5f148539786ceab427435a3a",
+    "prototype/bench/agentpii5/reportjson.py": "adb4b78ca972887094feeb2a2faf748bfd9c985ce4c7a8002fbb825487b91d43",
+    "prototype/bench/agentpii5/repro.py": "8d2011538fc0020e8507a532f438ab6657ce5cd0ba52442dc7af407144408f1a",
+    "prototype/bench/agentpii5/revise.py": "4f4b14deaae87f094f98fd636ef323fdf30f19d320449dabdc41648c7e46d627",
+    "prototype/bench/agentpii5/runinfo.py": "b6999abf505b415c78d86141f6f3a8685f59ddceb27c276629d43c46ed1abb78",
+    "prototype/bench/agentpii5/scenarios5/__init__.py": "92075e866e00675f27927b41c2b32c9e518bdc6a0634bf3e1d95338b7f31b49b",
+    "prototype/bench/agentpii5/scenarios5/assistant_writes.py": "9c4026a3460c5aff2cbfbbb6aa9e3a15c0036610794e37e72edca13045cf5d92",
+    "prototype/bench/agentpii5/scenarios5/branching.py": "75c9605e16647460d17270012ab683c0216b455acf0f9dc1dc5c3d2a1684c972",
+    "prototype/bench/agentpii5/scenarios5/client_tools.py": "454b9bc53c975bd16212fa67580df129b99d585303489d1ed7ace6ee8c6d930f",
+    "prototype/bench/agentpii5/scenarios5/common.py": "f00758baa75b2347468bc8de148768a2d758efbecdbbed3f0159de47754097e5",
+    "prototype/bench/agentpii5/scenarios5/document.py": "3b3b1a5a1ac91174683b2397276da5c5319401f2e32bdd64505640bbbfa3fff3",
+    "prototype/bench/agentpii5/scenarios5/fanout_pick.py": "c0a307caedbf17354f40e26b77df18794a48129b0c4d9a712d11f97c0913005e",
+    "prototype/bench/agentpii5/scenarios5/mail_find.py": "e05173c2246530b18bfe0d75af96d77bccb8149da7af619b825dddcdde220a56",
+    "prototype/bench/agentpii5/scenarios5/mail_loop.py": "6529b346d911be06069a045bfb60f73c2347fea881e1c2b15f8585347b44e631",
+    "prototype/bench/agentpii5/scenarios5/memory_anaphora.py": "564afd814010674e038bb1ae00fa98090a0374ff6b5afa8ebe40672a25d8343c",
+    "prototype/bench/agentpii5/scenarios5/office.py": "f90b12e763191c6d3c97ddf6898e3ab6b9b495443766d1d1408daf16b1eb608e",
+    "prototype/bench/agentpii5/scenarios5/parallel.py": "136801347565ab92956133f9c1f9c685a3003fbb7e564a075d6e4d12e788d96c",
+    "prototype/bench/agentpii5/scenarios5/plan_a.py": "9ed19d92dee20d2fece1b569507e235ef96f36eefb2c6036a19cfd93a1acdbb2",
+    "prototype/bench/agentpii5/scenarios5/plan_b.py": "db2e3f8111b5a7404c5997f9ae887c1fd91c195cae669c5b231236a83013bcd8",
+    "prototype/bench/agentpii5/scenarios5/rag.py": "1e5613ab210ffcd9b0bf8ed5ef71404136c1f75d46d4565179cdb89be6b58b3d",
+    "prototype/bench/agentpii5/scenarios5/retry_same_tool.py": "23ac4cd8b1369cfdaaf4857409e868f1b6dabb6bf4925dc0242832dbcd35f0b8",
+    "prototype/bench/agentpii5/scenarios5/same_tool_other_target.py": "a16f790a8e761d3b22aade5574cfe06004510e605776b179f326d35c0f46d341",
+    "prototype/bench/agentpii5/scenarios5/sequential_chain.py": "2fb11f3fb7d6e4c04c16a57c67a5b8b135ecd01118298d4bc1f2cfadb150ecc9",
+    "prototype/bench/agentpii5/scenarios5/single.py": "9f3c106c85964d7b629357040eb9d078d269205a857a54dcb168189ea2e599b9",
+    "prototype/bench/agentpii5/scenarios5/tracker.py": "cac697a4ead3ab4af6bb7bda5a4765ff83b33b0808b684e86ac828b01afca805",
+    "prototype/bench/agentpii5/scenarios5/user_in_loop.py": "181ea5a0d5a3d256952b697b09fe1d4cabfae9a341bc8f9598fc7c0d1234161e",
+    "prototype/bench/agentpii5/schema.py": "f1e8e2e593e4f47ec8de554be50c2cfb1400a023e5c979066d890cd57e31ad4c",
+    "prototype/bench/agentpii5/test_actual_hops.py": "df219e4f873c6f85009154429976d2d86f0a133398eb180f61c140f18d30bca3",
+    "prototype/bench/agentpii5/test_answer_restoration.py": "7bab1d4500bb920781d6c192bb7a624d4f70b2547fc04f009b971572cb55de0f",
+    "prototype/bench/agentpii5/test_build.py": "15d2ba1b3f9a40a25dec81a90f8be5acfaf0cc21bc3aac5b41ca2749846f38c1",
+    "prototype/bench/agentpii5/test_calibration.py": "6c0694118ebd301a0249ddc242c822d9cfde3e246b4a192a72e7cd4cdf0b0577",
+    "prototype/bench/agentpii5/test_call_scoped_name_consistency.py": "fc84228d708550a083d2e86d6a9404bfad09eb816ae7782285fd26c533eafd4f",
+    "prototype/bench/agentpii5/test_causal_hops.py": "4941016f8ea3cc448cf2fa0e492cf498fd9ec329768ab8d8186f95b898b03abb",
+    "prototype/bench/agentpii5/test_city_vs_surname.py": "9b01dd4892a95d937aa717df2fb334e70f54c6162dd5d8b5fd61f9832e25841d",
+    "prototype/bench/agentpii5/test_cli.py": "3d4d090470e20c397ef726297a0ad198035ba171d59ebcc8fab066ba3343d4ec",
+    "prototype/bench/agentpii5/test_client_families.py": "f36ea8f5a6208262a97817f63be37f03be5c9610afc67a49870677b545f15f2e",
+    "prototype/bench/agentpii5/test_cohort.py": "1f03a6fafd94ad2bcd738f4b1e425e7d003363230bf5ac6a6d96af1e418d96d4",
+    "prototype/bench/agentpii5/test_compare.py": "ee12d6c9b86aed6d788e4044f05ae80882c9b2acaf5d20732eb323af9382979b",
+    "prototype/bench/agentpii5/test_connectors.py": "96d72b7df6b622742c5ffc10a7535a218929a0737867b205165fae1dc7ae3899",
+    "prototype/bench/agentpii5/test_contracts.py": "670ce1eb7b81d9dc2d26ee8c825f89b0d91be648e6604e7ea1f518d6621956e7",
+    "prototype/bench/agentpii5/test_echo_marker_survives.py": "f4edac594e32a9e0408717cfc9e832a1354cad8791d2296e6c3cee81e56228b4",
+    "prototype/bench/agentpii5/test_error_payload_coverage.py": "02c2b1813d38602c937a164350ab1fdd578086a38f63390dbc3b82752a2af5bb",
+    "prototype/bench/agentpii5/test_fixtures.py": "e29652bf3bcae8fae1ee8279fd4e8a3724df4e92ad2763531fac33a19982830b",
+    "prototype/bench/agentpii5/test_form.py": "005f64af9fa6f7d979184775d6cc57eebdaeaab168f74ced04aac8af02138c50",
+    "prototype/bench/agentpii5/test_frozen_oracle.py": "dc61b5d36b722eb00f71af27b4e86e3f6466ddabdb76c03f02eec2ed73ec199d",
+    "prototype/bench/agentpii5/test_generator_a.py": "d17aa1de28737179a4888ce0bee03dddfc4ff62e61488a8bd11b70b2a08a08a0",
+    "prototype/bench/agentpii5/test_generator_b.py": "81a094d0751d5a97fce60c71d58e783ce1acb64d7c724f8922a8034060b48625",
+    "prototype/bench/agentpii5/test_harness.py": "6f781192efccc86e2f819f5a74fd8363613dcbb2b1fd55c2072a6264e8d814d1",
+    "prototype/bench/agentpii5/test_harness_stream.py": "9eb767575fb24021af6b92a32e7c8c39e9353cfc448de718d724ef2e73c469ac",
+    "prototype/bench/agentpii5/test_hop_report.py": "0b92bde4a4cc77e39787bfe9036a4aace2ef7441e608b6a8f50e9fa2449f0bfd",
+    "prototype/bench/agentpii5/test_judge.py": "965a019b021595b2385e6f7465ba387ec1ab8801721a9834d5ec2a2bc82e26c8",
+    "prototype/bench/agentpii5/test_live.py": "bfe3eb035b125b0657630ff349f3fb814e310495c99fed0aa843aa35a1467bf0",
+    "prototype/bench/agentpii5/test_loc_acceptance.py": "9ec141ca80c315e6167718e64f10437e6f15e584467ed881af6a058b2a707eef",
+    "prototype/bench/agentpii5/test_loc_settlement_echo.py": "2a6ea9ab65c73831726d83b51b4d37b221048fd6ed0d0a6d321bfa3d7cd5fb89",
+    "prototype/bench/agentpii5/test_metrics.py": "8e2da72c5470925866545fd7ad6b24d3d7dd2b0ffb1fed5a29f2fe8679e3c113",
+    "prototype/bench/agentpii5/test_microscope.py": "ed2d2af7750f5950246de58794421c3964de9850528670e63497a7cc0df04b98",
+    "prototype/bench/agentpii5/test_mint_consistency.py": "85239b8792c5dcf399f8ead0763aa1fd80f5100767449bf45ad807d8a819cdd9",
+    "prototype/bench/agentpii5/test_mock.py": "4566db9c5191cc244eba63fdc3399dd0a8f74c89cf96081335360a2e2d322248",
+    "prototype/bench/agentpii5/test_observe.py": "514d27423e1c28a8c50dbe412ceb2b3ae11d10ef8edecff458c1e2fb26e9d6a0",
+    "prototype/bench/agentpii5/test_payload_canaries.py": "698846f266745440ed35c3e7041b62eb4ef45d459ecec373a60918f2f49abc67",
+    "prototype/bench/agentpii5/test_payload_canary_integration.py": "ac0abae1a7e5f058be684cfb3825eac27dfc668846cb2159de7366dbe006e214",
+    "prototype/bench/agentpii5/test_perfect.py": "5bb836bc8591d3a423671dcc8b7e2ff0d8aa1d5341d5968f3e6921bac68141c5",
+    "prototype/bench/agentpii5/test_provider.py": "fe781ad84d3f3e972e750d982547d74d24962594a4f159868214e92d18d910ab",
+    "prototype/bench/agentpii5/test_quarantine.py": "ffc1c2488772b021cbd442c8379ad581026436b0114b8ed15a079bf52d9848d0",
+    "prototype/bench/agentpii5/test_recorded_echo_privacy.py": "2ad7815d34ef42b47d6b150bd69afaaaa70ad552385e85671d459204e6b3d7ab",
+    "prototype/bench/agentpii5/test_records.py": "c22d5a17c897f0244c7bb6933f83479782a0032d415195c036daffa1b1e8bd6b",
+    "prototype/bench/agentpii5/test_report.py": "47d6aa503cf30542368a14d9dbcbf6c6cecb7d4af3b16aa63cc25744d1741c55",
+    "prototype/bench/agentpii5/test_report_frozen.py": "0a8e803e7877e8d93d14aa03fd87a6c8e1c770b72f3b95073663bd7c562b1e02",
+    "prototype/bench/agentpii5/test_report_gate.py": "632da127b649036df951b31158bb093c9cf6e8597077aab2dda4c055e8fa7ca7",
+    "prototype/bench/agentpii5/test_reportjson.py": "5739aeef321e25b5dba171ac1c95bfc98226dd52daa35c4a09cd0499f412bf7d",
+    "prototype/bench/agentpii5/test_repro.py": "3cbf78652df769f90c7713618a89e06a34094289a6b76323a1770da0f020928b",
+    "prototype/bench/agentpii5/test_response_trace.py": "f3c586cbecbdaaffb8e325de013bf65582bf5f748c8c98df02b9bcf5b14604d6",
+    "prototype/bench/agentpii5/test_retry.py": "f052bc7e913309b1c95b53134aceb854eea989597a1a4bac75a8e71708bf512e",
+    "prototype/bench/agentpii5/test_revise.py": "9f280af92b7bbc235d6de0e961d59c2bc080e092aaad3a6f91a27364f054868c",
+    "prototype/bench/agentpii5/test_runinfo.py": "275c16dadcd9b1815d7dad4a606b2bdde0d7bdceb9a426164b96a5ea6079b6c2",
+    "prototype/bench/agentpii5/test_schema.py": "1e73e99c629c435ba81a9790f0b11a0c869243c772a1c8acacc09467c3641a62",
+    "prototype/bench/agentpii5/test_spec_corpus.py": "88ec79ccd1e08e59e3cb841d77fe506be395f3cf94f5ea3e0fc83a362f96ce1d",
+    "prototype/bench/agentpii5/test_spec_form.py": "f0bc4206da7ced38b685e35f4f8d739c1653e7dbaa2a4684a9e09a7d8cac2f57",
+    "prototype/bench/agentpii5/test_spec_metrics.py": "4d21c7f3feb32821e647147a7a264db6d0ccbf1680b88ca561c7cc108f7e37d5",
+    "prototype/bench/agentpii5/test_spike_e.py": "8effa32dcb05708325a02219dcbef803a5ed758847f06737ea78db68c91a5096",
+    "prototype/bench/agentpii5/test_spike_zh.py": "dee5a8bef5d25cf1f83d77da1f205bc8b64af8000dfac17d7484ca4c2c83c921",
+    "prototype/bench/agentpii5/test_timeout_scale.py": "27dffc091a68dc8f3ca3cf58b8c8ca4053b0beda811f54632ed90a319cd09f7a",
+    "prototype/bench/agentpii5/test_tools.py": "b0e95a1161550a829939baf59f694357000d99a66311f6e8d7967179b3d113f4",
+    "prototype/bench/agentpii5/test_trend.py": "71a2f6800fb7331b60cbec165ec54d546ee72fb716a86be482f9ccbf5066b346",
+    "prototype/bench/agentpii5/tools.py": "152bc1daee04b6bb9405ba41aa479932b5ae9d27b372ad774b7b2d52fd77e49a",
+    "prototype/bench/agentpii5/trend.py": "795f56c46a451eec05168ce023e55d05caab95f5a055d2ee70b31cc86ac3d83e",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.agent.usage.jsonl": "f478c4c95438488e6bc539b0b6c47ba2d7a6a59cf632a6094b079bc676cabf82",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.arms.jsonl": "dc0d749ab04c7788686a694675c1df59cb287455c83b93926bf8619c1444ac5a",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.arms.v5.jsonl": "252e775e602f3a59624d85efc5c6c56b35b84ffc4f0c2e59a39571d5fc0010f9",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl": "3c42892960088ad08a8cded1b5dc987563cfe4af810d7b8ae283b501e2ceabb7",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.gate.json": "23cbeb3c72269f8dee1a1377ab3bada351baba1b370104cbf6a322c6d695cbdf",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.hops.jsonl": "7fe5698ce0c704457cb03511c0c4835fec9c8786c14b8fe45d1dc0d8f767b4f1",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.judge.jsonl": "8a3a658fba14fc825edd975d8c5e66a79a3269b7b90180b9f5da00a8ccb31b56",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.meta.json": "5d4db2e76c226ea8b49c837bcbad0a490bd03c8425a19ad335a634e9cdca1505",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.oracle.json": "a5be57da1ea5d83e531b0c405236cd046df135844425fad9ec5ddb18c818d6b4",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.public.json": "04f746008f98652b25094e9223bb79626697fa577c353063248c68f2e01302b9",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.report.json": "d4a9e7bbc31edd91799b5124785060f08ba05fc5ee8ba3e28e92aae06fd29985",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.report.txt": "d8e34651cd8f4e05114dccac25b87a593b8987294cee4565f3c929e5accf4412",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.spend.tsv": "3c328b1817d1d45781c53d73de55ad5a5bf25ebb46d66a5dca66a0141543c34e",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.triples.jsonl": "2d257e25ffe14a68375ce856a5581fa843aba51e0896084ce38846e23c45abee",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/corpus.json": "d0e2788aee5fe2bc4ab66c8e955836115ca02cc21cfd7afa67e2c666f8ffa9dc",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/corpus.v5.json": "83d46b1da3416c40fffc94e41ac9a88ac642bc405b05d217e5c5d0413a9e12e4",
+    "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/repairs.json": "c40b89be45723c0a0c3ffb716baf94ea7f5d0cc1906172f81a10b028fddbb313",
+    "prototype/licensing/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "prototype/licensing/assets_source.py": "2e61b814f0a40a3ecbe3d93a9b98673348e215952d6143580e9168f4e0d5cfd5",
+    "prototype/licensing/canary.py": "a4296e05a64fdf5b95930bc6f804415a208f635bdcbdd43efa3c7d2809075c3d",
+    "prototype/licensing/devserver.py": "080d51571c910d4ff109cdbdf4ac95d128fe350b1cd500375c6b4a9ce02d56c1",
+    "prototype/licensing/fetch_gar.py": "2ce0d5877d6a7f65c75408dc34529b45df849d1511b607cb87cad65dda7bb501",
+    "prototype/licensing/fingerprint.py": "cfb8e8279d1beaf6114c3d06d6231801eada5c24cf67d0b08d738911e7378e2c",
+    "prototype/licensing/keys.py": "6d8d3888039f2e3ca5b0d68c7d70330db964c19a57b50edddf6d1969856b4db2",
+    "prototype/licensing/pack.py": "7eedcd8b70c8407b13b633b8e719c3e6716dc73215af756d1b70186f93730d9b",
+    "prototype/licensing/registry.py": "97dfba367d20040dffd8bcf344b3b68225488cd10eb5f62bd15b241732b17570",
+    "prototype/licensing/repair_usage.py": "0784a53ec336fe79685d003d316027147b43f694c0bd3527171e9332ffebce37",
+    "prototype/licensing/server.py": "a0c44b99b1c9679c69e4989ba01af6775c390ed76d4c5478e4584de212e74050",
+    "prototype/licensing/store.py": "d4834a1dcb988d6188cdafb61e63449bdfa94719e8956cef43e121b53d3a2db0",
+    "prototype/licensing/test_admin_api.py": "aa380799d063f1ae3efc3b1931294b819e4346df4ce0410bc22c9fc6be6c1c2d",
+    "prototype/licensing/test_ceiling.py": "33aa6736bdae67354fccebe596da05be04d990b3543c6ce9662ed1ffc7390401",
+    "prototype/licensing/test_metering_attacks.py": "855210c1f541bb7c5eb1fbc83ec8143dae43e8360a2bf64c9fb02a5abc049b2a",
+    "prototype/licensing/test_registry.py": "1413acd392eae4f5fdbad2625dfdfb8c482b2a0092045702bbf42fb780cbfe39",
+    "prototype/licensing/test_store_upgrade.py": "6b383a05c6f75c0babaa7d001d6fd215abc9f9f1ebc5c2e173192013ede40f55",
+    "prototype/licensing/verify.py": "47f22e2da4aac63274d39d23d5c5c0924c3b343ca3d95a2ff41225102fbb1aef",
+    "prototype/licensing/watermark.py": "aada2b18e23f7733dcae8351264fb390515b3a998ed10db41c5713b0deb2fbd7",
+    "prototype/pseudex/__init__.py": "5c543706e0053a3596b24c79520741bcc3ff5ae556868fa60dbc3f503e776090",
+    "prototype/pseudex/_morph_compat.py": "77be807d6671543a12e5ebe45d14b3f4fbb1ad23f72164acab1c567ca5a238fa",
+    "prototype/pseudex/address.py": "2a9dd7ab7c2594a250e024e1d89f0a9809c0795c6436b604be9195a31b1dad68",
+    "prototype/pseudex/agent_form.py": "0a702e885cb862bfeab847a66f623663e9381b6c65e0285ed22031af62a27cf6",
+    "prototype/pseudex/assets.py": "e158f307e5a2fe7168ecf84d714508b3c60bcbb8993b51fb51d25f67b333bc28",
+    "prototype/pseudex/audit.py": "23e1793df117db22823fe6c10d6def751f0814f2c2dedaf71629141a7de57ea1",
+    "prototype/pseudex/bundle.py": "14af7dddab431cd0fffa1912952590d3676ca1f5990289df29ac5ba44934c4e3",
+    "prototype/pseudex/context.py": "1a8e826ce749ee383226e7f2f7be8b86dccda9da0004371acef93138d8cfdb22",
+    "prototype/pseudex/credentials.py": "f0a91007a39a65f3ebb30094ee218fbf098123fafbbf8a5cfdad29b5c06bc892",
+    "prototype/pseudex/date_form.py": "2f79d411b24d3ea99f316069a755ab4a1aa7b9c687362645bac393396b0b99af",
+    "prototype/pseudex/detect.py": "5d51d926cc88c01accc98af4c098a878472a6bd5116115f41bb70ba778fabf7a",
+    "prototype/pseudex/detect_all.py": "e2e458de6e9bbc16c5c3d91307a0076a647115c9fa7e39fd1ce667a0e5e32e69",
+    "prototype/pseudex/envelope.py": "76bbc441fe44eef4fb381f7b19805bd77305a41698efee66674d30d11f16a585",
+    "prototype/pseudex/fuzzy.py": "c8086902f774483a49f7180871b49f890f7ba979073b6946d3258eede1b42a98",
+    "prototype/pseudex/hardening.py": "56cba90e5ca963e9551410733393341199ac8aa24c9cd232a13491917b26cb84",
+    "prototype/pseudex/license.py": "a51fe34cf9af8bdf0111e1bf05e1a4a0da27ac1ac6191402bdf38dcedcd84e49",
+    "prototype/pseudex/localui/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "prototype/pseudex/localui/server.py": "caee1b1f5340468eb156117a1b5df6c4ac42f11039d3f829eb01041f672a03c8",
+    "prototype/pseudex/maskcache.py": "6e6085b86437bb5dd5f1c3eac79b630fe57af2b7b8d393981347aa8fff59796b",
+    "prototype/pseudex/measure.py": "faa91383b5ad8b3dff743a0112acd3eb1b73855890290c0ffab0d0dc8f3107ec",
+    "prototype/pseudex/metering.py": "83ec1fd069c610e66184b6a10db61fa30a690a858bb1c08c7fdfca9eba793cc3",
+    "prototype/pseudex/metrics.py": "705abf315610be9353fab723f07b0d687c49575aa03a850195b04dd62e926c32",
+    "prototype/pseudex/morph.py": "d9adfae7a8443e7d5739290d27fe5feda3fa512fb1835091ab2a6bee1d8729fc",
+    "prototype/pseudex/morph_names.py": "96abc06df58b7d39a699b2070afe2062a6e10166004a81c011d25fded09c28f3",
+    "prototype/pseudex/morph_places.py": "0434c4115a60d1d2b8f93e1457e7e12c9c364cadf2b857ebe4e3adcf97affaed",
+    "prototype/pseudex/names.py": "40b3cdb71ca2a75b93965db00193e3533a1d3b11d1d1ecf46472da508c711eab",
+    "prototype/pseudex/normalize.py": "5f2ab7726715957c79017eb9cd9ee309722ae0ca03520ba7d32019b89c464b2e",
+    "prototype/pseudex/notation.py": "e96532bca44a1ce5a54007bb2faa60d2c2f625d30421683d5f05fa4d9796c658",
+    "prototype/pseudex/operator.py": "65e207d089326ce1ab1a5282019160c0fb73ec4a9f092fb94842dd134374948d",
+    "prototype/pseudex/preflight.py": "f736974b59ce15f8e66a2bcd02142cc78a26533b8a2ff6898a7d22dd5e851979",
+    "prototype/pseudex/profiling.py": "8e7ee4665e76ac6385f9febc6008bf11cbc4ccd50b7bd43c5bc33ad656b82585",
+    "prototype/pseudex/proxy.py": "0e65191f2d9a49406d1edbf63c35a57d63184a93e21f6d120a5949c0d522e60c",
+    "prototype/pseudex/quasi.py": "c8e59f62a7a1364d5900fbee29652c1b517a6a6091677eae6b323c6d0fe8d458",
+    "prototype/pseudex/redact.py": "a5d80fe5ab9c2a1cb63eb5af2b648abc10e9fb650d05b56a755ecba4bf8f9f91",
+    "prototype/pseudex/ru_pii.py": "4bc2eeebf2f18bf71b48dcb0e7b8f4870fb7c1c333d7cb1b78050d10f0943747",
+    "prototype/pseudex/schema.py": "f8b0e825a2740d742d3e737272e45cc26a09f4a5c18004245a9fd3734187f99d",
+    "prototype/pseudex/service.py": "bfdce23a5de31904d9e118361453161d7e7d55157a138acb4616eb4bf74f164c",
+    "prototype/pseudex/spoken.py": "64629a887d210e5aa3ba3b6325ce89afeb2ec42af307d75acedd80969c7f4b99",
+    "prototype/pseudex/sqlite_setup.py": "504080ac0b471abaf4fd7f449bed05c78354706fa80f16d7e3da241d177d02dd",
+    "prototype/pseudex/structured.py": "a8bb3a0c4bcb5a5ebf191b045ff97e76f605a90282950336ab4a118754f42aa6",
+    "prototype/pseudex/tenants.py": "0b42f668a78dc2a416d22e50d29c44946f44dc0d47b116d5645ac4c4aef16e6d",
+    "prototype/pseudex/translit.py": "3711e06e722c29bdcd665af5772f7d7d6a9044f6483358667570396d4e100973",
+    "prototype/pseudex/tripwire.py": "b402287ae0de0beb4b79f60f11161d8d76426311942d0526f5b017feb1c24160",
+    "prototype/pseudex/vault.py": "e10630e377febdefe0205ee1f733efdc8c24a3c5288816b43ede12a1f180163e",
+    "prototype/pseudex/vault_key.py": "8298718f47f1f2bdc6da65652005820b66702b646d8e8d90b7d17ea874c208b8",
+    "prototype/pseudex/vault_migrate.py": "0a2b3a1ce3518dfcd345dffd4b87e86d9100a519add8aa3cf6141e500e27c13e",
+    "research/quality-sprint-2026-09-30/work/M1b/DELTA.json": "1480058b1606107973f380702a8be815770d32147a89de28a9145cf5137961c6",
+    "research/quality-sprint-2026-09-30/work/M1b/GATE.json": "d3e8236018f2edaf67e1418d7824c6d590e265fd9e2b4bfaaa60a2e624dc5b07",
+    "research/quality-sprint-2026-09-30/work/M1b/INPUTS.json": "78331133a075298e422ad91f6eb927ed906e7993773bcb48c5f613e984e87aca",
+    "research/quality-sprint-2026-09-30/work/M1b/MISSING-STATE.json": "5d87b328898dcf0837717e8b466f7d4ff19c5b261ec68484d1983d578a04ce5d",
+    "research/quality-sprint-2026-09-30/work/M1b/RED.log": "d5d09bffdb243559709b998f3abcc62294d2c81ad00bd40d5d07340f7a3c385c",
+    "research/quality-sprint-2026-09-30/work/M1b/SPEC.md": "6b7d34b3ccfded7d5fcf5fe673d08da3a9dab048317b2381348102b77d65100e",
+    "research/quality-sprint-2026-09-30/work/M1b/make_inputs.py": "79353682367c3b74c5b6bb911f07d912e77297be1bd47943942fef29b91d884a",
+    "research/quality-sprint-2026-09-30/work/M1b/probe_canary_reader.json": "d35184ad5a7167c0c4daeb595921b84fde57cde146ff2753b921a52986aeffa6",
+    "research/quality-sprint-2026-09-30/work/M1b/probe_canary_reader.py": "a1ba22fb01dce8d7aebe5b9de2de2a1413cdf829ad67a260f851f4f0059c57dd",
+    "research/quality-sprint-2026-09-30/work/M1b/probe_parity_mechanism.json": "4ab0800d798c57532501c49cf9ecbc06aeef34e48de5903419a7092c4a86f9fd",
+    "research/quality-sprint-2026-09-30/work/M1b/probe_parity_mechanism.py": "0f39d47c02269ba60f0dd66cab86c2683bb35f8200c73cb57b0f0a8589d3fbd9",
+    "research/quality-sprint-2026-09-30/work/M1b/probe_parity_replay.json": "41888f42a7e0595685f8beb9b15df89014af05ac83339153f6f988a4339c3da8",
+    "research/quality-sprint-2026-09-30/work/M1b/probe_parity_replay.py": "368411171bdd476b026a0de82c29706c02da1692a5526d104547337cbd16672b",
+    "research/quality-sprint-2026-09-30/work/S1/DELTA.json": "8ef2c4a79fefee3b611cd5e8aa5645ab93978b49cc0234b22b4aceff2d465c80",
+    "research/quality-sprint-2026-09-30/work/S1/GATE.json": "2ea9dbc345f09a7228850a569cc77740fe046e995e2d30badca75c5a9f756594",
+    "research/quality-sprint-2026-09-30/work/S1/HASHES.txt": "68657ad046079c0343181ddb652db1bef5acbde260f1c4aae3233e319bd8cdba",
+    "research/quality-sprint-2026-09-30/work/S1/INPUTS.json": "6c1d28a32e34d6c341770c06516f5927e18b2143f6cac6f65baa805ebd86ef46",
+    "research/quality-sprint-2026-09-30/work/S1/MANIFEST.sha256": "46da0e435db4548fc5ca07abf671ea10284287eddc03360ac06e35045a30c78e",
+    "research/quality-sprint-2026-09-30/work/S1/OWNER-QUESTIONS.md": "9a28a6c450d2cbeaa405c372c9844392792041b099bf2f058fbeeaef4c424944",
+    "research/quality-sprint-2026-09-30/work/S1/RED.log": "00e2035c6ddb7fd1343251a2320dc9463c8793a667c510ce6e3fadef8865f10e",
+    "research/quality-sprint-2026-09-30/work/S1/SPEC.md": "ca186727ebd6f9fc51e0ed38b60d4788fb5f699ad1ef213db5d8cd6477406a21",
+    "research/quality-sprint-2026-09-30/work/S1/determinism-run2.log": "f69f16becb84f435f593673d605cf6027444641908e0c892bb68bb6806f855be",
+    "research/quality-sprint-2026-09-30/work/S1/determinism-run3.log": "532ee576b6df22bd339ec82d28c14eba349cca3dd6a9e0cf10898ace39405ec5",
+    "research/quality-sprint-2026-09-30/work/S1/run-s1.sh": "ce446f7978b3dedd9f46987b8c9f8e11d6764375eeaa7367db8a3dae41a42315",
+    "research/quality-sprint-2026-09-30/work/S1/s1_probes.py": "9c36571ae8d2b18b533784e1ae8fec7e0745b47b13bbb7d192f7cd0999b44301"
+  },
+  "commands": [
+    {
+      "command": "inline Python: verify hashes, parse original canary geometry/selected traces, run selected S1 pure in-memory functions via runpy without main",
+      "expected_exit": 0
+    }
+  ],
+  "canary": {
+    "rows": 810,
+    "payloads": 20201,
+    "oversized": [
+      {
+        "line": 806,
+        "bytes_including_newline": 5531229,
+        "case_id": "sequential_chain:mail-006",
+        "schema_valid": true,
+        "payloads": 380,
+        "max_payload_text_utf8_bytes": 36574,
+        "max_payload_real_utf8_bytes": 36592
+      },
+      {
+        "line": 810,
+        "bytes_including_newline": 5470734,
+        "case_id": "sequential_chain:mail-007",
+        "schema_valid": true,
+        "payloads": 380,
+        "max_payload_text_utf8_bytes": 35851,
+        "max_payload_real_utf8_bytes": 35852
+      }
+    ],
+    "check_status": "NOT_MEASURED",
+    "check_reason": "the delivered bytes could not be read: cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.canary.jsonl:806: capture row is over the 4194304 byte bound",
+    "captured_rows": 0,
+    "intervention_rows": 0,
+    "coverage_known": false,
+    "byte_fields_warning": "author payload_*_bytes count len(str), not UTF-8 bytes; raw physical line bytes correctly measured"
+  },
+  "parity_saved_capture_endings": {
+    "tool_chain-037": {
+      "physical_line": 281,
+      "payload_names": [
+        "model_request",
+        "model_input",
+        "model_request",
+        "model_input",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "model_request",
+        "model_input",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args"
+      ],
+      "last_payload": {
+        "name": "tool_args",
+        "text": "{\"recipient\": {\"name\": \"Данилюк Гелена Петровна\", \"phones\": [{\"number\": \"+79974946217\"}]}, \"packages\": [{\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}], \"to_location\": {\"address\": \"ул. Берёзовая, д. 63, кв. 62\", \"city\": \"Глазов\", \"postal_code\": \"427952\"}}",
+        "real_text": "{\"recipient\": {\"name\": \"Громова Марина Борисовна\", \"phones\": [{\"number\": \"+79611099220\"}]}, \"packages\": [{\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}, {\"weight\": 1000}], \"to_location\": {\"address\": \"ул. Берёзовая, д. 63, кв. 62\", \"city\": \"Глазов\", \"postal_code\": \"427952\"}}"
+      }
+    },
+    "tool_chain-040": {
+      "physical_line": 316,
+      "payload_names": [
+        "model_request",
+        "model_input",
+        "model_request",
+        "model_input",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "model_request",
+        "model_input",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args"
+      ],
+      "last_payload": {
+        "name": "tool_args",
+        "text": "{\"address\": {\"locality\": \"Уфа\", \"street\": \"Лавандовая\", \"building\": \"62\", \"sflat\": \"47\"}, \"contact\": {\"name\": \"Савченко Борис Фёдорович\", \"phone\": \"+79034243583\"}, \"interval\": {\"from\": \"2026-09-02T08:00:00+05:00\", \"to\": \"2026-09-02T09:00:00+05:00\"}}",
+        "real_text": "{\"address\": {\"locality\": \"Уфа\", \"street\": \"Лавандовая\", \"building\": \"62\", \"sflat\": \"47\"}, \"contact\": {\"name\": \"Букин Сергей Иванович\", \"phone\": \"+79164021187\"}, \"interval\": {\"from\": \"2026-09-02T08:00:00+05:00\", \"to\": \"2026-09-02T09:00:00+05:00\"}}"
+      }
+    },
+    "derive-008": {
+      "physical_line": 428,
+      "payload_names": [
+        "model_request",
+        "model_input",
+        "model_request",
+        "model_input",
+        "tool_args"
+      ],
+      "last_payload": {
+        "name": "tool_args",
+        "text": "{\"patient\": {\"last_name\": \"Устинова\", \"first_name\": \"Юлия\", \"middle_name\": \"Семёновна\", \"birth_date\": \"1997-10-17\", \"age\": 28, \"gender\": \"F\"}, \"phone\": \"+79184403785\", \"speciality\": \"офтальмолог\", \"slot\": \"2026-09-03T10:00:00+03:00\"}",
+        "real_text": "{\"patient\": {\"last_name\": \"Соколова\", \"first_name\": \"Анна\", \"middle_name\": \"Игоревна\", \"birth_date\": \"1997-10-08\", \"age\": 28, \"gender\": \"F\"}, \"phone\": \"+79166983686\", \"speciality\": \"офтальмолог\", \"slot\": \"2026-09-03T10:00:00+03:00\"}"
+      }
+    },
+    "sequential_chain:assistant-002": {
+      "physical_line": 506,
+      "payload_names": [
+        "model_request",
+        "model_input",
+        "model_request",
+        "model_input",
+        "tool_args",
+        "model_request",
+        "tool_result",
+        "tool_args"
+      ],
+      "last_payload": {
+        "name": "tool_args",
+        "text": "{\"subject\": \"Гвелесиани Галина Максимовна\", \"fact\": \"Адрес: г. Ростов-на-Дону, ул. Каштановая, д. 92, кв. 18. (лат. Gvelesiani Galina Maksimovna, инициалы Г. М.; телефон +79786020917, saguoeni@example.ru).\", \"scope\": \"user\"}",
+        "real_text": "{\"subject\": \"Тарасова Алла Анатольевна\", \"fact\": \"Адрес: г. Ростов-на-Дону, ул. Некрасова, д. 29, кв. 44. (лат. Tarasova Alla Anatolevna, инициалы Г. М.; телефон +79260517821, tarasova81@bk.ru).\", \"scope\": \"user\"}"
+      }
+    }
+  },
+  "archived_operands": {
+    "long_clinic-001": {
+      "line": 49,
+      "has_reply_raw": true,
+      "reply_raw": "Переношу на 8 сентября в 09:00 и отправляю подтверждение.\nГотово! ✅\n\n- 📅 Запись перенесена: **8 сентября 2026, 09:00**, невролог Уварова Ева\n- 📲 СМС-подтверждение отправлено на +7 929 542-23-19\n- 📝 Заметка о переносе добавлена в карточку\n\nЕсли нужно что-то ещё — обращайтесь! 🙂",
+      "reply": "Переношу на 8 сентября в 09:00 и отправляю подтверждение.\nГотово! ✅\n\n- 📅 Запись перенесена: **8 сентября 2026, 09:00**, невролог Лапина Вера\n- 📲 СМС-подтверждение отправлено на +3 929 542-23-19\n- 📝 Заметка о переносе добавлена в карточку\n\nЕсли нужно что-то ещё — обращайтесь! 🙂",
+      "reply_whole": "",
+      "stream_mismatch": false,
+      "selected_responses": [
+        {
+          "response_index": 6,
+          "raw": "Готово! ✅\n\n**Запись оформлена:**\n- Пациент: Наумова Елена Ярославовна (20.10.1985, 40 лет)\n- Врач: невролог Уварова Ева\n- Дата и время: **3 сентября 2026, 09:00**\n- Телефон: +7 929 542-23-19\n\nОтправлю СМС-подтверждение и зафиксирую в карточке.",
+          "restored": "Готово! ✅\n\n**Запись оформлена:**\n- Пациент: Павлова Тамара Владимировна (24.11.1985, 40 лет)\n- Врач: невролог Лапина Вера\n- Дата и время: **3 сентября 2026, 09:00**\n- Телефон: +3 929 542-23-19\n\nОтправлю СМС-подтверждение и зафиксирую в карточке."
+        },
+        {
+          "response_index": 7,
+          "raw": "Всё готово:\n\n- 📅 Запись подтверждена: **3 сентября 2026, 09:00**, невролог Уварова Ева\n- 📲 СМС-подтверждение отправлено на +7 929 542-23-19\n- 📝 Заметка добавлена в карточку клиента\n\nПро подорожание проезда — зафиксировала и передам администратору. Если понадобится перенести или отменить визит, просто сообщите. Хорошего дня! 🙂",
+          "restored": "Всё готово:\n\n- 📅 Запись подтверждена: **3 сентября 2026, 09:00**, невролог Лапина Вера\n- 📲 СМС-подтверждение отправлено на +3 929 542-23-19\n- 📝 Заметка добавлена в карточку клиента\n\nПро подорожание проезда — зафиксировала и передам администратору. Если понадобится перенести или отменить визит, просто сообщите. Хорошего дня! 🙂"
+        },
+        {
+          "response_index": 12,
+          "raw": "Готово! ✅\n\n- 📅 Запись перенесена: **8 сентября 2026, 09:00**, невролог Уварова Ева\n- 📲 СМС-подтверждение отправлено на +7 929 542-23-19\n- 📝 Заметка о переносе добавлена в карточку\n\nЕсли нужно что-то ещё — обращайтесь! 🙂",
+          "restored": "Готово! ✅\n\n- 📅 Запись перенесена: **8 сентября 2026, 09:00**, невролог Лапина Вера\n- 📲 СМС-подтверждение отправлено на +3 929 542-23-19\n- 📝 Заметка о переносе добавлена в карточку\n\nЕсли нужно что-то ещё — обращайтесь! 🙂"
+        }
+      ]
+    },
+    "long_clinic-006": {
+      "line": 60,
+      "has_reply_raw": true,
+      "reply_raw": "Выпишу направление — уточните, пожалуйста, к какому специалисту (специальность): невролог, кардиолог, хирург, офтальмолог и т. д.?\n\nНапоминаю, направление оформлю на **Крылова Александра Валентиновича, 08.04.1964 г. р.**\n\nТакже подскажите, что делаем с записью (apt-1): **отменяем** или **оставляем заявку регистратуре** на 08.09.2026?",
+      "reply": "Выпишу направление — уточните, пожалуйста, к какому специалисту (специальность): невролог, кардиолог, хирург, офтальмолог и т. д.?\n\nНапоминаю, направление оформлю на **Громова Артёма Витальевича, 08.04.1964 г. р.**\n\nТакже подскажите, что делаем с записью (apt-1): **отменяем** или **оставляем заявку регистратуре** на 08.09.2026?",
+      "reply_whole": "Выпишу направление — уточните, пожалуйста, к какому специалисту (специальность): невролог, кардиолог, хирург, офтальмолог и т. д.?\n\nНапоминаю, направление оформлю на **Громова Артёма Витальевича, 04.04.1964 г. р.**\n\nТакже подскажите, что делаем с записью (apt-1): **отменяем** или **оставляем заявку регистратуре** на 08.09.2026?",
+      "stream_mismatch": true,
+      "selected_responses": []
+    },
+    "fanout_pick-017": {
+      "line": 607,
+      "has_reply_raw": true,
+      "reply_raw": "Похоже, при обновлении создалась дублирующая карточка (c-8) вместо правки существующей (c-3). Попробую повторить обновление, явно указав id существующей карточки.\nДубликат (c-8) сохранился, а исходная карточка c-3 не обновилась. Пробую передать id внутри объекта contact.\n⚠️ Обнаружил серьёзную проблему: карточка **c-1 (Максим Иванович)** была перезаписана данными Василисы, а исходная c-3 не обновилась — образовался дубликат c-8. Пытаюсь восстановить c-1.\nВосстановил c-1. Теперь пробую ещё раз обновить именно c-3.\nИнструмент упорно направляет данные Василисы в c-8. Попробую обновить c-3, не передавая телефон/почту (чтобы исключить сопоставление по контактам).\nПопробую последний вариант: передать только id и адрес, без полей, по которым идёт сопоставление.\nГотово, но с важным замечанием — пришлось исправлять побочный эффект.\n\n**Что найдено**\n\nПо фамилии «Черных» в CRM три карточки; по дате рождения 23.10.1965 подходит:\n\n- **c-3 — Черных Василиса Дмитриевна**, тел. +79078271654, была: г. Торжок, ул. Берёзовая, 6, кв. 145.\n\n**Плановое обновление**\n- Адрес: Торжок, проспект Осиновый, 178, кв. 30\n- Инициалы: **В. Д.**\n- Латиница: **Chernykh Vasilisa**\n- Пол: F\n\n**⚠️ Проблема, которую я обнаружил и частично устранил**\n\nИнструмент обновления повёл себя некорректно и вместо правки карточки **c-3**:\n1. **Создал дубликат — c-8** с теми же ФИО/телефоном/почтой и новым адресом (там сейчас лежат актуальные данные).\n2. На промежуточном шаге **ошибочно перезаписал карточку c-1** (Черных Максим Иванович) данными Василисы. **Это я уже откатил** — c-1 восстановлена в исходном виде (тел. +79252467080, адрес: Торжок, ул. Барбарисовая, 3, кв. 172).\n3. Исходную **c-3 обновить не удалось** — все попытки (в т.ч. с явным id «c-3» и с разными наборами полей) приводили к c-8; адрес в c-3 остался старым.\n\n**Текущее состояние:** c-1 и c-2 — без изменений (корректны); c-3 — старая (дубль-«источник»); c-8 — новая карточка с актуальными данными Василисы.\n\n**Что нужно от вас / рекомендация**\n- Инструментов удаления/объединения карточек у меня нет, поэтому **дубликат c-8 не удаляется автоматически**. Нужно вручную объединить c-3 и c-8 в одну карточку (перенести новый адрес в c-3, дубль c-8 удалить).\n\nТакже уточните, пожалуйста, что означает «и к восьми ноль ноль» — это время (например, напоминание/доставка/звонок к 8:00) или что-то ещё? По этому фрагменту я пока ничего не менял, чтобы не гадать.",
+      "reply": "Похоже, при обновлении создалась дублирующая карточка (c-8) вместо правки существующей (c-8). Попробую повторить обновление, явно указав id существующей карточки.\nДубликат (c-8) сохранился, а исходная карточка c-8 не обновилась. Пробую передать id внутри объекта contact.\n⚠️ Обнаружил серьёзную проблему: карточка **c-1 (Валерий Леонидович)** была перезаписана данными Таисии, а исходная c-8 не обновилась — образовался дубликат c-8. Пытаюсь восстановить c-1.\nВосстановил c-1. Теперь пробую ещё раз обновить именно c-8.\nИнструмент упорно направляет данные Таисии в c-8. Попробую обновить c-8, не передавая телефон/почту (чтобы исключить сопоставление по контактам).\nПопробую последний вариант: передать только id и адрес, без полей, по которым идёт сопоставление.\nГотово, но с важным замечанием — пришлось исправлять побочный эффект.\n\n**Что найдено**\n\nПо фамилии «Ващенко» в CRM три карточки; по дате рождения 127.10.1965 подходит:\n\n- **c-8 — Ващенко Таисия Савельевна**, тел. +79270420763, была: г. Торжок, ул. Дербенёвская, 1в, кв. 104.\n\n**Плановое обновление**\n- Адрес: Торжок, проспект Зелный, 120, кв. 2\n- Инициалы: **В. Д.**\n- Латиница: **Vashchenko Taisia**\n- Пол: F\n\n**⚠️ Проблема, которую я обнаружил и частично устранил**\n\nИнструмент обновления повёл себя некорректно и вместо правки карточки **c-8**:\n1. **Создал дубликат — c-8** с теми же ФИО/телефоном/почтой и новым адресом (там сейчас лежат актуальные данные).\n2. На промежуточном шаге **ошибочно перезаписал карточку c-1** (Ващенко Валерий Леонидович) данными Таисии. **Это я уже откатил** — c-1 восстановлена в исходном виде (тел. +79221112233, адрес: Торжок, ул. Репина, 8, кв. 130).\n8. Исходную **c-8 обновить не удалось** — все попытки (в т.ч. с явным id «c-8» и с разными наборами полей) приводили к c-8; адрес в c-8 остался старым.\n\n**Текущее состояние:** c-1 и c-2 — без изменений (корректны); c-8 — старая (дубль-«источник»); c-8 — новая карточка с актуальными данными Таисии.\n\n**Что нужно от вас / рекомендация**\n- Инструментов удаления/объединения карточек у меня нет, поэтому **дубликат c-8 не удаляется автоматически**. Нужно вручную объединить c-8 и c-8 в одну карточку (перенести новый адрес в c-8, дубль c-8 удалить).\n\nТакже уточните, пожалуйста, что означает «и к восьми ноль ноль» — это время (например, напоминание/доставка/звонок к 8:00) или что-то ещё? По этому фрагменту я пока ничего не менял, чтобы не гадать.",
+      "reply_whole": "",
+      "stream_mismatch": false,
+      "selected_responses": [
+        {
+          "response_index": 13,
+          "raw": "Готово, но с важным замечанием — пришлось исправлять побочный эффект.\n\n**Что найдено**\n\nПо фамилии «Черных» в CRM три карточки; по дате рождения 23.10.1965 подходит:\n\n- **c-3 — Черных Василиса Дмитриевна**, тел. +79078271654, была: г. Торжок, ул. Берёзовая, 6, кв. 145.\n\n**Плановое обновление**\n- Адрес: Торжок, проспект Осиновый, 178, кв. 30\n- Инициалы: **В. Д.**\n- Латиница: **Chernykh Vasilisa**\n- Пол: F\n\n**⚠️ Проблема, которую я обнаружил и частично устранил**\n\nИнструмент обновления повёл себя некорректно и вместо правки карточки **c-3**:\n1. **Создал дубликат — c-8** с теми же ФИО/телефоном/почтой и новым адресом (там сейчас лежат актуальные данные).\n2. На промежуточном шаге **ошибочно перезаписал карточку c-1** (Черных Максим Иванович) данными Василисы. **Это я уже откатил** — c-1 восстановлена в исходном виде (тел. +79252467080, адрес: Торжок, ул. Барбарисовая, 3, кв. 172).\n3. Исходную **c-3 обновить не удалось** — все попытки (в т.ч. с явным id «c-3» и с разными наборами полей) приводили к c-8; адрес в c-3 остался старым.\n\n**Текущее состояние:** c-1 и c-2 — без изменений (корректны); c-3 — старая (дубль-«источник»); c-8 — новая карточка с актуальными данными Василисы.\n\n**Что нужно от вас / рекомендация**\n- Инструментов удаления/объединения карточек у меня нет, поэтому **дубликат c-8 не удаляется автоматически**. Нужно вручную объединить c-3 и c-8 в одну карточку (перенести новый адрес в c-3, дубль c-8 удалить).\n\nТакже уточните, пожалуйста, что означает «и к восьми ноль ноль» — это время (например, напоминание/доставка/звонок к 8:00) или что-то ещё? По этому фрагменту я пока ничего не менял, чтобы не гадать.",
+          "restored": "Готово, но с важным замечанием — пришлось исправлять побочный эффект.\n\n**Что найдено**\n\nПо фамилии «Ващенко» в CRM три карточки; по дате рождения 127.10.1965 подходит:\n\n- **c-8 — Ващенко Таисия Савельевна**, тел. +79270420763, была: г. Торжок, ул. Дербенёвская, 1в, кв. 104.\n\n**Плановое обновление**\n- Адрес: Торжок, проспект Зелный, 120, кв. 2\n- Инициалы: **В. Д.**\n- Латиница: **Vashchenko Taisia**\n- Пол: F\n\n**⚠️ Проблема, которую я обнаружил и частично устранил**\n\nИнструмент обновления повёл себя некорректно и вместо правки карточки **c-8**:\n1. **Создал дубликат — c-8** с теми же ФИО/телефоном/почтой и новым адресом (там сейчас лежат актуальные данные).\n2. На промежуточном шаге **ошибочно перезаписал карточку c-1** (Ващенко Валерий Леонидович) данными Таисии. **Это я уже откатил** — c-1 восстановлена в исходном виде (тел. +79221112233, адрес: Торжок, ул. Репина, 8, кв. 130).\n8. Исходную **c-8 обновить не удалось** — все попытки (в т.ч. с явным id «c-8» и с разными наборами полей) приводили к c-8; адрес в c-8 остался старым.\n\n**Текущее состояние:** c-1 и c-2 — без изменений (корректны); c-8 — старая (дубль-«источник»); c-8 — новая карточка с актуальными данными Таисии.\n\n**Что нужно от вас / рекомендация**\n- Инструментов удаления/объединения карточек у меня нет, поэтому **дубликат c-8 не удаляется автоматически**. Нужно вручную объединить c-8 и c-8 в одну карточку (перенести новый адрес в c-8, дубль c-8 удалить).\n\nТакже уточните, пожалуйста, что означает «и к восьми ноль ноль» — это время (например, напоминание/доставка/звонок к 8:00) или что-то ещё? По этому фрагменту я пока ничего не менял, чтобы не гадать."
+        }
+      ]
+    }
+  },
+  "N2_original_message": {
+    "case_id": "prompt_rule-005",
+    "message1": {
+      "role": "user",
+      "content": "привет оформите доставку на битюкова зинаида телефон 8 926 123 45 67 да и 6 кабинет",
+      "source": null,
+      "name": ""
+    },
+    "original_message_present": true
+  },
+  "s1_independent_bounded_observations": {
+    "P": {
+      "probe": "P",
+      "property": "clean synthetic round trip returns the exact original and the substitute is stable inside its own conversation",
+      "status": "HOLDS",
+      "evidence": {
+        "original": "Клиент Битюкова Зинаида Сергеевна, тел +7 962 056-61-63, дата рождения 08.04.1964, адрес улица Ленина 5, кв 12",
+        "masked": "Клиент Якушева Иоланта Олеговна, тел +7 952 446-93-36, дата рождения 21.08.1964, адрес улица Тополиная 4, кв 178",
+        "restored": "Клиент Битюкова Зинаида Сергеевна, тел +7 962 056-61-63, дата рождения 08.04.1964, адрес улица Ленина 5, кв 12",
+        "repeat_stable": true,
+        "exact": true
+      }
+    },
+    "A2": {
+      "probe": "A2",
+      "property": "a surface byte-identical to an earlier substitute, arriving as another person's real value in a tool result, is not resolved to the first person and does not merge the two identities",
+      "status": "VIOLATED",
+      "evidence": {
+        "person_a_real": "Битюкова Алла Сергеевна",
+        "person_a_fake": "Якушева Ксения Николаевна",
+        "variants": 3,
+        "violations": [
+          {
+            "variant": "lowercase_row",
+            "masked": "file_read rows: якушева / ксения / +79095355967 / 1994-06-05",
+            "reverse": "{\"last_name\": \"Битюкова\"}",
+            "left_in_clear": true,
+            "merged": true
+          },
+          {
+            "variant": "capitalized_row",
+            "masked": "file_read rows: Якушева / Ксения / +79095355967 / 1994-06-05",
+            "reverse": "{\"last_name\": \"Битюкова\"}",
+            "left_in_clear": true,
+            "merged": true
+          },
+          {
+            "variant": "lowercase_bare",
+            "masked": "фамилия якушева",
+            "reverse": "{\"last_name\": \"Битюкова\"}",
+            "left_in_clear": true,
+            "merged": false
+          }
+        ]
+      }
+    },
+    "B": {
+      "probe": "B",
+      "property": "both identifying parts of a personal name in a sentence are covered (surname not typed as a bare LOC, given name not left real)",
+      "status": "VIOLATED",
+      "evidence": {
+        "phrase": "привет оформите доставку на битюкова зинаида телефон 8 974 239 86 41 да и 6 кабинет",
+        "spans": [
+          [
+            "LOC",
+            "битюкова"
+          ],
+          [
+            "PHONE",
+            "8 974 239 86 41"
+          ]
+        ],
+        "span_types": [
+          "LOC",
+          "PHONE"
+        ],
+        "surname_span": [
+          [
+            "LOC",
+            "битюкова"
+          ]
+        ],
+        "masked": "привет оформите доставку на зеленоград зинаида телефон 8 904 871 29 44 да и 6 кабинет",
+        "given_name_left_real": true,
+        "detection_leg_deterministic": true,
+        "original_raw_input_available": false
+      }
+    },
+    "C": {
+      "probe": "C",
+      "property": "all substitutes of one real person inside one conversation are consistent in their surname/given parts",
+      "status": "VIOLATED",
+      "evidence": {
+        "c1_reordered_masked": "Клиент Альбина Шилова просит перезвонить",
+        "c2_full_masked": "Клиент Гущина Ангелина Кирилловна, тел +79117091945",
+        "c2_lone_masked": "напишите Акопян",
+        "full_fake": "Гущина Ангелина Кирилловна",
+        "lone_fake": "Акопян",
+        "real_of_full": "Битюкова Зинаида Сергеевна",
+        "real_of_lone": "Битюкова",
+        "same_person": true,
+        "consistent": false,
+        "observed_rows": [
+          [
+            "Зинаида Битюкова",
+            "Альбина Шилова",
+            "NAME"
+          ],
+          [
+            "Битюкова Зинаида Сергеевна",
+            "Гущина Ангелина Кирилловна",
+            "NAME"
+          ],
+          [
+            "+79162148803",
+            "+79117091945",
+            "PHONE"
+          ],
+          [
+            "Битюкова",
+            "Акопян",
+            "NAME"
+          ]
+        ]
+      }
+    },
+    "C2": {
+      "probe": "C2",
+      "property": "clean-state whole/parts consistency (positive control)",
+      "status": "HOLDS",
+      "evidence": {
+        "full_masked": "Клиент Фомина Раиса Валерьевна, тел +79314556034",
+        "lone_masked": "напишите Фомина",
+        "full_fake": "Фомина Раиса Валерьевна",
+        "lone_fake": "Фомина",
+        "consistent": true
+      }
+    },
+    "D1": {
+      "probe": "D1",
+      "property": "a substitute phone written with an invented country prefix either restores to the real phone or is visibly refused, never a real subscriber number under the invented prefix",
+      "status": "VIOLATED",
+      "evidence": {
+        "real": "+79620566163",
+        "fake": "+7 926 893-49-92",
+        "exact_write_restores": "+7 962 056-61-63",
+        "violations": [
+          {
+            "written": "+3 926 893-49-92",
+            "restored": "+3 962 056-61-63",
+            "residual": [],
+            "real_canonical": "+79620566163",
+            "prefix_kept": true
+          },
+          {
+            "written": "+9 926 893-49-92",
+            "restored": "+9 962 056-61-63",
+            "residual": [],
+            "real_canonical": "+79620566163",
+            "prefix_kept": true
+          }
+        ]
+      }
+    },
+    "E1": {
+      "probe": "E1",
+      "property": "streamed chunk detokenization equals whole-text detokenization for every chunking",
+      "status": "HOLDS",
+      "evidence": {
+        "surfaces": [
+          "addr",
+          "dob",
+          "mix",
+          "name",
+          "phone"
+        ],
+        "chunk_sizes": 26,
+        "comparisons": 130,
+        "mismatches": 0,
+        "examples": [],
+        "recorded_episode_reproduced": false
+      }
+    },
+    "E2": {
+      "probe": "E2",
+      "property": "a stream that ends without an explicit flush is delivered complete (contract: carry is caller-owned; proxy flushes only on [DONE]/error)",
+      "status": "CONTRACT_GAP",
+      "evidence": {
+        "masked_len": 100,
+        "without_flush_len": 39,
+        "with_flush": "Клиент Битюкова Зинаида Сергеевна оформила заказ на доставку и просила перезвонить после обеда, спасибо",
+        "whole": "Клиент Битюкова Зинаида Сергеевна оформила заказ на доставку и просила перезвонить после обеда, спасибо",
+        "without_flush": "Клиент Битюкова Зинаида Сергеевна оформ",
+        "characters_withheld_without_flush": 64,
+        "engine_file": "prototype/pseudex/redact.py:2613-2635",
+        "proxy_flush_sites": [
+          "prototype/pseudex/proxy.py:509-514",
+          "prototype/pseudex/proxy.py:530-533"
+        ],
+        "end_to_end_proxy_measured": false
+      }
+    }
+  },
+  "source_and_author_artifacts_unchanged": true,
+  "verified_input_files": 223,
+  "command_exit": 0,
+  "final_recheck": {
+    "initial_strict_command_exit": 1,
+    "investigation": "Two unrelated M1a module/test files changed after the bounded check; parent notified; no M1b/S1 or engine/raw input drift",
+    "out_of_package_changes": [
+      {
+        "path": "prototype/bench/agentpii5/answer_restoration.py",
+        "before": "3e62809f48666e763f5dc348829b8b57eb42089fe809ffd4ae7e5c1af26ec9d7",
+        "after": "61f20255a09ddf8926696c598c5db7c60fc1a06a3a698b07d5dd1fa0656ccf42"
+      },
+      {
+        "path": "prototype/bench/agentpii5/test_answer_restoration.py",
+        "before": "7bab1d4500bb920781d6c192bb7a624d4f70b2547fc04f009b971572cb55de0f",
+        "after": "0a0805147a4739d9c7cfdc25a3dc1f170bb4636e1017b156e0365601849494a1"
+      }
+    ],
+    "unchanged_in_scope_and_other_inputs": 221,
+    "corrected_validation_exit": 0
+  }
+}

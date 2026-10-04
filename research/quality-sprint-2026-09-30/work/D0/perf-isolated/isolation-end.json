@@ -1,0 +1,144 @@
+{
+ "label": "isolation-end",
+ "captured_utc": "2026-10-01T05:04:05Z",
+ "captured_epoch": 1790831045.548,
+ "hostname": "MacBook-Pro-Igor.local",
+ "platform": "macOS-26.6.2-arm64-arm-64bit",
+ "uptime": "10:04  up 2 days, 17:34, 3 users, load averages: 5.43 5.14 5.30",
+ "loadavg": [
+  "5.43",
+  "5.14",
+  "5.30"
+ ],
+ "cpu_count": 10,
+ "top_cpu": [
+  {
+   "cpu_pct": 100.0,
+   "pid": 31169,
+   "rss_kb": 200976,
+   "etime": "16:36:58",
+   "command": ".venv/bin/python -m bench.agentpii5.live bench/runs/2026-09-30/v5-sprint-v2-813 --web --host 127.0.0.1 --port 8099 --baseline-dir /Users/igor/Projects/Obscura-hop-audit/research/hop-format-audit/evidence/prev-813"
+  },
+  {
+   "cpu_pct": 84.6,
+   "pid": 97578,
+   "rss_kb": 135776,
+   "etime": "00:01",
+   "command": ".venv/bin/python ../research/quality-sprint-2026-09-30/work/D0/perf-isolated/make_env.py --out ../research/quality-sprint-2026-09-30/work/D0/perf-isolated --corpus ../research/quality-sprint-2026-09-30/work/D0/perf-isolated/corpus.jsonl --isolation-out ../research/quality-sprint-2026-09-30/work/D0/perf-isolated/isolation-end.json"
+  },
+  {
+   "cpu_pct": 24.7,
+   "pid": 43798,
+   "rss_kb": 446352,
+   "etime": "15:40:45",
+   "command": "/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Framework.framework/Versions/154.0.8037.58/Helpers/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer) --type=renderer --lang=ru --num-raster-threads=4 --enable-zero-copy --enable-gpu-memory-buffer-compositor-resources --enable-main-frame-before-activation --renderer-client-id=60 --launch-time-ticks=179588259885 --shared-files --metrics-shmem-handle=1752395122,r,16988791400627345771,16083683879877932347,1572864 --field-trial-handle=1718379636,r,9535983721458408501,17610986459806994172,262144 --variations-seed-version=20260928-234838.410000-production --pseudonymization-salt-handle=1935764596,r,9118067513985750369,7238222338354555921,4 --trace-process-track-uuid=3190709042534382434 --seatbelt-client=150"
+  },
+  {
+   "cpu_pct": 12.7,
+   "pid": 930,
+   "rss_kb": 2723760,
+   "etime": "02-17:32:57",
+   "command": "/Applications/OrbStack.app/Contents/Frameworks/OrbStack Helper.app/Contents/MacOS/OrbStack Helper vmgr -build-id macho:05775f98b4bb3d75b88520220872c248 -handoff"
+  },
+  {
+   "cpu_pct": 10.5,
+   "pid": 412,
+   "rss_kb": 42976,
+   "etime": "02-17:33:07",
+   "command": "/System/Library/PrivateFrameworks/SkyLight.framework/Resources/WindowServer -daemon"
+  },
+  {
+   "cpu_pct": 6.6,
+   "pid": 923,
+   "rss_kb": 392944,
+   "etime": "02-17:32:57",
+   "command": "/Applications/Zen.app/Contents/MacOS/zen -os-restarted"
+  },
+  {
+   "cpu_pct": 3.9,
+   "pid": 692,
+   "rss_kb": 95760,
+   "etime": "02-17:33:03",
+   "command": "/Applications/Telegram.app/Contents/MacOS/Telegram"
+  },
+  {
+   "cpu_pct": 3.4,
+   "pid": 3509,
+   "rss_kb": 38912,
+   "etime": "02-17:32:35",
+   "command": "/Applications/Stats.app/Contents/MacOS/Stats --dmg-path /Users/igor/Downloads/Stats.dmg --mount-path /var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/Stats-update-YxkGYx"
+  },
+  {
+   "cpu_pct": 1.9,
+   "pid": 34424,
+   "rss_kb": 107408,
+   "etime": "01-22:00:28",
+   "command": "/Applications/Zen.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container -isForBrowser -prefsHandle 0:51324 -prefMapHandle 1:307108 -jsInitHandle 2:162620 -sbStartup -sbAppPath /Applications/Zen.app -sbLevel 3 -parentBuildID 20260922050124 -ipcHandle 0 -initialChannelId {81360452-358b-431b-a5c3-6b4f29dd3097} -parentPid 923 -greomni /Applications/Zen.app/Contents/Resources/omni.ja -appomni /Applications/Zen.app/Contents/Resources/browser/omni.ja -appDir /Applications/Zen.app/Contents/Resources/browser -profile /Users/igor/Library/Application Support/zen/Profiles/aknmvh5n.Default (release) org.mozilla.machname.1734843896 942 tab"
+  },
+  {
+   "cpu_pct": 1.8,
+   "pid": 425,
+   "rss_kb": 19744,
+   "etime": "02-17:33:07",
+   "command": "/usr/sbin/coreaudiod"
+  },
+  {
+   "cpu_pct": 1.7,
+   "pid": 36546,
+   "rss_kb": 102960,
+   "etime": "22:43:33",
+   "command": "/Applications/Zen.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container -isForBrowser -prefsHandle 0:51359 -prefMapHandle 1:307108 -jsInitHandle 2:162620 -sbStartup -sbAppPath /Applications/Zen.app -sbLevel 3 -parentBuildID 20260922050124 -ipcHandle 0 -initialChannelId {f26d326a-c3d9-4733-b204-aef109f9f33c} -parentPid 923 -greomni /Applications/Zen.app/Contents/Resources/omni.ja -appomni /Applications/Zen.app/Contents/Resources/browser/omni.ja -appDir /Applications/Zen.app/Contents/Resources/browser -profile /Users/igor/Library/Application Support/zen/Profiles/aknmvh5n.Default (release) org.mozilla.machname.167404157 3813 tab"
+  },
+  {
+   "cpu_pct": 1.6,
+   "pid": 1125,
+   "rss_kb": 43536,
+   "etime": "02-17:32:53",
+   "command": "/Applications/Sota Connect.app/Contents/PlugIns/PacketTunnel.appex/Contents/MacOS/PacketTunnel -AppleLanguages (\"ru-RU\")"
+  },
+  {
+   "cpu_pct": 1.6,
+   "pid": 350,
+   "rss_kb": 4720,
+   "etime": "02-17:33:08",
+   "command": "/usr/libexec/configd"
+  },
+  {
+   "cpu_pct": 1.4,
+   "pid": 76421,
+   "rss_kb": 89824,
+   "etime": "01-15:55:41",
+   "command": "/Applications/Zen.app/Contents/MacOS/plugin-container.app/Contents/MacOS/plugin-container -isForBrowser -prefsHandle 0:51324 -prefMapHandle 1:307108 -jsInitHandle 2:162620 -sbStartup -sbAppPath /Applications/Zen.app -sbLevel 3 -parentBuildID 20260922050124 -ipcHandle 0 -initialChannelId {3845bdb5-c43e-460e-b8a3-d3c238d58aa7} -parentPid 923 -greomni /Applications/Zen.app/Contents/Resources/omni.ja -appomni /Applications/Zen.app/Contents/Resources/browser/omni.ja -appDir /Applications/Zen.app/Contents/Resources/browser -profile /Users/igor/Library/Application Support/zen/Profiles/aknmvh5n.Default (release) org.mozilla.machname.867497535 1503 tab"
+  },
+  {
+   "cpu_pct": 1.4,
+   "pid": 97588,
+   "rss_kb": 12640,
+   "etime": "00:01",
+   "command": "/System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared -s mdworker -c MDSImporterWorker -m com.apple.mdworker.shared"
+  }
+ ],
+ "heavy_jobs": [
+  {
+   "cpu_pct": 100.0,
+   "pid": 31169,
+   "rss_kb": 200976,
+   "etime": "16:36:58",
+   "command": ".venv/bin/python -m bench.agentpii5.live bench/runs/2026-09-30/v5-sprint-v2-813 --web --host 127.0.0.1 --port 8099 --baseline-dir /Users/igor/Projects/Obscura-hop-audit/research/hop-format-audit/evidence/prev-813"
+  }
+ ],
+ "verdict": "NOT_ISOLATED",
+ "threshold_cpu_pct": 40.0,
+ "hints": [
+  "bench",
+  "agentpii",
+  "eval",
+  "ner",
+  "pytest",
+  "uvicorn",
+  "docker",
+  "nuitka",
+  "gates.py"
+ ],
+ "note": "RUNBOOK-PERF §0.1 requires no other NER/container/benchmark job. A NOT_ISOLATED verdict makes every number EXPLORATORY: it may not enter an admission budget (RUNBOOK-PERF §3)."
+}

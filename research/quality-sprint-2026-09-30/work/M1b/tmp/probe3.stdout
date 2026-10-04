@@ -1,0 +1,58 @@
+{
+  "case": "derive-008",
+  "run_dir": "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/runs/2026-09-30/v5-sprint-v2-813",
+  "transcript_sha256_len": 767,
+  "real_values_in_transcript": [
+    "соколову анну игоревну",
+    "соколова анна игоревна",
+    "08.10.1997",
+    "08.10.1997",
+    "+79166983686",
+    "+79166983686"
+  ],
+  "controls": {
+    "positive_new_value": {
+      "observed_len": 160,
+      "production_len": 160,
+      "equal": true
+    },
+    "negative_no_pii": {
+      "observed_len": 62,
+      "production_len": 62,
+      "equal": true
+    },
+    "echo_of_substitute": {
+      "observed_len": 134,
+      "production_len": 134,
+      "equal": true
+    },
+    "fragment_surname": {
+      "observed_len": 37,
+      "production_len": 37,
+      "equal": true
+    },
+    "fragment_phone_head": {
+      "observed_len": 49,
+      "production_len": 49,
+      "equal": true
+    },
+    "fragment_phone_tail": {
+      "observed_len": 26,
+      "production_len": 26,
+      "equal": true
+    },
+    "fragment_patronymic": {
+      "observed_len": 33,
+      "production_len": 33,
+      "equal": true
+    },
+    "full_name_again": {
+      "observed_len": 54,
+      "production_len": 54,
+      "equal": true
+    }
+  },
+  "positive_differs": false,
+  "negative_equal": true,
+  "echo_equal": true
+}

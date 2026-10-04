@@ -1,0 +1,51 @@
+CHECK overlap-24 GREEN expected=GREEN recomputed=24 declared=24 identical=True
+CHECK type-55 GREEN expected=GREEN ORIGIN_V6=55 NEW_ITEM_TYPES=55 grammar_uncertain=9 -> ['BIRTH_CERT', 'CIVIL_ACT_CERT', 'RESIDENCE_PERMIT', 'OSAGO_POLICY', 'EXEC_DOC_NO', 'REFERRAL_NUMBER', 'STUDENT_ID_NUMBER', 'PNR', 'E_TICKET_NUMBER']
+CHECK v5-tables-reproduced RED expected=RED tables_diverging=['FEATURE_LABELS', 'FORM_ABSTAIN', 'FORM_FEATURES'] detail=FEATURE_LABELS: ('NAME', 'script'): v5=('cyrillic', 'latin', 'mixed', 'none') v6=('cyrillic', 'latin:gost', 'latin:icao', 'latin:bgn', 'latin:unknown', 'mixed', 'none'); FORM_ABSTAIN: ('NAME', 'translit'): v5='latin:unknown' v6=None; FORM_FEATURES: NAME: v5=('case_class', 'gram_case', 'order', 'parts', 'initials', 'script', 'translit', 'hyphen_particle') v6=('case_class', 'gram_case', 'order', 'parts', 'initials', 'script', 'hyphen_particle')
+CHECK v6-test-literal-copy RED expected=RED copied_tables_diverging_from_live_v5=['FEATURE_LABELS', 'FORM_ABSTAIN', 'FORM_FEATURES'] live_v5_matches_copy=False
+CHECK status-funnel RED expected=RED v5_live_statuses=['absent', 'engine_kept', 'leaf_foreign', 'leaked', 'not_masked', 'observed', 'residual'] v6_HOP_STATUSES=['absent', 'leaked', 'observed', 'residual', 'unmasked'] v6_missing_from_v5=['unmasked'] v5_missing_from_v6=['engine_kept', 'leaf_foreign', 'not_masked']
+CHECK checksum-policy RED expected=RED generated_checksum_types=11 samples_valid=11/11 owner_Q2_line=0/11 M8_mutant_line=0/11 Q2_equals_M8=True boundary_1.0_met_under_Q2=False (the perfect arm is indistinguishable from the mutant on this line)
+CHECK script-translit RED expected=RED v6_NAME_features_has_translit=False v6_script_labels=('cyrillic', 'latin:gost', 'latin:icao', 'latin:bgn', 'latin:unknown', 'mixed', 'none') v6_translit_abstain=None v5_live_NAME_features=('case_class', 'gram_case', 'order', 'parts', 'initials', 'script', 'translit', 'hyphen_particle')
+CHECK v5-leaf-and-readings RED expected=RED v5_live_tables=['LEAF_EQUIVALENCE', 'VALUE_NORMALISERS', 'VALUE_READINGS'] present_in_v6_snapshot=[] unrepresented=['LEAF_EQUIVALENCE', 'VALUE_NORMALISERS', 'VALUE_READINGS']
+CHECK v5-corpus-rules RED expected=RED v5_case_rules=23 v6_case_rules=21 v5_only_rules=['R22', 'R23']
+CHECKS total=9 expected_red=7 unexpected=0 -> OK
+type                       algo               notation    mint       sample_valid
+BANK_ACCOUNT               cbr515             digits      id_digits  True
+IBAN                       mod97              squeezed    id_alnum   True
+LOAN_UID                   uid                squeezed    hex        True
+OGRNIP                     ogrnip             digits      id_digits  True
+OMS_ENP                    luhn               digits      id_digits  True
+VIN                        iso3779            glyph_fold  id_alnum   True
+EPTS_NUMBER                epts               digits      id_digits  True
+UIN                        uin                digits      id_digits  True
+IMEI                       luhn               digits      id_digits  True
+ICCID                      luhn               digits      id_digits  True
+LOYALTY_CARD_NUMBER        gs1                digits      id_digits  True
+generated_checksum types = 11; sample valid = 11/11
+C1 overlap recomputed=24 declared=24 identical=True
+C2 v5_changed_vs_base=418 v6_changed_vs_base=77 v6_only=53 v5_only=394
+C3 product-source diff 0bfda23..890c508 prototype/ files=0 (expect 0)
+C4 CLAUDE.md v5+133/-14 v6+193/-0 both_removed=0
+C4 prototype/bench/agentpii5/contracts.py v5+14/-0 v6+9/-0 both_removed=0
+C4 prototype/bench/agentpii5/fixtures.py v5+16/-0 v6+6/-0 both_removed=0
+C4 prototype/bench/agentpii5/form.py v5+1/-0 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/harness.py v5+13/-1 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/judge.py v5+2/-0 v6+4/-0 both_removed=0
+C4 prototype/bench/agentpii5/metrics.py v5+12/-0 v6+19/-0 both_removed=0
+C4 prototype/bench/agentpii5/observe.py v5+16/-0 v6+13/-0 both_removed=0
+C4 prototype/bench/agentpii5/perfect.py v5+1/-0 v6+8/-0 both_removed=0
+C4 prototype/bench/agentpii5/records.py v5+5/-0 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/report.py v5+5/-0 v6+7/-0 both_removed=0
+C4 prototype/bench/agentpii5/revise.py v5+1/-1 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/scenarios5/common.py v5+0/-0 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/schema.py v5+1/-0 v6+1/-0 both_removed=0
+C4 prototype/bench/agentpii5/test_cli.py v5+0/-0 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/test_contracts.py v5+0/-0 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/test_form.py v5+0/-0 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/test_judge.py v5+0/-0 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/test_observe.py v5+1/-0 v6+1/-0 both_removed=0
+C4 prototype/bench/agentpii5/test_schema.py v5+4/-0 v6+0/-0 both_removed=0
+C4 prototype/bench/agentpii5/test_spec_form.py v5+0/-0 v6+1/-0 both_removed=0
+C4 wiki/INDEX.md v5+2/-0 v6+0/-0 both_removed=0
+C4 wiki/MAP.md v5+134/-14 v6+193/-0 both_removed=0
+C4 wiki/STATE.md v5+74/-0 v6+3/-0 both_removed=0
+C5 wrote evidence/compat_raw.json rows=24

@@ -1,0 +1,75 @@
+{
+  "task": "S1",
+  "artifact": "executed deterministic RED/probes on the pinned unchanged engine",
+  "revision": "product source 0bfda2363ef1a1d552e2ac093129b1026a86ad68 at evidence HEAD 890c50849a326f882eac336ba4e38c91171de473",
+  "changed_files": {
+    "outside_work_S1": [],
+    "inside_work_S1": [
+      "research/quality-sprint-2026-09-30/work/S1/s1_probes.py",
+      "research/quality-sprint-2026-09-30/work/S1/run-s1.sh",
+      "research/quality-sprint-2026-09-30/work/S1/RED.log",
+      "research/quality-sprint-2026-09-30/work/S1/determinism-run2.log",
+      "research/quality-sprint-2026-09-30/work/S1/determinism-run3.log",
+      "research/quality-sprint-2026-09-30/work/S1/HASHES.txt",
+      "research/quality-sprint-2026-09-30/work/S1/INPUTS.json",
+      "research/quality-sprint-2026-09-30/work/S1/SPEC.md",
+      "research/quality-sprint-2026-09-30/work/S1/DELTA.json",
+      "research/quality-sprint-2026-09-30/work/S1/GATE.json",
+      "research/quality-sprint-2026-09-30/work/S1/OWNER-QUESTIONS.md"
+    ],
+    "git_worktree_verification": {
+      "before_command": "git status --porcelain -- prototype licensing",
+      "after_command": "git status --porcelain -- prototype licensing",
+      "identical": true,
+      "content": [" M prototype/bench/agentpii5/live.py", " M prototype/bench/agentpii5/runs.json", "?? prototype/bench/agentpii5/answer_restoration.py", "?? prototype/bench/agentpii5/test_answer_restoration.py"],
+      "note": "the four dirty/untracked product paths above are the pre-existing preservation targets; S1 did not touch them"
+    }
+  },
+  "population_and_denominator": {
+    "corpus_cases_run": 0,
+    "reason": "S1 is an in-memory mechanism RED wave; no corpus re-run, no holdout access, no provider call",
+    "unknown_or_excluded_changes": "none (no run population was touched)",
+    "old_counters_rewritten": "none"
+  },
+  "per_probe": [
+    {"probe": "P", "property": "clean round trip exact + stable", "x": 1, "n": 1, "status": "HOLDS", "before_on_pinned_build": "n/a (control)", "after": "n/a (no patch in this task)"},
+    {"probe": "A1", "property": "plain-message collision, foreign conversation", "x": 0, "n": 3, "status": "HOLDS", "note": "counterexample expected; none found in this shape"},
+    {"probe": "A3", "property": "namesake of a substitute stays masked", "x": 0, "n": 1, "status": "HOLDS"},
+    {"probe": "A2", "property": "tool-result collision does not merge identities / wrong-person restore", "x": 3, "n": 3, "status": "VIOLATED", "fault_class": "identity collision / wrong-person restore (G5)"},
+    {"probe": "B", "property": "all name parts covered", "x": 1, "n": 1, "status": "VIOLATED", "fault_class": "partial detection: surname typed LOC, given name never born (leak G7/G5)", "detection_spans": ["LOC битюкова", "PHONE"], "given_name_left_real": true},
+    {"probe": "C", "property": "whole/parts consistent substitute in one conversation", "x": 1, "n": 1, "status": "VIOLATED", "fault_class": "split identity (one person, two substitutes)"},
+    {"probe": "C2", "property": "clean-state whole/parts consistency", "x": 1, "n": 1, "status": "HOLDS", "note": "shows the C defect is state-dependent, not global"},
+    {"probe": "D1", "property": "phone prefix authority on restore", "x": 2, "n": 2, "status": "VIOLATED", "fault_class": "malformed real value / non-PII fidelity (G6): invented +3/+9 prefix kept, residual empty", "exact_write_restores_correctly": true},
+    {"probe": "D2", "property": "non-PII digits/ids unchanged", "x": 0, "n": 375, "status": "NOT_MEASURED", "note": "recorded rewrite not reproduced; class stays open, not passed"},
+    {"probe": "E1", "property": "stream == whole for every chunking", "x": 0, "n": 130, "status": "HOLDS", "note": "recorded stream defect not reproduced in-process"},
+    {"probe": "E2", "property": "complete delivery without an explicit flush", "x": 1, "n": 1, "status": "CONTRACT_GAP", "note": "64 chars withheld without flush; proxy flushes only on [DONE]/error; end-to-end proxy NOT_MEASURED"}
+  ],
+  "summary": {"probes": 11, "holds": 5, "violated": 4, "violated_probes": ["A2", "B", "C", "D1"], "other": {"D2": "NOT_MEASURED", "E2": "CONTRACT_GAP"}, "exit_code": 4, "expected_red": 4},
+  "class_status": {
+    "A_name_collision": "PARTIALLY_REPRODUCED (A2 reproduced; A1/A3 hold)",
+    "B_partial_name_given_left_real": "REPRODUCED",
+    "C_whole_parts_consistency": "REPRODUCED",
+    "C_numeric_prose_restore": "REPRODUCED for the invented-prefix sub-class (D1)",
+    "C_nonpii_id_rewrite": "NOT_MEASURED",
+    "D_stream_vs_whole_original_episode": "NOT_MEASURED",
+    "D_stream_inprocess_equality": "HOLDS_FOR_FIXTURE"
+  },
+  "mechanism_evidence_vs_measurement": {
+    "mechanism_evidence": [
+      "A2: envelope.mask_messages hands `recorded` to every role:'tool' message (envelope.py:1620-1621,1650); collision value indistinguishable from an echo; executed masked tool content keeps the surname and merges the given name; unmask_arguments returns the first person",
+      "B: Detector.detect is stateless and returns LOC on the surname, no NAME span on the given name (executed)",
+      "C: executed vault rows show three rows for one real person in c2/с1: reordered full (c1), canonical full (c2), lone surname (c2) with a different substitute",
+      "D1: redact._digits_in_form_of keeps the written prefix (redact.py:1728-1745); only +8/++ guarded (redact.py:1642-1654); executed +3/+9 preserved with residual=[]",
+      "E2: redact.unmask_stream_chunk withholds _STREAM_KEEP=64 until flush (redact.py:2613-2635); proxy flush sites proxy.py:509-514,530-533"
+    ],
+    "measurement": {
+      "executed_runs": 3,
+      "determinism": "violated set {A2,B,C,D1} and exit 4 identical in all three runs",
+      "fixture_spec_sha256": "438f318669d66b7bdcacfcec0141646dca5d446878a88a74226ee10f5e444fec",
+      "observed_state_sha256_RED_log": "00e2035c6ddb7fd1343251a2320dc9463c8793a667c510ce6e3fadef8865f10e",
+      "observed_state_sha256_run2": "f69f16becb84f435f593673d605cf6027444641908e0c892bb68bb6806f855be",
+      "observed_state_sha256_run3": "532ee576b6df22bd339ec82d28c14eba349cca3dd6a9e0cf10898ace39405ec5"
+    },
+    "explicitly_not_claimed": ["original trace causality", "class closed for D2/E1", "production behaviour", "recall/precision/PPV", "product readiness or release"]
+  }
+}

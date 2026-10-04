@@ -1,0 +1,318 @@
+{
+  "arm": "C",
+  "calls": [
+    {
+      "name": "crm_find_contact",
+      "parsed": {
+        "query": {
+          "phone": "+79821406572"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "query": {
+          "phone": "+79821406572"
+        }
+      },
+      "seq": 1,
+      "written": {
+        "query": {
+          "phone": "+79821406572"
+        }
+      }
+    },
+    {
+      "name": "delivery_quote",
+      "parsed": {
+        "city": "одоев",
+        "weight": 3000
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "city": "Одоев",
+        "weight": 3000
+      },
+      "seq": 2,
+      "written": {
+        "city": "Одоев",
+        "weight": 3000
+      }
+    },
+    {
+      "name": "delivery_create_order",
+      "parsed": {
+        "comment": "",
+        "packages": [
+          {
+            "weight": 3000
+          }
+        ],
+        "recipient": {
+          "name": "Мкртчян Ашот",
+          "phones": [
+            "+79508407856"
+          ]
+        },
+        "to_location": {
+          "address": "ул. Солнечная, д. 104, кв. 203",
+          "city": "одоев",
+          "postal_code": "301440"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "packages": [
+          {
+            "weight": 3000
+          }
+        ],
+        "recipient": {
+          "name": "Мкртчян Ашот",
+          "phones": [
+            {
+              "number": "+79508407856"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "ул. Солнечная, д. 104, кв. 203",
+          "city": "Одоев",
+          "postal_code": "301440"
+        }
+      },
+      "seq": 3,
+      "written": {
+        "packages": [
+          {
+            "weight": 3000
+          }
+        ],
+        "recipient": {
+          "name": "Мкртчян Ашот",
+          "phones": [
+            {
+              "number": "+79508407856"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "ул. Солнечная, д. 104, кв. 203",
+          "city": "Одоев",
+          "postal_code": "301440"
+        }
+      }
+    },
+    {
+      "name": "crm_add_note",
+      "parsed": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Оформил отправку посылки (заказ ord-1): Одоев, ул. Солнечная, д. 104, кв. 203. Получатель — Мкртчян Ашот, +79508407856. Вес 3000 г. Стоимость 510 ₽, срок 2 дня."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Оформил отправку посылки (заказ ord-1): Одоев, ул. Солнечная, д. 104, кв. 203. Получатель — Мкртчян Ашот, +79508407856. Вес 3000 г. Стоимость 510 ₽, срок 2 дня."
+      },
+      "seq": 4,
+      "written": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Оформил отправку посылки (заказ ord-1): Одоев, ул. Солнечная, д. 104, кв. 203. Получатель — Мкртчян Ашот, +79508407856. Вес 3000 г. Стоимость 510 ₽, срок 2 дня."
+      }
+    },
+    {
+      "name": "notify_sms",
+      "parsed": {
+        "number": "+79821406572",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен: Одоев, ул. Солнечная, д. 104, кв. 203. Получатель Мкртчян Ашот. Вес 3 кг, стоимость 510 руб, срок 2 дня. Спасибо!"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "number": "+79821406572",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен: Одоев, ул. Солнечная, д. 104, кв. 203. Получатель Мкртчян Ашот. Вес 3 кг, стоимость 510 руб, срок 2 дня. Спасибо!"
+      },
+      "seq": 5,
+      "written": {
+        "number": "+79821406572",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен: Одоев, ул. Солнечная, д. 104, кв. 203. Получатель Мкртчян Ашот. Вес 3 кг, стоимость 510 руб, срок 2 дня. Спасибо!"
+      }
+    },
+    {
+      "name": "pickup_points_near",
+      "parsed": {
+        "address": "Одоев, ул. Солнечная, 104",
+        "limit": 10
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "address": "Одоев, ул. Солнечная, 104",
+        "limit": 10
+      },
+      "seq": 6,
+      "written": {
+        "address": "Одоев, ул. Солнечная, 104",
+        "limit": 10
+      }
+    },
+    {
+      "name": "pickup_points_near",
+      "parsed": {
+        "address": "Одоев",
+        "limit": 10
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "address": "Одоев",
+        "limit": 10
+      },
+      "seq": 7,
+      "written": {
+        "address": "Одоев",
+        "limit": 10
+      }
+    },
+    {
+      "name": "pickup_points_near",
+      "parsed": {
+        "address": "Одоев, улица Солнечная, дом 104",
+        "limit": 10
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "address": "Одоев, улица Солнечная, дом 104",
+        "limit": 10
+      },
+      "seq": 8,
+      "written": {
+        "address": "Одоев, улица Солнечная, дом 104",
+        "limit": 10
+      }
+    },
+    {
+      "name": "notify_sms",
+      "parsed": {
+        "number": "+79821406572",
+        "sign": "Dostavka",
+        "text": "Захаров В.Ю., ваш заказ ord-1 принят: Одоев, ул. Солнечная, д. 104, кв. 203. Получатель Мкртчян Ашот, +79508407856. Вес 3 кг, 510 руб, срок 2 дня."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "number": "+79821406572",
+        "sign": "Dostavka",
+        "text": "Захаров В.Ю., ваш заказ ord-1 принят: Одоев, ул. Солнечная, д. 104, кв. 203. Получатель Мкртчян Ашот, +79508407856. Вес 3 кг, 510 руб, срок 2 дня."
+      },
+      "seq": 9,
+      "written": {
+        "number": "+79821406572",
+        "sign": "Dostavka",
+        "text": "Захаров В.Ю., ваш заказ ord-1 принят: Одоев, ул. Солнечная, д. 104, кв. 203. Получатель Мкртчян Ашот, +79508407856. Вес 3 кг, 510 руб, срок 2 дня."
+      }
+    }
+  ],
+  "case_id": "long_order-002",
+  "cluster": "PHONE:9821406572",
+  "cost_usd": 0.005016,
+  "key": "long_order-002|C|0",
+  "kind": "long_order",
+  "masked_spans": {},
+  "meta": {
+    "api_error_status": null,
+    "cap_usd": 0.48,
+    "duration_ms": 23220,
+    "errors": [],
+    "is_error": false,
+    "model": "deepseek-flash",
+    "reason": "",
+    "session_id": "deepseek-1790427267834138000",
+    "subtype": "success",
+    "turns": 80
+  },
+  "register": "chat",
+  "repeat": 0,
+  "reply": "Отправил СМС на ваш номер +79821406572 с деталями заказа ord-1 ✅\n\nЧто-нибудь ещё?",
+  "state": [
+    {
+      "fields": {
+        "comment": "",
+        "packages": [
+          {
+            "weight": 3000
+          }
+        ],
+        "recipient": {
+          "name": "Мкртчян Ашот",
+          "phones": [
+            "+79508407856"
+          ]
+        },
+        "to_location": {
+          "address": "ул. Солнечная, д. 104, кв. 203",
+          "city": "одоев",
+          "postal_code": "301440"
+        }
+      },
+      "id": "ord-1",
+      "seq": 3,
+      "table": "orders",
+      "tool": "delivery_create_order"
+    },
+    {
+      "fields": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Оформил отправку посылки (заказ ord-1): Одоев, ул. Солнечная, д. 104, кв. 203. Получатель — Мкртчян Ашот, +79508407856. Вес 3000 г. Стоимость 510 ₽, срок 2 дня."
+      },
+      "id": "note-1",
+      "seq": 4,
+      "table": "notes",
+      "tool": "crm_add_note"
+    },
+    {
+      "fields": {
+        "number": "+79821406572",
+        "sign": "Dostavka",
+        "text": "Заказ ord-1 оформлен: Одоев, ул. Солнечная, д. 104, кв. 203. Получатель Мкртчян Ашот. Вес 3 кг, стоимость 510 руб, срок 2 дня. Спасибо!"
+      },
+      "id": "sms-1",
+      "seq": 5,
+      "table": "sms",
+      "tool": "notify_sms"
+    },
+    {
+      "fields": {
+        "number": "+79821406572",
+        "sign": "Dostavka",
+        "text": "Захаров В.Ю., ваш заказ ord-1 принят: Одоев, ул. Солнечная, д. 104, кв. 203. Получатель Мкртчян Ашот, +79508407856. Вес 3 кг, 510 руб, срок 2 дня."
+      },
+      "id": "sms-2",
+      "seq": 9,
+      "table": "sms",
+      "tool": "notify_sms"
+    }
+  ],
+  "substitutes": {},
+  "termination": "done"
+}

@@ -1,0 +1,21 @@
+PASS  gender is read from the strongest available signal  17 cases
+PASS  the case a name is written in is recognised
+PASS  every case of one person collapses to ONE vault key  keys={'Иванов Пётр Сергеевич'}
+PASS  a fake name inflects into the sentence's case, agreeing throughout  14 cases
+PASS  the feminine form is derived from the masculine pool, not stored twice
+PASS  the REAL person comes back from every sentence  10 sentences
+PASS  and in a case Russian does not spell differently
+PASS  a substitute never stands in the nominative inside an oblique slot
+PASS  a token the model re-inflected NEVER leaves a fake with the caller  3 rewrites, 3 real people
+PASS  one person in four cases is ONE identity, not four  identities={'Шилов Глеб Николаевич'}
+PASS  a given name the dictionary holds only as a city still declines (София → Софии)  Курьер выехал к Софии Щукиной
+PASS  and the customer's dative comes back as the customer's dative  Курьер выехал к Анне Черных
+PASS  a surname-shaped word does not out-vote the given name  Вера Уварова → femn
+PASS  so the model's instrumental gets the feminine ending  Верой Уваровой
+PASS  and the real person, not half a fake, reaches the caller  Клиент Ольгой Кузнецовой
+PASS  a form syncretic between cases restores in the case the customer wrote  Курьер выехал к Виктории Рыбаковой → Курьер выехал к Анне Черных
+
+names OK — gender and case agree, and a re-inflected token still resolves to the real person
+
+STDERR
+vault: encrypted with a key generated BESIDE THE DATA (/var/folders/_z/vsscvl3j5mg60_tttt6crzf40000gn/T/tmpiubo6z_g/pseudex-vault.key). This protects a copied database file, NOT a stolen volume or backup — both carry the key. Set PSEUDEX_VAULT_KEY_CMD (a secret manager), PSEUDEX_VAULT_KEY_FILE or PSEUDEX_VAULT_KEY to hold the key elsewhere.

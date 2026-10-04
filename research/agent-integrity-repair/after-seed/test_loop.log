@@ -1,0 +1,5 @@
+SENT TO MODEL: Найди заказ по телефону +7 950 922-33-22 и почте ansbtscr@example.ru
+MODEL TOOL CALL (tokens): {"phone": "+7 950 922-33-22", "email": "ansbtscr@example.ru"}
+TOOL EXECUTES WITH: {"phone": "+7 999 123-45-67", "email": "ivan@mail.ru"}
+
+PASS — model saw only tokens; tool received real values.

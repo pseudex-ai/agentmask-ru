@@ -1,0 +1,11 @@
+diff --git a/prototype/bench/agentpii5/scenarios5/common.py b/prototype/bench/agentpii5/scenarios5/common.py
+index 533d320..6250aa9 100644
+--- a/prototype/bench/agentpii5/scenarios5/common.py
++++ b/prototype/bench/agentpii5/scenarios5/common.py
+@@ -372,5 +372,5 @@ class CaseBuilderV5:
+             pick=self.pick, branch=self.branch, loop=self.loop, rag=self.rag,
+             document=self.document, has_result=has_result(hops), streaming=self.streaming,
+-            revised_from_v4=False)
++            revised_from_v4=False, v6=None)
+         problems = validate_v5(case)
+         if problems:

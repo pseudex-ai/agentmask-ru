@@ -43,9 +43,12 @@ it was wrong, and each has a test that falls when it is reverted
 places where a plausible simulation charges the gateway for the probe's own
 bookkeeping.
 
-THE OTHER HALF lives in `test_perfect.py`: SIX wrong gateways must FAIL the
+THE OTHER HALF lives in `test_perfect.py`: EIGHT wrong gateways must FAIL the
 same bounds this one clears. An acceptance test a wrong gateway can also pass
-is not an acceptance test.
+is not an acceptance test. Two are M04's: a right-form/wrong-identity gateway
+(`round_trip`) and one that leaves the substitute standing (`residual`).
+`reverse_action_order` below is the third M04 control: the same actions in
+another order, held to the two halves `ORDER_SENSITIVE` declares.
 
 AND THE MINT IS PART OF THE SPECIFICATION TOO (§1bis). A substitute the model
 reads has to be a WORD, not a string of the right length: a letter-mangled fake
@@ -65,14 +68,14 @@ import json
 import pathlib
 import re
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from pymorphy3.analyzer import Parse
 
 from bench.agentpii4.compare import ArmRun, ObservedCall
 from bench.agentpii4.parts import name_parts
 from bench.agentpii4.schema import Ladder, PiiItem, tier
-from bench.agentpii5 import contracts, form, metrics, observe
+from bench.agentpii5 import checksum_v6, contracts, form, metrics, observe, pii_types
 from bench.agentpii5.contracts import (ArmRunV5, CaseV5, Line, MentionRecord, RunObservation,
                                        ToolResultRecord)
 from bench.agentpii5.form_tables import NAME_PARTICLES, TRANSLIT_SIGNATURES
@@ -107,7 +110,7 @@ _LAT_TARGET: str = "ovezydjlnpbrtkmafuhcwsxqig"
 _LAT_MAP = str.maketrans(_LAT_ALPHABET, _LAT_TARGET)
 # HOW MANY OTHER LATIN MAPS THERE ARE TO TRY, and why there has to be more than
 # one. A NAME the tracker's directory answers in is LATIN — «Polyakova
-# Valentina» — and `form.name_script` reads a Latin name's TRANSLITERATION
+# Valentina» — and `form.name_translit` reads a Latin name's TRANSLITERATION
 # STANDARD off short markers («ya», «yu», «kh», «ts», a final «y», «shch»,
 # «iu», «ia», «cz», «e'»). One fixed letter map scrambles those markers away
 # and invents new ones: «Polyakova Valentina» (BGN, «ya») became «Amriokova
@@ -578,6 +581,245 @@ def _shift_digits(text: str, by: int) -> str:
     return "".join(str((int(c) + by) % 10) if c.isdigit() else c for c in text)
 
 
+# --- §6.2 the v6 mint by IDENTIFIER (T8) ---------------------------------------------
+#
+# `_fake_digits`/`_fake_words` mangle a v5 surface word by word and leave the
+# checksum-valid share standing (a +3 digit shift keeps a Luhn-valid body valid
+# ~12 % of the time, §6.3). A v6 identifier is minted from the registry's `mint`
+# rule — `id_digits`, `id_alnum`, `hex` — which changes EVERY alphanumeric
+# character in place and keeps every separator (so the grammar holds).
+#
+# FOR A `generated_checksum` TYPE THE SUBSTITUTE INHERITS THE SOURCE'S VERDICT
+# (V1 S5, MUTANT-LINE-REDEFINE, COV-CHECKSUM-INHERIT): a valid source mints a
+# valid substitute, a faulty source is not repaired. The old R6-39 rule
+# (re-mint until the checksum FAILS) is the `mint_v6_remint_invalid` mutant, kept
+# for the re-versioned metric to separate, NOT the accepted semantics.
+# This module CALLS `checksum_v6` (the third module may call it, R6-07); it never
+# re-derives the arithmetic.
+_V6_SPECS: dict[str, pii_types.TypeSpec] = {t.id: t for t in pii_types.TYPE_REGISTRY}
+_BANK_ACCOUNT_BIK: str = "049805746"     # the fixed BIK gen_v6 mints accounts against
+
+
+def _shift_text(text: str, shift: int) -> str:
+    """Shift EVERY alphanumeric character by `shift` inside its own class — a
+    digit within 0-9, a Latin letter within a-z/A-Z, a Cyrillic letter within
+    а-я/А-Я — and leave every separator and mark in place. Any shift 1..25 keeps
+    letters disjoint from the source; any shift not divisible by 10 keeps digits
+    disjoint, so no position is shared with the sample (T8)."""
+    out: list[str] = []
+    for ch in text:
+        if ch.isdigit():
+            out.append(str((int(ch) + shift) % 10))
+        elif "A" <= ch <= "Z":
+            out.append(chr((ord(ch) - ord("A") + shift) % 26 + ord("A")))
+        elif "a" <= ch <= "z":
+            out.append(chr((ord(ch) - ord("a") + shift) % 26 + ord("a")))
+        elif "А" <= ch <= "Я":
+            out.append(chr((ord(ch) - ord("А") + shift) % 32 + ord("А")))
+        elif "а" <= ch <= "я":
+            out.append(chr((ord(ch) - ord("а") + shift) % 32 + ord("а")))
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
+def _mint_fold(spec: pii_types.TypeSpec, text: str) -> str:
+    """The surface folded the way the grammar regex and the published checksum
+    read it (the same five-way rule `gen_v6._canonical` uses)."""
+    notation = spec.value_notation
+    if notation == "digits":
+        return observe.digits_of(text)
+    if notation == "squeezed":
+        return observe.squeeze(text)
+    if notation == "glyph_fold":
+        return observe.glyph_fold(text)
+    return text
+
+
+def _grammar_pattern(grammar: str) -> str | None:
+    """The regex a grammar card opens with, or None for a prose grammar. A prose
+    grammar («свободная форма», «национальной НЕТ») names the shape in words, so
+    a class-preserving shift cannot break it; a regex grammar carries a character
+    class `[...]` or a digit class `\\d` and must be fullmatched."""
+    head = grammar.split(";", 1)[0].strip()
+    if not head:
+        return None
+    # A card like GIS_ZHKH_ELS writes its alternatives as
+    # `\d{2}[А-Я]{2}\d{6} (10) | …` — the «(10)» is a LENGTH annotation, not a
+    # regex group, and the spaces around «|» are prose; both are dropped before
+    # the head is judged/compiled. Whitespace is safe to strip wholesale: a
+    # regex names an optional space as `\s?`, never as a literal space.
+    head = re.sub(r"\s*\(\d+\)\s*", "", head)
+    head = re.sub(r"\s+", "", head)
+    return head if re.search(r"\\d|\[", head) else None
+
+
+def _grammar_holds(spec: pii_types.TypeSpec, text: str) -> bool:
+    # A digit identifier's grammar is its digit run: the strict POSITIONAL regex
+    # (EPTS's fixed «0», IMEI's TAC) is a format the simulator does not need to
+    # reproduce — `fake_checksum_invalid` validates the CHECKSUM, never the shape
+    # — so a non-empty digit run is the whole grammar for `id_digits`.
+    if spec.mint == "id_digits":
+        return bool(observe.digits_of(text))
+    pattern = _grammar_pattern(spec.grammar)
+    if pattern is None:
+        return True
+    try:
+        # Fullmatch against the SHIFTED SURFACE (separators kept by `_shift_text`),
+        # not the squeezed canonical: a CADASTRAL grammar names its colons. The
+        # regex card is UPPERCASE while the fold lower-cases, so the two meet
+        # under IGNORECASE, which does not widen a VIN-style `[A-HJ-NPR-Z]` class.
+        return re.fullmatch(pattern, text, re.IGNORECASE) is not None
+    except re.error:
+        return True
+
+
+def _v6_checksum_valid(spec: pii_types.TypeSpec, text: str) -> bool:
+    """Does `text` PASS the published checksum (after the notation fold)? A
+    caller of `checksum_v6` only; BANK_ACCOUNT's key is a (account, BIK) pair."""
+    folded = _mint_fold(spec, text)
+    if not folded:
+        return False
+    if spec.id == "BANK_ACCOUNT":
+        return checksum_v6.validate_account(folded, _BANK_ACCOUNT_BIK)
+    try:
+        return checksum_v6.validate(spec.id, folded)
+    except (KeyError, ValueError):
+        return False
+
+
+def mint_v6_remint_invalid(spec: pii_types.TypeSpec, texts: Sequence[str]) -> list[str]:
+    """The HISTORICAL R6-39 arm: re-mint until the fake's checksum FAILS.
+
+    Kept because it is the mutant the re-versioned line must separate, and
+    because a saved v6 result may name it. NOT the accepted semantics (V1 S5,
+    MUTANT-LINE-REDEFINE): COV-CHECKSUM-INHERIT says a VALID source mints a
+    VALID substitute, and this arm turns a valid source into an invalid fake —
+    the `valid -> invalid` mutant. `_mint_with(wanted=False)` is exactly the old
+    loop: skip every shift whose surface still passes, so the result always
+    fails."""
+    made = _mint_with(spec, texts, False)
+    return made if made is not None else list(texts)
+
+
+def _same_class(ch: str) -> str:
+    """The characters a single-position checksum repair may try, in the CLASS of
+    `ch`: a digit stays a digit (a Luhn/GS1/OGRNIP check digit), a lowercase
+    letter stays lowercase hex (LOAN_UID's trailing check CHARACTER), upper
+    likewise. A repair that crossed the class would break the grammar and be
+    refused by `_grammar_holds` anyway."""
+    if ch.isdigit():
+        return "0123456789"
+    if ch.islower():
+        return "0123456789abcdef"
+    if ch.isupper():
+        return "0123456789ABCDEF"
+    return ""
+
+
+def _repair_checksum(spec: pii_types.TypeSpec, text: str, wanted: bool,
+                     sample: str) -> tuple[int, str] | None:
+    """`(index, replacement)` that makes `text`'s checksum verdict `wanted`, or
+    None. `(-1, "")` means `text` already carries the wanted verdict.
+
+    A uniform shift moves every character and often flips validity: of the 22
+    usable shifts, IBAN/OGRNIP/OMS_ENP/UIN/EPTS/ICCID/LOAN_UID present NO
+    checksum-valid spelling at all, and `COV-CHECKSUM-INHERIT` needs a VALID
+    substitute for a valid source. So the check character is RE-DERIVED rather
+    than hoped for: rewrite ONE position and ask the published validator. The
+    search is algorithm-agnostic on purpose — the arithmetic stays in
+    `checksum_v6`, this only asks it (R6-07). Positions are tried from the TAIL,
+    where a check digit usually sits, and a repair that would share the SAMPLE's
+    character at that position is refused: identity is not inheritance."""
+    if _v6_checksum_valid(spec, text) == wanted:
+        return (-1, "")
+    for index in reversed([i for i, ch in enumerate(text) if ch.isalnum()]):
+        for replacement in _same_class(text[index]):
+            if replacement == text[index]:
+                continue
+            if index < len(sample) and replacement == sample[index]:
+                continue
+            candidate = text[:index] + replacement + text[index + 1:]
+            if not _grammar_holds(spec, candidate):
+                continue
+            if _v6_checksum_valid(spec, candidate) == wanted:
+                return (index, replacement)
+    return None
+
+
+def _apply_repair(spec: pii_types.TypeSpec, made: Sequence[str],
+                  index: int, replacement: str) -> list[str]:
+    """The repaired surface PLUS every other spelling kept consistent with it.
+
+    The ONE character change reaches the canonical (and the parts) too: at the
+    same index when the two spellings are position-aligned there, else the
+    canonical is re-folded from the repaired surface by `_mint_fold` — the same
+    five-way fold `gen_v6._canonical` uses. Without this the fake would have TWO
+    spellings that differ by the check character, and a tool result rendered from
+    the canonical would show a value the model never wrote: a simulation defect
+    invented by its own bookkeeping."""
+    if index < 0:
+        return list(made)
+    surface = made[0][:index] + replacement + made[0][index + 1:]
+    out = [surface]
+    for other in made[1:]:
+        if index < len(other) and other[index] == made[0][index]:
+            out.append(other[:index] + replacement + other[index + 1:])
+        else:
+            out.append(_mint_fold(spec, surface) or other)
+    return out
+
+
+def _mint_with(spec: pii_types.TypeSpec, texts: Sequence[str],
+               wanted: bool | None) -> list[str] | None:
+    """One shift for ALL `texts` (surface, canonical, parts), repaired so the
+    SURFACE's checksum verdict is `wanted` (None = the type carries no checksum).
+    Two families of candidate, in the order the old R6-39 loop used them:
+    a class-preserving shift of every alphanumeric character, then a digit-only
+    shift that leaves a STRUCTURAL identifier's fixed letters in place («А31-…»,
+    «…-ИП», UUID hex). Returns None when no candidate holds; the caller keeps
+    the inputs (a named miss beats a fake that violates T8)."""
+    for shift in range(1, 26):
+        if shift % 10 == 0:
+            continue
+        made = [_shift_text(text, shift) for text in texts]
+        if not all(_grammar_holds(spec, one) for one in made):
+            continue
+        if wanted is None:
+            return made
+        repair = _repair_checksum(spec, made[0], wanted, texts[0])
+        if repair is not None:
+            return _apply_repair(spec, made, *repair)
+    for shift in range(1, 10):
+        made = [_shift_digits(text, shift) for text in texts]
+        if not all(_grammar_holds(spec, one) for one in made):
+            continue
+        if wanted is None:
+            return made
+        repair = _repair_checksum(spec, made[0], wanted, texts[0])
+        if repair is not None:
+            return _apply_repair(spec, made, *repair)
+    return None
+
+
+def mint_v6(spec: pii_types.TypeSpec, texts: Sequence[str]) -> list[str]:
+    """The ACCEPTED v6 mint (V1 S5, MUTANT-LINE-REDEFINE, COV-CHECKSUM-INHERIT).
+
+    THE SUBSTITUTE INHERITS THE SOURCE'S CHECKSUM VALIDITY: a VALID source mints
+    a VALID substitute and a faulty source is NOT repaired. The old R6-39 rule —
+    re-mint until the checksum FAILS — is kept as `mint_v6_remint_invalid` and is
+    the `valid -> invalid` mutant, never the accepted semantics: under the
+    owner's choice it turns every real (valid) identifier into an invalid fake,
+    and the historical `fake_checksum_invalid` line then rewards it (1.0) while
+    the correct arm prints 0.0 — the line could not separate the behaviour it
+    exists to catch. The source's own verdict is read off `texts[0]`, the
+    surface, and `_repair_checksum` re-derives the check character to hold it.
+    Returns the inputs unchanged on a named miss."""
+    wanted = _v6_checksum_valid(spec, texts[0]) if spec.generated_checksum else None
+    made = _mint_with(spec, texts, wanted)
+    return made if made is not None else list(texts)
+
+
 def _fake_digits(text: str, pii_type: str) -> str:
     """Shift every digit, keep the separators — and keep the COUNTRY digit of
     an eleven-digit phone, so the substitute's canonical, its surface and its
@@ -630,8 +872,10 @@ def _fake_name_words(text: str, fakes: dict[str, str], shift: int = 0) -> str:
 
     THE STANDARD IS READ OFF THE WHOLE STRING and handed down to each word:
     «ya» in the surname is what makes «Polyakova Valentina» BGN, and a word
-    asked about itself would not know."""
-    label = form.name_script(text)
+    asked about itself would not know. It is `name_translit` — the ROMANIZATION
+    feature — and not `name_script`, which since SPIKE-Ж answers the ALPHABET
+    alone (`latin`/`cyrillic`/`mixed`/`none`)."""
+    label = form.name_translit(text)
     out: list[str] = []
     for token in _WORD.findall(text):
         if token.isalpha():
@@ -650,19 +894,25 @@ def _signature_shift(texts: Sequence[str], mint_at: object) -> int:
     transliteration standard it arrived in.
 
     ZERO WHEN THE QUESTION DOES NOT ARISE, which is every Cyrillic name in the
-    corpus: `form.name_script` answers `cyrillic` on both sides whatever the
-    letters became, so the base map is chosen and nothing moves. The walk is for
-    the LATIN names the office suite introduced, and a value for which no
-    rotation works keeps the base map — a named miss beats a silent re-roll.
+    corpus: no Latin letter is present, so the base map is chosen and nothing
+    moves. The walk is for the LATIN names the office suite introduced, and a
+    value for which no rotation works keeps the base map — a named miss beats a
+    silent re-roll.
+
+    THE ALPHABET DECIDES WHETHER THE QUESTION ARISES, the romanization feature
+    decides whether a rotation ANSWERS it: `name_translit` answers
+    `latin:unknown` both for a Cyrillic name and for a Latin one no table
+    speaks for, and only `name_script` tells those two apart.
     """
-    wanted = [form.name_script(one) for one in texts if one]
-    if not any(label.startswith("latin") or label == "mixed" for label in wanted):
+    texts = [one for one in texts if one]
+    wanted = [form.name_translit(one) for one in texts]
+    if not any(form.name_script(one) in ("latin", "mixed") for one in texts):
         return 0
     for shift in range(_LAT_SHIFTS):
         if shift and _lat_fixes_a_letter(shift):
             continue
-        made = [mint_at(one, shift) for one in texts if one]            # type: ignore[operator]
-        if [form.name_script(one) for one in made] == wanted:
+        made = [mint_at(one, shift) for one in texts]                    # type: ignore[operator]
+        if [form.name_translit(one) for one in made] == wanted:
             return shift
     return 0
 
@@ -672,6 +922,17 @@ def mint(pii_type: str, surface: str, canonical: str, parts: dict[str, str],
     """(substitute surface, substitute canonical, substitute parts). `fakes` is
     the conversation's NAME assignment (`name_pool_map`) and nothing else reads
     it."""
+    # A v6 type with a mint rule is minted by IDENTIFIER (T8): every alphanumeric
+    # character changes in place and a checksum-carrying type INHERITS the
+    # source's checksum verdict (S5 / COV-CHECKSUM-INHERIT). The ONE shift is
+    # chosen over the surface, the canonical AND every part together, so the
+    # substitute is one value, not three independent re-rolls.
+    spec = _V6_SPECS.get(pii_type)
+    if spec is not None and spec.origin == pii_types.ORIGIN_V6 and spec.mint:
+        keys = list(parts.keys())
+        made = mint_v6(spec, (surface, canonical, *(parts[key] for key in keys)))
+        return (made[0], made[1],
+                {key: made[2 + index] for index, key in enumerate(keys)})
     if pii_type in _DATE_TYPES:
         return (_fake_date(surface), _fake_date(canonical),
                 {role: _fake_date(value) for role, value in parts.items()})
@@ -937,6 +1198,13 @@ def _tool_results(case: CaseV5, items: dict[str, PiiItem], subs: dict[str, Subst
     declared = {(ret.tool_name, ret.call_ordinal): ret for ret in case.returns}
     records: list[ToolResultRecord] = []
     mentions: list[MentionRecord] = []
+    # The v6 NEGATIVES a right gateway must leave untouched inside the results
+    # (§6.3, CQ-11). They ride the FIRST result as `neg:`-tagged slots, beside the
+    # positive the case declared — a BIK beside the account in a statement, a КБК
+    # beside the УИН in a charge. `overmask_result` counts these slots and M9
+    # masks them; every other metric skips `neg:` tags (a negative is not an item).
+    v6_negatives = [negative for negative in case.base.negatives
+                    if negative.family in contracts.V6_NEGATIVE_FAMILIES]
     for seq, ((turn, tool, ordinal), read_ids) in enumerate(sorted(by_result.items())):
         # EVERY DECLARED item of this result, even one no hop reads: a value the
         # result renders and nobody consumes still reaches the model.
@@ -957,12 +1225,27 @@ def _tool_results(case: CaseV5, items: dict[str, PiiItem], subs: dict[str, Subst
             masked_parts.append(prefix + fake.canonical + "\n")
             spans_real[item_id] = (start_real, start_real + len(item.canonical))
             pieces.append((start_real, start_real + len(item.canonical), fake.canonical, item.type))
+        # THE NEGATIVES LAND IN THE FIRST RESULT, tagged with `NEG_TAG_PREFIX`
+        # (CQ-11). They are NOT `pieces` here: a right gateway leaves them
+        # untouched, and `overmask_result` reads their coverage as a survival. M9
+        # (`_m9_overmask_negatives`) later adds the piece and turns the survival
+        # into a hit against the mutant.
+        if seq == 0:
+            for ni, negative in enumerate(v6_negatives):
+                prefix = f"{negative.family}: " if real_parts else ""
+                start_real = sum(len(part) for part in real_parts) + len(prefix)
+                real_parts.append(prefix + negative.value + "\n")
+                masked_parts.append(prefix + negative.value + "\n")
+                spans_real[metrics.NEG_TAG_PREFIX + f"n{ni}"] = (
+                    start_real, start_real + len(negative.value))
         records.append(ToolResultRecord(
             tool_name=tool, seq=seq, call_ordinal=ordinal, turn=turn,
             return_form=(ret.return_form if ret else "flat_json"),
             text_real="".join(real_parts), text_masked="".join(masked_parts),
             spans_real=spans_real, pieces=tuple(pieces), forced=False))
         for item_id in spans_real:
+            if item_id.startswith(metrics.NEG_TAG_PREFIX):
+                continue                      # a negative, not an item: no mention
             mentions.append(MentionRecord(
                 item_id=item_id, msg=-1, result_seq=seq, substitute=subs[item_id].canonical,
                 request_index=request_of_result(len(case.base.messages), seq)))
@@ -1053,7 +1336,30 @@ def simulate(case: CaseV5) -> ArmRunV5:
         # Correction 3 again, at the level of the whole run: one request per
         # push, messages and results alike.
         request_count=max(len(case.base.messages) + len(results), 1),
-        stream_mismatch=False, reply_whole=reply if case.streaming else "", turn_residual=0)
+        stream_mismatch=False, reply_whole=reply if case.streaming else "", turn_residual=0,
+        # A perfect SIMULATION observed no provider; None is the honest answer.
+        model_trace=None)
+
+
+def reverse_action_order(run: ArmRunV5) -> ArmRunV5:
+    """The same actions in the OPPOSITE order, as records that stay COHERENT.
+
+    `seq` and `call_turns` are renumbered WITH the list, because they are the
+    record of the order: reversing the tuple while leaving `seq` at 0, 1, 2
+    produces an artifact no run could have written, and a metric that reads the
+    order would then be blamed for the surgeon's inconsistency rather than for
+    its own assumption.
+
+    M04 asks that the action order be VARIED without a scheduled-turn
+    assumption. Which lines can follow a permutation and which cannot is a
+    measured fact, declared in `test_perfect.ORDER_SENSITIVE` — a line that
+    moves without being on that list is the defect this helper exists to find.
+    """
+    count = len(run.base.calls)
+    calls = tuple(replace(call, seq=count - 1 - index)
+                  for index, call in enumerate(reversed(run.base.calls)))
+    return replace(run, base=replace(run.base, calls=calls),
+                   call_turns=tuple(reversed(run.call_turns)))
 
 
 # --- §4 running it ------------------------------------------------------------------

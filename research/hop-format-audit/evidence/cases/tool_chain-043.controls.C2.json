@@ -1,0 +1,313 @@
+{
+  "arm": "C2",
+  "calls": [
+    {
+      "name": "crm_find_contact",
+      "parsed": {
+        "query": {
+          "phone": "+79527054451"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "query": {
+          "phone": "+79527054451"
+        }
+      },
+      "seq": 1,
+      "written": {
+        "query": {
+          "phone": "+79527054451"
+        }
+      }
+    },
+    {
+      "name": "order_status",
+      "parsed": null,
+      "refusal_path": "order_id",
+      "refusal_rule": "order_id_format",
+      "residual": {},
+      "restored": {
+        "order_id": "241"
+      },
+      "seq": 2,
+      "written": {
+        "order_id": "241"
+      }
+    },
+    {
+      "name": "address_suggest",
+      "parsed": {
+        "count": 5,
+        "query": "Брянск, улица Добролюбова, 41"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "count": 5,
+        "query": "Брянск, улица Добролюбова, 41"
+      },
+      "seq": 3,
+      "written": {
+        "count": 5,
+        "query": "Брянск, улица Добролюбова, 41"
+      }
+    },
+    {
+      "name": "order_status",
+      "parsed": {
+        "order_id": "ORD-241"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "order_id": "ORD-241"
+      },
+      "seq": 4,
+      "written": {
+        "order_id": "ORD-241"
+      }
+    },
+    {
+      "name": "order_status",
+      "parsed": {
+        "order_id": "ORD-000241"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "order_id": "ORD-000241"
+      },
+      "seq": 5,
+      "written": {
+        "order_id": "ORD-000241"
+      }
+    },
+    {
+      "name": "order_status",
+      "parsed": {
+        "order_id": "ORD-241241"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "order_id": "ORD-241241"
+      },
+      "seq": 6,
+      "written": {
+        "order_id": "ORD-241241"
+      }
+    },
+    {
+      "name": "delivery_create_order",
+      "parsed": {
+        "comment": "Доставка как в прошлый раз\"}",
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Воронина Елена Сергеевна",
+          "phones": [
+            "+79527054451"
+          ]
+        },
+        "to_location": {
+          "address": "ул. Добролюбова, д. 41, кв. 25",
+          "city": "брянск",
+          "postal_code": "241228"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "comment": "Доставка как в прошлый раз\"}",
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Воронина Елена Сергеевна",
+          "phones": [
+            {
+              "number": "+79527054451"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "ул. Добролюбова, д. 41, кв. 25",
+          "city": "Брянск",
+          "postal_code": "241228"
+        }
+      },
+      "seq": 7,
+      "written": {
+        "comment": "Доставка как в прошлый раз\"}",
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Воронина Елена Сергеевна",
+          "phones": [
+            {
+              "number": "+79527054451"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "ул. Добролюбова, д. 41, кв. 25",
+          "city": "Брянск",
+          "postal_code": "241228"
+        }
+      }
+    },
+    {
+      "name": "crm_add_note",
+      "parsed": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Оформлен заказ на доставку (ord-1) получателю Воронина Елена Сергеевна, тел. +79527054451, г. Брянск, ул. Добролюбова, д. 41, кв. 25, индекс 241228, вес 1000 г — «как в прошлый раз». Также клиент упомянул заказ №241 — в системе не найден, запрошен полный номер."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Оформлен заказ на доставку (ord-1) получателю Воронина Елена Сергеевна, тел. +79527054451, г. Брянск, ул. Добролюбова, д. 41, кв. 25, индекс 241228, вес 1000 г — «как в прошлый раз». Также клиент упомянул заказ №241 — в системе не найден, запрошен полный номер."
+      },
+      "seq": 8,
+      "written": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Оформлен заказ на доставку (ord-1) получателю Воронина Елена Сергеевна, тел. +79527054451, г. Брянск, ул. Добролюбова, д. 41, кв. 25, индекс 241228, вес 1000 г — «как в прошлый раз». Также клиент упомянул заказ №241 — в системе не найден, запрошен полный номер."
+      }
+    },
+    {
+      "name": "crm_find_contact",
+      "parsed": {
+        "query": {
+          "phone": "+79527054451"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "query": {
+          "phone": "+79527054451"
+        }
+      },
+      "seq": 9,
+      "written": {
+        "query": {
+          "phone": "+79527054451"
+        }
+      }
+    },
+    {
+      "name": "order_status",
+      "parsed": {
+        "order_id": "ord-1"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "order_id": "ord-1"
+      },
+      "seq": 10,
+      "written": {
+        "order_id": "ord-1"
+      }
+    },
+    {
+      "name": "order_status",
+      "parsed": {
+        "order_id": "ord-1"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "order_id": "ord-1"
+      },
+      "seq": 11,
+      "written": {
+        "order_id": "ord-1"
+      }
+    }
+  ],
+  "case_id": "tool_chain-043",
+  "cluster": "PHONE:9527054451",
+  "cost_usd": 0.014639,
+  "key": "tool_chain-043|C2|0",
+  "kind": "tool_chain",
+  "masked_spans": {},
+  "meta": {
+    "api_error_status": null,
+    "cap_usd": 0.28,
+    "duration_ms": 53142,
+    "errors": [],
+    "is_error": false,
+    "model": "deepseek-flash",
+    "reason": "",
+    "session_id": "deepseek-1790440586420154000",
+    "subtype": "success",
+    "turns": 81
+  },
+  "register": "sloppy",
+  "repeat": 0,
+  "reply": "Статус заказа **ord-1** — «принят» (ACCEPTED).\n\n- **Получатель:** Воронина Елена Сергеевна, +7 952 705-44-51\n- **Адрес доставки:** г. Брянск, ул. Добролюбова, д. 41, кв. 25 (индекс 241228)\n- **Состояние:** заказ принят в обработку, курьер ещё не назначен.\n\nКак только появится трекинг или изменится статус — сообщу.",
+  "state": [
+    {
+      "fields": {
+        "comment": "Доставка как в прошлый раз\"}",
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Воронина Елена Сергеевна",
+          "phones": [
+            "+79527054451"
+          ]
+        },
+        "to_location": {
+          "address": "ул. Добролюбова, д. 41, кв. 25",
+          "city": "брянск",
+          "postal_code": "241228"
+        }
+      },
+      "id": "ord-1",
+      "seq": 7,
+      "table": "orders",
+      "tool": "delivery_create_order"
+    },
+    {
+      "fields": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Оформлен заказ на доставку (ord-1) получателю Воронина Елена Сергеевна, тел. +79527054451, г. Брянск, ул. Добролюбова, д. 41, кв. 25, индекс 241228, вес 1000 г — «как в прошлый раз». Также клиент упомянул заказ №241 — в системе не найден, запрошен полный номер."
+      },
+      "id": "note-1",
+      "seq": 8,
+      "table": "notes",
+      "tool": "crm_add_note"
+    }
+  ],
+  "substitutes": {},
+  "termination": "done"
+}

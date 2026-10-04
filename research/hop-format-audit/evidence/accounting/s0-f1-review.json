@@ -1,0 +1,47 @@
+{
+  "taskId": "hop-s0-repro-20260927",
+  "sessionId": "c3482257-ae89-4068-b4dd-a1c07c895127",
+  "status": "idle",
+  "durationMs": 767834,
+  "usage": {
+    "inputTokens": 99687,
+    "outputTokens": 100110,
+    "freshTokens": 199797,
+    "totalTokens": 9487349,
+    "cacheReadTokens": 9287552,
+    "cacheWriteTokens": 0,
+    "reasoningTokens": 67887,
+    "modelCalls": 73,
+    "toolCalls": 91,
+    "estimatedCostUsd": 0.205763412,
+    "accountingComplete": false,
+    "bySession": {
+      "c3482257-ae89-4068-b4dd-a1c07c895127": {
+        "inputTokens": 99687,
+        "outputTokens": 100110,
+        "freshTokens": 199797,
+        "totalTokens": 9487349,
+        "cacheReadTokens": 9287552,
+        "cacheWriteTokens": 0,
+        "reasoningTokens": 67887,
+        "modelCalls": 73,
+        "toolCalls": 91,
+        "estimatedCostUsd": 0.205763412
+      }
+    }
+  },
+  "budget": {
+    "maxCostUsd": 0.5
+  },
+  "pricing": {
+    "basis": "deepseek-flash-peak-upper-bound",
+    "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+    "inputUsdPerMillion": 0.3,
+    "cacheReadUsdPerMillion": 0.006,
+    "cacheWriteUsdPerMillion": 0.3,
+    "outputUsdPerMillion": 1.2
+  },
+  "budgetExceeded": null,
+  "budgetOverrun": null,
+  "accountingNote": "Incomplete: at least one DSH attempt or assistant message had no committed usage. Treat totals as a lower bound."
+}

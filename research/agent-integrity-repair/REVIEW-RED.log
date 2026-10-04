@@ -1,0 +1,5 @@
+FAIL test_birth_evidence_in_json_keeps_supported_typo_and_pronoun_forms AssertionError ('{"note": "рдилась 22.04.1994", "slot": "2026-09-10"}', [])
+FAIL test_short_address_cues_still_restore_role_projections AssertionError ('д. 1, кв. 743', 'д. 1, кв. 743')
+FAIL test_repeated_shortening_keeps_scoped_address_owner RuntimeError the composed place 'улица Тополиная 7, кв. 545' is already another place's substitute ('Пушкина 6 кв 74' of customer 'hop-integrity-repeated-shortening')
+FAIL test_adjacent_markdown_fields_do_not_get_consumed AssertionError ('**Телефон**: +79164021187 **Статус**: подтвержден', '**Телефон**: +79807421235')
+Failures: 4 ['test_birth_evidence_in_json_keeps_supported_typo_and_pronoun_forms', 'test_short_address_cues_still_restore_role_projections', 'test_repeated_shortening_keeps_scoped_address_owner', 'test_adjacent_markdown_fields_do_not_get_consumed']

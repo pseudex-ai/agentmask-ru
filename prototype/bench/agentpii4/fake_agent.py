@@ -227,7 +227,7 @@ class FakeGateway:
                 text = text.replace(fake, self._back[fake])
         return text
 
-    def restore_arguments(self, arguments: dict[str, object]) -> tuple[dict[str, object], dict[str, tuple[str, ...]]]:
+    def restore_arguments(self, arguments: dict[str, object], name: str = "") -> tuple[dict[str, object], dict[str, tuple[str, ...]]]:
         def walk(node: object) -> object:
             if isinstance(node, str):
                 return self._restore(node)
@@ -1302,7 +1302,7 @@ def scripted_run(case: Case, arm: str, repeat: int, gateway: object, backend: Ba
                 raise RuntimeError(f"{case.id}/{arm}: {ceiling} calls and still planning "
                                    f"({name}) — a substitute that changes every turn would loop here")
             gateway.note_tool_call(name, arguments)  # type: ignore[attr-defined]
-            restored, residual = gateway.restore_arguments(arguments)  # type: ignore[attr-defined]
+            restored, residual = gateway.restore_arguments(arguments, name)  # type: ignore[attr-defined]
             log = backend.call(name, restored)
             # WHAT THE AGENT READS BACK is the masked result, byte for byte
             # what the model is handed; the next plan may use it.

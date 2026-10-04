@@ -61,9 +61,11 @@ from bench.agentpii4.pools import BuildError
 from bench.agentpii4.schema import Case, PiiItem, SeedRecord, case_from_json
 from bench.agentpii4.tools import FieldSpec
 from bench.agentpii5 import mock
-from bench.agentpii5.contracts import (BranchSpec, CaseV5, Hop, LoopSpec, MemorySpec, PickSpec,
-                                       ReturnExpectation, SPEECH_REGISTERS,
-                                       V4_KIND_TO_BEHAVIOUR, hop_owner_of_leaf)
+from bench.agentpii5.contracts import (GENERIC_PIECE_ROLES, BranchSpec, CaseV5, Hop, LoopSpec,
+                                       MemorySpec, PickSpec, ReturnExpectation, SPEECH_REGISTERS,
+                                       V4_KIND_TO_BEHAVIOUR, hop_owner_of_leaf, is_canonical_leaf,
+                                       semantic_leaf)
+from bench.agentpii5.observe import values_equal
 from bench.agentpii5.schema import has_result, validate_v5
 from bench.agentpii5.tools import REGISTRY_V5, expected_leaf_value, spec_v5_for
 
@@ -183,7 +185,7 @@ def _finish(case: Case, reads: dict[str, list[tuple[PiiItem, str]]], forms: dict
                    returns=declared.returns, forced=(), memory=declared.memory,
                    pick=pick, branch=branch, loop=loop if behaviour == "user_in_loop" else None,
                    rag=None, document=None, has_result=declared.has_result,
-                   streaming=declared.streaming, revised_from_v4=True),
+                   streaming=declared.streaming, revised_from_v4=True, v6=None),
             downgraded, reason)
 
 
@@ -239,11 +241,18 @@ def _declare(case: Case, reads: dict[str, list[tuple[PiiItem, str]]], forms: dic
         spec = spec_v5_for(tool, path)
         if spec is None:
             raise BuildError(f"{tool} has no leaf {path!r}")
+        # REACHABILITY (SPIKE-Е, Е-4): the schema says whether a call may omit
+        # the leaf, the PRODUCT says which leaves it never masks. A generic
+        # role (`contracts.GENERIC_PIECE_ROLES` — the settlement inside an
+        # address, the generic street word) is kept real by
+        # `pseudex/vault.py::_settlement_of`, so a REQUIRED hop there can never
+        # become `observed` and would be a miss by construction.
         argument_hops.append(Hop(kind="OUT", owner=hop_owner_of_leaf(tool, path),
                                  item_id=item.id, hop_index=-1, turn=last_turn,
                                  tool_name=tool, call_ordinal=0, parallel_group="",
                                  source_hop=_source_of(item, spec, hops, in_hop, rendered),
-                                 path=path, optional=not spec.required))
+                                 path=path,
+                                 optional=(not spec.required) or spec.role in GENERIC_PIECE_ROLES))
 
     # The answer comes before the arguments for `user_in_loop` (it is what the
     # confirmation is about) and after them everywhere else, which is the order
@@ -259,7 +268,7 @@ def _declare(case: Case, reads: dict[str, list[tuple[PiiItem, str]]], forms: dic
     return CaseV5(base=case, behaviour=behaviour, hops=tuple(hops), returns=tuple(returns),
                   forced=(), memory=_memory_specs(loop, answered), pick=None, branch=None,
                   loop=loop, rag=None, document=None, has_result=reached,
-                  streaming=streaming and reached, revised_from_v4=True)
+                  streaming=streaming and reached, revised_from_v4=True, v6=None)
 
 
 def _source_of(item: PiiItem, spec: FieldSpec, hops: Sequence[Hop], in_hop: dict[str, int],
@@ -286,27 +295,21 @@ def _source_of(item: PiiItem, spec: FieldSpec, hops: Sequence[Hop], in_hop: dict
     return source if printed and wanted and _same_value(item.type, printed, wanted) else -1
 
 
-# The types whose value IS its digits, so a notation change is not a different
-# value: «+7 916…» and «+7 (916) …», «XXX-XXX-XXX YY» and eleven digits. LOC and
-# NAME are absent on purpose — «г Ростов-на-дону, ул Дзержинского, д 44» and
-# «44» have one digit signature and are not one value, and reading them as one
-# declared 177 hand-overs the source result never made.
-DIGIT_TYPES: tuple[str, ...] = ("PHONE", "CARD", "SNILS", "INN", "PASSPORT", "PLATE", "DOB")
-
-
 def _same_value(pii_type: str, left: str, right: str) -> bool:
-    """Two spellings of one value, under the fold the comparator uses: case and
-    ё→е for letters, the digit signature for the types that ARE digits. Not the
-    comparator itself — `metrics.value_matches` reads a run, this reads a
-    corpus — but the same question, so a hop this accepts is a hop that line
-    can hit."""
-    if left.casefold().replace("ё", "е") == right.casefold().replace("ё", "е"):
-        return True
-    if pii_type not in DIGIT_TYPES:
-        return False
-    digits = "".join(character for character in left if character.isdigit())
-    other = "".join(character for character in right if character.isdigit())
-    return bool(digits) and digits == other
+    """Two spellings of one value — A THIN CALLER OF THE ONE PREDICATE.
+
+    THIS USED TO BE A THIRD COPY, and its own docstring promised «a hop this
+    accepts is a hop that line can hit» while it already disagreed with the line
+    it promised to agree with: it folded the digit signature for a private
+    `DIGIT_TYPES` tuple that INCLUDED PLATE and DOB, while `metrics.value_matches`
+    folded nothing. Measured by the spike's RED test on PLATE, SNILS and INN:
+    `revise._same_value` said True where the value line said False, three times
+    out of three — a hop the corpus declared reachable counted as a hand-over the
+    gateway broke. The private tuple is deleted (SPIKE-Ж, Ж-4): the reading is
+    `contracts.VALUE_NORMALISERS` and the predicate is
+    `observe.values_equal`, so a hop this accepts is a hop that line can hit by
+    construction, not by discipline."""
+    return values_equal(pii_type, left, right)
 
 
 # How a confirmation refers BACK to the value it confirms, by the type of that
@@ -426,6 +429,13 @@ def _arguments(case: Case, in_hop: dict[str, int],
     customer said. That preference is the whole of R12: an argument fed by a
     result is the chain, and filling every leaf from the message would make
     `sequential_chain` a family with no chains in it.
+
+    ONE (ITEM, SEMANTIC LEAF) DECLARES ONE (TOOL, PATH) — the canonical one
+    (`contracts.LEAF_CANONICAL`, SPIKE-Е, Е-6). A family that reaches the same
+    datum through `courier_book` AND a CRM write filled two equivalent leaves
+    from one item; declaring both would let one written leaf satisfy both and
+    read two `observed` from one crossing, so the non-canonical spelling is left
+    undeclared (R22 refuses the case that still names both).
     """
     read_by: dict[str, str] = {item.id: tool for tool, pairs in reads.items()
                                for item, _leaf in pairs}
@@ -440,7 +450,38 @@ def _arguments(case: Case, in_hop: dict[str, int],
             item = _argument_item(case, field, in_hop, read_by, tool)
             if item is not None:
                 out.append((tool, field.path, item))
-    return out
+    return _dedup_equivalent_leaves(out)
+
+
+def _dedup_equivalent_leaves(arguments: list[tuple[str, str, PiiItem]]
+                             ) -> list[tuple[str, str, PiiItem]]:
+    """Keep ONE declared leaf per (item, semantic leaf), the canonical one.
+
+    R22 forbids two DIFFERENT leaves of one class on one transition, so the
+    builder must decide which one stays. `contracts.LEAF_CANONICAL` names the
+    first leaf of each class (`courier_book.address.*` in every landed class):
+    the class's own READ tool, against the CRM WRITES that spell the same datum
+    differently. A non-canonical leaf is dropped only when its class's canonical
+    leaf IS declared; a class whose canonical leaf the case never fills keeps its
+    one non-canonical spelling rather than vanishing without a trace.
+    """
+    has_canonical = {(item.id, semantic_leaf(tool, path))
+                     for tool, path, item in arguments if is_canonical_leaf(tool, path)}
+    seen: set[tuple[str, str]] = set()
+    kept: list[tuple[str, str, PiiItem]] = []
+    for tool, path, item in arguments:
+        sem = semantic_leaf(tool, path)
+        if not sem:
+            kept.append((tool, path, item))
+            continue
+        key = (item.id, sem)
+        if key in has_canonical and not is_canonical_leaf(tool, path):
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append((tool, path, item))
+    return kept
 
 
 def _argument_item(case: Case, field: FieldSpec, in_hop: Container[str],
@@ -470,16 +511,24 @@ def _argument_item(case: Case, field: FieldSpec, in_hop: Container[str],
     satisfied it would have written the stale value back into the record. A read
     keeps the chain preference: there the result IS where the argument comes
     from, which is what `sequential_chain` measures.
+
+    `said[-1]` IS THE LAST WORD OF THE CUSTOMER, NOT THE FIRST (SPIKE-Е, Е-4).
+    A `correction` message is «садовая 46 … ой нет, садовая 18»: two message
+    items of one identity, the first cancelled by the second. `said[0]` put the
+    hop on the CANCELLED address, which the correct agent never writes again —
+    a REQUIRED hop that could not become `observed` by construction. For a
+    verbatim repeat the two are one item, so this is a no-op there; only the
+    correction is moved onto the value the agent will actually write.
     """
     primary = case.expects.primary_identity
     candidates = _candidates(case, field, in_hop, primary)
     said = _said_of(candidates)
     if said and _is_mutating(tool):
-        return said[0]
+        return said[-1]
     chained = _chained_of(candidates, read_by, tool)
     if chained:
         return chained[0]
-    return said[0] if said else None
+    return said[-1] if said else None
 
 
 def _candidates(case: Case, field: FieldSpec, in_hop: Container[str],

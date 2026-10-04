@@ -1,0 +1,137 @@
+{
+  "task": "S1",
+  "revision": "revision-2",
+  "supersedes_descriptions_in": "work/S1/DELTA.json and work/S1/SPEC.md (revision-1 files preserved read-only)",
+  "changed_product_files": [],
+  "changed_scorer_files": [],
+  "revision": {
+    "product_pinned": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "git_head": "8a808ca70a13b3b19b28d60c6746c443bec01ea0",
+    "fixture_spec_sha256": "6178608ff3b2edc0c910edf914e0844cc4b73f2f14615e6f32aceafff8f70e2a"
+  },
+  "run": {"command": "PYTHONDONTWRITEBYTECODE=1 prototype/.venv/bin/python work/S1/revision-2/s1_probes_v2.py", "exit": 4, "expected_red": 4},
+  "files_written": [
+    "work/S1/revision-2/SPEC.md",
+    "work/S1/revision-2/DELTA.json",
+    "work/S1/revision-2/GATE.json",
+    "work/S1/revision-2/INPUTS.json",
+    "work/S1/revision-2/DECISION-COVERAGE.md",
+    "work/S1/revision-2/s1_probes_v2.py",
+    "work/S1/revision-2/run-revision-v2.sh",
+    "work/S1/revision-2/revision.log",
+    "work/S1/revision-2/tmp/probes_v2.stdout"
+  ],
+  "archived_raw_pointers_corrected_into_the_package": {
+    "prompt_rule-005": "prototype/bench/runs/2026-09-30/v5-sprint-v2-813/corpus.v5.json#corpus[base.id=prompt_rule-005].base.messages[1] = 'привет оформите доставку на битюкова зинаида телефон 8 926 123 45 67 да и 6 кабинет'",
+    "long_clinic-001": "…arms.v5.jsonl#L49.v5.model_trace.responses[7,13] raw '+7 929 542-23-19' -> restored '+3 929 542-23-19'",
+    "long_clinic-006": "…arms.v5.jsonl#L60.v5 reply_raw (fake DOB 08.04.1964) / reply / reply_whole (real 04.04.1964) / stream_mismatch=true",
+    "fanout_pick-017": "…arms.v5.jsonl#L607.v5.model_trace.responses[14] raw '23.10.1965 / c-3' -> restored '127.10.1965 / c-8'"
+  },
+  "corrected_claims": [
+    "missing state is the historical vault/provenance/mint order, not the raw text",
+    "B uses a different phone from the archived prompt_rule-005 message: a valid RED for its own input, not an exact replay",
+    "the given-name NAME candidate IS born and survives suppress; it is outranked at _resolve by the ADDR span",
+    "D1 is a synthetic input-side mutation, separate from the archived engine +7 -> +3 boundary; it does not explain P4",
+    "the historical streaming mismatch is in-process STREAM_CHUNK=17 + flush; provider SSE is not a missing input",
+    "E2 is the documented carry contract of the pure API, not an engine RED",
+    "A2 variants are isolated and their harms separated; indistinguishability is not claimed",
+    "C requires nonempty, exactly identified substitutes; no vacuous pass",
+    "A1 includes a true second-person round trip"
+  ],
+  "slices": [
+    {
+      "slice": "A2 tool-result collision",
+      "before": "3/3 variants violated in one shared context/vault; harms not separated",
+      "after": {
+        "per_variant_isolated": true,
+        "violated_variants": ["lowercase_row", "capitalized_row", "lowercase_bare"],
+        "harm_matrix": {
+          "lowercase_row": {"surname_left_in_clear": true, "reverse_wrong_person": true, "given_name_merged": true},
+          "capitalized_row": {"surname_left_in_clear": true, "reverse_wrong_person": true, "given_name_merged": true},
+          "lowercase_bare": {"surname_left_in_clear": true, "reverse_wrong_person": true, "given_name_merged": false}
+        },
+        "indistinguishability_claimed": false
+      },
+      "x_over_n": "3/3 isolated variants violate"
+    },
+    {
+      "slice": "B partial name",
+      "before": "given name 'never born as a candidate' (asserted from the final detector output)",
+      "after": {
+        "given_covering_spans_recognizers": [["NAME", "битюкова зинаида"]],
+        "given_covering_spans_after_suppress": [["NAME", "битюкова зинаида"]],
+        "given_covering_spans_after_resolve": [],
+        "given_covering_spans_final_detect": [],
+        "given_candidate_lost_at": "resolve",
+        "replication_matches_public_detect": true,
+        "final_surname_span": [["LOC", "битюкова"]],
+        "given_name_left_real": true
+      },
+      "x_over_n": "1/1 reproduced; cause corrected from 'never born' to 'outranked at resolve'"
+    },
+    {
+      "slice": "C whole/parts consistency",
+      "before": "substring test; consistent=true vacuously when _find_fake returned ''",
+      "after": {
+        "fixture_valid": true,
+        "full_token": "Боброва Василиса Алексеевна",
+        "lone_token": "Ткачук",
+        "same_person": true,
+        "surnames_equal": false,
+        "C2_holds": true
+      },
+      "x_over_n": "1/1 reproduced with a nonempty exact identity"
+    },
+    {
+      "slice": "D1 invented country prefix",
+      "before": "stated as 'the same class as recorded P4'",
+      "after": {
+        "exact_copy_restores": true,
+        "approved_notations_keep_form": {"keep_plus7": true, "domestic_8": true, "bare_digits": true},
+        "invented_prefix_cases": [
+          {"written": "+3 <fake>", "restored": "+3 <real digits>", "residual": [], "silently_accepted": true},
+          {"written": "+9 <fake>", "restored": "+9 <real digits>", "residual": [], "silently_accepted": true}
+        ],
+        "archived_p4_boundary": "+7 929 542-23-19 -> +3 929 542-23-19",
+        "archived_boundary_executed_here": false,
+        "d1_explains_archived_p4": false
+      },
+      "x_over_n": "2/2 invented prefixes silently deliver the real subscriber digits"
+    },
+    {
+      "slice": "E1/E2 streaming",
+      "before": "reported as needing host /unmask_chunk sequence, SSE framing, and the delivering leg; E2 a CONTRACT_GAP",
+      "after": {
+        "historical_path_is_in_process": true,
+        "harness_chunk_constant": "STREAM_CHUNK=17 with one StreamDetokenizer and flush (bench/agentpii5/harness.py:117,512-536)",
+        "provider_sse_is_a_missing_input": false,
+        "E1_fixture_comparisons": 130,
+        "E1_fixture_mismatches": 0,
+        "historical_episode_reproduced": false,
+        "E2_status": "CONTRACT_EXPECTED",
+        "E2_counts_as_engine_red": false,
+        "separate_open_question": "proxy behaviour when the upstream iterator ends without [DONE] and without an error - offline fake upstream, not asserted"
+      },
+      "x_over_n": "130/130 fixture comparisons equal; historical episode NOT_MEASURED for reproduction"
+    },
+    {
+      "slice": "D2 non-PII fidelity",
+      "before": "NOT_MEASURED, 375 checks, 0 mutations",
+      "after": {"unchanged": true, "checks": 375, "mutations": 0, "recorded_episode_reproduced": false},
+      "x_over_n": "375/375 held on the fresh fixture; class stays NOT_MEASURED"
+    }
+  ],
+  "evidence_vs_measurement": {
+    "evidence_mechanism": "the unchanged engine imported in memory; archived run files read for pointers only",
+    "measurement": "11 executed probes with positive controls (P, A1, A3, C2) and separated stages",
+    "separated_because": "a deterministic RED is not a production observation, and B/D1 are fixture-level mechanisms, not proofs about the archived traces"
+  },
+  "unknowns": [
+    "which internal guard produced the recorded document:office-005 symptom",
+    "the fanout_pick-017 vault/provenance behind the recorded non-PII rewrite",
+    "the long_clinic-006 vault state behind the recorded stream mismatch",
+    "whether all available inputs are incapable of distinguishing an external new-real value from an echo"
+  ],
+  "owner_questions_opened": 0,
+  "gate_status": "G3 NOT passed; evidence accepted for the listed probes only; independent re-review required"
+}

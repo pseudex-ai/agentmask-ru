@@ -1,0 +1,69 @@
+diff --git a/prototype/bench/agentpii5/schema.py b/prototype/bench/agentpii5/schema.py
+index a2f9802..d5291ca 100644
+--- a/prototype/bench/agentpii5/schema.py
++++ b/prototype/bench/agentpii5/schema.py
+@@ -65,4 +65,32 @@ def has_result(hops: Sequence[Hop]) -> bool:
+ 
+ 
++def _superseded_ids(base: Case) -> set[str]:
++    """The ids of message items a LATER message item of the same
++    (type, identity, message) supersedes with a DIFFERENT value (SPIKE-Е, Е-4).
++
++    «садовая 46 … ой нет, садовая 18» is two LOC items of one identity in ONE
++    message: the first is cancelled by the second, and the correct agent writes
++    the second. A REQUIRED OUT hop on the cancelled item is a promise no correct
++    gateway can keep, so R23 turns the case that still names the first into a
++    build refusal instead of a miss read off the agent's behaviour.
++
++    `base.pii` ORDER IS THE AUTHORING ORDER, and `revise._argument_item` reads
++    `said[-1]` off it — so «later» here is «later in `base.pii`», the SAME order
++    the fix relies on. The two must not disagree about which item is current:
++    a check that called a different item current would refuse the corpus the fix
++    just made correct.
++    """
++    by_group: dict[tuple[str, str, int], list[PiiItem]] = {}
++    for item in base.pii:
++        if item.where.kind == "message":
++            by_group.setdefault((item.type, item.identity, item.where.msg), []).append(item)
++    superseded: set[str] = set()
++    for group in by_group.values():
++        for position, item in enumerate(group):
++            if any(later.value != item.value for later in group[position + 1:]):
++                superseded.add(item.id)
++    return superseded
++
++
+ def _declared_return_forms() -> dict[str, tuple[str, ...]]:
+     """Each tool's declared return forms, read off the landed registry.
+@@ -317,4 +345,31 @@ def validate_v5(case: CaseV5) -> list[str]:
+             problems.append(f"R21 {tag}: hop {hop.hop_index} on {hop.tool_name}.{hop.path} "
+                             f"is owner {hop.owner!r}, the table says {expected!r}")
++
++    # R22 two DIFFERENT leaves of one semantic class on one (turn, item). The
++    # equivalence table lets ONE written leaf satisfy EITHER declared spelling,
++    # so declaring both on one transition would let the observer read two
++    # `observed` from one crossing and inflate `end_to_end` (SPIKE-Е, Е-6).
++    by_semantic: dict[tuple[int, str, str], set[tuple[str, str]]] = {}
++    for hop in case.hops:
++        if hop.kind != "OUT" or not hop.tool_name:
++            continue
++        sem = c.semantic_leaf(hop.tool_name, hop.path)
++        if not sem:
++            continue
++        by_semantic.setdefault((hop.turn, hop.item_id, sem), set()).add((hop.tool_name, hop.path))
++    for (turn, item_id, sem), leaves in sorted(by_semantic.items()):
++        if len(leaves) > 1:
++            problems.append(f"R22 {tag}: turn {turn} item {item_id} declares {len(leaves)} "
++                            f"leaves of class {sem!r} on one transition: {sorted(leaves)}")
++
++    # R23 a REQUIRED OUT hop must not name a message item a later word of the
++    # customer cancelled. The correct agent writes the corrected value, so the
++    # hop on the cancelled one can never become `observed` (SPIKE-Е, Е-4).
++    superseded = _superseded_ids(base)
++    for hop in case.hops:
++        if hop.kind == "OUT" and not hop.optional and hop.item_id in superseded:
++            problems.append(f"R23 {tag}: hop {hop.hop_index} names item {hop.item_id}, which "
++                            f"a later message item of the same (type, identity, message) "
++                            f"supersedes with a different value")
+     return problems
+ 

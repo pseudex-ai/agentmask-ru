@@ -1,0 +1,191 @@
+# M1b RED log — executed commands, exit codes, counts
+
+Interpreter: `prototype/.venv/bin/python` (Python 3.12.12), `PYTHONDONTWRITEBYTECODE=1`.
+All commands run from the repository root `/Users/igor/Projects/Obscura-hop-audit`.
+Run under test: `prototype/bench/runs/2026-09-30/v5-sprint-v2-813`,
+run id `cc3a551f-a8a5-4c0d-b90b-d3db2b26858a`.
+No provider call, no benchmark call, no install, no model download, no git mutation,
+no write outside `research/quality-sprint-2026-09-30/work/M1b/`.
+
+Pinned product source: `0bfda2363ef1a1d552e2ac093129b1026a86ad68`.
+`git diff --stat 0bfda236..HEAD -- prototype/pseudex prototype/licensing prototype/testkit.py`
+is **empty**, so every RED below is on the unchanged engine/benchmark source
+(HEAD `890c508` is research-only evidence).
+
+---
+
+## C1 — canary reader vs the saved run and a valid oversized synthetic row
+
+```
+PYTHONDONTWRITEBYTECODE=1 prototype/.venv/bin/python \
+  research/quality-sprint-2026-09-30/work/M1b/probe_canary_reader.py \
+  --run prototype/bench/runs/2026-09-30/v5-sprint-v2-813 \
+  --out research/quality-sprint-2026-09-30/work/M1b \
+  --json research/quality-sprint-2026-09-30/work/M1b/probe_canary_reader.json
+```
+**exit 0** (the assertions the probe makes — that the RED is real and the synthetic
+control fires — all held; a red verdict is the finding, not a probe failure).
+Stdout/stderr: `tmp/probe1.stdout`, `tmp/probe1.stderr`; full result
+[probe_canary_reader.json](<probe_canary_reader.json>).
+
+Observed, in the reader's own words:
+
+| quantity | value |
+|---|---|
+| `payload_canaries.check_run(run_dir)` status | `NOT_MEASURED`, `ok=false` |
+| reason | `the delivered bytes could not be read: cc3a551f-….canary.jsonl:806: capture row is over the 4194304 byte bound` |
+| capture artifact | `cc3a551f-….canary.jsonl`, 810 rows, 95 241 454 bytes |
+| row bound / run bound | 4 194 304 / 268 435 456 bytes; run total is **under** the run bound |
+| oversized rows | line **806** = 5 531 229 B (+1 336 925 over), line **810** = 5 470 734 B (+1 276 430 over) |
+| rows at or under the bound | **808 / 810** |
+| rows 806 and 810 through `capture_from_json` | **ACCEPTED**, version 1, arm `I`, `sequential_chain:mail-006` and `:mail-007` |
+| why they are large | **380 payload deliveries each**, 20 manifests canaries; the largest single payload text is small — the row is big by *count*, not by one huge value |
+| synthetic control | one valid capture whose single payload is over the bound: `check_run` → `NOT_MEASURED`, reason names `m1b-synthetic.canary.jsonl:1`; row 8 910 569 B (~2.1× the row bound), under the run bound |
+
+Raw-record integrity (`raw_record_integrity`, one bounded pass):
+
+| quantity | value |
+|---|---|
+| rows parsed in full | **810 / 810**, 0 unparsable |
+| distinct `(case_id, repeat)` keys | 810, **0 duplicates** |
+| delivered payloads | 20 201 (`model_request` 7477, `tool_args` 4445, `tool_result` 4391, `model_input` 3036, `tool_error` 50, `final_answer` 802) |
+| payload text / real-text bytes | 32 299 491 / 32 323 337 |
+
+Denominator and coverage (`coverage`, read from the run's own triples journal):
+
+| quantity | value |
+|---|---|
+| triples rows / complete | 813 / 802 |
+| expected I arms (`_expected_capture_keys`) | **810** |
+| captured rows | 810 |
+| covered | **810 / 810 = 1.0**, 0 missing, 0 unexpected |
+
+And yet the published report says the opposite:
+
+```
+report.txt:947–949   СТАТУС: NOT_MEASURED
+                     ПРИЧИНА: … :806: capture row is over the 4194304 byte bound
+report.json          canary_capture = {"captured": 0, "intervention": 0,
+                                       "known": false, "selected": 0}
+                     canary_by_boundary = {}
+```
+
+So the run **loses no records and loses no denominator** — the file holds every row
+the journal names. What is lost is the *reading*: one row's byte arithmetic aborts
+the pass, and the refusal branch returns a `0/0` denominator that the
+no-capture branch would have filled from the triples journal.
+
+## C2 — parity: replay the four divergences from the saved prior state
+
+```
+PYTHONDONTWRITEBYTECODE=1 prototype/.venv/bin/python \
+  research/quality-sprint-2026-09-30/work/M1b/probe_parity_replay.py \
+  --run prototype/bench/runs/2026-09-30/v5-sprint-v2-813 \
+  --out research/quality-sprint-2026-09-30/work/M1b/probe_parity_replay.json \
+  --reason-source research/hop-format-audit/runs/cc3a551f-a8a5-4c0d-b90b-d3db2b26858a.excluded.json
+```
+**exit 0.** Stdout/stderr `tmp/probe2.stdout`, `tmp/probe2.stderr`; result
+[probe_parity_replay.json](<probe_parity_replay.json>), missing-state manifest
+[MISSING-STATE.json](<MISSING-STATE.json>).
+
+| case | prior payloads recovered | prefix replayed byte-identical | prior state fully replayed | intermediate tool hops in the capture | restored tool args match saved | failing push reproduced |
+|---|---|---|---|---|---|---|
+| `derive-008` | 5 | **yes** (4/4 prefix, 0 hops) | **yes** | 0 | **yes** (3 minted pairs recovered: NAME, DOB, PHONE) | **no** (all 5 declared tools tried) |
+| `sequential_chain:assistant-002` | 8 | yes (4/4 prefix) | no | 1 | no | no (4 tools tried) |
+| `tool_chain-037` | 31 | yes (4/4 prefix) | no | 8 | no | no (8 tools tried) |
+| `tool_chain-040` | 31 | yes (4/4 prefix) | no | 8 | no | no (8 tools tried) |
+
+Byte-identity covers the payloads the replay produces — the system push and the
+user pushes before the first tool call. Only `derive-008` has no intermediate hop,
+so only there is the prior state replayed in full (4 replayed payloads + the
+saved `tool_args` = all 5). The other three carry delivered bytes for 1/8/8
+intermediate tool results that this probe does not replay: the capture holds what
+was delivered but not the call that produced it.
+
+Facts reproduced about the divergences:
+
+- The excluded arm-I records are `_empty_run`: `state=[]`, `calls=[]`,
+  `substitutes={}`, `request_count=0`; the only surviving text is the 60-character
+  prefix pair inside the triple `reason`.
+- The prior state **is** on disk: `GatewayV5(capture=True)` appended every payload
+  as it was delivered and the triple appended the capture even after the arm
+  failed (`harness.py:1343` runs after `asyncio.gather` returns an outcome). Each
+  of the four captures ends at the `tool_args` payload that the failing
+  `push_call` consumes — so the failing boundary is `tool_result`, and the
+  pre-failure transcript, user messages and tool arguments are recovered exactly.
+- In every one of the four, the production and counting prefixes **are equal to
+  each other** (the divergence begins at or after character 60).
+- `derive-008` reaches byte-identical prior state and the failing push still does
+  not diverge under freshly minted substitutes — so the trigger is in the failing
+  push's own mint/state, not in the prior transcript.
+- The other three cases show the same failure to reproduce, but their prior state
+  is only replayed up to the first tool call, so their «no divergence» is weaker
+  evidence than `derive-008`'s and is not used to generalise.
+
+## C3 — parity: class controls (positive / negative / echo / fragments)
+
+```
+PYTHONDONTWRITEBYTECODE=1 prototype/.venv/bin/python \
+  research/quality-sprint-2026-09-30/work/M1b/probe_parity_mechanism.py \
+  --run prototype/bench/runs/2026-09-30/v5-sprint-v2-813 --case derive-008 \
+  --tool-args research/quality-sprint-2026-09-30/work/M1b/tmp/derive-008.tool_args.json \
+  --out research/quality-sprint-2026-09-30/work/M1b/probe_parity_mechanism.json
+```
+**exit 0.** Result [probe_parity_mechanism.json](<probe_parity_mechanism.json>).
+
+Eight controls run on `derive-008`'s exact prior state (primed vault), each asked
+whether `score._mask_message(text, …, "tool")` differs from
+`envelope.mask_messages(transcript+text, context, False)[-1]["content"]`:
+
+| control | differs? |
+|---|---|
+| a **new** value the transcript never saw (name, birth date, phone) | no |
+| **no personal data** at all (negative) | no |
+| a repeat of a **substitute** the transcript already shows | no |
+| lone surname fragment / phone head / phone tail / patronymic | no |
+| the whole real name again | no |
+
+`positive_differs=false`, `negative_equal=true`. The two compared functions *are*
+different (production reads a frozen provenance snapshot and has a call-scoped
+`_reserve_echoes` leg; `score._mask_message` has no call association, reads the
+vault live, and derives its LOC cover set from the pieces it kept), but none of
+these shapes makes them disagree, so the trigger stays **UNKNOWN** — recorded as
+unknown, not invented.
+
+## C4 — hashes and machine manifests
+
+```
+PYTHONDONTWRITEBYTECODE=1 prototype/.venv/bin/python \
+  research/quality-sprint-2026-09-30/work/M1b/make_inputs.py \
+  --reasons research/hop-format-audit/runs/cc3a551f-….excluded.json \
+  --parity  research/quality-sprint-2026-09-30/work/M1b/probe_parity_replay.json \
+  --captures-json research/quality-sprint-2026-09-30/work/M1b/probe_canary_reader.json
+```
+**exit 0.** 11 source files hashed, 9 run artifacts, 12 evidence inputs; in-memory
+bundle `2a07cebae2b050ec`, 1 524 582 bytes,
+`sha256 01c19f4689450b54694b7aaa4070cbaf695efc3e98f0b59471486392a0348206` —
+identical to B0's recorded identity. Outputs [INPUTS.json](<INPUTS.json>),
+[MISSING-STATE.json](<MISSING-STATE.json>).
+
+---
+
+## Exit-code summary
+
+| step | exit |
+|---|---:|
+| C1 canary reader probe | 0 |
+| C2 parity replay probe | 0 |
+| C3 parity mechanism controls | 0 |
+| C4 INPUTS / MISSING-STATE generation | 0 |
+
+## Expected failing properties (deliberate RED, not a green suite)
+
+1. `payload_canaries.check_run` returns `NOT_MEASURED` for a run whose 810 rows are
+   all present, parseable and cover the journal's 810 I arms — because two rows
+   exceed a per-*row* byte bound while every individual payload is small.
+2. The divergence between the production masking path and the counting
+   `score._mask_message` on a `tool` message is not reproducible offline from the
+   saved artifacts, because the mint is `secrets`-driven and the failing push's
+   own mints are not persisted.
+
+No suite PASS is claimed for M1b; no product source was patched.

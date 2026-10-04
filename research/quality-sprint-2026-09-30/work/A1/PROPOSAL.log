@@ -1,0 +1,13 @@
+wrote /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/A1/ACCEPTANCE-PROPOSAL.json
+wrote /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/A1/OWNER-QUESTIONS.md
+owner_questions=10 native_types=10 v6_new=55
+  NAME      occurrences=  6373 independent= 1188 gap=    0
+  LOC       occurrences=  2797 independent=  985 gap=    0
+  PHONE     occurrences=  3181 independent=  883 gap=    0
+  EMAIL     occurrences=  1298 independent=  459 gap=    0
+  PASSPORT  occurrences=   100 independent=   63 gap=  237
+  SNILS     occurrences=   224 independent=  128 gap=  172
+  INN       occurrences=   263 independent=  144 gap=  156
+  CARD      occurrences=   200 independent=  123 gap=  177
+  PLATE     occurrences=   289 independent=  154 gap=  146
+  DOB       occurrences=  1562 independent=  544 gap=    0

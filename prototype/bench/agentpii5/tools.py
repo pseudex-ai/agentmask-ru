@@ -37,9 +37,10 @@ from dataclasses import replace
 
 from bench.agentpii4 import tools as v4tools
 from bench.agentpii4.schema import PiiItem
-from bench.agentpii4.tools import (CSV_HEADER, REGISTRY as V4_REGISTRY, FieldSpec, Refusal,
-                                   ToolSpec, parse_e164, parse_inn, parse_int, parse_iso_date,
-                                   parse_name_word, parse_snils)
+from bench.agentpii4.tools import (CSV_HEADER, LEAF_NOTATION, LEAF_NOTATION_EVIDENCE,
+                                   NOTATIONS, REGISTRY as V4_REGISTRY, FieldSpec, Refusal,
+                                   ToolSpec, leaf_notation, parse_e164, parse_inn, parse_int,
+                                   parse_iso_date, parse_name_word, parse_snils)
 from bench.agentpii5.contracts import (NEW_TOOL_NAMES, NEW_TOOL_RESULT_TYPES,
                                        NEW_TOOL_RETURN_FORMS, NO_SUITE, RETURN_FORMS, SUITES,
                                        TOOL_SUITE, TOOL_VERTICAL, V4_TOOL_NAMES, VERTICALS,
@@ -2039,6 +2040,10 @@ def registry_problems(registry: dict[str, ToolSpecV5]) -> list[str]:
         if not isinstance(refused, Refusal) or not refused.rule:
             problems.append(f"V05 {name}: parse({{}}) did not refuse with a documented rule "
                             f"(got {refused!r})")
+    # V08 rides here rather than beside the corpus checks because it is the same
+    # kind of fact as V01–V07: a claim the REGISTRY makes and only its own tools
+    # can falsify (SPIKE-Ж, Ж-6/Ж-7).
+    problems.extend(notation_problems(registry))
     return problems
 
 
@@ -2091,3 +2096,69 @@ def result_types(tool: str) -> tuple[str, ...]:
         if field.pii_type and field.pii_type not in types:
             types.append(field.pii_type)
     return tuple(types)
+
+
+# --- WHAT NOTATION A LEAF DEMANDS (SPIKE-Ж, Ж-6) ------------------------------
+#
+# THE TOOL SCHEMA IS THE AUTHORITATIVE MARKER, AND NOTHING IS GUESSED BEYOND IT.
+# The owner's ruling for class Ж is two-sided: the VALUE line is notation-BLIND
+# (it mirrors the form the agent wrote and never judges the tool's schema), and
+# the schema is what says how a substitution on the OUT leg must be SPELLED so
+# the tool executes it. `snils_verify`'s own schema says «СНИЛС в формате
+# XXX-XXX-XXX YY» and its parser (`agentpii4.tools.parse_snils`) enforces
+# exactly that; `vehicle_check` says «кириллицей, без пробелов» and its parser
+# STRIPS the spaces and upper-cases instead; `calendar_free` takes «от одного до
+# трёх слов» in any order. Recording that here — next to the parser that
+# requires it — turns a notation mismatch from an accident of byte comparison
+# into a NAMED fact, which is what the spike asked for (Ж-6).
+#
+# LEAF_NOTATION / LEAF_NOTATION_EVIDENCE / NOTATIONS / leaf_notation now live in
+# `bench.agentpii4.tools` (the schemas are v4's, and a v4 module may not import
+# v5) and are re-imported at the top of this module. `notation_problems` stays
+# here because it needs the v5 `ToolSpecV5`.
+
+
+def notation_problems(registry: dict[str, ToolSpecV5]) -> list[str]:
+    """V08: every declared notation is the one the leaf's own parser demands.
+
+    A DECLARATION NO PARSER CAN REFUSE IS NOT A DECLARATION. For a demanding
+    notation the rule proves both halves — the declared spelling is accepted and
+    the other one is refused — so a registry that quietly widened its parser (or
+    a declaration copied onto the wrong leaf) reddens here instead of silently
+    making the marker meaningless. `any` is proved the other way: a leaf that
+    declares «any spelling» must accept both."""
+    problems: list[str] = []
+    for (tool, path), notation in sorted(LEAF_NOTATION.items()):
+        where = f"{tool}.{path}"
+        spec = registry.get(tool)
+        if spec is None:
+            problems.append(f"V08 {where}: declares a notation but is not in the registry")
+            continue
+        if spec.base.name != tool:
+            problems.append(f"V08 {where}: registry key and ToolSpec.name disagree")
+        if not any(field.path == path for field in spec.base.fields):
+            problems.append(f"V08 {where}: declares a notation for a leaf the schema has not")
+            continue
+        if notation not in NOTATIONS:
+            problems.append(f"V08 {where}: {notation!r} is not one of {NOTATIONS}")
+            continue
+        evidence = LEAF_NOTATION_EVIDENCE.get((tool, path))
+        if evidence is None:
+            problems.append(f"V08 {where}: declares {notation!r} with nothing proving the "
+                            f"parser demands it")
+            continue
+        declared, other = evidence
+        accepted = spec.base.parse(dict(declared))
+        refused = spec.base.parse(dict(other))
+        if isinstance(accepted, Refusal):
+            problems.append(f"V08 {where}: the schema declares {notation!r} but the parser "
+                            f"refuses {declared!r} ({accepted.rule})")
+        if notation == "any":
+            if isinstance(refused, Refusal):
+                problems.append(f"V08 {where}: declares 'any' but the parser refuses "
+                                f"{other!r} ({refused.rule})")
+        elif not isinstance(refused, Refusal):
+            problems.append(f"V08 {where}: declares {notation!r} but the parser ACCEPTS the "
+                            f"other spelling {other!r} — the declaration claims more than "
+                            f"the schema says")
+    return problems

@@ -1,0 +1,27 @@
+[NER_ONLY run1] n=1000 corpus=500 msgs (500 unique timed)
+  cold_start_ms=1290.815 (parent_recorded_before_subprocess_run) in_process=2.218 ms interpreter_startup=8.429 ms
+  p50=0.6626 p95=1.4483 p99=2.1848 mean=0.831 stdev=0.5066 ms
+  rss modules/import/load/warmup/after_n = 83.0/215.8/437.7/437.7/437.7 MiB
+  warmup (discarded, spread: every 10-th corpus message): max=1.7619 mean=0.8456 ms  time_to_warm=1341.652 ms
+  current rss modules/import/load/warmup/after_n = 83.0/215.8/410.7/411.9/390.8 MiB  (peak column above)
+  throughput=1202.68 msg/s  model_bytes=29020160  bundle=2a07cebae2b050ec
+  controls: positive=1 spans ['NAME'] negative=0
+  -> /Users/igor/Projects/Obscura-hop-audit/research/quality-sprint-2026-09-30/work/D0/perf-isolated/raw/NER_ONLY-run1.tsv
+        2.33 real         2.02 user         0.21 sys
+           458981376  maximum resident set size
+                   0  average shared memory size
+                   0  average unshared data size
+                   0  average unshared stack size
+               61003  page reclaims
+                  35  page faults
+                   0  swaps
+                   0  block input operations
+                   0  block output operations
+                   0  messages sent
+                   0  messages received
+                   0  signals received
+                 557  voluntary context switches
+                1429  involuntary context switches
+           543200030  instructions retired
+           202222659  cycles elapsed
+            17384000  peak memory footprint

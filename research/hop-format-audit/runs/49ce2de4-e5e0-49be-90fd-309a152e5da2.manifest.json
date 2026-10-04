@@ -1,0 +1,107 @@
+{
+ "run_id": "49ce2de4-e5e0-49be-90fd-309a152e5da2",
+ "source_dir": "/Users/igor/Projects/Obscura-hop-audit/prototype/bench/runs/2026-09-29/v5-live-rerun-timeout-3",
+ "archived_at": "2026-09-29T11:26:42+00:00",
+ "archived_on": "MacBook-Pro-Igor.local",
+ "files": [
+  {
+   "path": "49ce2de4-e5e0-49be-90fd-309a152e5da2.agent.usage.jsonl",
+   "bytes": 5120,
+   "sha256": "0ddeed0b11d40840978c5782cf8651b98d401f3d25b84038f685061236ada280"
+  },
+  {
+   "path": "49ce2de4-e5e0-49be-90fd-309a152e5da2.arms.jsonl",
+   "bytes": 104315,
+   "sha256": "fd9e7d31720d2bc9749be2be0fda52975ed34d8fa2e2128ee86443adc0f68f8d"
+  },
+  {
+   "path": "49ce2de4-e5e0-49be-90fd-309a152e5da2.arms.v5.jsonl",
+   "bytes": 102792,
+   "sha256": "86dfd64268613b32269f5856bad098044a93f8232353c880fd0bd6f4e75d01c0"
+  },
+  {
+   "path": "49ce2de4-e5e0-49be-90fd-309a152e5da2.canary.jsonl",
+   "bytes": 1666799,
+   "sha256": "822b7b111956addbbcbe73e090a486cc599e1010503ac499241247bacfb2a8a8"
+  },
+  {
+   "path": "49ce2de4-e5e0-49be-90fd-309a152e5da2.gate.json",
+   "bytes": 1799,
+   "sha256": "d9878839461b14bba6d4c51acaaf04450ec4e9b03eb33dc26c1ee7af7936e1cc"
+  },
+  {
+   "path": "49ce2de4-e5e0-49be-90fd-309a152e5da2.hops.jsonl",
+   "bytes": 33330,
+   "sha256": "03c6da5f25651ddd7f3d47200f28f21151a2541c3ac6fd79c1a20c6594ad9f35"
+  },
+  {
+   "path": "49ce2de4-e5e0-49be-90fd-309a152e5da2.judge.jsonl",
+   "bytes": 1126,
+   "sha256": "4308836ae41d44a1ddf02cb357c7dba2de24e6f0975a185db5f8a6d7c972111e"
+  },
+  {
+   "path": "49ce2de4-e5e0-49be-90fd-309a152e5da2.meta.json",
+   "bytes": 3215,
+   "sha256": "cd92fbfb452e577df0e2cf0ed5ecf69bbd8304e261bd6776cfe929591166ff57"
+  },
+  {
+   "path": "49ce2de4-e5e0-49be-90fd-309a152e5da2.oracle.json",
+   "bytes": 678,
+   "sha256": "fdf33b400478740499b08e01932b5a6c60adf04c489cbcad54a5f1b661bd6b55"
+  },
+  {
+   "path": "49ce2de4-e5e0-49be-90fd-309a152e5da2.public.json",
+   "bytes": 2420,
+   "sha256": "612e4c8f9b133a14aac2d3197f5b362bc3f2e4f3e807f6dea168b6497bee2720"
+  },
+  {
+   "path": "49ce2de4-e5e0-49be-90fd-309a152e5da2.report.json",
+   "bytes": 138504,
+   "sha256": "83726c3ee9729a5d932c700040c458492ea9a86b096c2cb15c799e2d15a4625c"
+  },
+  {
+   "path": "49ce2de4-e5e0-49be-90fd-309a152e5da2.report.txt",
+   "bytes": 51404,
+   "sha256": "7b0a16d8e24c313776826ab5738189ab204b546fc25ee1434d044441f98d4bbf"
+  },
+  {
+   "path": "49ce2de4-e5e0-49be-90fd-309a152e5da2.spend.tsv",
+   "bytes": 372,
+   "sha256": "5f88adafdfde6b41d3444223f497c1a689bdf20e02757081862b3f0ef0bff140"
+  },
+  {
+   "path": "49ce2de4-e5e0-49be-90fd-309a152e5da2.triples.jsonl",
+   "bytes": 2107,
+   "sha256": "25061528790b8c720daaf905c8ebdb5751c759dbd1ef55163b2d614f7192d3c0"
+  },
+  {
+   "path": "corpus.json",
+   "bytes": 29190,
+   "sha256": "0c0a85414ffe44bc74587f9cfc7ef44613020416fadeb87d9d072292b43f04b4"
+  },
+  {
+   "path": "corpus.v5.json",
+   "bytes": 40948,
+   "sha256": "3439191bbb08cf2778a20959f32e5eef749875359b24731451370916edc7dde9"
+  },
+  {
+   "path": "repairs.json",
+   "bytes": 1728,
+   "sha256": "ee92d3e05afb5a112659e90b2b7db6b41a9c65f42dab8a92b1c1107b83b65c09"
+  }
+ ],
+ "files_total": 17,
+ "bytes_total": 2185847,
+ "run_sha256": "91efe26be8964b8b892ea9c9f314dbc02cd1e35e8be2568bb4053024aca19beb",
+ "label": "v5-live-rerun-timeout-3",
+ "tarball": {
+  "path": "49ce2de4-e5e0-49be-90fd-309a152e5da2.tar.gz",
+  "bytes": 79971,
+  "sha256": "86a75772f405ec753545997af07371ca37926064baf76d7f0b6bef2c8b9c3ffd"
+ },
+ "excluded_total": 0,
+ "excluded_cases": [],
+ "archive_dir": "/Users/igor/pseudex-run-archives/49ce2de4-e5e0-49be-90fd-309a152e5da2",
+ "verified_files": 17,
+ "verify_failures": []
+}

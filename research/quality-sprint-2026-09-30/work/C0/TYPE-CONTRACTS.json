@@ -1,0 +1,295 @@
+{
+  "artifact": "C0/TYPE-CONTRACTS.json",
+  "task": "C0",
+  "wave": "quality-sprint-design-red-1",
+  "status": "PROPOSED_QUALITY_CONTRACT__OWNER_PENDING__O-SECRET",
+  "status_meaning": "This is a QUALITY type-contract proposal for C1, not an implementation brief and not an approved registry. Every fork below is OWNER_PENDING and blocks only the C1 transition, not the independent read-only work.",
+  "generated_from": {
+    "pinned_product_source_commit": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "workspace_head_at_read_time": "890c50849a326f882eac336ba4e38c91171de473",
+    "engine_source_modified_by_this_task": false,
+    "git_diff_of_engine_sources_vs_pin": "empty (verified: licensing/assets_source.py, pseudex/structured.py, pseudex/credentials.py, pseudex/assets.py, pseudex/vault.py, pseudex/audit.py, pseudex/detect_all.py, testkit.py)"
+  },
+  "reused_completed_evidence_do_not_repeat": [
+    {
+      "path": "research/quality-sprint-2026-09-30/followup/cvc-context-contract/PRIMARY-SOURCES.md",
+      "sha256": "5dee41ac3d32cd8a828422fc8e9dbc5886c23b94ec144f329fd704a007c53abc",
+      "carries": ["S1 PCI SSC SAD + 3-or-4 digits + no crypto no-storage", "S2 Stripe named field, write-only", "S3/S4 3DS one-time channel", "S5 YooKassa save-payment-method", "S6 EMVCo unreachable", "U1..U4 explicit unfetched limits"]
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/followup/cvc-context-contract/FINDINGS.md",
+      "sha256": "53529ab87b7a31eef72a1a03708842bc53f52fe179b0e4cf53aa03429c655a15",
+      "carries": ["E1..E11 engine facts", "counted upstream population 77/48/29/0/0", "U-a..U-g unknowns", "P1..P9 acceptance properties", "Q-A1..Q-A5, Q-B1..Q-B3"]
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/followup/cvc-context-contract/CONTEXT-MATRIX.json",
+      "sha256": "cc267ab3d1edc5d9db654ea0ec7f5c9a70760e23f5e35707015ed886f30a7cfa",
+      "carries": ["M01..M17 case matrix", "8 owner questions with options/price/RED proposal"]
+    },
+    {
+      "path": "research/quality-sprint-2026-09-30/followup/cvc-context-contract/probes/mechanism_probe.py",
+      "sha256": "4f1dfc2287d03c72641ba2f43a54e5133188429f8331c5ecd402c87cfb665f28",
+      "carries": ["re-runnable read-only mechanism probe A..E"]
+    }
+  ],
+  "not_repeated_here": [
+    "No PCI/Stripe/YooKassa/EMVCo research was re-run; the primary sources above are cited, not re-fetched.",
+    "No claim about PCI DSS v4.0.1 clause numbers (U-a stays UNKNOWN).",
+    "No claim that a 3DS one-time value is or is not SAD (U-b stays UNKNOWN).",
+    "No engine, scorer, corpus, benchmark, wiki or git change."
+  ],
+  "owner_decisions_already_settled_do_not_reopen": [
+    {"id": "REMAINING-DECISIONS/Блок 3 CVC destinations", "text": "«В любой ответ той же операции» — the previous recommendation to restrict reversibility to the payment argument only was NOT chosen."},
+    {"id": "REMAINING-DECISIONS/Блок 3 CVC in sprint", "text": "CVC is not excluded from the current sprint; recognise and restore as for other PII."},
+    {"id": "REMAINING-DECISIONS/Блок 3 OTP/3DS/SMS", "text": "«Да, исследовать всё семейство временных секретов» — research/type-scope expansion, not permission to treat any three digits as CVC."},
+    {"id": "REMAINING-DECISIONS/Блок 3 lifecycle deferred", "text": "storage/TTL/admin/API/HITL implementation is deferred to the next feature-sprint; the temporary reversible path is a FUTURE design intent, not a current obligation."},
+    {"id": "REMAINING-DECISIONS/Блок 3 claims boundary", "text": "test-scope recognition/restoration is not permission for production retention of real CVV/CVC."},
+    {"id": "P05 / OWNER-DECISIONS Q3", "text": "business orders, legal-entity requisites and look-alike numbers are not turned into personal documents by length alone."},
+    {"id": "P08 / REMAINING-DECISIONS Блок 2", "text": "known identity ambiguity/collision -> explicit refusal of the whole affected call/response; no partial payload as success."},
+    {"id": "P02 / Блок 2 форма", "text": "substitute fully inherits the source form (except the value); explicit agent form beats schema-required form."},
+    {"id": "P04 / OWNER-DECISIONS Q2", "text": "inherit the source's validity; a malformed source is not repaired by the substitute."},
+    {"id": "P09 / Блок 1 lexical ambiguity", "text": "one ambiguous form does not by itself create a NAME; the analogue for secrets is: a bare short digit run is not a secret."}
+  ],
+  "registry_disposition": {
+    "fact": "The v6 type registry snapshot (research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6.md) enumerates 63 type codes and contains NO card-verification-code, OTP, 3DS, SMS-code, PIN or authentication-code type. The only near match is CREDIT_SUBJECT_CODE, which is a borrower credit code, not an authentication secret.",
+    "consequence": "The temporary-secret family is ADDITIONAL to the v6 registry and needs its own registry/allocation decision (O-SECRET-1). It must not be smuggled in as a v6 alias.",
+    "verified_by": "work/C0/checks.log C4 (regex extraction of the registry table, exit 0)"
+  },
+
+  "shared_axes": {
+    "note": "Every family below is declared on the same axes; a missing axis is a named gap, not an omission.",
+    "axes": [
+      "scope (in/out, justification, legal framing)",
+      "context/evidence (which discriminator licenses the value)",
+      "length (declared set or explicitly unasserted)",
+      "syntax (charset, leading zero, separators inside the value)",
+      "malformed under a proven field (mask-not-drop vs pass)",
+      "identity binding (what the value is bound to)",
+      "fake constraints (shape of the substitute, validity inheritance, tiny-domain collision)",
+      "restore value + form (value restored; form inherited from the agent's own writing on OUT)",
+      "parts (these classes are atomic; a declared 'no parts' is itself a contract)",
+      "hops (which of IN/user, IN/tool, IN/document, IN/memory, OUT/tool_arg, OUT/answer, OUT/summary, OUT/template are asserted)",
+      "positive + hard-negative pairs (same glyphs, different context)"
+    ]
+  },
+
+  "families": [
+    {
+      "type_id": "CARD_VERIFICATION_CODE",
+      "proposed_registry_name": "CARD_VERIFICATION_CODE",
+      "class": "static_printed_card_secret",
+      "in_scope": true,
+      "in_scope_basis": "REMAINING-DECISIONS Блок 3: CVC is not excluded from this sprint; quality recognition/restoration on a synthetic isolated path.",
+      "aliases": {
+        "latin": ["cvv", "cvv2", "cvc", "cvc2", "csc", "cav2", "cid", "cvv_code", "security_code"],
+        "cyrillic": ["цвс", "цсв", "код cvv", "cvv-код", "защитный код", "защитный код карты", "код проверки карты", "код безопасности карты"],
+        "alias_family_source": "PRIMARY-SOURCES.md S1 (CAV2/CVC2/CVV2/CID 'depending on the payment brand')",
+        "explicitly_not_aliases": ["code", "код", "pin", "otp"]
+      },
+      "scope": {
+        "value_class": "the 3- or 4-digit number printed on the card",
+        "not_a_secret_in_scope": ["card number (existing CARD)", "expiry", "cardholder name (NAME)", "issue/bank data"],
+        "legal_framing": "OPEN (O-SECRET-6): 152-ФЗ vs payment-standard retention rule — the two framings imply different product claims"
+      },
+      "context_evidence": {
+        "primary": "authoritative field name in a typed KV / schema field (cvc, cvv2, cid, ...)",
+        "secondary": "bounded card-code cue phrase in prose within the existing cue window (<=20 non-digit characters, assets.py:432)",
+        "forbidden": [
+          "bare digit run of any length",
+          "generic cue 'код' alone",
+          "card PAN proximity (upstream population gives 0/77 adjacency — FINDINGS.md §3)",
+          "entropy / look-alike scoring (credentials.py:1-20 rejects entropy as the discriminator)"
+        ],
+        "owner_pending": "O-SECRET-2: is field-name-only sufficient, or is field-name OR bounded-cue the accepted recall boundary? 29/77 upstream annotations carry neither."
+      },
+      "length": {
+        "kind": "bounded_set",
+        "values": [3, 4],
+        "brand_map": {"CVV2/CVC2/CSC": 3, "CID (Amex, 4DBC)": 4},
+        "rule": "the length set is declared per alias, never written as one fixed \\d{n} and never as an unbounded \\d{3,4} that widens the 3-digit false-positive surface",
+        "fact": "a fixed \\d{3} cannot match a 4-digit CID: POS-CVC-003 (cid '0000') is protected 0 times on the pinned build, and the prior mechanism probe C records amex_cid_4 as no-match"
+      },
+      "syntax": {
+        "charset": "ascii_digits",
+        "leading_zero_allowed": true,
+        "separators_inside_value": false,
+        "decorations_outside_the_value": "inherited from the source on IN and from the agent's own writing on OUT (P02)"
+      },
+      "malformed_under_proven_field": {
+        "proposed": "mask-not-drop: demote to OPAQUE exactly as structured.py:371-372 already does for the numeric key types; a value written in a field the customer declares sensitive is never passed in the clear",
+        "precedent_pointer": "pseudex/structured.py:355-372 (_NUMERIC_KEY_TYPES + OPAQUE demotion)",
+        "requires": "CARD_VERIFICATION_CODE must be added to the numeric-key type set for the precedent to apply — that set is pseudex/structured.py:55",
+        "owner_pending": "O-SECRET-5 (carries Q-A4 forward): confirm mask-not-drop, accepting that the tool cannot receive a real value it could not read"
+      },
+      "identity_binding": {
+        "unit": "the value is bound to the field/object it was written in and to the operation",
+        "per_object_pairing": "required proposal: a code belongs to the card object it was written in; two cards in one payload may not exchange codes (structured._by_object is the existing primitive)",
+        "owner_pending": "O-SECRET-7 (carries Q-A5): is per-object pairing a required acceptance property?"
+      },
+      "fake_constraints": {
+        "shape": "exactly the source length (3 -> 3 digits, 4 -> 4 digits); never a different-length substitute",
+        "validity_inheritance": "P04: no checksum exists for this class; the source's digit form is inherited exactly, including a leading zero",
+        "must_not": ["fall through to REDACTED<6 hex> inside a numeric field (proved: RED-8)", "be replaced by a CARD-shaped number (proved: RED-9)"],
+        "collision_tiny_space": {
+          "domain_size": 1000,
+          "fact": "the credentials renderer's safety argument ('collision not possible in practice: well over a hundred bits', vault.py:1765-1782) does NOT transfer here",
+          "rule_proposed": "value-only pairing is FORBIDDEN for this class; the mapping must be keyed by (field/object identity, operation) as well as value, and a substitute must avoid every real value already seen in the same binding unit (the _unique_token analogue)",
+          "forward_collision": "P07: a new real equal to an old fake is not automatically that fake; with a 1000-value domain this is LIKELY, so the refusal rule must be explicit",
+          "owner_pending": "O-SECRET-8"
+        }
+      },
+      "restore": {
+        "value": "the exact source digits, restored into the reply of the same operation (REMAINING-DECISIONS Блок 3 CVC destinations)",
+        "form": "IN inherits the source form; OUT keeps the agent's explicitly written form (P02/P03)",
+        "parts": "ATOMIC — no sub-parts; a partial restore is not a success (P08)",
+        "residual": "an unresolved substitute is reported as residual, never emitted as a fake (the /unmask_arguments contract)"
+      },
+      "hops": {
+        "asserted_for_C1_proposal": ["IN/user", "IN/tool", "IN/document", "IN/memory", "OUT/tool_arg", "OUT/answer", "OUT/summary", "OUT/template"],
+        "owner_pending": "O-SECRET-9: 'any answer of the same operation' is the owner's phrase; the accepted hop set for the C1 acceptance matrix must be confirmed, because IN/document and IN/memory have no payment operation to bind to"
+      },
+      "positives": ["POS-CVC-001", "POS-CVC-002", "POS-CVC-003", "POS-CVC-004", "POS-CVC-005", "POS-CVC-006", "POS-CVC-007", "POS-CVC-008"],
+      "hard_negatives": ["NEG-JSON-1", "NEG-JSON-2", "NEG-JSON-3", "NEG-FORM-1", "NEG-PROSE-1", "NEG-PROSE-2", "NEG-PROSE-3"],
+      "engine_today": {"red": ["RED-1", "RED-2", "RED-3", "RED-5", "RED-6", "RED-7", "RED-8", "RED-9"], "protected_on_pinned_build": "0/14 synthetic positives"},
+      "storage": "DEFERRED by owner: no durable retention of real values; the quality path validates recognition/restoration only. Any non-persistent mapping is a FUTURE design intent, not a current obligation."
+    },
+    {
+      "type_id": "ISSUER_OTP",
+      "proposed_registry_name": "ISSUER_OTP",
+      "class": "dynamic_one_time_authentication_secret",
+      "in_scope": true,
+      "in_scope_basis": "REMAINING-DECISIONS Блок 3: «Да, исследовать всё семейство временных секретов».",
+      "aliases": {
+        "channels": ["3-D Secure / 3DS", "SMS code", "email code", "push challenge", "issuer authentication code"],
+        "latin": ["otp", "one_time_code", "onetimecode", "auth_code", "verification_code", "sms_code", "two_factor_code"],
+        "cyrillic": ["одноразовый код", "код подтверждения", "код из смс", "код из sms", "код подтверждения операции", "код 3ds"],
+        "explicitly_not_aliases": ["цифровой код заказа", "номер заказа"]
+      },
+      "scope": {
+        "value_class": "a dynamic, single-use, issuer-generated authentication value",
+        "separation_from_CVC": "REQUIRED: a different channel from the printed code even when both are short digit runs (PRIMARY-SOURCES.md S3/S4). They must never share one storage policy (CONTEXT-MATRIX M10).",
+        "not_established": "whether a 3DS one-time value is itself SAD under PCI DSS (U-b) — no rule may depend on that answer until it is verified"
+      },
+      "context_evidence": {
+        "primary": "authoritative field name (otp, sms_code, auth_code, 3ds_code)",
+        "secondary": "explicit one-time / channel wording ('код подтверждения', 'код из смс', 'одноразовый код', '3-D Secure')",
+        "forbidden": ["bare 'код'", "bare 4-10 digit run", "a field that merely contains 'sms' without naming a code (NEG-OTP-3)"]
+      },
+      "length": {
+        "kind": "explicitly_unasserted",
+        "reason": "CONTEXT-MATRIX known_coverage_gaps: 'The 3DS OTP length was NOT established and is deliberately left unasserted.'",
+        "consequence": "the contract must NOT pin a length; any implementation needs a declared bounded set plus a re-measured negative suite",
+        "owner_pending": "O-SECRET-3"
+      },
+      "syntax": {"charset": "ascii_digits (declared candidate)", "leading_zero_allowed": true, "separators_inside_value": false, "asserted": false},
+      "malformed_under_proven_field": {"proposed": "same mask-not-drop rule as CARD_VERIFICATION_CODE", "owner_pending": "O-SECRET-5"},
+      "identity_binding": {
+        "unit": "the operation/authentication event the code belongs to, not the card",
+        "distinct_from": "CARD_VERIFICATION_CODE binding",
+        "owner_pending": "O-SECRET-7"
+      },
+      "fake_constraints": {
+        "shape": "same declared digit class as the source",
+        "validity_inheritance": "no checksum; inherit the digit form",
+        "collision_tiny_space": "same tiny-domain argument as CARD_VERIFICATION_CODE for a short length; forbidden to bind by value alone",
+        "must_not": "be rendered as a CARD-shaped number or as a REDACTED marker inside a numeric field"
+      },
+      "restore": {"value": "the exact source digits in any answer of the same operation", "form": "agent's own form on OUT", "parts": "ATOMIC"},
+      "hops": {"asserted_for_C1_proposal": ["IN/user", "IN/tool", "OUT/tool_arg", "OUT/answer"], "owner_pending": "O-SECRET-9"},
+      "positives": ["POS-OTP-001", "POS-OTP-002", "POS-OTP-003", "POS-OTP-004"],
+      "hard_negatives": ["NEG-OTP-1", "NEG-OTP-2", "NEG-OTP-3", "NEG-PROSE-3"],
+      "engine_today": {"red": ["RED-4", "RED-1", "RED-6"], "protected_on_pinned_build": "0/4 synthetic positives"},
+      "storage": "DEFERRED. A live authentication secret is at least as hazardous to persist as SAD; no retention is proposed."
+    },
+    {
+      "type_id": "TOTP_2FA",
+      "proposed_registry_name": "TOTP_2FA_CANDIDATE",
+      "class": "dynamic_time_based_one_time_secret",
+      "in_scope": "CANDIDATE__OWNER_PENDING",
+      "in_scope_basis": "«всё семейство временных секретов» plausibly includes TOTP, but TOTP is not card- or issuer-authentication traffic and its inclusion changes the denominator.",
+      "owner_pending": "O-SECRET-4: include TOTP_2FA in the quality denominator or keep it documented-but-out?",
+      "length": {"kind": "6_or_8_unasserted", "reason": "RFC 6238 deployments commonly use 6; not verified in this task"},
+      "context_evidence": {"primary": "field/authenticator context", "secondary": "explicit 2FA/TOTP wording", "forbidden": ["bare 6-digit run"]},
+      "positives": ["CAND-TOTP-001"],
+      "engine_today": {"red": [], "note": "no RED executed: scope is owner-pending, executing a RED would assert a denominator the owner has not accepted"}
+    },
+    {
+      "type_id": "RECOVERY_CODE",
+      "proposed_registry_name": "RECOVERY_CODE_CANDIDATE",
+      "class": "static_single_use_list_secret",
+      "in_scope": "CANDIDATE__OWNER_PENDING",
+      "in_scope_basis": "backup/recovery codes are static, human-typed and single-use-per-entry, but they are a durable LIST rather than a per-transaction secret.",
+      "owner_pending": "O-SECRET-4",
+      "length": {"kind": "vendor_defined_unasserted", "example_shape": "alphanumeric with a hyphen"},
+      "syntax": {"charset": "ascii_alnum_plus_hyphen (candidate)", "asserted": false},
+      "positives": ["CAND-REC-001"],
+      "engine_today": {"red": [], "note": "no RED executed: scope owner-pending"}
+    },
+    {
+      "type_id": "TRANSACTION_AUTH_CODE",
+      "proposed_registry_name": "TRANSACTION_AUTH_CODE_CANDIDATE",
+      "class": "one_time_transaction_authorisation_code",
+      "in_scope": "CANDIDATE__OWNER_PENDING",
+      "in_scope_basis": "bank/merchant authorisation codes ('код авторизации операции') are one-time and operation-scoped, but their cue vocabulary overlaps business order numbers heavily.",
+      "owner_pending": "O-SECRET-4 and O-SECRET-2 (the cue boundary is the whole risk here)",
+      "positives": [],
+      "hard_negatives": ["NEG-JSON-1", "NEG-PROSE-1"],
+      "note": "No fixtures were generated for this candidate: constructing a cue set before the owner rules would be guessing the boundary the owner must set."
+    }
+  ],
+
+  "excluded_classes": [
+    {"type_id": "CARD_PIN", "reason": "a persistent static card secret, not a temporary secret; the owner's research scope is временные секреты. Its handling is a separate question (O-SECRET-4) because 'pin' is a plausible cue-confusion neighbour of 'cvv'."},
+    {"type_id": "PAN", "reason": "already the existing CARD class with a checksum path (ru_pii.validate_luhn); only referenced as a structural neighbour."},
+    {"type_id": "CARD_EXPIRY", "reason": "not SAD and not a secret; exposing it identifies no one by itself and it is needed by ordinary tool calls."},
+    {"type_id": "CARDHOLDER_NAME", "reason": "already NAME; the existing mis-typing of cardholder_name as CARD is RED-9's counterexample, not a new class."},
+    {"type_id": "PASSWORD_OR_PASSPHRASE", "reason": "already SECRET via the leased key map (password/passwd/пароль -> SECRET, assets_source.py:1334) and a published-prefix/typical-form path; not temporary."},
+    {"type_id": "API_KEYS_AND_TOKENS", "reason": "already SECRET at priority 8, anchored to published prefixes (credentials.py:45); deliberately NOT an entropy detector."},
+    {"type_id": "BARE_SHORT_DIGIT_RUN", "reason": "P05 and OWNER-DECISIONS Q3: a bare look-alike number is not made a personal document by length. Any rule that starts matching bare runs is a RED by construction."},
+    {"type_id": "BUSINESS_ORDERS_AND_REQUISITES", "reason": "P05: order numbers, product codes, legal-entity requisites stay open; they are the hard-negative population."},
+    {"type_id": "V6_IDENTIFIER_TYPES", "reason": "IBAN/IMEI/ICCID/... are the v6 registry's own business; this contract neither duplicates nor aliases them."}
+  ],
+
+  "interaction_with_existing_types": {
+    "SECRET_priority_8": "SECRET already occupies the top priority slot (assets_source.py:1485-1503) for published-prefix credentials. A temporary-secret class must NOT be typed SECRET: the customer question differs, the renderer differs, and SECRET's collision argument (long CSPRNG bodies) does not transfer to a 1000-value domain.",
+    "existing_keyed_SECRET_path": "the leased key map already types password/passwd/secret/секрет/пароль as SECRET (assets_source.py:1334) and keyed values are protected today (probe CTRL-1 held: {\"password\": \"hunter2\"} -> SECRET). The typed-KV mechanism is therefore LIVE; the temporary-secret classes are simply absent from the leased map.",
+    "OPAQUE_demotion_precedent": "structured.py:371-372 demotes a numeric key type whose value has no digit to OPAQUE instead of dropping it; a card-code field that reads a malformed value should follow the same precedent (O-SECRET-5).",
+    "no_renderer_fallback": "vault.py:1929 renders an unrenderer'd type as REDACTED<6 hex>; proved by RED-8 for a hypothetical CVC type. A new class without its own renderer is inadmissible."
+  },
+
+  "acceptance_properties_for_C1": [
+    {"id": "A1", "property": "fielded and cued positives are protected; every same-glyph business negative stays open, in the SAME run", "gate": "G4/G7"},
+    {"id": "A2", "property": "the declared length set per alias is matched; no fixed-length regex leaves a declared variant open", "gate": "G4"},
+    {"id": "A3", "property": "a card code and an issuer OTP in one utterance receive DIFFERENT classes and different policies", "gate": "G5/G6"},
+    {"id": "A4", "property": "the substitute has exactly the source length and digit shape; never a REDACTED marker and never a CARD-shaped number", "gate": "G6"},
+    {"id": "A5", "property": "restoration returns the exact digits of the same operation; a form the agent wrote itself is preserved; a partial restore is a failure, not a success", "gate": "G6"},
+    {"id": "A6", "property": "per-object binding: two cards in one payload never exchange codes; an indistinguishable pair fails closed", "gate": "G5"},
+    {"id": "A7", "property": "tiny-domain collision: a new real equal to an old fake is not silently restored as that fake; the refusal is explicit", "gate": "G5"},
+    {"id": "A8", "property": "no real secret value appears in any artifact of the acceptance run (fixtures synthetic only; absence proven by reading the stores, not by trusting the API)", "gate": "G5"},
+    {"id": "A9", "property": "the quality path is isolated: no durable retention of real values is required by, or implied by, a green C1 quality result", "gate": "scope boundary"}
+  ],
+
+  "owner_pending_forks": [
+    {"id": "O-SECRET-1", "fork": "registry allocation for the temporary-secret family (new types vs a separate family vs v6 aliases)"},
+    {"id": "O-SECRET-2", "fork": "accepted detection evidence boundary per class (field-only vs field OR bounded cue)"},
+    {"id": "O-SECRET-3", "fork": "length policy for ISSUER_OTP (currently explicitly unasserted)"},
+    {"id": "O-SECRET-4", "fork": "which adjacent classes enter the quality denominator (TOTP, recovery codes, transaction auth codes, PIN)"},
+    {"id": "O-SECRET-5", "fork": "mask-not-drop for a malformed value under an authoritative secret field (carries Q-A4)"},
+    {"id": "O-SECRET-6", "fork": "legal/product framing (152-ФЗ vs payment-standard retention rule)"},
+    {"id": "O-SECRET-7", "fork": "per-object pairing as a required acceptance property (carries Q-A5)"},
+    {"id": "O-SECRET-8", "fork": "tiny-domain collision/refusal policy for 3-digit substitutes"},
+    {"id": "O-SECRET-9", "fork": "which hops the C1 acceptance matrix asserts for 'any answer of the same operation'"},
+    {"id": "O-SECRET-10", "fork": "whether the C1 quality gate may demonstrate faithful restoration using an isolated non-persistent synthetic path while production retention stays deferred"}
+  ],
+
+  "unknowns": [
+    "U-a PCI DSS v4.0.1 clause numbers (not fetched; licence gate)",
+    "U-b whether a 3DS one-time value is SAD",
+    "U-c YooKassa/CloudPayments exact cvc field text (truncated bodies)",
+    "U-d ISSUER_OTP length (deliberately unasserted)",
+    "U-e EMVCo spec text (membership)",
+    "U-f real customer field names (no production traffic inspected by policy)",
+    "U-g historical cause of existing repo wording",
+    "U-h whether real customer traffic contains temporary secrets at all (O-SECRET-6)"
+  ]
+}

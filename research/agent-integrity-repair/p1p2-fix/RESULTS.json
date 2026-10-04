@@ -1,0 +1,87 @@
+[
+  {
+    "test": "test_loop",
+    "exit_code": 0,
+    "seconds": 1.35
+  },
+  {
+    "test": "test_product",
+    "exit_code": 0,
+    "seconds": 15.49
+  },
+  {
+    "test": "vault_test",
+    "exit_code": 0,
+    "seconds": 0.3
+  },
+  {
+    "test": "test_persona_defects",
+    "exit_code": 0,
+    "seconds": 8.16
+  },
+  {
+    "test": "test_overmasking",
+    "exit_code": 0,
+    "seconds": 6.38
+  },
+  {
+    "test": "test_localui",
+    "exit_code": 0,
+    "seconds": 6.75
+  },
+  {
+    "test": "test_hard_cases",
+    "exit_code": 0,
+    "seconds": 13.9
+  },
+  {
+    "test": "test_names_morphology",
+    "exit_code": 0,
+    "seconds": 2.78
+  },
+  {
+    "test": "test_credentials",
+    "exit_code": 0,
+    "seconds": 2.04
+  },
+  {
+    "test": "test_coverage_152fz",
+    "exit_code": 0,
+    "seconds": 1.99
+  },
+  {
+    "test": "test_perf_masking",
+    "exit_code": 0,
+    "seconds": 7.68
+  },
+  {
+    "test": "test_identity_invariant",
+    "exit_code": 0,
+    "seconds": 2.38
+  },
+  {
+    "test": "test_phase4b",
+    "exit_code": 0,
+    "seconds": 2.01
+  },
+  {
+    "test": "test_derived_forms",
+    "exit_code": 0,
+    "seconds": 15.77
+  },
+  {
+    "test": "test_address_composition",
+    "exit_code": 1,
+    "seconds": 3.09
+  },
+  {
+    "test": "test_collisions",
+    "exit_code": 0,
+    "seconds": 29.58
+  },
+  {
+    "test": "test_schema",
+    "exit_code": 0,
+    "seconds": 1.46
+  }
+]

@@ -1,0 +1,241 @@
+{
+  "arm": "C2",
+  "calls": [
+    {
+      "name": "crm_find_contact",
+      "parsed": {
+        "query": {
+          "phone": "+79512725489"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "query": {
+          "phone": "+79512725489"
+        }
+      },
+      "seq": 1,
+      "written": {
+        "query": {
+          "phone": "+79512725489"
+        }
+      }
+    },
+    {
+      "name": "order_status",
+      "parsed": null,
+      "refusal_path": "order_id",
+      "refusal_rule": "order_id_format",
+      "residual": {},
+      "restored": {
+        "order_id": "837"
+      },
+      "seq": 2,
+      "written": {
+        "order_id": "837"
+      }
+    },
+    {
+      "name": "address_suggest",
+      "parsed": {
+        "count": 10,
+        "query": "Псков Смольный 52"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "count": 10,
+        "query": "Псков Смольный 52"
+      },
+      "seq": 3,
+      "written": {
+        "count": 10,
+        "query": "Псков Смольный 52"
+      }
+    },
+    {
+      "name": "delivery_create_order",
+      "parsed": {
+        "comment": "",
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Миллер Валерий Леонидович",
+          "phones": [
+            "+79512725489"
+          ]
+        },
+        "to_location": {
+          "address": "ул Смольный, д 52, кв. 2",
+          "city": "псков",
+          "postal_code": "180782"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Миллер Валерий Леонидович",
+          "phones": [
+            {
+              "number": "+79512725489"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "ул Смольный, д 52, кв. 2",
+          "city": "псков",
+          "postal_code": "180782"
+        }
+      },
+      "seq": 4,
+      "written": {
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Миллер Валерий Леонидович",
+          "phones": [
+            {
+              "number": "+79512725489"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "ул Смольный, д 52, кв. 2",
+          "city": "псков",
+          "postal_code": "180782"
+        }
+      }
+    },
+    {
+      "name": "order_status",
+      "parsed": {
+        "order_id": "ord-837"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "order_id": "ord-837"
+      },
+      "seq": 5,
+      "written": {
+        "order_id": "ord-837"
+      }
+    },
+    {
+      "name": "crm_add_note",
+      "parsed": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Звонок клиента. Повтор прошлой доставки: получатель Миллер Валерий Леонидович, Псков, ул Смольный, д. 52, кв. 2, индекс 180782 (сверено по справочнику), вес 1000 г. Оформлен заказ ord-1. По запросу «заказ 837» номер не найден — уточняется у клиента."
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Звонок клиента. Повтор прошлой доставки: получатель Миллер Валерий Леонидович, Псков, ул Смольный, д. 52, кв. 2, индекс 180782 (сверено по справочнику), вес 1000 г. Оформлен заказ ord-1. По запросу «заказ 837» номер не найден — уточняется у клиента."
+      },
+      "seq": 6,
+      "written": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Звонок клиента. Повтор прошлой доставки: получатель Миллер Валерий Леонидович, Псков, ул Смольный, д. 52, кв. 2, индекс 180782 (сверено по справочнику), вес 1000 г. Оформлен заказ ord-1. По запросу «заказ 837» номер не найден — уточняется у клиента."
+      }
+    },
+    {
+      "name": "order_status",
+      "parsed": {
+        "order_id": "ord-1"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "order_id": "ord-1"
+      },
+      "seq": 7,
+      "written": {
+        "order_id": "ord-1"
+      }
+    }
+  ],
+  "case_id": "tool_chain-004",
+  "cluster": "PHONE:9512725489",
+  "cost_usd": 0.005485,
+  "key": "tool_chain-004|C2|0",
+  "kind": "tool_chain",
+  "masked_spans": {},
+  "meta": {
+    "api_error_status": null,
+    "cap_usd": 0.28,
+    "duration_ms": 23361,
+    "errors": [],
+    "is_error": false,
+    "model": "deepseek-flash",
+    "reason": "",
+    "session_id": "deepseek-1790430223035976000",
+    "subtype": "success",
+    "turns": 74
+  },
+  "register": "sloppy",
+  "repeat": 0,
+  "reply": "Проверяю статус оформленного заказа.\nПроверил — заказ **`ord-1`** успешно принят:\n\n- Статус: **ACCEPTED** (заказ прошёл, оформлен)\n- Получатель: Миллер Валерий Леонидович, +79512725489\n- Адрес: г. Псков, ул. Смольный, д. 52, кв. 2\n\nВсё в порядке, доставка в работе. Напомню, что по **заказу 837** пока жду уточнения номера — как будете готовы, разберёмся и с ним.",
+  "state": [
+    {
+      "fields": {
+        "comment": "",
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Миллер Валерий Леонидович",
+          "phones": [
+            "+79512725489"
+          ]
+        },
+        "to_location": {
+          "address": "ул Смольный, д 52, кв. 2",
+          "city": "псков",
+          "postal_code": "180782"
+        }
+      },
+      "id": "ord-1",
+      "seq": 4,
+      "table": "orders",
+      "tool": "delivery_create_order"
+    },
+    {
+      "fields": {
+        "entity_id": "c-1",
+        "note_type": "call_in",
+        "text": "Звонок клиента. Повтор прошлой доставки: получатель Миллер Валерий Леонидович, Псков, ул Смольный, д. 52, кв. 2, индекс 180782 (сверено по справочнику), вес 1000 г. Оформлен заказ ord-1. По запросу «заказ 837» номер не найден — уточняется у клиента."
+      },
+      "id": "note-1",
+      "seq": 6,
+      "table": "notes",
+      "tool": "crm_add_note"
+    }
+  ],
+  "substitutes": {},
+  "termination": "done"
+}

@@ -81,7 +81,7 @@ normalized text index straight back into the original.
 The span types every recognizer emits (`Span`, `NameSpan`, `PartSpan`) and the
 first recognizer: libphonenumber ∪ regex phone/email.
 - **API:** `Span`, `NameSpan`, `PartSpan`, `detect_pii`
-- **Uses:** — · **Used by:** address, context, credentials, detect_all, names, quasi, redact, ru_pii, spoken, structured
+- **Uses:** — · **Used by:** address, context, credentials, cvc, detect_all, envelope, names, quasi, redact, ru_pii, ru_pii_v6, spoken, structured
 - **Tests:** test_loop · via detect_all
 - **Docs:** `docs/how-it-works.md`
 
@@ -90,18 +90,61 @@ Russian structured identifiers, checksum-gated: СНИЛС (mod 101), ИНН (we
 vectors), card (Luhn), ОГРН/ОГРНИП, passport (cue-gated), VIN, licence plates.
 The validators are the algorithm and stay in the binary; the cue words are leased.
 - **API:** `validate_snils`, `validate_inn`, `validate_luhn`, `validate_ogrn`, `vin_check_digit_valid`, `detect_vehicle_ids`, `detect_structured`, `detect_plates`
-- **Uses:** assets, detect, fuzzy · **Used by:** detect_all, spoken, vault
-- **Tests:** test_product, make_dataset · via detect_all → test_coverage_152fz, test_hard_cases, test_overmasking
+- **Uses:** assets, detect, fuzzy, ru_pii_v6 (lazy) · **Used by:** detect_all, ru_pii_v6, spoken, vault
+- **Tests:** test_class_g_leaks, test_product, make_dataset · via detect_all → test_coverage_152fz, test_hard_cases, test_overmasking
 - **Docs:** `research/dd2-notes-C-disambiguation.md`, `research/ru-pii-dataset-and-detectors.md` · rules: INVARIANTS.md#structured-ids
+
+#### `pseudex/ru_pii_v6.py` — 3 834 lines · `live`
+The v6 registry families the engine supports NATIVELY (N1): the eleven
+checksum-carrying types (§checksum), the eight identity documents (§identity),
+the six legal/court records (§legal), the ten finance/insurance/medical records
+(§finance) and the eight telecom/device records (§telecom). The arithmetic lives
+HERE, not in `pseudex/ru_pii.py`, so the two can disagree. Two rules decide every line:
+COV-CHECKSUM-INHERIT (a valid source mints a valid fake, a faulty source mints a
+faulty one — never re-minted until the checksum fails) and SAFE RANGES PROVEN
+PER TYPE. `engine_label` is the registry-id ↔ engine-label bridge (G7): detection
+emits the registry id and the vault speaks the engine label. A bare positive is
+anchored on a closed SOURCE list (IBAN country registry, LOAN_UID) or a Luhn
+check digit AND a number word (IMEI); a cue or a field key always outranks a
+bare shape (`bare_typed=False`).
+- **API:** `engine_label`, `luhn_check_digit`, `validate_luhn`, `validate_imei`, `validate_oms_enp`, `validate_iccid`, `validate_ogrnip`, `validate_epts_number`, `uin_check_digit`, `validate_uin`, `vin_check_char`, `validate_vin`, `iban_check_digits`, `validate_iban`, `validate_loan_uid`, `cbr515_account_key`, `validate_account`, `validate_bank_account_shape`, `gs1_check_digit`, `validate_loyalty_card_number`, `validate`, `detect_checksum_anchored`, `is_business_account`, `mint_imei`, `mint_iccid`, `mint_oms_enp`, `mint_ogrnip`, `mint_epts_number`, `mint_uin`, `mint_loyalty`, `mint_vin`, `mint_iban`, `mint_loan_uid`, `mint_bank_account`, `mint`, `render_like_atomic`, `identity_signature`, `identity_label_of_shape`, `identity_signatures`, `mint_identity`, `legal_signature`, `legal_signatures`, `legal_label_of_shape`, `legal_label_for_source`, `mint_legal`, `finance_signature`, `finance_signatures`, `finance_label_of_shape`, `finance_label_for_source`, `mint_finance`, `telecom_own_layout`, `telecom_shape`, `telecom_signature`, `telecom_signatures`, `telecom_label_of_shape`, `v6_uuid_squeezed`, `mint_telecom`, `utility_signature`, `utility_signatures`, `utility_label_of_shape`, `utility_label_for_source`, `mint_utility`, `detect_cued_raw`, `detect_telecom`
+- **Uses:** agent_form (lazy), assets (lazy), detect, fuzzy (lazy), ru_pii (lazy) · **Used by:** notation, operator, redact, ru_pii, vault
+- **Tests:** test_pii_v6, test_v6_gaps · via ru_pii, redact, vault → test_product, test_hard_cases, test_coverage_152fz
+- **Docs:** `docs/tz-agentpii6.md`, `docs/tz-agentpii6-registry.md` · rules: INVARIANTS.md#structured-ids
 
 #### `pseudex/structured.py` — 219 lines · `live`
 Layer 1: JSON / form key-value, where the KEY types the WHOLE value with no shape
 check (`KEY_TYPE`), or only licenses a shape (`CTX_TYPES`). A KV-typed span skips
 `suppress`.
-- **API:** `detect_structured_kv`
-- **Uses:** assets, detect, morph_places · **Used by:** detect_all
+- **API:** `key_type`, `key_edge`, `detect_structured_kv`
+- **Uses:** assets, cvc, detect, json_fields, morph_places · **Used by:** context, cvc, detect_all, redact
 - **Tests:** none direct · via detect_all → test_hard_cases, test_persona_defects, test_product
 - **Docs:** `research/dd4-B-structured.md` · rules: INVARIANTS.md#structured-kv
+
+#### `pseudex/json_fields.py` — `live`
+Source-offset string-value boundaries and structural paths for valid JSON payloads.
+No PII policy: callers attribute evidence within a value or its typed ancestry,
+never by proximity to another field. Invalid JSON falls back to ordinary detection.
+- **API:** `StringLeaf`, `string_leaves`
+- **Uses:** — · **Used by:** context, structured
+- **Tests:** test_hop_integrity
+- **Docs:** `research/agent-integrity-repair/SCOPE.md` · rules: INVARIANTS.md#structured-kv
+
+#### `pseudex/cvc.py` — 362 lines · `live`
+Temporary secrets with NO internal evidence — the card verification code
+(`CARD_VERIFICATION_CODE`, declared 3 or 4 digits by alias) and the one-time
+issuer code (`ISSUER_OTP`, length never declared). The class is typed ONLY by
+external evidence: the authoritative field name (`key_class` reads
+`structured.key_type`) or a bounded prose cue from the leased `CTX_TYPES` — never
+by entropy. Format-preserving substitutes (width = source width, never a leading
+zero, so an unquoted JSON number keeps parsing); deliberately NOT in
+`vault._token_re`, so restoration is a point query under the SAME class context,
+and an uncontexted substitute is left as a residual (`O-SECRET-8`), never handed
+to the tool.
+- **API:** `field_lengths`, `is_digit_run`, `leaf_shape_ok`, `key_class`, `mint`, `detect_spans`, `restore_spans`, `licensed_ranges`, `drop_uncontexted`, `restore_number_leaf`
+- **Uses:** assets, detect, structured (lazy) · **Used by:** redact, structured, vault
+- **Tests:** test_cvc_otp · via redact, structured, vault → test_product, test_hard_cases
+- **Docs:** `research/quality-sprint-2026-09-30/work/C0/SPEC.md` · rules: INVARIANTS.md#structured-kv
 
 #### `pseudex/credentials.py` — 123 lines · `live`
 API keys, tokens, private keys — anchored to PUBLISHED prefixes, never to entropy.
@@ -122,8 +165,8 @@ Identifiers DICTATED ALOUD: numeral runs → digit strings, then the SAME
 validators as the digit path (Luhn, mod 101, ИНН, libphonenumber). Spoken dates,
 e-mails, plates. The typo table is MINED from real transcripts; fuzzy matching on
 numerals is forbidden.
-- **API:** `is_numeral_word`, `numeral_alternation`, `canonical_numeral`, `date_from_words`, `date_to_words`, `run_to_digits`, `numeral_runs`, `detect_spoken_ids`, `email_from_words`, `detect_spoken_email`, `plate_from_words`, `detect_spoken_plate`, `main`
-- **Uses:** assets, detect, fuzzy, ru_pii · **Used by:** address, date_form, detect_all, morph_places, names, vault
+- **API:** `is_numeral_word`, `numeral_alternation`, `canonical_numeral`, `date_from_words`, `date_to_words`, `run_to_digits`, `digits_in_words_like`, `numeral_runs`, `detect_spoken_ids`, `email_from_words`, `detect_spoken_email`, `plate_from_words`, `plate_in_words_like`, `detect_spoken_plate`, `main`
+- **Uses:** agent_form, assets, detect, fuzzy, ru_pii · **Used by:** address, date_form, detect_all, morph_places, names, notation, redact, vault
 - **Tests:** test_product · via detect_all → test_overmasking (dictated order numbers), test_hard_cases; `bench/voice/`
 - **Docs:** `bench/voice/README.md`, `docs/known-issues.md` (Б1, Б6) · rules: INVARIANTS.md#spoken
 
@@ -132,9 +175,9 @@ What NER misses and what it over-tags: the gazetteer (leased), lowercase
 diminutives, Latin names, initials, the cue-word gate, the deletion-neighbourhood
 typo index, the four-signal split-surname join. Also the gate that KEEPS or DROPS
 a Natasha PER/LOC.
-- **API:** `is_known_name`, `is_surname_shaped`, `keep_location`, `trim_person_span`, `keep_person`, `gazetteer_names`, `trim_document_words`
-- **Uses:** assets, detect, fuzzy, morph, spoken · **Used by:** address, assets, detect_all
-- **Tests:** test_product, test_unload_scrub, profile_deep · via detect_all → test_names_morphology, test_hard_cases, test_persona_defects, test_overmasking; `bench/gate/`, `bench/eval_massive_ru.py`, `bench/eval_external_ner.py`
+- **API:** `is_known_name`, `is_surname_shaped`, `keep_location`, `trim_person_span`, `keep_person`, `gazetteer_names`, `trim_document_words`, `recover_damaged_name`
+- **Uses:** assets, detect, fuzzy, morph, spoken · **Used by:** address, assets, detect_all, vault
+- **Tests:** test_class_g_leaks, test_product, test_unload_scrub, profile_deep · via detect_all → test_names_morphology, test_hard_cases, test_persona_defects, test_overmasking; `bench/gate/`, `bench/eval_massive_ru.py`, `bench/eval_external_ner.py`
 - **Docs:** `research/dd2-notes-A-ru-ner.md`, `research/2026-08-31-ml-gate-or-rules.md`, `bench/gate/README.md` · rules: INVARIANTS.md#names
 
 #### `pseudex/morph_names.py` — 988 lines · `live`
@@ -142,7 +185,7 @@ Russian personal-name morphology: gender, case, nominative, inflection, the
 round-trip guard. `to_nominative` is called from two sides (real value in
 `canonicalize`, fake value in `name_key`) and only one may carry a guard.
 - **API:** `name_shape`, `has_given_name`, `detect_gender`, `detect_case`, `full_patronymic`, `governing_cases`, `read_person`, `to_nominative_governed`, `to_nominative`, `lone_nominative_gender`, `inflect_person`, `cases_spelled_as`, `looks_like_person`, `given_name_gender`, `feminine_surname`, `survives_round_trip`
-- **Uses:** assets, fuzzy, morph · **Used by:** detect_all, redact, vault
+- **Uses:** assets, fuzzy, morph · **Used by:** detect_all, operator, redact, vault
 - **Tests:** test_derived_forms, test_names_morphology, test_product
 - **Docs:** `research/2026-08-16-russian-name-morphology.md`, `docs/tz-name-gender-canonical.md`, `research/2026-09-17-prose-case-homography.md` · rules: INVARIANTS.md#name-morphology
 
@@ -153,17 +196,21 @@ marker-less streets (ГАР-vocabulary-gated) ∪ bare lower-case streets (four 
 register-spelling repair of a mistyped street for the TOOL leg.
 - **API:** `register_spelling`, `repair_street`, `detect_address`
 - **Uses:** _morph_compat, assets, detect, fuzzy, morph, morph_places, names, spoken · **Used by:** assets, detect_all, redact
-- **Tests:** test_hard_cases, test_unload_scrub, profile_deep · via detect_all → test_overmasking, test_persona_defects, test_product; `bench/voice/`, `bench/eval_gar_cut.py`, `make_addr_real.py`
+- **Tests:** test_hard_cases, test_unload_scrub, profile_deep · test_class_g_leaks via detect_all → test_overmasking, test_persona_defects, test_product; `bench/voice/`, `bench/eval_gar_cut.py`, `make_addr_real.py`
 - **Docs:** `docs/gar-street-vocabulary.md`, `research/dd2-notes-B-ru-address.md`, `research/dd3-location-pii.md` · rules: INVARIANTS.md#address
 
-#### `pseudex/morph_places.py` — 1 607 lines · `live`
+#### `pseudex/morph_places.py` — 1 937 lines · `live`
 Place morphology and the address READER: street vs city, nominative, agreement
-with the generic word, `split_roles` (city / street / house / flat / entrance —
-the one parser every consumer must reuse), keys for the vault, `in_form_of` for
-restoring a tool argument in the agent's own form.
-- **API:** `looks_like_street`, `to_nominative`, `phrase_to_nominative`, `inflect_place`, `detect_case`, `place_gender`, `generic_forms`, `region_prefix_end`, `address_key`, `generic_full`, `street_house_key`, `strip_flat`, `strip_leading_city`, `place_shape`, `agree_with_generic`, `match_signature`, `signature_parts`, `is_generic_word`, `street_case`, `split_roles`, `role_spans`, `field_role`, `role_of_field`, `city_case`, `address_from_fields`, `part_in_form_of`, `house_digits`, `in_form_of`, `reduce_address`
-- **Uses:** agent_form, assets, morph, spoken · **Used by:** address, assets, redact, structured, vault
-- **Tests:** test_hard_cases, test_product, test_unload_scrub; `bench/agentpii4/harness.py`, `bench/agentpii4/microscope.py`
+with the generic word, `split_roles` (city / street / street_type / street_name /
+house / flat / entrance — the one parser every consumer must reuse), keys for the
+vault (`address_key` is the IDENTITY and `street_house_key` is the LINKING key;
+`key_type` reads the type slot of the identity), `in_form_of` for restoring a
+tool argument in the agent's own form, and `field_role` / `field_tokens` /
+`field_prefix` for reading a schema's field names (`street_type`, `streetType`,
+`address.street`).
+- **API:** `looks_like_street`, `to_nominative`, `phrase_to_nominative`, `inflect_place`, `detect_case`, `place_gender`, `generic_forms`, `region_prefix_end`, `address_key`, `key_type`, `generic_full`, `street_house_key`, `strip_flat`, `strip_leading_city`, `place_shape`, `agree_with_generic`, `match_signature`, `signature_parts`, `is_generic_word`, `street_case`, `split_roles`, `role_spans`, `field_role`, `field_tokens`, `field_prefix`, `role_of_field`, `city_case`, `address_from_fields`, `part_in_form_of`, `house_digits`, `in_form_of`, `reduce_address`, `core_phrase`, `mutable_parts`, `parts_signature`, `place_core_key`, `place_parts_key`, `strip_parts_key`
+- **Uses:** agent_form, assets, morph, spoken · **Used by:** address, assets, envelope, notation, redact, structured, vault
+- **Tests:** test_address_composition, test_hard_cases, test_product, test_unload_scrub; `bench/agentpii4/harness.py`, `bench/agentpii4/microscope.py`
 - **Docs:** `docs/known-issues.md` (§2, Б2, Б10), `research/2026-09-02-agent-form-benchmark.md` · rules: INVARIANTS.md#address, INVARIANTS.md#agent-form
 
 #### `pseudex/context.py` — 386 lines · `live`
@@ -171,15 +218,15 @@ Context-aware false-positive suppression (the deny-context layer): document
 words before a date, cue words within 60 characters and never across a sentence
 end, place-reference vs address. Runs BEFORE overlap resolution.
 - **API:** `location_is_pii`, `suppress`
-- **Uses:** assets, detect, fuzzy, quasi · **Used by:** detect_all
+- **Uses:** assets, detect, fuzzy, json_fields, quasi, structured (lazy) · **Used by:** detect_all
 - **Tests:** none direct · via detect_all → test_overmasking, test_hard_cases, test_coverage_152fz
 - **Docs:** `research/dd2-notes-C-disambiguation.md`, `research/dd3-location-pii.md` · rules: INVARIANTS.md#context
 
 #### `pseudex/fuzzy.py` — 213 lines · `live`
 One-edit matching shared by names and addresses: Damerau distance and the
 deletion-neighbourhood index (Mor-Fraenkel / SymSpell), complete by construction.
-- **API:** `within_one_edit`, `within_one_typo`, `deletion_keys`, `DeletionIndex`, `build_index`, `lookup`
-- **Uses:** — · **Used by:** address, context, morph_names, names, quasi, ru_pii, spoken, vault
+- **API:** `within_one_edit`, `within_one_typo`, `deletion_keys`, `DeletionIndex`, `build_index`, `lookup`, `recover_one_edit`, `Edit`, `edit_from`, `apply_edit`
+- **Uses:** — · **Used by:** address, context, morph_names, names, quasi, ru_pii, ru_pii_v6, spoken, vault
 - **Tests:** `bench/blocking_recall.py` · via names/address → test_hard_cases, test_persona_defects
 - **Docs:** `docs/gar-street-vocabulary.md` (the fuzzy-street curve) · rules: INVARIANTS.md#names, INVARIANTS.md#spoken
 
@@ -203,16 +250,17 @@ pipeline above; `_PRIORITY` is the arbiter (checksum IDs 6 > phone/email 5 >
 ADDR 4 > NAME 3 > DATE/PASSPORT/LOC 2); `ADDR` exists only to outrank a NAME
 inside a street name and is remapped to `LOC` after resolution.
 - **API:** `Detector`
-- **Uses:** _morph_compat, address, assets, context, credentials, detect, morph_names, names, normalize, profiling, quasi, ru_pii, spoken, structured · **Used by:** envelope, proxy, service
-- **Tests:** test_argument_form, test_collisions, test_coverage_152fz, test_credentials, test_hard_cases, test_names_morphology, test_overmasking, test_perf_masking, test_persona_defects, test_product, test_prose_fragments; every `eval_*.py`; every `bench/`
+- **Uses:** _morph_compat, address, assets, context, credentials, detect, metrics, morph_names, names, normalize, profiling, quasi, ru_pii, spoken, structured · **Used by:** envelope, proxy, service
+- **Tests:** test_class_g_leaks, test_argument_form, test_collisions, test_coverage_152fz, test_credentials, test_hard_cases, test_names_morphology, test_overmasking, test_perf_masking, test_persona_defects, test_product, test_prose_fragments; every `eval_*.py`; every `bench/`
 - **Docs:** `docs/how-it-works.md`, `docs/spec.md`, `research/dd2-notes-D-architecture-eval.md` · rules: INVARIANTS.md#pipeline
 
-#### `pseudex/translit.py` — 264 lines · `live`
+#### `pseudex/translit.py` — 350 lines · `live`
 Transliteration and initials — the DERIVED forms a model writes. `align` learns
 the model's per-unit choice from the substitute, `render` applies it to the real
-name, `fold` is the vault index under which every rendering collides.
-- **API:** `apply`, `is_cyrillic_word`, `units_of`, `align`, `render`, `variants`, `table_for`, `fold`, `folded`, `match_case`, `squeezed_initials`, `main`
-- **Uses:** assets · **Used by:** redact, vault
+name, `fold` is the vault index key of one rendering, and `declared_keys` is the
+set of keys the mint indexes so that no rendering `UNITS` declares can miss it.
+- **API:** `apply`, `is_cyrillic_word`, `units_of`, `align`, `render`, `variants`, `table_for`, `fold`, `folded`, `declared_keys`, `match_case`, `squeezed_initials`, `main`
+- **Uses:** assets · **Used by:** notation, redact, vault
 - **Tests:** test_derived_forms, test_prose_fragments
 - **Docs:** `research/2026-09-02-agent-form-benchmark.md` · rules: INVARIANTS.md#derived-forms
 
@@ -224,8 +272,8 @@ two-digit year, ISO, month in words with or without the year, spoken),
 mirrors the customer's notation at the mint, the restorer renders the real
 date in the agent's.
 - **API:** `notation_of`, `same_notation`, `render_like`, `main`
-- **Uses:** spoken · **Used by:** redact, vault
-- **Tests:** `python3 -m pseudex.date_form` (self-test) · via redact → test_argument_form (`_forms_follow`), test_product, test_hard_cases
+- **Uses:** spoken · **Used by:** notation, vault
+- **Tests:** `python3 -m pseudex.date_form` (self-test) · via redact → test_argument_form (`_forms_follow`), test_product, test_hard_cases; test_notation_symmetry
 - **Docs:** `docs/known-issues.md` (Б24) · rules: INVARIANTS.md#swap
 
 #### `pseudex/agent_form.py` — 135 lines · `live`
@@ -235,33 +283,62 @@ case out. A NAME is cased as a whole class (`lower`/`upper`/`title`), never
 word by word — mirroring a lower-case particle onto the fake's patronymic
 produced a run the windows could not read back (Б24).
 - **API:** `cased_like`, `case_class`, `name_cased_like`, `main`
-- **Uses:** — · **Used by:** morph_places, redact
+- **Uses:** — · **Used by:** morph_places, notation, redact, ru_pii_v6, spoken
 - **Tests:** none direct · via redact → test_argument_form
 - **Docs:** `research/2026-09-02-agent-form-benchmark.md` · rules: INVARIANTS.md#agent-form
+
+#### `pseudex/notation.py` — 434 lines · `live`
+ONE interface for notation: «the value in the notation of whoever wrote it».
+`render_like(value, surface, kind, target=None, for_tool=False)` is the single
+decision point every restore seam and every mint must use — `surface` is the
+notation SAMPLE, `value` is the content from the vault, `target` is the leaf's
+notation (class Ж `FieldSpec`), and `for_tool` says which leg the mention is on
+(the tool cannot execute a dictated phrase, so there the leaf's/register's
+written form wins). `notation_of(surface, kind)` names the notation CLASS. The
+per-type renderers stay where they belong (PHONE/SNILS/card/date/email in
+`redact`/`date_form`, the address in `morph_places.in_form_of`, the plate here);
+they are reached ONLY through this interface, because seven separate decisions
+was exactly the class А defect. `plate_signature` is the content signature a
+plate resolves by (letters + digits, both Latin readings folded). `redact`,
+`translit` and `vault` are reached by LAZY imports inside the type-specific
+renderers — `redact` imports this module, and `vault`/`translit` would make the
+ring.
+- **API:** `script_of`, `case_of`, `looks_dictated`, `notation_of`, `render_like`, `plate_content`, `plate_signature`, `plate_notation_of`, `plate_in_form_of`, `plate_laid_like`, `written_place`, `place_in_form_of`, `name_in_form_of`, `name_in_script`
+- **Uses:** agent_form, date_form, morph_places, redact (lazy), ru_pii_v6 (lazy), spoken, translit (lazy), vault (lazy) · **Used by:** redact, vault
+- **Tests:** test_notation_symmetry; via redact/vault → the hop-form suites
+- **Docs:** `research/hop-format-audit/SPIKE-А.md`, `research/hop-format-audit/DECISIONS-SPRINT.md` · rules: INVARIANTS.md#notation
 
 ### 1.2 Swap and vault
 
 #### `pseudex/redact.py` — 1 666 lines · `live`
 The swap layer: tokenize spans on the way to the model (substitute inflected to
 the original's case), detokenize on the way back — prose in agreement, tool
-arguments verbatim in the agent's form. Streaming detokenizer with one carry per
+arguments verbatim in the agent's form; PHONE notation follows the current
+sender on both legs. Streaming detokenizer with one carry per
 `choice.index`; `unmask_arguments` for buffered tool calls; `residual_tokens`
 (two arguments, the shape the benchmark's own gateway calls) and the leg-aware
 `surviving_substitutes` for substitutes that failed to resolve.
 - **API:** `mask_text`, `is_own_substitute`, `vault_value`, `tokenize_span`, `unmask_text`, `unmask_stream_chunk`, `unmask_arguments`, `residual_tokens`, `surviving_substitutes`, `StreamDetokenizer`
-- **Uses:** address, agent_form, assets, date_form, detect, morph_names, morph_places, normalize, profiling, translit, vault · **Used by:** envelope, proxy, service
-- **Tests:** test_argument_form, test_collisions, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_product, test_prose_fragments, bench_masking, profile_latency; `bench/agentpii{2,3,4}`, `bench/agentrun/roundtrip.py`
+- **Uses:** address, agent_form, assets, cvc, detect, morph_names, morph_places, normalize, notation, profiling, ru_pii_v6, spoken, structured, translit, vault · **Used by:** envelope, notation, proxy, service
+- **Tests:** test_class_g_leaks, test_argument_form, test_collisions, test_derived_forms, test_digit_truncation, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_phone_hop_form, test_error_echo_privacy, test_product, test_prose_fragments, bench_masking, profile_latency; `bench/agentpii{2,3,4}`, `bench/agentrun/roundtrip.py`
 - **Docs:** `docs/how-it-works.md`, `docs/known-issues.md` (§0, §1, Б8, Б11, Б12) · rules: INVARIANTS.md#swap, INVARIANTS.md#streaming
 
 #### `pseudex/vault.py` — 3 397 lines · `live`
 Token vault: persistent SQLCipher store keyed by `(customer, canonical)`;
 canonicalization (phones, names in the nominative with gender evidence,
-addresses via `split_roles`); format-preserving, checksum-INVALID substitutes;
-the conversation scope (`for_conversation`, `with_pseudonym_scope`, `minted_in`);
+addresses via `split_roles`); format-preserving, checksum-VALID substitutes from
+impossible ranges; the conversation scope (`for_conversation`, `with_pseudonym_scope`, `minted_in`);
 the digit-signature and translit reindexes; the collision guards at mint time.
-- **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `looks_dictated`, `name_key`, `fold_key`, `place_key`, `token_re`, `create_tables`, `create_indexes`, `Vault` (+ `VAULT_MIGRATIONS`)
-- **Uses:** assets, credentials, date_form, fuzzy, morph_names, morph_places, normalize, profiling, ru_pii, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, proxy, redact, service, schema (lazy)
-- **Tests:** vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_hard_cases, test_loop, test_names_morphology, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
+`Vault.resolve_digit_signatures_typed` preserves type and exact-over-tail
+precedence for PHONE rendering without a new schema or database query.
+`Vault.digit_fragment_owner` answers a run that is a substitute's digits as a
+NUMBER spelled without their leading zeros with the real value WHOLE (class Д,
+never `canon[2:12]`), refuses two owners of one number, and
+`digit_fragment_is_ours` names a substitute one digit from what the agent wrote
+without ever resolving it.
+- **API:** `count_values_since`, `canonicalize_person`, `canonicalize`, `name_key`, `fold_key`, `place_key`, `token_re`, `create_tables`, `create_indexes`, `zero_grouped`, `seed_token_rng`, `Vault` (+ `VAULT_MIGRATIONS`)
+- **Uses:** assets, credentials, cvc, date_form, fuzzy, morph_names, morph_places, names, normalize, notation, profiling, ru_pii, ru_pii_v6, schema, spoken, sqlite_setup, translit · **Used by:** assets, envelope, notation, operator, proxy, redact, service, schema (lazy)
+- **Tests:** test_class_g_leaks, vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_digit_truncation, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
 - **Docs:** `docs/tz-vault-encryption.md`, `docs/tz-name-gender-canonical.md`, `docs/how-it-works.md`, `research/2026-09-03-checksum-valid-substitutes.md` · rules: INVARIANTS.md#vault, INVARIANTS.md#collisions, INVARIANTS.md#conversation-scope
 
 #### `pseudex/envelope.py` — 326 lines · `live`
@@ -269,9 +346,11 @@ Transformations over the OpenAI chat wire envelope, shared by BOTH surfaces:
 `mask_messages` (multi-part content, `skip_system`, the mask cache),
 `mask_tools`, `unmask_response`, `conversation_key` (derived from the first two
 messages when the caller names none).
-- **API:** `MaskContext`, `conversation_key`, `mask_one`, `mask_messages`, `mask_tools`, `unmask_response`
-- **Uses:** audit, detect_all, maskcache, profiling, redact, vault · **Used by:** proxy, service
-- **Tests:** test_collisions, test_persona_defects, test_product, profile_deep; `bench/agentpii*/`
+- `tool_result_contexts` binds exact preceding IDs for contextual echo protection;
+  an unbound result can neutral-redact a typed echo recorded in this conversation.
+- **API:** `MaskContext`, `ToolCallContext`, `ToolResultContext`, `tool_result_contexts`, `conversation_key`, `mask_one`, `mask_messages`, `mask_tools`, `unmask_response`
+- **Uses:** audit, detect, detect_all, maskcache, morph_places, profiling, redact, vault · **Used by:** proxy, service
+- **Tests:** test_collisions, test_persona_defects, test_product, test_tool_result_context, profile_deep; `bench/agentpii*/`
 - **Docs:** `docs/how-it-works.md` · rules: INVARIANTS.md#conversation-scope, INVARIANTS.md#cache
 
 #### `pseudex/maskcache.py` — 109 lines · `live`
@@ -300,8 +379,8 @@ In-memory registry of the LEASED detection assets — gazetteers, street
 vocabulary, cue words, priority table, look-alike folds, key→type map, fake
 pools. Compiles every regex ONCE at load; raises `BundleNotLeased` when nothing
 is loaded — no bundle means NO detection, not less.
-- **API:** `BundleNotLeased`, `NameAssets`, `AddressAssets`, `SpokenAssets`, `QuasiAssets`, `ContextAssets`, `StructuredAssets`, `RuPiiAssets`, `TranslitAssets`, `FakeAssets`, `DetectionAssets`, `Assets`
-- **Uses:** address, bundle, morph, morph_places, names, vault (lazy) · **Used by:** address, context, detect_all, license, morph_names, morph_places, names, normalize, proxy, quasi, redact, ru_pii, service, spoken, structured, translit, vault
+- **API:** `BundleNotLeased`, `NameAssets`, `AddressAssets`, `SpokenAssets`, `QuasiAssets`, `ContextAssets`, `StructuredAssets`, `RuPiiAssets`, `TranslitAssets`, `FakeAssets`, `CompositeType, DetectionAssets`, `Assets`
+- **Uses:** address, bundle, morph, morph_places, names, vault (lazy) · **Used by:** address, context, cvc, detect_all, license, morph_names, morph_places, names, normalize, proxy, quasi, redact, ru_pii, ru_pii_v6, service, spoken, structured, translit, vault
 - **Tests:** test_canary, test_derived_forms, test_fingerprint, test_hard_cases, test_product, test_prose_fragments, test_tuning_lease_security, test_unload_scrub, test_watermark, testkit
 - **Docs:** `docs/tz-license-packaging.md`, `docs/tz-tuning-in-lease.md` · rules: INVARIANTS.md#lease
 
@@ -377,8 +456,8 @@ surfaces under the ADMIN token: `/status`, `/events`, `/stats`, `/stats.csv`,
 `release_verdict` is the `engine.release` block of `/status` and `/subscription`:
 the server's verdict on this version (D-055) with unix dates and the one
 upgrade command, `None` fields when the server said nothing.
-- **API:** `processes`, `memory`, `release_verdict`, `build_router`
-- **Uses:** audit, metrics, preflight, profiling, schema, sqlite_setup · **Used by:** proxy, service
+- **API:** `processes`, `memory`, `release_verdict`, `build_router`, `identity_stability`, `latency_snapshot`
+- **Uses:** audit, metrics, morph_names, preflight, profiling, ru_pii_v6, schema, sqlite_setup, vault · **Used by:** proxy, service
 - **Tests:** none direct · via service → test_localui, test_perf_masking (401 on token drift), test_detok_security
 - **Docs:** `docs/tz-local-ui.md` · rules: INVARIANTS.md#surfaces, INVARIANTS.md#audit
 
@@ -402,8 +481,8 @@ Multi-tenant API keys for the proxy shape: key → upstream URL + key.
 
 #### `pseudex/metrics.py` — 113 lines · `live`
 Prometheus text format written by hand — no client library in the image.
-- **API:** `escape`, `render`, `series`, `Counter`
-- **Uses:** — · **Used by:** operator; `licensing/server.py`
+- **API:** `escape`, `render`, `series`, `Counter`, `TypeCounter`, `suppressed_snapshot`
+- **Uses:** — · **Used by:** detect_all, operator; `licensing/server.py`
 - **Tests:** none direct · via operator → test_localui
 - **Docs:** `docs/operations.md`
 
@@ -572,7 +651,36 @@ Run from `prototype/`; each loads the dev bundle itself.
 | `test_pseudexctl.py` | the ops CLI: command shapes, doctor verdicts (incl. the version ladder), the rekey proof, `upgrade` (order, secrets never in argv, both rollback branches, dry-run leaves nothing) |
 | `test_collisions.py` | a substitute equal to a real value — both halves (backwards at mint, forwards via `minted_in`), and BOTH sides of the `pseudonym_scope` trade |
 | `test_derived_forms.py` | transliteration and initials in a tool argument — in the model's own convention, resolved by the conversation |
+| `test_notation_symmetry.py` | class А: the substitute inherits the SOURCE's notation (dictation, case, separators and region position, script) and the argument is rendered in the AGENT's, or the leaf's when the tool cannot execute a phrase; one interface (`notation.render_like`) for every seam, with the PHONE/СНИЛС/DOB controls that already worked |
 | `test_argument_form.py` | a tool argument is restored VERBATIM in the agent's form (case, generic words); prose in agreement |
+| `test_own_substitute_fixed_point.py` | class В: a part, a lone surname, initials, an oblique case, another script and a re-typing field key of the dialogue's OWN substitute are a fixed point of the mask (prose and JSON leaf), the engine's `REDACTED…` marker is a fixed point, and the boundary holds — a stranger reusing our surname, a bare given name, a Latin stranger, an address and another conversation all stay masked |
+| `test_phone_hop_form.py` | fixed PHONE mint: three input forms × four numeric agent forms × both output legs; copied typo, separate identities, tenant and typed-numeric controls |
+| `test_other_hop_forms.py` | current-hop form for SNILS, INN, CARD, PASSPORT, DOB, EMAIL and PLATE; fixed mints and literal expected values |
+| `test_atomic_form_adversarial.py` | independent numeric/glyph, date and email-form attacks; unknown changed digits must not restore a known prefix |
+| `test_spoken_date_form.py` | spoken day case at IN and both OUT legs; copied words, changed case and ISO share one identity |
+| `test_spoken_identifier_form.py` | spoken PHONE grouping/case/hesitations, national notation, both OUT legs, no second mint, residual visibility, copied and rewritten SNILS with leading zeroes; not full arbitrary-speech acceptance |
+| `test_tool_result_context.py` | standard call/result association: parallel same-name calls, reverse order, duplicate and missing IDs, invalid arguments, no future/cross-transcript evidence; not echo masking acceptance |
+| `test_shown_form_ambiguity.py` | conflicting shown owners, replay/reopen and independent-connection safety; equivalent spelling and expiry controls; rewritten-conflict acceptance tracked in the sprint report |
+| `test_name_subject_form.py` | finite verb subjects versus objects and known-gender NAME rewrites through the real detector and vault |
+| `test_name_case_regression.py` | pinned random-name false alarm: literal accusative outputs and gender-aware morphology controls |
+| `test_location_hop_form.py` | structured address leaves recomposed into one mention, prose/tool form parity and independent owners |
+| `test_location_form_adversarial.py` | independent LOC attacks, including unresolved fragments and CAPS; a red suite is not an accepted fix |
+| `test_address_composition.py` | class Б: the street TYPE survives on both legs and in a schema field (incl. a dotted path), `street`/`street_type` are two leaves of ONE street, one real street is one fake street whatever the house and the litera keeps two houses apart, and a fragment of a substitute resolves WHOLE or is named in `residual_tokens` |
+| `test_digit_truncation.py` | class Д: a substitute's NUMBER survives its spelling — a run equal to the substitute's digits as a number (leading zeros dropped) resolves to the real value WHOLE and never to a positional slice of the canon, two owners of one number are a NAMED refusal, a named place (passport series/number, last four digits) still slices, and a run one digit from a substitute is reported in the residual without ever being resolved |
+| `test_positional_slice_guard.py` | class Д (REVIEW-SPRINT.md point 4): the positional slice of the canon is licensed ONLY by a NAMED edge — `{"inn":"0084999497"}` no longer hands the tool 10 of 12 real digits and is NAMED, `{"x":"6984"}` does not slice like `{"last4":"6984"}`, while `last4` and the passport series/number still slice and a number written without its zeros restores WHOLE |
+| `test_typo_inheritance.py` | class А (REVIEW-SPRINT.md point 1): a single damaged name after a naming cue is a NAME, the mint applies the SAME edit to the drawn fake (the damaged slot stays damaged, the clean slot clean), and the same damaged word in an address is not a person |
+| `test_type_identity_linking.py` | class Б (REVIEW-SPRINT.md point 2): the street TYPE is identity in the old tolerant paths too — «переулок Пушкина 5» and «улица Пушкина 5» are two substitutes in both directions, while a writing with no type still links to the typed one |
+| `test_one_person_one_mint.py` | class В (REVIEW-SPRINT.md point 3): a CRM card of three name fields and the same person as a whole string mint ONE substitute set whatever the order, and the tool gets the real parts back |
+| `test_class_g_leaks.py` | class Г (five vectors): a Latin name is judged WORD BY WORD whatever its position (`Kukushkin Valeriy`, `Fomin Vyacheslav`, a lone `Kukushkin`) and the substitute mirrors the source script and resolves back; a bare lowercase word is granted a span by its anchor (`адрес репина` → LOC, `от аленчиев`/`к аленчиеву` → NAME, `на бибиревская` → LOC) while the measured negatives stay untouched; a typed PARENT key closes its children (`passport.series`/`.number` masked as 4/6-digit parts of ONE document, `address` still whole, and the parts rejoin on the tool leg); a substitute may not carry a whole word that is another person's real value in the conversation, and pool exhaustion fails CLOSED; and a phone that passes the СНИЛС checksum wins by BOUNDARY (the «+» included) while an equal-boundary or dashed СНИЛС does not move |
+| `test_g3_passport_fail_closed.py` | class Г (REVIEW-SPRINT.md point 6): a typed passport parent closes its children FAIL-CLOSED — a lone `series`/`number`, a misspelled role (`seria`/`nomer`) and a non-digit part are each masked as a WHOLE passport substitute, never left open; the complete passport still mints two parts of ONE document and the `address` in the same payload stays closed |
+| `test_g4_reverse_order.py` | class Г (REVIEW-SPRINT.md point 7): a substitute minted EARLIER is recognised by PART (a lone surname, surname+given) so it is not re-minted into a second person, while the FULL real name of a person appearing LATER whose surname equals the substitute's is masked, never passed as «ours», and that later person's substitute never carries the surname |
+| `test_b_litera_composition.py` | class Б (REVIEW-SPRINT.md point 10): a house litera written as a separate word before a marker («34 в кв 9») is glued to the number BEFORE prepositions are dropped, so «34 в кв 9» ≠ «34 кв 9» while «34в» == «34 в», the dot after the marker does not matter, and «с» between two numbers stays «строение», not a litera |
+| `test_v_redacted_deterministic.py` | class В (REVIEW-SPRINT.md point 13): a type with no renderer mints a DETERMINISTIC `REDACTED<6hex>` (digest of the value), not a random one — the same value is idempotent, and `cardholder` under a re-typing key stays a fixed point instead of becoming a fake card |
+| `test_g_spent_words_crossworker.py` | class Г (REVIEW-SPRINT.md point 14): two `Vault` instances on ONE DB share the spent-word index — the second worker's snapshot is invalidated by the first worker's NAME insert (a `MAX(rowid)` point query, like `_shares_a_stem_in_conversation`) and refuses a substitute carrying the other's real word |
+| `test_zh2_schema_notation.py` | class Ж (REVIEW-SPRINT.md point 5): the tool schema's declared leaf notation reaches the OUT leg — `unmask_arguments(leaf_notation={"snils":"snils"})` renders the real СНИЛС as `XXX-XXX-XXX YY`, an undeclared leaf keeps the agent's own form (never guessed), and the notation applies per leaf, not to the whole call |
+| `test_zh2_gateway_wiring.py` | class Ж (wiring): `leaf_notation` is actually threaded into every OUT-leg caller, not just the engine seam — the sidecar `/unmask_arguments` endpoint and `unmask_response` accept and forward it, and `bench.agentpii4.gateway.RealGateway.restore_arguments` computes it from the tool schema (`bench.agentpii5.tools.LEAF_NOTATION`) and passes it to `unmask_arguments`; the declared→schema-notation / undeclared→agent-form / empty-and-foreign-keys-harmless contract is pinned on a live `RealGateway`, not a stub |
+| `test_error_echo_privacy.py` | S01 privacy gate: archived truncated spoken-phone echo, seven unbound-result shapes, ordinary-number and cross-conversation controls; E01 case-retyped cut form remains open |
+| `test_date_association_dob.py` | a date personal ONLY by association (next to a СНИЛС/card/passport, no «рождения») is typed DOB, not DATE, so the vault mints a DOB fake and an unbound tool result echoing it is redacted instead of leaking; meeting and document dates stay real |
 | `test_prose_fragments.py` | a piece or a derivative of a substitute in the ANSWER to the customer |
 | `test_names_morphology.py` | gender, case and self-agreement of names; the round-trip guard |
 | `test_hard_cases.py` | 967 lines of the awkward, the rare and the deliberately hostile — addresses, names, dates, KV |
@@ -590,6 +698,15 @@ Run from `prototype/`; each loads the dev bundle itself.
 | `test_watermark.py` | every leased bundle carries the customer's watermark |
 | `test_metering_anomaly.py` | the fleet-wide anomaly report surfaces a silently root-patched counter (WS-6/M2) |
 | `test_published_claims.py` | numbers PRINTED to the customer (landing, EULA) equal the numbers the code works by — and the replaced literals are ABSENT |
+| `test_addr_passport_tail.py` | address HEAD/TAIL + passport cue/tail (the PII-Bench coverage gap): a region name at the head, a trailing city and a passport cue past 16 chars were found but their span leaked the tail to the model; the tail and the restorer are extended TOGETHER so the span covers the part WHOLE and the round-trip converges (vectors 6–8) |
+| `test_address_head.py` | the address HEAD inside the span — a city/region/district prefix, a street without «улица» but with a house, and the indirect form («варшавке 24к3»); the head is absorbed ONLY when a street+house is already in the span, a bare toponym stays open, and «Иван Петров» before the street stays a NAME |
+| `test_cvc_otp.py` | C1 temporary secrets — CARD_VERIFICATION_CODE and ISSUER_OTP: the nine RED properties, hard negatives in the same run, declared alias lengths, format-preserving mint, restore on text/args/stream, the tiny-domain collision refusal (O-SECRET-8), the NOT_MEASURED gap, and three must-fail mutants |
+| `test_pii_v6.py` | N1 — the v6 registry families the engine supports natively (checksum, identity, legal, finance, telecom): RECOGNIZE / MINT / RESTORE per type, with format-preserving substitutes that INHERIT the source's checksum validity (COV-CHECKSUM-INHERIT) |
+| `test_r1_seed20_f4.py` | R1 — seed20 (D1-N F1) + street-adjacency veto (D1-N F4) on the leased NAME path: twenty lower-case diminutives as seed entries, a street word vetoes the lower-case NAME branch; runs the real detector and prints the two fixed denominators |
+| `test_v6_gaps.py` | G7 follow-up — the two v6 detection gaps (type-label alignment and six real 0%-coverage gaps), each positive with four controls (own register, negative, no fuzzy numerals, typed over bare) |
+| `test_identity_invariant.py` | D-081 — the PIN test: the eight `bench/identity_invariant.py` groups as asserts (NAME case/order collapse, NAME differ control, NAME patronymic collapse, LOC form/dictation/flat/entrance collapse, PHONE notation) plus the key/trap controls (lone-surname gender, to_nominative single-guard) |
+| `test_phase4b.py` | phase 4b — the PIN test for the five owner-approved clusters (W1 build/corpus leaf round-trip, W2 word→digit detokenization, W3/W4 NAME case + initials, W5/W6 VIN/PTS separators + glued cue, W7 leading-zero preservation) + the D-081 core intact (55 assertions) |
+| `test_hop_integrity.py` | Cross-hop repair regressions: role-bounded numerical restoration, phone priority, compatible address projections versus distinct owners, field-scoped operational dates and DOB controls, Markdown labels, JSON offsets and quantity tails. Work-in-progress tests remain red for pending classes; not a release gate substitute. |
 
 Not in `prototype/`: `licensing/test_*.py` (§2), `storefront/test_*.py` (§6),
 `e2e/` gates (§5).
@@ -618,6 +735,25 @@ any of them. External corpora live in `~/.cache/pseudex-bench/`.
 
 ### 4.1 Benchmarks we built
 
+The additive v5 hop audit uses `bench/agentpii5/cohort.py` (complete-only C/C2/I
+composition with input hashes and excluded spend), `bench/agentpii5/actual_hops.py`
+(versioned actual OUT diagnostic, no scheduled-turn requirement), and
+`bench/agentpii5/hop_report.py` (offline manifest, old lines, actual events and
+limits), and `bench/agentpii5/live.py` (real-time watch face of a RUNNING run:
+recomputes the same metrics on the partial files — no provider, engine or
+judge; the four hop-owner transitions and every rarer bucket are printed
+beside the 13 sprint metrics). Pins: `bench/agentpii5/test_cohort.py`,
+`bench/agentpii5/test_actual_hops.py`, `bench/agentpii5/test_hop_report.py`,
+`bench/agentpii5/test_live.py`,
+`bench/agentpii5/test_response_trace.py` (additive model-response chronology,
+same-response tool batches, legacy absence and strict record validation).
+It does not replace the historical observer or certify all NAME/LOC, IN,
+answer, chain and paired metrics. Status and acceptance:
+`docs/tz-hop-form-adaptation.md`, `research/hop-format-audit/PROGRESS.md`.
+Before the next hop-form implementation or a proposed 450 rerun, consult
+`docs/plan-hop-form-before-450.md`: evidence matrix, all current v5 types,
+full-loop acceptance, open owner decisions and budget boundaries.
+
 Owner's decision 2026-09-20: of the four AgentPII generations only **v4 is
 live**; v1–v3 stay for the numbers cited from them and are not developed.
 
@@ -627,12 +763,219 @@ live**; v1–v3 stay for the numbers cited from them and are not developed.
 | `bench/agentpii2/` | `superseded by agentpii4` | v2: case schema and family taxonomy (families/, live/) | `bench/agentpii2/schema.py` | `docs/tz-agentpii2.md`, `bench/agentpii2/README.md` |
 | `bench/agentpii3/` | `superseded by agentpii4` | v3: полнота on speech-like agent traffic; mined dispatch calls and reference forms (`bench/agentpii3/mine_*.py`, `bench/agentpii3/mined/`); audit + crosscheck. **The 69.6% NAME полнота number cited in CLAUDE.md is from here** — kept for that number, not for new work | `bench/agentpii3/schema.py` | `docs/tz-agentpii3.md` |
 | `bench/agentpii4/` | `live` | v4 «шлюз не ломает агента»: three arms (control, control′, gateway) over a mock CRM; levels calls/fields/state; TOST at δ=3pp with cluster bootstrap; `autopsy`, `microscope`, `compare_runs`; fresh-seed corpora `bench/agentpii4/fresh5150/` … `bench/agentpii4/fresh8080/` | `bench/agentpii4/schema.py` | `docs/tz-agentpii4.md`, `bench/agentpii4/README.md`, `research/2026-09-05-agent-scenario-coverage.md`, `research/2026-09-06-benchmark-tiers.md`, `research/2026-09-07-benchmark-critics.md` |
-| `bench/agentpii5/` | `live` | v5 «tool-result-first, форма на каждом хопе, живой агент»: a value's FORM is compared at every hop it crosses (`Hop`, `HopObservation`), not once at the tool. Contracts and rules: `bench/agentpii5/contracts.py` (hops, `CaseV5`, `ToolSpecV5`, form features, metric `Line`s + the refuse-to-report gate, judge I/O, the v4-vs-v5 side-by-side), `bench/agentpii5/schema.py` (R01–R21 per case, K01–K15 per corpus, the corpus snapshot), `bench/agentpii5/RULINGS.md` (the architect's decisions the builders were held to), `bench/agentpii5/CHECKLIST.md` (191 conformance items), `bench/agentpii5/briefs/` (one brief per component). Tools and backend: `bench/agentpii5/tools.py` (43 tools over 11 verticals, 8 return forms), `bench/agentpii5/mock.py` (the seeded CRM the three arms share). Form: `bench/agentpii5/form.py` + `bench/agentpii5/form_tables.py` (`form_match` per type and feature, with the ABSTAIN rule). Corpus: `bench/agentpii5/scenarios5/` (`bench/agentpii5/scenarios5/common.py` the builder, `bench/agentpii5/scenarios5/plan_a.py` / `bench/agentpii5/scenarios5/plan_b.py` the two halves, one module per behaviour — `retry_same_tool`, `same_tool_other_target`, `sequential_chain`, `parallel`, `fanout_pick`, `branching`, `user_in_loop`, `memory_anaphora`, `rag`, `document`), `bench/agentpii5/revise.py` (v4's 834 cases given a behaviour and hops, bytes untouched), `bench/agentpii5/build.py` (assemble, check, freeze the ladder). Run: `bench/agentpii5/harness.py` (the ONLY module here that imports `pseudex` — the gateway arm is the production path), `bench/agentpii5/records.py` (every run file, both ways), `bench/agentpii5/judge.py` + `bench/agentpii5/calibration.py` (the blind judge and its κ stamp). Read-back: `bench/agentpii5/observe.py`, `bench/agentpii5/metrics.py`, `bench/agentpii5/fixtures.py` (three fixtures per metric, one adversarial), `bench/agentpii5/report.py` (the side-by-side, refused metrics named), `bench/agentpii5/reportjson.py` (the same report as one versioned machine schema). Acceptance: `bench/agentpii5/perfect.py` + `bench/agentpii5/test_perfect.py` — a PERFECT gateway must clear every bounded line and four WRONG ones must fail them, on the whole corpus; an instrument that cannot fail is not an instrument. The harness as a tool (`docs/tz-bench-harness.md`, D-066): `bench/agentpii5/runinfo.py` (the estimate before a dollar, the run registry the runs write themselves, and the refusal that keeps a key or a corpus value out of it), `bench/agentpii5/provider.py` (what answered and what masked, with prices and key NAMES), `bench/agentpii5/compare.py` (any run against any other, case by case, with the cluster bootstrap), `bench/agentpii5/microscope.py` (one case whole, no model and no spend), `bench/agentpii5/trend.py` (the runs by date), `bench/agentpii5/repro.py` (the one command that repeats a run), `bench/agentpii5/quarantine.py` (cases unstable at ALL arms — a defect of the CASE; it prints and never marks). One `test_*.py` per module, each a script with `main()`; imports `bench/agentpii4/` and never edits it | `bench/agentpii5/contracts.py` | `docs/tz-agentpii5.md`, `wiki/BENCHMARK.md`, `research/2026-09-22-toolresult-derisk.md` |
+| `bench/agentpii5/` | `live` | v5 «tool-result-first, форма на каждом хопе, живой агент»: a value's FORM is compared at every hop it crosses (`Hop`, `HopObservation`), not once at the tool. Contracts and rules: `bench/agentpii5/contracts.py` (hops, `CaseV5`, `ToolSpecV5`, form features, metric `Line`s + the refuse-to-report gate, judge I/O, the v4-vs-v5 side-by-side), `bench/agentpii5/schema.py` (R01–R23 per case, K01–K15 per corpus, the corpus snapshot), `bench/agentpii5/pii_types.py` (v6 type registry — `TypeSpec`, `TYPE_REGISTRY`, rules T1–T8; the one home of the type tables), `bench/agentpii5/contracts_v6.py` (`INDUSTRIES`, `V6_AXES`, `V6_PROVENANCE_KINDS`, `CaseV6Meta`), `bench/agentpii5/RULINGS.md` (the architect's decisions the builders were held to), `bench/agentpii5/CHECKLIST.md` (191 conformance items), `bench/agentpii5/briefs/` (one brief per component). Tools and backend: `bench/agentpii5/tools.py` (43 tools over 11 verticals, 8 return forms), `bench/agentpii5/mock.py` (the seeded CRM the three arms share). Form: `bench/agentpii5/form.py` + `bench/agentpii5/form_tables.py` (`form_match` per type and feature, with the ABSTAIN rule). Corpus: `bench/agentpii5/scenarios5/` (`bench/agentpii5/scenarios5/common.py` the builder, `bench/agentpii5/scenarios5/plan_a.py` / `bench/agentpii5/scenarios5/plan_b.py` the two halves, one module per behaviour — `retry_same_tool`, `same_tool_other_target`, `sequential_chain`, `parallel`, `fanout_pick`, `branching`, `user_in_loop`, `memory_anaphora`, `rag`, `document`), `bench/agentpii5/revise.py` (v4's 834 cases given a behaviour and hops, bytes untouched), `bench/agentpii5/build.py` (assemble, check, freeze the ladder). Run: `bench/agentpii5/harness.py` (one of the two modules that import `pseudex` — the gateway arm is the production path), `bench/agentpii5/regress_print.py` (the same path offline, no model — the G4/L9 product-path printer), `bench/agentpii5/records.py` (every run file, both ways), `bench/agentpii5/judge.py` + `bench/agentpii5/calibration.py` (the blind judge and its κ stamp). Read-back: `bench/agentpii5/observe.py`, `bench/agentpii5/metrics.py`, `bench/agentpii5/fixtures.py` (three fixtures per metric, one adversarial), `bench/agentpii5/report.py` (the side-by-side, refused metrics named), `bench/agentpii5/reportjson.py` (the same report as one versioned machine schema), `bench/agentpii5/live.py` (real-time watch face, engine-free; `--latest`/`--once`/`--web` — terminal or an HTTP page at `http://host:port/`). Acceptance: `bench/agentpii5/perfect.py` + `bench/agentpii5/test_perfect.py` — a PERFECT gateway must clear every bounded line and four WRONG ones must fail them, on the whole corpus; an instrument that cannot fail is not an instrument. The harness as a tool (`docs/tz-bench-harness.md`, D-066): `bench/agentpii5/runinfo.py` (the estimate before a dollar, the run registry the runs write themselves, and the refusal that keeps a key or a corpus value out of it), `bench/agentpii5/provider.py` (what answered and what masked, with prices and key NAMES), `bench/agentpii5/compare.py` (any run against any other, case by case, with the cluster bootstrap), `bench/agentpii5/microscope.py` (one case whole, no model and no spend), `bench/agentpii5/trend.py` (the runs by date), `bench/agentpii5/repro.py` (the one command that repeats a run), `bench/agentpii5/quarantine.py` (cases unstable at ALL arms — a defect of the CASE; it prints and never marks). One `test_*.py` per module, each a script with `main()`; imports `bench/agentpii4/` and never edits it; the base gateway exposes one no-op request-capture hook so v5 records the exact existing mask result without another mask pass | `bench/agentpii5/contracts.py` | `docs/tz-agentpii5.md`, `wiki/BENCHMARK.md`, `research/2026-09-22-toolresult-derisk.md` |
+| `bench/agentpii5/payload_canaries.py` | `live` | Case-declared S02 canary manifest with raw-payload placement, exact model-request snapshots and boundary scan; missing, duplicate and oversized captures or missing I-arm rows are `NOT_MEASURED`, never a clean result. `bench/agentpii5/test_payload_canaries.py` pins the scanner and `bench/agentpii5/test_payload_canary_integration.py` pins the gateway capture seam. Saved 450 runs have no manifest and remain unmeasured. | `bench/agentpii5/payload_canaries.py` | `docs/plan-hop-form-before-450.md`, `research/hop-format-audit/PROGRESS.md` |
+| `bench/agentpii5/test_spike_e.py` | `live` | Класс Е of the hop-format sprint: the OUT leaf funnel answers ONE fact per status (`observed` / `residual` / `engine_kept` / `not_masked` / `leaf_foreign` / `absent` — `unmasked` used to be three of them at once), the strict headline denominators stay the corpus's and the engine's honest share is published BESIDE them (`end_to_end_written` + the `out_*` counts), `optional` is read off the LEAF and off the generic role (`GENERIC_PIECE_ROLES`), and a declared hop is satisfied by the semantically equal leaf the run really wrote (`contracts.LEAF_EQUIVALENCE`, an AUTHORED table, never a guess off a tool name). Runs the real observer and the real metric functions on hand-built records, no model and no network. | `bench/agentpii5/test_spike_e.py` | `research/hop-format-audit/SPIKE-Е.md`, `research/hop-format-audit/DECISIONS-SPRINT.md` |
+| `bench/agentpii5/test_spike_zh.py` | `live` | Класс Ж of the hop-format sprint: the VALUE question («did this leaf receive THAT value») is answered by ONE table (`contracts.VALUE_NORMALISERS`) through ONE predicate (`observe.values_equal`) with three thin callers (`metrics.value_matches`, `observe.part_matches`, `revise._same_value` — a third copy that had already drifted); NAME compares as a multiset of parts, LOC by the roles street/house/flat, PLATE squeezed, the digital documents by digits, a date by ISO, and PHONE by the last ten digits **plus the prefix class** (the one place the value line deliberately does not reduce to the needle layer: `+1…` ≠ `+7…`); `script` is the ALPHABET and `translit` the ROMANIZATION SYSTEM, abstaining on `latin:unknown`; and the tool schema is the authoritative notation marker (`tools.LEAF_NOTATION`, proved against each leaf's own parser by rule V08) while the value line stays notation-blind. Runs the real comparator on hand-built pairs — no model, no network, no engine. | `bench/agentpii5/test_spike_zh.py` | `research/hop-format-audit/SPIKE-Ж.md`, `research/hop-format-audit/DECISIONS-SPRINT.md` |
 | `bench/agentrun/` | `live` | paired runs on BFCL tasks with injected Russian PII (`bench/inject_ru_pii.py`): did putting Pseudex in the path cost anything; `bench/agentrun/gpu/` + `bench/agentrun/GPU.md` for a local model | — | `bench/agentrun/GPU.md` |
 | `bench/fragments/` | `live` | **Б29: переписывает ли возврат числа, которых шлюз не подменял, и возвращает ли он те, что подменял.** Прибор меряет ОБЕ стороны и ни одна не главнее: «наше не вернулось» (делится на видимое и ТИХОЕ) против «чужое переписано» (молчит всегда). Режет по поверхности (аргумент · проза · поток · обратный прокси), по области (разговор назван · не назван · `pseudonym_scope=customer`) и по НАПОЛНЕННОСТИ хранилища — дефект арифметический, и на пустом волте его не видно. Чужие числа строятся так, чтобы столкновение с цифрами выданных подмен было неизбежным, а не случайным. Предшественники (инструменты ложных тревог пятого захода по адресам) слали подмену дословно и поля порознь, поэтому показывали ноль там, где было 12 из 12 молчащих потерь. Модели не зовёт, денег не тратит: агента имитирует скрипт, движок настоящий, путь продуктовый | — | `docs/known-issues.md` (Б29) |
 | `bench/gate/` | `frozen` | the ceiling of the dictionary gate: 600 hand-labelled OCCURRENCES pinned to a snapshot; the live detector re-runs and prints MOVEMENT | `bench/gate/labels.json` | `bench/gate/README.md` |
 | `bench/voice/` | `frozen` | real taxi-dispatch transcripts (RuDevices), addresses hand-labelled in two strata (400 marker-carrying + 250 of 4 805 number-only; weight the second 250/4805); `bench/voice/score.py` filters to LOC | `~/.cache/pseudex-bench/rudevices_addresses.json` | `bench/voice/README.md` |
 | `bench/runs/` | `frozen` | measurement outputs by date (2026-09-01 … ); `README.md` says what each run answered. Never edit. | — | `bench/runs/README.md` |
+
+### 4.1.1 AgentPII-RU v6 — the new modules in `bench/agentpii5/`
+
+v6 (`branch bench/agentpii6`) is built **inside** the `bench/agentpii5/` package,
+mirroring v5 and importing it; it does not replace v5. The 55-type registry that
+was one table in `bench/agentpii5/pii_types.py` is now split across
+`bench/agentpii5/pii_types_a.py` / `bench/agentpii5/pii_types_b.py` /
+`bench/agentpii5/pii_types_c.py` (`GROUP_A`/`GROUP_B`/`GROUP_C`, re-assembled by
+`bench/agentpii5/pii_types.py` into `TYPE_REGISTRY`). Spec `docs/tz-agentpii6.md`, registry
+`docs/tz-agentpii6-registry.md`. `Uses` / `Used by` are the real import edges
+inside `bench/`; the v5 modules that gained a v6 branch are listed at the end.
+
+#### `bench/agentpii5/contracts_v6.py` — 331 lines · `live`
+The v6 tables that are NOT about PII types: the axis vocabulary (`INDUSTRIES`,
+`V6_AXES`, `V6_PROVENANCE_KINDS`), `CaseV6Meta` (what `CaseV5.v6` carries),
+`ProcedureRecord`, `V6_DIR`, the v6 negative families and `neg_value`. Pure and
+self-contained — imports nothing from `contracts`/`pseudex`/`licensing`;
+`bench/agentpii5/contracts.py` imports IT, never the reverse.
+- **API:** `INDUSTRIES`, `V6_PROVENANCE_KINDS`, `ProcedureRecord`, `CaseV6Meta`, `V6_AXES`, `V6_DIR`, `V6_NEGATIVE_FAMILIES`, `neg_value`
+- **Uses:** — · **Used by:** contracts, build_v6, scenarios6/build_full
+- **Tests:** test_contracts_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/pii_types_a.py` — 396 lines · `live`
+`GROUP_A`, the first third of the v6 `TypeSpec` registry — one `TypeSpec` per
+v6 type, imported by `bench/agentpii5/pii_types.py` (which re-assembles
+`TYPE_REGISTRY`). Split out of `bench/agentpii5/pii_types.py` so each type table
+stays one definition.
+- **API:** `GROUP_A`
+- **Uses:** pii_types · **Used by:** pii_types
+- **Tests:** via pii_types → test_pii_types
+- **Docs:** `docs/tz-agentpii6-registry.md`
+
+#### `bench/agentpii5/pii_types_b.py` — 360 lines · `live`
+`GROUP_B`, the second third of the v6 `TypeSpec` registry.
+- **API:** `GROUP_B`
+- **Uses:** pii_types · **Used by:** pii_types
+- **Tests:** via pii_types → test_pii_types
+- **Docs:** `docs/tz-agentpii6-registry.md`
+
+#### `bench/agentpii5/pii_types_c.py` — 538 lines · `live`
+`GROUP_C`, the last third of the v6 `TypeSpec` registry.
+- **API:** `GROUP_C`
+- **Uses:** pii_types · **Used by:** pii_types
+- **Tests:** via pii_types → test_pii_types
+- **Docs:** `docs/tz-agentpii6-registry.md`
+
+#### `bench/agentpii5/checksum_v6.py` — 397 lines · `live`
+The v6 checksum validators — IMEI, OMS/ENP, ICCID, bank account/IBAN (CBR 515),
+ОГРНИП, ЭПТС, УИН, VIN, loyalty card, ICAO-731 international passport, S10
+track, GS1. `validate(type_id, value)` is the one entry point every consumer
+calls.
+- **API:** `validate`, `validate_luhn`, `validate_imei`, `validate_oms_enp`, `validate_iccid`, `validate_account`, `validate_iban`, `validate_ogrnip`, `validate_epts_number`, `validate_uin`, `validate_vin`, `validate_intl_passport`, `validate_loyalty_card_number`, `validate_s10_track`
+- **Uses:** — · **Used by:** tools_v6, metrics, perfect, report, integrate_v6
+- **Tests:** test_checksum_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/gen_v6.py` — 728 lines · `live`
+The deterministic v6 value mint: `generate(type_id, seed)` builds a
+checksum-VALID value from the seed — never a search of a finished string (the
+R6-26 discipline). ~50 private `_gen_*` minters, one per type.
+- **API:** `generate`, `vin_is_russian_wmi`
+- **Uses:** pii_types · **Used by:** tools_v6, integrate_v6, scenarios6/common6, scenarios6/build_full
+- **Tests:** test_gen_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/form_v6.py` — 308 lines · `live`
+The v6 form-feature extractors and `FEATURE_EXTRACTORS`; `bench/agentpii5/form.py` unpacks the
+whole table into the v5 form matcher (`form_v6.FEATURE_EXTRACTORS`) so the v6
+types get a `form_match` with no second copy.
+- **API:** `separators`, `case_class`, `script`, `by_fields`, `padding`, `notation`, `FEATURE_EXTRACTORS`
+- **Uses:** contracts, pii_types · **Used by:** form
+- **Tests:** via form → test_form_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/tools_v6.py` — 4 098 lines · `live`
+The v6 tool registry: `TOOLS_V6` (78 `ToolSpecV5` over the v6 verticals with
+exact producer/consumer fields), `V6_META` (a `V6ToolMeta` per tool),
+`UNSCHEMED_TOOLS`.
+- **API:** `V6ToolMeta`, `TOOLS_V6`, `V6_META`, `UNSCHEMED_TOOLS`
+- **Uses:** checksum_v6, gen_v6, contracts · **Used by:** schema_v6, build_v6, mock_v6, scenarios6/common6, scenarios6/build_full
+- **Tests:** test_tools_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/mock_v6.py` — 1 425 lines · `live`
+The v6 seeded backend the arms share: `BackendV6` (extends `BackendV5`),
+`seed_backend_v6`, `call_v6`, `call_arguments_v6`, `drive_v6`,
+`render_problems_v6`.
+- **API:** `BackendV6`, `seed_backend_v6`, `call_v6`, `call_arguments_v6`, `drive_v6`, `render_problems_v6`, `V6_SPECS`, `V6_NAMES`, `UNSCHEMED_NAMES`
+- **Uses:** contracts, metrics, mock, tools_v6 · **Used by:** build_v6
+- **Tests:** test_mock_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/schema_v6.py` — 786 lines · `live`
+The v6 corpus rules (K6-01…K6-22): type/industry/register floors,
+`merged_registry` (v5+v6 tools), `validate_corpus_v6`, `type_floor_table`,
+`PILOT_INDUSTRIES`.
+- **API:** `FLOORS`, `PILOT_INDUSTRIES`, `REGISTER_SHARES_V6`, `INDUSTRY_WEIGHTS`, `merged_registry`, `type_floor_table`, `validate_corpus_v6`
+- **Uses:** contracts, pii_types, tools, tools_v6 · **Used by:** build_v6, integrate_v6, scenarios6/plan_v6, scenarios6/build_full
+- **Tests:** test_schema_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/build_v6.py` — 453 lines · `live`
+Assemble, check and freeze the v6 corpus and ladder: `build_ladder_v6`,
+`draw_holdout_v6`, `stratified_order_v6`, `write_corpus`, `write_ladder_v6`,
+`proof_v6` (the L8 unprovable → 0 gate), `main`.
+- **API:** `stratified_order_v6`, `draw_holdout_v6`, `build_ladder_v6`, `ladder_problems_v6`, `write_corpus`, `write_ladder_v6`, `proof_v6`, `main`
+- **Uses:** contracts_v6, mock_v6, pii_types, contracts, schema, schema_v6, tools_v6 · **Used by:** integrate_v6, scenarios6/build_full
+- **Tests:** test_build_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/integrate_v6.py` — 636 lines · `live`
+The v6 integration report and acceptance (G1): `measure` (single-arm metrics),
+`MUTANTS` (12 wrong-gateway mutants the metrics must fail), `build_report`,
+`dry_run_cost`, `regress_section`, `main`.
+- **API:** `measure`, `MUTANTS`, `l1_section`, `l7_section`, `l8_section`, `l9_section`, `dry_run_cost`, `regress_section`, `build_report`, `main`
+- **Uses:** build_v6, checksum_v6, contracts, gen_v6, metrics, observe, perfect, pii_types, form_tables, schema, schema_v6, scenarios6/common6, scenarios6/build_full · **Used by:** — (entry point)
+- **Tests:** test_integration_v6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/regress_print.py` — 192 lines · `live`
+The offline product-path printer for the v6 corpus (no model, no spend): the
+same masking path as the gateway arm — one of the two modules that import
+`pseudex` (vault, audit, detect_all, maskcache) plus `harness.GatewayV5`. Run
+`python3 -m bench.agentpii5.regress_print`.
+- **API:** `main`
+- **Uses:** pseudex (vault, audit, detect_all, maskcache), contracts, harness, mock, schema, testkit · **Used by:** — (entry point)
+- **Tests:** test_pii_types (R6-42), test_cli
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/scenarios6/__init__.py` — 9 lines · `live`
+The v6 case-family package — one module per behaviour of `contracts.BEHAVIOURS`
+that v6 authors anew. Mirrors v5, does not replace it.
+- **Used by:** integrate_v6, test_scenarios6, test_scenarios6_plan (import the submodules)
+
+#### `bench/agentpii5/scenarios6/common6.py` — 472 lines · `live`
+What every v6 family shares: `CaseBuilderV6` (HOLDS a v5 `CaseBuilderV5`, adds
+`CaseV6Meta` + `gen_v6.generate`), `PROCEDURES`/`procedure_records`, the
+`bench/agentpii5/v6/skeletons.json` loader, `v6_parts`/`v6_rendered`, and the family entry points
+(`single_case`, `sequential_chain_case`, `memory_anaphora_case`).
+- **API:** `CaseBuilderV6`, `new_builder_v6`, `procedure_records`, `load_skeletons`, `skeleton_ids`, `v6_parts`, `v6_rendered`, `single_case`, `sequential_chain_case`, `memory_anaphora_case`
+- **Uses:** gen_v6, pii_types, contracts, tools, tools_v6, scenarios5/common · **Used by:** scenarios6/build_full, integrate_v6
+- **Tests:** test_scenarios6
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/scenarios6/plan_v6.py` — 236 lines · `live`
+The deterministic 500-case allocation (`PlanRow`, `PLAN_V6`): every admitted
+type in 34 distinct cases, the industry axis steered toward `INDUSTRY_CASES`,
+the `sequential_chain` pairs.
+- **API:** `PlanRow`, `PLAN_V6`, `INDUSTRY_CASES`, `CHAIN_PAIRS`, `plan_type_table`, `plan_industry_table`, `main`
+- **Uses:** contracts, pii_types, schema_v6 · **Used by:** scenarios6/build_full
+- **Tests:** test_scenarios6_plan
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/scenarios6/build_full.py` — 803 lines · `live`
+Instantiate every `plan_v6.PlanRow` into a `CaseV5` (`Recipe`, `RECIPES`,
+`CHAIN_SPECS`, `build_full`); the value source is always `gen_v6.generate`,
+never a search of a finished string.
+- **API:** `Recipe`, `RECIPES`, `CHAIN_SPECS`, `build_full`, `main`
+- **Uses:** build_v6, contracts_v6, gen_v6, pii_types, schema_v6, contracts, scenarios5/common, scenarios6/plan_v6, scenarios6/common6, tools_v6 · **Used by:** integrate_v6
+- **Tests:** test_scenarios6_plan
+- **Docs:** `docs/tz-agentpii6.md`
+
+#### `bench/agentpii5/v6/` — the generated v6 corpus and ladder · `generated`
+`bench/agentpii5/v6/corpus.v5.json` (the 500-case v6 corpus in the v5 shape),
+`bench/agentpii5/v6/corpus.json`, `bench/agentpii5/v6/ladder.json`
+(nano/small/medium/pool/max tiers), `bench/agentpii5/v6/denylist.json`, and
+`bench/agentpii5/v6/skeletons.json` (the authored skeleton registry `common6`
+loads). Written by `bench/agentpii5/build_v6.py`; never edit by hand.
+
+#### The v6 test files · `live`
+
+| test | pins |
+|---|---|
+| `bench/agentpii5/test_checksum_v6.py` | `checksum_v6` — every v6 validator on valid + broken values |
+| `bench/agentpii5/test_gen_v6.py` | `gen_v6` — minted values pass checksum_v6/pii_types |
+| `bench/agentpii5/test_form_v6.py` | `form_v6` via `form` — the v6 form features |
+| `bench/agentpii5/test_observe_v6.py` | `observe`'s v6 branch — IPv6 types and `survives_in` |
+| `bench/agentpii5/test_tools_v6.py` | `tools_v6` — producer/consumer fields, forms |
+| `bench/agentpii5/test_mock_v6.py` | `mock_v6` — the v6 seeded backend |
+| `bench/agentpii5/test_schema_v6.py` | `schema_v6` — the K6 corpus rules |
+| `bench/agentpii5/test_build_v6.py` | `build_v6` — build/check/freeze the ladder |
+| `bench/agentpii5/test_metrics_v6.py` | `metrics`' v6 branch — `V6_METRIC_FUNCTIONS` |
+| `bench/agentpii5/test_perfect_v6.py` | `perfect`'s v6 branch — `mint_v6` |
+| `bench/agentpii5/test_report_v6.py` | `report`'s v6 branch — the v6 axes/rows |
+| `bench/agentpii5/test_judge_v6.py` | `judge`'s v6 branch — `_V6_SPECS` |
+| `bench/agentpii5/test_calibration_v6.py` | `calibration`'s v6 branch — new v6 item types |
+| `bench/agentpii5/test_scenarios6.py` | `bench/agentpii5/scenarios6/common6.py` — the family builder |
+| `bench/agentpii5/test_scenarios6_plan.py` | `bench/agentpii5/scenarios6/plan_v6.py` + `bench/agentpii5/scenarios6/build_full.py` |
+| `bench/agentpii5/test_integration_v6.py` | `integrate_v6` — the G1 acceptance |
+| `bench/agentpii5/test_contracts_v6.py` | `contracts_v6` — the axis tables |
+
+#### The v5 modules that gained a v6 branch
+`bench/agentpii5/form.py` (imports `form_v6`, unpacks `form_v6.FEATURE_EXTRACTORS`),
+`bench/agentpii5/observe.py` (`IPV6_TYPES`, `_is_ipv6`, `_ipv6_spans`),
+`bench/agentpii5/metrics.py` (`V6_AXES`, `V6_METRIC_FUNCTIONS`, `_v6_value_matches`),
+`bench/agentpii5/perfect.py` (`mint_v6`, `_v6_checksum_valid`),
+`bench/agentpii5/fixtures.py` (`V6_FIXTURES`), `bench/agentpii5/report.py`
+(`has_v6_case`, `v6_axis_rows`, `v6_new_row_lines`), `bench/agentpii5/judge.py`
+(`_V6_SPECS`), `bench/agentpii5/calibration.py` (samples the new v6 item types,
+`origin == "v6"`), `bench/agentpii5/records.py` (`CaseV5.v6` omitted at None — a
+v5 record stays byte-for-byte), `bench/agentpii5/harness.py` (reached by
+`regress_print`'s product path, `GatewayV5`), `bench/agentpii5/build.py` (reached
+by `bench/agentpii5/report.py`'s v6 path, `run_provenance`).
 
 ### 4.2 Evals on corpora we did not write
 
@@ -658,6 +1001,8 @@ live**; v1–v3 stay for the numbers cited from them and are not developed.
 | `bench/build_name_dicts.py` | — | extracted the name dictionaries into `licensing/data/` (one-off) |
 | `bench/run_all.py`, `bench/summarize_run.py` | — | the whole battery in one run; headline numbers of one run into one document |
 | `bench/public_row.py` | — | produces OUR own row in the public benchmark the way anybody else's is made: starts a real sidecar and runs the PUBLIC harness against it over HTTP, so nothing of the engine reaches the benchmark but its endpoint answers. Also prints the corpus-name overlap our leased gazetteers already hold, which the benchmark itself cannot see |
+| `bench/identity_invariant.py` | — | the identity invariant per PII type: one person/address/phone written in several forms (case/order/dictation, flat/entrance, patronymic, +7 vs 8) collapses to ONE substitute; no model, no network |
+| `bench/edge_case_stress.py` | — | the edge-case stress test (66 checks): form transformations, mutable parts, collisions, round-trip robustness across all PII types; 65/66 green, the one remaining (A9) is an instrument reader defect; no model, no network |
 
 ---
 

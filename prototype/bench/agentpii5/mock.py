@@ -52,10 +52,12 @@ from bench.agentpii5.contracts import (ACTING_OUT_OWNERS, ECHO_TAG_PREFIX,
                                        PIECE_MIN_CHARS, PIECE_MIN_DIGITS, CaseV5,
                                        ForcedError)
 # V05 (`_transition_problems`) asks the question the RUN will ask, so it asks it
-# with the run's own comparator rather than a second one written here: two folds
+# with the run's own predicate rather than a second one written here: two folds
 # for «the same value» would have to stay equal for ever, and the one that
 # drifted would let the build prove a hand-over the metric then scores as broken.
-from bench.agentpii5.metrics import role_matches
+# Before class Ж this import was `role_matches`, because `leaf_value_ok` had a
+# byte-comparing role-less branch; one predicate now serves both.
+from bench.agentpii5.metrics import leaf_value_ok
 from bench.agentpii5.tools import (NEW_REGISTRY, csv_row_path, expected_leaf_value,
                                    field_at, spec_v5_for)
 
@@ -1198,11 +1200,12 @@ class BackendV5(Backend):
         """A document as running prose.
 
         CSV ROWS ARE JOINED WITH « | », NOT WITH A NEWLINE, and that is a
-        constraint of the instrument rather than of JSON: `writer._escape_free`
-        refuses a control character inside a slot, because an escaped value no
-        longer equals the span that was laid down for it. A document read as
-        TEXT is therefore one line; a document read as a TABLE comes back as
-        `file_read`'s `list` form, with a row per record and no joining at all."""
+        constraint of the instrument rather than of JSON: a composed string's
+        inner spans are laid down in SOURCE-character offsets and `writer` now
+        escapes a newline as two bytes, so a newline inside a composed slot would
+        shift every span laid after it. A document read as TEXT is therefore one
+        line; a document read as a TABLE comes back as `file_read`'s `list` form,
+        with a row per record and no joining at all."""
         fmt = str(record.fields.get("format", "free_text"))
         rng = random.Random(f"scan:{record.id}") if fmt == "scan" else None
         # WHAT `doc_append` WROTE IS PART OF THE DOCUMENT FROM THEN ON, which is
@@ -2557,12 +2560,15 @@ def _transition_problems(case: CaseV5,
     answer) whose source is an IN/tool hop of ANOTHER tool. A rule wider than
     the line it protects would refuse cases no line ever scores.
 
-    THE FOLD IS `role_matches`, THE TYPE-AWARE HALF OF THE RUN'S COMPARATOR,
-    and not `leaf_value_ok`: its no-role branch compares byte for byte, so a
-    phone the source printed as «+7 (925) 634-55-93» against the canonical
-    «+79256345593» would be refused here although it is the same number — the
-    build would delete a sound transition to pay for a defect of the metric,
-    which is the opposite of a proof.
+    THE FOLD IS THE RUN'S OWN PREDICATE, `metrics.leaf_value_ok` (SPIKE-Ж,
+    Ж-5). It used to be `role_matches` BECAUSE `leaf_value_ok`'s role-less
+    branch compared byte for byte — so the build carried a private bypass of the
+    very metric it exists to protect, and a phone the source printed as
+    «+7 (925) 634-55-93» against the canonical «+79256345593» would have been
+    refused although it is the same number. Since class Ж there is one predicate
+    (`observe.values_equal` over `contracts.VALUE_NORMALISERS`), the bypass has
+    no reason left, and a build rule that is not the metric could only drift
+    from it.
     """
     problems: list[str] = []
     tag = case.base.id
@@ -2590,7 +2596,7 @@ def _transition_problems(case: CaseV5,
                             f"{hop.path}, which asks for the {role!r} of {item.id}, "
                             f"and the item has no such part")
             continue
-        if not role_matches(item.type, rendered, wanted):
+        if not leaf_value_ok(item, hop.tool_name, hop.path, rendered):
             problems.append(f"V05 {tag}: hop {hop.hop_index} takes {item.id} for "
                             f"{hop.tool_name}.{hop.path} from hop {source.hop_index}, but "
                             f"{source.tool_name}#{source.call_ordinal} renders {rendered!r} "

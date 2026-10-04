@@ -33,6 +33,7 @@ from types import ModuleType
 
 from bench.agentpii5 import contracts
 from bench.agentpii5.contracts import FIELD_SEP as SEP
+from bench.agentpii5.pii_types import TYPE_REGISTRY
 
 Pair = tuple[str, str, str, frozenset[str]]
 
@@ -67,7 +68,13 @@ def _pairs() -> tuple[Pair, ...]:
         ("NAME", "Иванов П.", "Иванов Пётр", frozenset({"initials"})),
         ("NAME", "Иванов П.С.", "Иванов Пётр", frozenset({"initials"})),
         ("NAME", "Ivanov Petr", "Иванов Пётр", frozenset({"script"})),
-        ("NAME", "Petrov Iurii", "Petrov Yuriy", frozenset({"script"})),
+        # TWO ROMANIZATION SYSTEMS ARE A REAL DIFFERENCE AND IT IS `translit`
+        # THAT NAMES IT (SPIKE-Ж, Ж-5): «Iurii» is ICAO and «Yuriy» is BGN, both
+        # concrete labels, and the feature they belong to is no longer `script`
+        # (which answers the ALPHABET — here `latin` on both sides). The pair
+        # above is the other case: ONE side is not a romanization at all, so
+        # `translit` abstains on `latin:unknown` and only `script` differs.
+        ("NAME", "Petrov Iurii", "Petrov Yuriy", frozenset({"translit"})),
         ("NAME", "Иванов-Петров Пётр", "Иванов Пётр", frozenset({"hyphen_particle"})),
         # A particle is written lower case in Russian, so it moves
         # `case_class` too — the expectation says so rather than being
@@ -613,12 +620,13 @@ def test_nothing_is_not_a_form(form: ModuleType) -> list[str]:
     stated reason and not by accident, so the set is the type's WHOLE feature
     list rather than whichever subset an extractor stumbled into."""
     failures: list[str] = []
+    # The one non-empty value per type is the registry's OWN sample (F.5): the
+    # hardcoded v5-only dict here stopped being the closed list the moment the
+    # v6 records joined `FORM_FEATURES`, and a type left out would KeyError on
+    # the very next line rather than refuse an empty side.
+    samples = {record.id: record.sample for record in TYPE_REGISTRY}
     for kind, features in contracts.FORM_FEATURES.items():
-        lettered = {"NAME": "Иванов Пётр", "PHONE": "+7 916 402-11-87",
-                    "LOC": "улица Ленина, 14", "DOB": "14.03.1987", "DATE": "14.03.1987",
-                    "EMAIL": "ivan@mail.ru", "CARD": "4276 3800 1234 5678",
-                    "SNILS": "112-233-445 95", "INN": "770708389915",
-                    "PASSPORT": "4510 123456", "PLATE": "А123ВС77"}[kind]
+        lettered = samples[kind]
         for empty in ("", "   "):
             verdict = form.form_match(kind, empty, lettered)
             if verdict.same:

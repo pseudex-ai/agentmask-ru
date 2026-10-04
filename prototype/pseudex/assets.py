@@ -41,9 +41,24 @@ class BundleNotLeased(RuntimeError):
 class NameAssets:
     dict_first: frozenset[str]
     dict_surnames: frozenset[str]
+    # THE SAME TWO DICTIONARIES, READ LATIN. Derived here rather than shipped:
+    # the transliteration table is already in the lease, so the Latin reading is
+    # a pure function of it and of the Cyrillic bulk — shipping it would put the
+    # same facts in the bundle twice and let the two drift apart. The engine
+    # «knew» «Кукушкин» and did not know `Kukushkin`, and the evidence lived in
+    # the wrong place: the Latin branch was positional (`_LATIN_PAIR_RE`) over a
+    # 641-entry seed, while the surname itself sat in `dict_surnames` (196 800).
+    latin_first: frozenset[str]
+    latin_surnames: frozenset[str]
     name_set: frozenset[str]
     ambiguous: frozenset[str]
     cues: tuple[str, ...]
+    # Предлоги, вводящие ЧЕЛОВЕКА («от», «к», «у», «для»), — второй сигнал
+    # строчной фамилии, потерявшей заглавную. Арендуются, как и `cues`.
+    anchor_preps: tuple[str, ...]
+    # …и они же, скомпилированные ВПЛОТНУЮ перед словом: один раз на бандл, не
+    # на каждое слово сообщения.
+    anchor_re: re.Pattern[str]
     bio_cues: tuple[str, ...]
     never_cues: tuple[str, ...]
     stopwords: frozenset[str]
@@ -56,6 +71,13 @@ class NameAssets:
 @dataclass(frozen=True)
 class AddressAssets:
     street_gaz: frozenset[str]
+    # Real settlements pymorphy reads only as a surname (no `Geox`) — «одоев»,
+    # «венёв», «белёв». The ONLY evidence the lowercase settlement variant has,
+    # and read only where an address structure (a street-type word or a settlement
+    # marker) licenses it: a word on this list is a settlement in an address and a
+    # surname elsewhere («фамилия одоев» stays a person). Same shape as
+    # `street_gaz`, kept apart because the two lists gate different roles.
+    settlement_gaz: frozenset[str]
     # The ГАР street vocabulary, lower-cased. A SEPARATE field from
     # `street_gaz` and never merged into it: `street_gaz` is nineteen
     # hand-tuned words and is the ONLY evidence the lower-case marker-less arm
@@ -118,6 +140,14 @@ class AddressAssets:
     # never on morphology — the capital is the missing signal and a
     # generalising gate would put it back the wrong way.
     markerless_lower: re.Pattern[str]
+    # Строчная улица БЕЗ дома и БЕЗ слова-типа: «адрес репина», «на
+    # бибиревская». Номер дома — единственный сигнал, державший предыдущие
+    # строчные ветки; здесь его нет, и роль решают ЯКОРЬ и морфология в
+    # `address.py` (ни то, ни другое регуляркой не выражается).
+    street_nohouse_bare: re.Pattern[str]
+    # Местный предлог ВПЛОТНУЮ — «на»/«по». Не весь `prep_before`: «в» и «у»
+    # вводят обстоятельство и владельца и адресной роли не дают.
+    street_nohouse_prep: re.Pattern[str]
     addr_ctx: re.Pattern[str]
     prep_before: re.Pattern[str]
     numbered_st: re.Pattern[str]
@@ -179,12 +209,30 @@ class ContextAssets:
     place_ref: tuple[str, ...]
     version_ctx: tuple[str, ...]
     org_cue: frozenset[str]
+    personnel_cue: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CompositeType:
+    """РОДИТЕЛЬСКИЙ КЛЮЧ ТИПИЗУЕТ ДЕТЕЙ, и здесь описано КАК.
+
+    `roles` переводит слово поля в роль части документа (series/number), `order`
+    называет порядок частей — тождество документа, а не деталь оформления,
+    `lengths` — сколько цифр несёт часть, по ним подмена раскладывается обратно
+    по полям и листья складываются в целое на восстановлении, `required` — без
+    каких частей объекта нет. Всё это leased TUNING: тип уже в `KEY_TYPE`, не
+    хватало карты частей."""
+    roles: dict[str, str]
+    order: tuple[str, ...]
+    lengths: dict[str, int]
+    required: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class StructuredAssets:
     key_type: dict[str, str]
     key_stems: tuple[tuple[str, str], ...]
+    composites: dict[str, CompositeType]
 
 
 @dataclass(frozen=True)
@@ -260,6 +308,7 @@ def _build_names(raw: dict[str, object]) -> NameAssets:
 
     name_set = set(seed) | set(diminutives)
     name_set |= {_translit(name, translit_table) for name in name_set}
+    anchor_preps = tuple(raw.get("anchor_preps", ()))
 
     # Seed names that are ALSO ordinary Russian words: вера, роман, любовь,
     # надежда. Matching those in any case masked `вера в успех` and `начнём роман
@@ -273,9 +322,22 @@ def _build_names(raw: dict[str, object]) -> NameAssets:
     return NameAssets(
         dict_first=frozenset(raw["dict_first"]),
         dict_surnames=frozenset(raw["dict_surnames"]),
+        # ONE TABLE, TWO SCRIPTS. `_translit` is the same function that already
+        # reads a seed name in Latin, applied to the bulk; it costs ~0.14 s once
+        # per lease and removes the position dependency as a CLASS — `Kukushkin
+        # Valeriy`, `Kukushkin`, `Fomin Vyacheslav` are no longer distinguishable
+        # by mechanism.
+        latin_first=frozenset(
+            _translit(name, translit_table) for name in raw["dict_first"]),
+        latin_surnames=frozenset(
+            _translit(name, translit_table) for name in raw["dict_surnames"]),
         name_set=frozenset(name_set),
         ambiguous=ambiguous,
         cues=tuple(raw["cues"]),
+        anchor_preps=anchor_preps,
+        anchor_re=re.compile(
+            r"(?i)\b(?:" + "|".join(re.escape(p) for p in anchor_preps) + r")\s+$")
+        if anchor_preps else re.compile(r"(?!)"),
         bio_cues=tuple(raw["bio_cues"]),
         never_cues=tuple(raw["never_cues"]),
         stopwords=frozenset(raw["stopwords"]),
@@ -296,6 +358,7 @@ def _build_address(raw: dict[str, object], months: list[str]) -> AddressAssets:
     compiled = {name: re.compile(source) for name, source in raw["patterns"].items()}
     return AddressAssets(
         street_gaz=frozenset(raw["street_gaz"]),
+        settlement_gaz=frozenset(raw["settlement_gaz"]),
         street_names=frozenset(raw["street_names"]),
         street_frequent=frozenset(raw["street_frequent"]),
         street_phrases=frozenset(raw["street_phrases"]),
@@ -396,11 +459,22 @@ def _build_fakes(raw: dict[str, object]) -> FakeAssets:
     )
 
 
+def _build_structured(raw: dict[str, object]) -> StructuredAssets:
+    key_stems = tuple((str(key), str(value)) for key, value in raw["key_type"])
+    composites: dict[str, CompositeType] = {}
+    for entity_type, spec in (raw.get("composite_types") or {}).items():
+        roles = {word: role for role, words in spec["roles"].items() for word in words}
+        composites[str(entity_type)] = CompositeType(
+            roles=roles,
+            order=tuple(str(role) for role in spec["order"]),
+            lengths={str(role): int(size) for role, size in spec["lengths"].items()},
+            required=tuple(str(role) for role in spec["required"]),
+        )
+    return StructuredAssets(key_type=dict(key_stems), key_stems=key_stems,
+                            composites=composites)
+
+
 def _build(payload: dict[str, object]) -> DetectionAssets:
-    # Ordered pairs on the wire, because the prefix fallback in
-    # `structured._key_type` resolves ties by order — see licensing/pack.py.
-    key_stems = tuple((str(key), str(value)) for key, value in payload["structured"]["key_type"])
-    key_type = dict(key_stems)
     return DetectionAssets(
         version=str(payload["version"]),
         attribution=tuple(payload["attribution"]),
@@ -418,8 +492,12 @@ def _build(payload: dict[str, object]) -> DetectionAssets:
             place_ref=tuple(payload["context"]["place_ref"]),
             version_ctx=tuple(payload["context"]["version_ctx"]),
             org_cue=frozenset(payload["context"]["org_cue"]),
+            personnel_cue=tuple(payload["context"].get("personnel_cue", ())),
         ),
-        structured=StructuredAssets(key_type=key_type, key_stems=key_stems),
+        # `_build_structured` is the one builder that reads BOTH halves — the
+    # ordered key→type pairs and the composite map — so the pair order that
+    # decides prefix ties is preserved by construction.
+    structured=_build_structured(payload["structured"]),
         ru_pii=_build_ru_pii(payload["ru_pii"]),
         translit=_build_translit(payload["translit_machine"]),
         fakes=_build_fakes(payload["fakes"]),

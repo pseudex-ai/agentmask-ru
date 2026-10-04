@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from bench.agentpii5 import contracts, records
+from bench.agentpii5 import contracts, payload_canaries, records
 from bench.agentpii5.contracts import Line, Metric, MetricSpec, SideBySide
 from bench.agentpii5.metrics import METRIC_FUNCTIONS
 from bench.agentpii5.report import (
@@ -78,7 +78,13 @@ PUBLIC_JSON_NAME: str = "<run>.public.json"
 # including one added to the private document after this line was written.
 PUBLIC_TOP_LEVEL: tuple[str, ...] = (
     "schema", "benchmark", "generated_at", "tier", "cases", "repeats",
-    "corpus_digest", "incomplete", "incomplete_reasons", "lines")
+    "corpus_digest", "incomplete", "incomplete_reasons", "lines",
+    # S02 C1: the STATUS and the REASON, never a count, a case id or a value.
+    # The public file is the one finished surface whose readers cannot consult
+    # §1bis, so it must be able to say «this half was not measured» in words a
+    # machine can branch on — the flag alone was published while the fact that
+    # invalidated it was not.
+    "canary_status", "canary_reason", "canary_capture")
 PUBLIC_LINE_FIELDS: tuple[str, ...] = (
     "name", "hits", "total", "rate", "ci_low", "ci_high", "certified")
 # THE LINES ARE THE CONTRACT'S `public` FAMILY MINUS ITS DIAGNOSTICS, and the
@@ -155,13 +161,29 @@ def judge_json(side: SideBySide, parts: ReportParts) -> dict[str, object]:
             "pregate": side.judge_pregate}
 
 
+def canary_incomplete(parts: ReportParts) -> bool:
+    """Is the S02 half of this run unmeasured?
+
+    Its own function because `incomplete` and `incomplete_reasons` must derive
+    from ONE condition: a flag set by a term the reason list does not name is a
+    document that says «НЕПОЛНЫЙ» and cannot say why."""
+    return parts.canaries.status != payload_canaries.STATUS_MEASURED
+
+
 def incomplete_reasons(side: SideBySide, parts: ReportParts) -> tuple[str, ...]:
     """Why the header carries «НЕПОЛНЫЙ», as a list a machine can branch on.
 
     The text report prints the three causes in three different sections; a
     consumer that had to tell them apart was reading three places and guessing.
     The causes themselves are `report.assemble`'s, read back off the assembled
-    object rather than recomputed."""
+    object rather than recomputed.
+
+    THE FOURTH CAUSE IS S02 (C1). A run whose payload canaries were never
+    measured is not a complete report: `incomplete` was computed from refused
+    metrics, the judge and the holes alone, so a run with no manifest published
+    `incomplete: false` with an empty reason list on the one surface whose
+    readers cannot check §1bis. The reason is the canary report's own, so the
+    sentence a machine reads and the sentence §1bis prints are one string."""
     out: list[str] = []
     blocked = sorted(name for name in side.v5_refused
                      if name not in contracts.DIAGNOSTIC_METRIC_NAMES)
@@ -172,6 +194,9 @@ def incomplete_reasons(side: SideBySide, parts: ReportParts) -> tuple[str, ...]:
     holes = _holes(side.excluded_observations)
     if holes:
         out.append(f"наблюдений без хопов: {len(holes)}")
+    if canary_incomplete(parts):
+        out.append("канарейки пейлоада не измерены: "
+                   + (parts.canaries.reason or "причина не записана"))
     return tuple(out)
 
 
@@ -219,10 +244,36 @@ def build(parts: ReportParts, side: SideBySide) -> dict[str, object]:
         "label": meta.get("label"),
         "note": meta.get("note"),
         "prompt_sha256": meta.get("prompt_sha256"),
-        "incomplete": side.incomplete,
+        # S02 C1: AN UNMEASURED CANARY HALF IS INCOMPLETE, AND THE FLAG AND ITS
+        # REASON ARE WRITTEN FROM THE SAME CONDITION. `side.incomplete` reads
+        # refused metrics, the judge and the holes; the canary half is the fourth
+        # cause and it lives here because `report.assemble`'s flag is also read
+        # by the markdown title, which three tests pin for a manifest-less
+        # fixture. The public file is built from THIS document, so the outward
+        # surface cannot publish «ПОЛНЫЙ» over a half nobody measured.
+        "incomplete": side.incomplete or canary_incomplete(parts),
         "incomplete_reasons": list(reasons),
         "cost": cost_json(run_dir),
         "judge": judge_json(side, parts),
+        # S02: THE CANARY STATUS TRAVELS WITH THE COUNTS, AND BOTH TRAVEL.
+        # `by_boundary()` is `{}` on a run with no manifest, so a document that
+        # carried only the counts said nothing at all and a machine reader could
+        # not tell «не измерено» from «измерено, утечек нет». `status` and
+        # `reason` are what make the first unreadable as the second, and they are
+        # written even when the run IS measured, so a reader can branch on them
+        # unconditionally.
+        "canary_status": parts.canaries.status,
+        "canary_reason": parts.canaries.reason,
+        "canary_capture": {
+            "known": parts.canaries.coverage_known,
+            "captured": parts.canaries.capture_rows,
+            "intervention": parts.canaries.intervention_rows,
+            "selected": parts.canaries.selected_rows,
+        },
+        "canary_by_boundary": {name: dict(counts)
+                               for name, counts in sorted(parts.canaries.by_boundary().items())},
+        "canary_neighbour_damage": list(parts.canaries.neighbour_damage),
+        "canary_unreached": list(parts.canaries.unreached),
         "lines": {name: line_json(line) for name, line in sorted(side.v5_lines.items())},
         "slices": {name: {axis: {bucket: line_json(line) for bucket, line in sorted(cells.items())}
                           for axis, cells in sorted(axes.items())}

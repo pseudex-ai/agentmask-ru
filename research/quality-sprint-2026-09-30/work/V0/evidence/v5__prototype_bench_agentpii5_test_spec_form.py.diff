@@ -1,0 +1,19 @@
+diff --git a/prototype/bench/agentpii5/test_spec_form.py b/prototype/bench/agentpii5/test_spec_form.py
+index 277762e..6c2c51e 100644
+--- a/prototype/bench/agentpii5/test_spec_form.py
++++ b/prototype/bench/agentpii5/test_spec_form.py
+@@ -303,7 +303,13 @@ def test_the_benchmark_run_path_holds_no_scripted_agent() -> list[str]:
+ # которая совпадает, и пара, которая расходится, и — там, где признак умеет
+ # воздерживаться — пара, в которой метки разные, а расхождения нет.
++#
++# ЧЕТЫРЕ СИСТЕМЫ РОМАНИЗАЦИИ В МАТРИЦЕ (класс Ж, `NAME.translit`): `gost`,
++# `icao`, `bgn` и `unknown` — иначе у нового признака не окажется ни пары с
++# расхождением, ни пары, где воздержание `latin:unknown` его гасит, и проверка
++# «матрица отличает правило от константы» справедливо покраснеет.
+ STRINGS: dict[str, tuple[str, ...]] = {
+     "NAME": ("Иванов Пётр", "иванов пётр", "ИВАНОВ ПЁТР", "Пётр", "Иванов П.",
+-             "Ivanov Petr", "Иванов-Петров Пётр", "Иванову Петру", "фон Иванов Пётр", "7"),
++             "Ivanov Petr", "Czernov Petr", "Petrov Iurii", "Petrov Yuriy",
++             "Иванов-Петров Пётр", "Иванову Петру", "фон Иванов Пётр", "7"),
+     "PHONE": (REAL_PHONE_TEXT, "8 916 123-45-67", "+79161234567", "+7 (916) 123-45-67",
+               "+7 916 123 45 67", "123"),

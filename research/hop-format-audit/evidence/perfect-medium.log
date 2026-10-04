@@ -1,0 +1,14 @@
+  no_engine_imported: PASS
+  every_metric_has_a_bound: PASS
+  every_tier_of_the_ladder_is_recorded: PASS
+  the_recorded_numbers_are_still_the_numbers: PASS
+  no_line_is_empty: PASS
+  perfect_gateway_clears_every_bound: PASS
+  correction_one_is_load_bearing: PASS
+  correction_two_is_load_bearing: PASS
+  correction_three_is_load_bearing: PASS
+  pool_is_fit_to_mint_from: PASS
+  readable_fakes_are_load_bearing: PASS
+  number_mutant_moves_only_form_lines: PASS
+  wrong_gateways_are_caught: PASS
+perfect: PASS (300 cases of tier medium, 25 bounded lines, 6 wrong gateways caught)

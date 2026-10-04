@@ -98,7 +98,18 @@ sys.path.insert(0, str(_HERE.parents[2]))
 
 from pseudex.audit import AuditLog  # noqa: E402
 from pseudex.detect_all import Detector  # noqa: E402
-from pseudex.envelope import MaskContext, conversation_key, mask_tools  # noqa: E402
+from pseudex.envelope import (  # noqa: E402
+    MaskContext,
+    _InjectedValue,
+    _Provenance,
+    _echo_targets,
+    _is_own_composition,
+    _is_own_rendering,
+    _relevant_own_renderings,
+    _replace_echoes,
+    conversation_key,
+    mask_tools,
+)
 from pseudex.maskcache import MaskCache  # noqa: E402
 # `_splice` and `_token_for_text` are private and imported ANYWAY, deliberately.
 # The substitute the model copies is the token INFLECTED INTO THE SENTENCE —
@@ -328,7 +339,52 @@ def _model_writes(seen: str, expected: str, argument: str, how: str,
     return seen
 
 
-def _mask_message(text: str, detector: Detector, vault: Vault) -> Masked:
+def _recorded_values(vault: Vault) -> tuple[_InjectedValue, ...]:
+    """This conversation's recorded values, as the echo leg consumes them.
+
+    DELEGATES TO PRODUCTION. `envelope._Provenance.recorded_values_of` is the
+    engine's own computation of the UNBOUND leg's evidence from a conversation
+    view, and this returns its result unchanged. A local re-derivation is what
+    broke: it dropped `substitute` (the docstring claimed the conservative leg
+    never reads it, which stopped being true when production grew the
+    forward-collision part leg), so production neutral-redacted a word of a
+    recorded NAME's substitute while the scorer substituted it — and the parity
+    gate at `gateway._push` raised on every long case whose result echoed a part
+    of a recorded name. Reuse, not mirroring, is the fix: a field added to the
+    leg's input is then read here the turn it is read there.
+    """
+    return _Provenance.recorded_values_of(vault)
+
+
+def _own_renderings(vault: Vault) -> tuple[str, ...]:
+    """The substitute strings this conversation showed, for the echo pass's
+    own-rendering guard — the exact rows `_Provenance.renderings` returns."""
+    return tuple(rendering for rendering, literal, _ in vault.shown_forms()
+                 if rendering and rendering != literal)
+
+
+def _own_rendering_set(vault: Vault) -> frozenset[str]:
+    """The conversation's own renderings, exact and case-folded.
+
+    `_mask_one`'s detection refuses to re-mint a NAME that is a rendering this
+    dialogue already showed, read in another case, or composed of such renderings
+    (`_is_own_rendering` / `_is_own_composition`). Production builds the set in
+    `_Provenance._index` — every rendering plus its case fold. The scorer reads
+    the same `shown_forms` rows, so it must build the same set or it re-mints a
+    composed substitute (the model joined «Лебедева» + «Майя» + «Романовна» it
+    was shown apart) into a NEW person — the divergence that excluded
+    `long_support-038`.
+    """
+    own: set[str] = set()
+    for rendering, literal, _ in vault.shown_forms():
+        if rendering and rendering != literal:
+            own.add(rendering)
+            own.add(rendering.casefold())
+    return frozenset(own)
+
+
+def _mask_message(text: str, detector: Detector, vault: Vault,
+                  role: str = "tool") -> Masked:
     """The production masking of one message, with the pieces kept.
 
     This is `envelope.mask_one`'s `_compute` minus the cache and the audit —
@@ -336,16 +392,43 @@ def _mask_message(text: str, detector: Detector, vault: Vault) -> Masked:
     functions production composes it from. The spans a minted token sits on are
     dropped first, exactly as `mask_text` drops them, because the model echoes
     its own substitutes back constantly and masking one a second time makes the
-    person's identity change every turn.
+    person's identity change every turn. The same own-rendering and
+    own-composition guards production's `_mask_one` applies ride along: a NAME
+    that is this dialogue's own substitute — retyped in another case or composed
+    from the parts it was shown — is left standing, never re-minted.
+
+    THEN THE SAME PRIVACY LEG AS PRODUCTION, for tool messages only. A tool
+    result whose echo of a value the dialogue already restored survives
+    detection (a lone surname, a truncated phone) is redacted with a neutral,
+    identity-free stand-in by `envelope._replace_echoes` — the same function the
+    production result leg composes, and only the message types production offers
+    it to (`role == "tool"`). `role` defaults to `"tool"` because the scorer is
+    compared against the production result leg; callers masking prose pass the
+    message's own role.
     """
+    own = _own_rendering_set(vault)
+    relevant = _relevant_own_renderings(text, own)
     spans = [span for span in detector.detect(text)
-             if not is_own_substitute(span, vault)]
+             if not is_own_substitute(span, vault)
+             and not _is_own_rendering(span, relevant)
+             and not _is_own_composition(span, relevant)]
     pieces = tuple(
         Piece(start=span.start, end=span.end,
               substitute=_token_for_text(span, vault),
               engine_type=span.entity_type)
         for span in spans)
     masked = _splice(text, [(p.start, p.end, p.substitute) for p in pieces])
+    if role == "tool":
+        recorded = _echo_targets(_recorded_values(vault))
+        if recorded:
+            # MIRROR `envelope._mask_text_leg`: the recorded leg must not redact a
+            # fragment inside a detected whole LOC span — the span was substituted
+            # whole (class Б), so the surviving generic word is the substitute's
+            # own, not a real cut.
+            covered = tuple((p.start, p.end) for p in pieces
+                            if p.engine_type == "LOC")
+            masked = _replace_echoes(masked, (), recorded, _own_renderings(vault),
+                                     covered)
     return Masked(text=text, masked=masked, pieces=pieces)
 
 
@@ -1138,7 +1221,8 @@ def _score_case(case: schema.Case, detector: Detector, vault: Vault,
                           conversation_id=conversation)
 
     messages = tuple(
-        _mask_message(schema.message_text(case, index), detector, scoped)
+        _mask_message(schema.message_text(case, index), detector, scoped,
+                      case.messages[index].role)
         for index in range(len(case.messages)))
     # Masked AFTER the messages, as `proxy._mask_request` does: a value first
     # seen in a tool description must get the substitute the conversation

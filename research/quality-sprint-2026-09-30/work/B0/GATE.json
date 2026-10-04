@@ -1,0 +1,16 @@
+{
+  "task": "B0",
+  "gate": "G1",
+  "status": "PASS",
+  "scope": "local source, WIP, raw-run and evaluation-runtime baseline for design/RED wave",
+  "reviewer": "subagent_fork:d9aedfb0-84b7-4e11-a273-8288245b2005",
+  "review_evidence": "Independent reviewer returned PASS and durable REVIEW.md was read by Lead before dependent wave launch. Scope is local/design G1 only.",
+  "source_head": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+  "evidence": ["SPEC.md", "checkpoint.py", "checkpoint.log", "WIP-MANIFEST.json", "INPUTS.json", "RUNTIME.json", "pip-freeze.txt", "REVIEW.md", "POST-CHECKPOINT-NOTE.md"],
+  "checks": {"wip_files_archived_verified":441,"dependency_reference_hashes_verified":3554,"skipped_unknown_files":0,"prior_source_hashes_verified":88,"paid_raw_files_verified":17,"pinned_source_run_files":198,"complete":802,"excluded":11,"holdout_intersection":0},
+  "bundle": {"version":"2a07cebae2b050ec","sha256":"01c19f4689450b54694b7aaa4070cbaf695efc3e98f0b59471486392a0348206","persisted":false},
+  "production_artifact_gate": {"status":"NOT_MEASURED","blocks":"RG release-A/B","reason":"Actual deployed digest not queried; no inference from local version.txt"},
+  "not_claimed": ["clean working tree", "historically untouched holdout", "product quality passed", "production artifact verified", "commit pushed", "release approved"],
+  "allowed_next": ["M1a","M1b","A1","S1","D0","V0","C0","S2"],
+  "paid_runs_authorized": false
+}

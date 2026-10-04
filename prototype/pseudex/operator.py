@@ -28,7 +28,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from pseudex import metrics as metrics_format
 from pseudex import preflight, schema, sqlite_setup
 from pseudex.audit import SELFCHECK_ORG
-from pseudex.profiling import snapshot as profiling_snapshot
+from pseudex.profiling import PERCENTILES, snapshot as profiling_snapshot
 
 # Config worth showing an operator, and nothing else. An allowlist rather than a
 # denylist of secret-looking names: a denylist silently starts leaking the moment
@@ -63,6 +63,270 @@ _SELFCHECK_TEXT = (
     "Здравствуйте! Меня зовут Иванов Пётр Сергеевич, "
     "перезвоните на +7 916 214-88-03."
 )
+
+# THE IDENTITY-INVARIANT PROBE (D-081), MIRRORED HERE FOR THE INTERFACE.
+#
+# WHAT IT ANSWERS. One identity written several ways — «4512 345678» and
+# «4512345678», «Иванов Пётр Сергеевич» and «Иванов П. С.», «улица Лермонтова
+# дом 38 квартира 7» and «ул. Лермонтова 38 кв 42» — must mint ONE substitute.
+# The interface's statistics screen prints that per type, so an operator can see
+# a canonicalisation regression on the same page as the counters it moves.
+#
+# WHY THE FORMS ARE COPIED AND NOT IMPORTED. `pseudex/` may never import from
+# `bench/` — bench does not ship (Dockerfile.nuitka's COPY set), so an import
+# would be an ImportError in the release image, on the one screen an operator
+# opens when something is wrong. The metric
+# (`bench/identity_invariant.py`) is the source of truth and compares this exact
+# list on every run: it prints `UI-зеркало … agrees` or `DRIFT` and names the
+# group that moved, so a mirror cannot diverge quietly.
+#
+# THE FORMS ARE FULLY SYNTHETIC — invented numbers, a fictional person, a street
+# nobody lives on — so they carry no personal data and are safe to keep in RAM
+# and in the shipped binary. Only COUNTS leave /stats; no form, no canonical and
+# no token is ever returned.
+#
+# (entity_type, expect, (form, ...)) — `collapse` = all forms must mint ONE fake;
+# `differ` = all forms must mint DIFFERENT fakes (the negative control).
+IDENTITY_PROBE = (
+    ("NAME", "collapse", ("Иванов Пётр", "Иванову Петру", "Иванова Петра",
+                          "Пётр Иванов")),
+    ("NAME", "differ", ("Иванов Пётр", "Иванов Николай")),
+    ("NAME", "collapse", ("Иванов Пётр Сергеевич", "Иванов Пётр",
+                          "Иванов П. С.")),
+    ("LOC", "collapse", ("улица Лермонтова, дом 38, квартира 7",
+                         "ул. Лермонтова 38 кв 7",
+                         "улица лермонтова дом 38 квартира 7")),
+    ("LOC", "collapse", ("улица лермонтова дом тридцать восемь квартира семь",
+                         "улица Лермонтова дом 38 квартира 7")),
+    ("LOC", "collapse", ("улица Лермонтова дом 38 квартира 7",
+                         "улица Лермонтова дом 38 квартира 42")),
+    ("LOC", "collapse", ("улица Лермонтова дом 38 подъезд 1 квартира 7",
+                         "улица Лермонтова дом 38 подъезд 3 квартира 7")),
+    ("PHONE", "collapse", ("+7 916 402-11-87", "8 916 402-11-87",
+                           "89164021187")),
+    ("EMAIL", "collapse", ("Ivanov@Example.RU", " ivanov@example.ru ")),
+    ("EMAIL", "differ", ("ivanov@example.ru", "petrov@example.ru")),
+    ("PASSPORT", "collapse", ("4512 345678", "4512345678")),
+    ("PASSPORT", "differ", ("4512 345678", "4512 345679")),
+    ("SNILS", "collapse", ("123-456-789 01", "12345678901")),
+    ("SNILS", "differ", ("123-456-789 01", "123-456-789 02")),
+    ("INN", "collapse", ("7712345678", "77 12345678")),
+    ("INN", "differ", ("7712345678", "7712345679")),
+    ("CARD", "collapse", ("4276 1234 5678 9012", "4276123456789012")),
+    ("CARD", "differ", ("4276 1234 5678 9012", "4276 1234 5678 9013")),
+    ("OGRN", "collapse", ("1027700132195", "1 0277 00132195")),
+    ("OGRN", "differ", ("1027700132195", "1027700132196")),
+    ("OGRNIP", "collapse", ("304500000012345", "3045000000 12345")),
+    ("OGRNIP", "differ", ("304500000012345", "304500000012346")),
+    # DATE is a NON-ITEM date (`item_type=False`): its substitute mirrors the
+    # customer's notation by design, so the three writings are three rows — the
+    # control asserts that shape rather than the invariant. The identity-bearing
+    # date is DOB, and the same three forms collapse there.
+    ("DATE", "differ", ("21.01.1979", "21/01/1979", "1979-01-21")),
+    ("DOB", "collapse", ("21.01.1979", "21/01/1979", "1979-01-21")),
+    ("DOB", "differ", ("21.01.1979", "22.01.1979")),
+    ("OMS_ENP", "collapse", ("1234567890123456", "1234 5678 9012 3456")),
+    ("OMS_ENP", "differ", ("1234567890123456", "1234567890123457")),
+    ("IBAN", "collapse", ("RU0204452560040702810412345678901",
+                          "ru02 0445 2560 0407 0281 0412 3456 78901")),
+    ("IBAN", "differ", ("RU0204452560040702810412345678901",
+                        "RU0204452560040702810412345678902")),
+    ("VIN", "collapse", ("XTA210990Y2765499", "xta 210990 y2765499")),
+    ("VIN", "differ", ("XTA210990Y2765499", "XTA210990Y2765498")),
+    ("PTS_NUMBER", "collapse", ("78 УВ 123456", "78УВ123456", "78 YB 123456")),
+    ("PTS_NUMBER", "differ", ("78 УВ 123456", "78 УВ 123457")),
+)
+
+# Computed once per process: the invariant is a property of this build's
+# canonicalisation, not of any traffic, so a 5-second poll must not re-run it.
+# `None` means "not computed yet"; the dict is replaced atomically under the
+# GIL, and two workers racing to compute it compute the same value.
+_IDENTITY_RESULT: dict[str, object] | None = None
+
+
+def _identity_of(entity_type: str, value: str) -> str:
+    """The identity key of ONE real writing — no vault, nothing minted.
+
+    `canonicalize` is the row key, and on a fresh vault equal row key means
+    equal substitute. NAME is the one exception the metric documents: D-081
+    renders one substitute at the named granularity, so «Иванов Пётр Сергеевич»
+    and «Иванов П. С.» canonicalise to different STRINGS that are the same
+    person. The fold is surname + given-name initial, exactly what
+    `bench/identity_invariant.py::fake_identity` applies to substitutes; the
+    metric's UI-mirror check compares the two group lists, and both
+    implementations are probed against each other on every metric run.
+    """
+    from pseudex import morph_names, ru_pii_v6
+    from pseudex.vault import canonicalize
+    canonical = canonicalize(entity_type, value)
+    if ru_pii_v6.engine_label(entity_type) != "NAME":
+        return canonical
+    words = canonical.split()
+    shape = morph_names.name_shape(canonical)
+    if len(shape) != len(words):
+        return canonical
+    surname = [w for w, kind in zip(words, shape) if kind == "surn"]
+    given = [w for w, kind in zip(words, shape) if kind in ("name", "init")]
+    if surname and given:
+        return f"{surname[0].casefold()}|{given[0].strip('.').casefold()[:1]}"
+    return canonical
+
+
+def identity_stability() -> dict[str, object]:
+    """Per-type identity stability for the statistics screen — COUNTS ONLY.
+
+    Never a form, a canonical or a token: this crosses /stats, which the
+    interface polls, and a value there would be personal data on an operator
+    screen. The type vocabulary is the closed set the screen already prints.
+
+    A failure (an unleased bundle, a store that will not open) is reported as
+    `available: False` with a short reason rather than raised: /stats must keep
+    answering while the licence is degraded, and a statistical screen that goes
+    dark exactly when the container is in trouble is the wrong instrument.
+    """
+    global _IDENTITY_RESULT
+    if _IDENTITY_RESULT is not None:
+        return _IDENTITY_RESULT
+    result: dict[str, object] = {
+        "available": False, "error": "", "scope": "row key (canonicalize)",
+        "by_type": {}, "collapse_groups": 0, "collapse_stable": 0,
+        "differ_groups": 0, "differ_ok": 0, "types_with_groups": 0,
+        "types_stable": 0, "rate": 0.0,
+    }
+    try:
+        by_type: dict[str, dict[str, int]] = {}
+        for entity_type, expect, forms in IDENTITY_PROBE:
+            keys = {_identity_of(entity_type, form) for form in forms}
+            row = by_type.setdefault(entity_type, {
+                "collapse_groups": 0, "collapse_stable": 0,
+                "differ_groups": 0, "differ_ok": 0})
+            if expect == "collapse":
+                row["collapse_groups"] += 1
+                row["collapse_stable"] += 1 if len(keys) == 1 else 0
+            else:
+                row["differ_groups"] += 1
+                row["differ_ok"] += 1 if len(keys) == len(forms) else 0
+        groups = sum(r["collapse_groups"] for r in by_type.values())
+        stable = sum(r["collapse_stable"] for r in by_type.values())
+        result.update({
+            "available": True,
+            "by_type": by_type,
+            "collapse_groups": groups,
+            "collapse_stable": stable,
+            "differ_groups": sum(r["differ_groups"] for r in by_type.values()),
+            "differ_ok": sum(r["differ_ok"] for r in by_type.values()),
+            "types_with_groups": sum(1 for r in by_type.values()
+                                     if r["collapse_groups"]),
+            "types_stable": sum(1 for r in by_type.values()
+                                if r["collapse_groups"]
+                                and r["collapse_stable"] == r["collapse_groups"]),
+            "rate": stable / groups if groups else 0.0,
+        })
+    except Exception as exc:  # noqa: BLE001 — /stats must answer regardless
+        result["error"] = f"{type(exc).__name__}: {exc}"
+        return result
+    _IDENTITY_RESULT = result
+    return result
+
+
+# THE LATENCY READOUT — the cost the ENGINE adds, by phase.
+#
+# WHY IT EXISTS. «Движок тормозит агента» is the one complaint about a gateway
+# that cannot be answered from the audit journal: every row there counts a
+# value, and a value has no duration. profiling.py already measures each phase
+# into a bounded ring buffer (PSEUDEX_PROFILE=1); this block is the operator's
+# view of it, so the number comes from the process that actually paid it rather
+# than from a benchmark run somewhere else.
+#
+# WHICH MEASURED STAGE EACH ROW IS, named explicitly, and HOW THE STAGES NEST —
+# a row called «detect» that silently meant one sub-stage would be worse than no
+# row at all, and so would a «total» that added phases which contain each other:
+#   normalize -> `detect.normalize`  one Layer-0 fold        (inside detect.total)
+#   detect    -> `detect.total`      the whole detect pass   (inside mask.one)
+#   mask      -> `mask.one`          masking ONE TEXT — a message content or a
+#                                    whole tool-arguments JSON — including the
+#                                    detection pass that text runs (`_mask_one`
+#                                    calls `detector.detect` inside its own
+#                                    `_compute`), plus mint/audit and splice
+#   unmask    -> `unmask.total`      one restore call
+# `nested_in` carries that containment to the screen, so the operator can see
+# that the normalize and detect rows are INSIDE the mask row rather than beside
+# it. (The `detect.*` counters also collect detection runs that happen WITHOUT
+# masking — the interface's own `/spans` highlighting, `/selfcheck` — so they
+# describe all detection in this worker, which is why the mask row, not the
+# detect row, is the one the cumulative masking figure is taken from.)
+#
+# TWO CONSEQUENCES, BOTH LOAD-BEARING:
+#   * the `total` row sums only stages that CANNOT overlap — `mask.one` and
+#     `unmask.total`, the two legs a caller waits on — never `detect.total`,
+#     which is already inside `mask.one`. It is still marked `derived: true`
+#     with its `sources`, because it adds per-phase percentiles and quantiles do
+#     not add: a planning figure, not the percentile of one operation.
+#   * `total_mask_ms` is the cumulative total of ONE enclosing stage
+#     (`mask.one`), never a prefix sum over `mask.*`: `mask.tokenize_and_audit`
+#     and `mask.splice` run inside `mask.one`, so summing the prefix would count
+#     them twice — the same overlap `profile_deep.py` warns about for `detect.*`.
+#
+# WHY p90 IS NOT DECORATION: a gateway is sized on the near-tail, and p95/p99
+# alone hide the shoulder that most slow requests actually sit on. p50 is the
+# number that never hurts. p90 is the one an operator can act on.
+#
+# NEVER PII. A stage name is ours, a duration is a float, a count is an integer:
+# nothing here can carry a token or a value, which is what lets it ride the
+# endpoint the interface already polls. When PSEUDEX_PROFILE is off every group
+# is `null` — never a zero that reads as «instant» — so the screen can print «—»
+# and the operator learns the feature needs enabling instead of believing a
+# fabricated number.
+_LATENCY_GROUPS: tuple[tuple[str, str, str], ...] = (
+    ("normalize", "detect.normalize", "detect.total"),
+    ("detect", "detect.total", "mask.one"),
+    ("mask", "mask.one", ""),
+    ("unmask", "unmask.total", ""),
+)
+# The legs a caller waits on. Disjoint by construction: masking a request and
+# restoring a response are different endpoints, and neither contains the other.
+_LATENCY_TOTAL_SOURCES: tuple[str, ...] = ("mask.one", "unmask.total")
+# The enclosing mask stage, for the cumulative figure. See the overlap note above.
+_LATENCY_MASK_TOTAL_STAGE = "mask.one"
+_PERCENTILE_KEYS: tuple[str, ...] = tuple(f"{label}_ms" for label, _ in PERCENTILES)
+
+
+def latency_snapshot() -> dict[str, object]:
+    """Per-phase latency for /stats — durations and counts only, never a value.
+
+    Read-only and lock-scoped: `profiling_snapshot()` takes the profiler's lock
+    only to freeze the sample deques, so this endpoint stays cheap enough for the
+    5-second poll the stats screen runs.
+    """
+    profile = profiling_snapshot()
+    stages = profile.get("stages") or {}
+    groups: dict[str, object] = {}
+    for label, stage_name, nested_in in _LATENCY_GROUPS:
+        row = stages.get(stage_name)
+        if row:
+            groups[label] = {"stage": stage_name, "nested_in": nested_in or None, **row}
+        else:
+            groups[label] = None
+    present = [name for name in _LATENCY_TOTAL_SOURCES if name in stages]
+    total: dict[str, object] | None = None
+    if present:
+        total = {"derived": True, "sources": present, "nested_in": None}
+        for key in _PERCENTILE_KEYS:
+            total[key] = round(sum(stages[name][key] for name in present), 4)
+        # The cumulative column IS exact: summing disjoint phase totals is the
+        # total time spent in those phases. Only the percentile columns are the
+        # planning approximation the `derived` flag announces.
+        total["total_ms"] = round(sum(stages[name]["total_ms"] for name in present), 3)
+    mask_total_ms = round(
+        (stages.get(_LATENCY_MASK_TOTAL_STAGE) or {}).get("total_ms", 0.0), 3)
+    return {
+        "enabled": bool(profile.get("enabled")),
+        "percentiles": list(_PERCENTILE_KEYS),
+        "groups": groups,
+        "total": total,
+        "total_mask_ms": mask_total_ms,
+        "stages": stages,
+    }
 
 
 def _clock_ticks() -> int:
@@ -339,6 +603,43 @@ def build_router(audit, license_client, assets, detector_version: str,
         # numbers, and the printed report carried that claim to an auditor.
         since = time.time() - days * 86400
         since_day = time.strftime("%Y-%m-%d", time.localtime(since))
+        # THE OVER-MASKING GUARD, BESIDE THE MASK COUNTS. `by_type` above is read
+        # from the audit journal over the requested window; this one is counted
+        # in the detector, because a DENIED span writes no row at all (see
+        # `metrics.TypeCounter`). The two therefore do NOT share a denominator,
+        # and the response says so: `suppressed_since` is when this worker first
+        # denied a span, so the interface can print «в этом процессе с …» instead
+        # of implying the numbers cover the same period.
+        #
+        # COUNTS ONLY, like every other figure here: no token, no preview, no
+        # value crosses this endpoint, and a type name is a closed vocabulary.
+        suppressed = metrics_format.suppressed_snapshot()
+        # THE IDENTITY READOUT, BESIDE THE COUNTS IT QUALIFIES. `by_type` says
+        # how many values were protected; this says whether the SAME identity
+        # written two ways was protected ONCE. A regression here is invisible in
+        # the counts (they grow either way) and visible at a glance here. It is
+        # the build's own canonicalisation, so it is computed once and cached;
+        # the offload keeps the first poll off the event loop (canonicalisation
+        # runs morphology, and this endpoint also serves /health's neighbours).
+        # COUNTS ONLY — see `identity_stability`.
+        identity = await anyio.to_thread.run_sync(identity_stability)
+        # THE ENGINE'S OWN COST, BESIDE THE COUNTS IT EXPLAINS. «Защищено
+        # значений» says how much was protected and nothing about what that cost
+        # the agent waiting on the gateway; this block is that answer, measured in
+        # this worker. It does NOT share the period above: the percentiles come
+        # from a bounded ring buffer of RECENT samples (and `count`/`total_ms` are
+        # process-lifetime), which is why the screen gives it its own caption
+        # instead of filing it under «за N дней».
+        #
+        # Counts and durations only: a stage name is ours, a float carries no
+        # token. `latency.enabled` is False (and every group null) unless the
+        # container runs with PSEUDEX_PROFILE=1, and the screen prints «—» rather
+        # than a zero: an unconfigured profiler must not read as «instant».
+        #
+        # OFF THE LOOP, like the identity probe: the snapshot sorts the retained
+        # window per stage, and this endpoint is polled every 5 s by a screen
+        # that must not make /health late.
+        latency = await anyio.to_thread.run_sync(latency_snapshot)
         return JSONResponse({
             "org_id": org_id,
             "days": await anyio.to_thread.run_sync(audit.daily_series, org_id, days, agent_id),
@@ -346,6 +647,11 @@ def build_router(audit, license_client, assets, detector_version: str,
             "by_agent": await anyio.to_thread.run_sync(audit.by_agent, org_id, since_day),
             "requests_total": await anyio.to_thread.run_sync(
                 audit.request_totals, org_id, since_day, agent_id),
+            "suppressed_by_type": suppressed["by_type"],
+            "suppressed_total": suppressed["total"],
+            "suppressed_since": suppressed["since"],
+            "identity": identity,
+            "latency": latency,
         })
 
     @router.get("/stats.csv")
@@ -406,6 +712,12 @@ def build_router(audit, license_client, assets, detector_version: str,
             audit.counts, org_id, _period_start("today"), "")
         series = await anyio.to_thread.run_sync(audit.daily_series, org_id, 1, "")
         volume = sqlite_setup.volume_state(os.environ.get("PSEUDEX_DB_DIR", "."))
+        # The over-masking guard on the same scrape as the mask counts. It is a
+        # COUNTER, not a gauge: it only rises for the life of the process, which
+        # is exactly what Prometheus's `rate()`/`increase()` are defined over.
+        # A label is safe here for the reason entity types are: the vocabulary is
+        # closed (10 v5 + the v6 registry + CVC/OTP), never a customer value.
+        suppressed = metrics_format.suppressed_snapshot()
 
         out = [
             # THE LADDER AS FOUR SERIES, NOT ONE NUMBER. An enum encoded as
@@ -455,6 +767,27 @@ def build_router(audit, license_client, assets, detector_version: str,
             metrics_format.series(
                 "pseudex_values_today", {k: int(v) for k, v in today.items()},
                 "Personal values protected today, by type", "type"),
+            # THE OTHER HALF OF THE TYPE PICTURE, and the reason it is a separate
+            # metric rather than a subtraction: `pseudex_values_today` counts spans
+            # that WERE masked; this counts near-masks the deny layer deliberately
+            # LEFT ALONE (an order number that looks like a phone, a version string
+            # that looks like an IP). One rising while the other falls is the
+            # over-masking guard moving, and no single series shows that.
+            #
+            # Process-lifetime, this worker: a scrape of N workers sees the share
+            # of the worker Prometheus happened to reach, the same property
+            # `pseudex_requests_today` has and the same reason the interface prints
+            # «в этом процессе». The `since` gauge carries the window with it, so a
+            # dashboard never reads a small count as a quiet business day.
+            metrics_format.series(
+                "pseudex_suppressed_total", suppressed["by_type"],
+                "Near-masks the deny layer kept OUT of masking, by type — values "
+                "the context evidence said were never PII, not PII left "
+                "unprotected", "type", kind="counter"),
+            metrics_format.render(
+                "pseudex_suppressed_since_seconds", suppressed["since"],
+                "Unix time of this worker's first suppressed span; absent until "
+                "the guard has fired at least once"),
             # FOUR STATES, NOT A BOOLEAN, for the same reason the licence
             # ladder is four series: `== ENCRYPTED` collapsed «a correctly
             # configured volume nobody has written to yet» (EMPTY) and «half the

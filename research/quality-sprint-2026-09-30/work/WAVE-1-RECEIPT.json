@@ -1,0 +1,77 @@
+{
+  "job": "workflow-3",
+  "completed_tasks": 7,
+  "routing_requested": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash"
+  },
+  "source_pins_verified": 198,
+  "raw_run_unchanged": true,
+  "new_paid_benchmark_calls": 0,
+  "product_patches": 0,
+  "tasks": [
+    {
+      "task": "M1b",
+      "child_reported_status": "NOT_MEASURED",
+      "accepted_full_gate": false,
+      "independent_review": "NOT_RUN",
+      "gate_file": "research/quality-sprint-2026-09-30/work/M1b/GATE.json",
+      "gate_sha256": "d3e8236018f2edaf67e1418d7824c6d590e265fd9e2b4bfaaa60a2e624dc5b07",
+      "spec_sha256": "6b7d34b3ccfded7d5fcf5fe673d08da3a9dab048317b2381348102b77d65100e"
+    },
+    {
+      "task": "A1",
+      "child_reported_status": "OWNER_PENDING",
+      "accepted_full_gate": false,
+      "independent_review": "NOT_RUN",
+      "gate_file": "research/quality-sprint-2026-09-30/work/A1/GATE.json",
+      "gate_sha256": "c017b24b5c4f270bf98f337b821c3a4f6a97d0c66de9ec3f1068b89821b8997b",
+      "spec_sha256": "fc5b01e977b241c52684e1581f24732f6b8af38fa5461540427fd3d992b364dd"
+    },
+    {
+      "task": "S1",
+      "child_reported_status": "PASS",
+      "accepted_full_gate": false,
+      "independent_review": "NOT_RUN",
+      "gate_file": "research/quality-sprint-2026-09-30/work/S1/GATE.json",
+      "gate_sha256": "2ea9dbc345f09a7228850a569cc77740fe046e995e2d30badca75c5a9f756594",
+      "spec_sha256": "ca186727ebd6f9fc51e0ed38b60d4788fb5f699ad1ef213db5d8cd6477406a21"
+    },
+    {
+      "task": "D0",
+      "child_reported_status": "PASS",
+      "accepted_full_gate": false,
+      "independent_review": "NOT_RUN",
+      "gate_file": "research/quality-sprint-2026-09-30/work/D0/GATE.json",
+      "gate_sha256": "07c7b7668bf22ea0b269c751d51b238d8a17f904e2c5a5946a0973bca231d4de",
+      "spec_sha256": "86546350b4c3b9460cbc4f0d48fd8dffe47ac68ee2e411a406ef60496e654e2f"
+    },
+    {
+      "task": "V0",
+      "child_reported_status": "PARTIAL",
+      "accepted_full_gate": false,
+      "independent_review": "NOT_RUN",
+      "gate_file": "research/quality-sprint-2026-09-30/work/V0/GATE.json",
+      "gate_sha256": "0c0c17a2e93507ded0a3272b5b1f2841c1c6395eb3ac7b68b6ff09d4e0726c72",
+      "spec_sha256": "db54bcc38d4bbeb2f32c44a9e253a3d4bfde2f6451094230c21ac037457fa6b5"
+    },
+    {
+      "task": "C0",
+      "child_reported_status": "OWNER_PENDING",
+      "accepted_full_gate": false,
+      "independent_review": "NOT_RUN",
+      "gate_file": "research/quality-sprint-2026-09-30/work/C0/GATE.json",
+      "gate_sha256": "524c16ad6e75ff68b50351fbbeecb026393d7be644eb6fe8a0568cc815adcada",
+      "spec_sha256": "fa3038451af12a1f67fbc15ef1cd286dba70a825d821069eff1315130a2a650a"
+    },
+    {
+      "task": "S2",
+      "child_reported_status": "PASS_RESEARCH_ONLY",
+      "accepted_full_gate": false,
+      "independent_review": "NOT_RUN",
+      "gate_file": "research/quality-sprint-2026-09-30/work/S2/GATE.json",
+      "gate_sha256": "20faa203d1cc33877c6699fc4020b9e1fd092686927e8cd273a83d97b746b8c3",
+      "spec_sha256": "b0079161c7e404e8d61eae9466d145cc04417d6293b5676cfb4e79f5e1b0c4db"
+    }
+  ]
+}

@@ -1,0 +1,206 @@
+{
+ "run_id": "9f8f8551-efe3-4bab-bbe2-6f722343aacd",
+ "excluded_total": 18,
+ "excluded_cases": [
+  "memory_anaphora-028",
+  "memory_anaphora-079",
+  "memory_anaphora-121",
+  "rag-004",
+  "rag-006",
+  "sequential_chain:mail-000",
+  "sequential_chain:mail-003",
+  "sequential_chain:mail-004",
+  "sequential_chain:mail-006",
+  "sequential_chain:mail-007",
+  "sequential_chain:mail-009",
+  "sequential_chain:mail-010",
+  "sequential_chain:mail-011",
+  "sequential_chain:mailfind-002",
+  "sequential_chain:mailfind-003",
+  "sequential_chain:tracker-005",
+  "sequential_chain:tracker-006",
+  "tool_chain-025"
+ ],
+ "excluded": [
+  {
+   "case_id": "memory_anaphora-028",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "clean",
+   "cluster": "PHONE:9252387434",
+   "reason": "terminated: transport: ConnectorError: DeepSeek response ended incomplete: None (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "rag-004",
+   "status": "excluded",
+   "kind": "search_rank",
+   "behaviour": "rag",
+   "register": "chat",
+   "cluster": "PHONE:9095460859",
+   "reason": "terminated: transport: ConnectorLimit: tool call limit reached (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "memory_anaphora-079",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "clean",
+   "cluster": "PHONE:9778736058",
+   "reason": "terminated: transport: ConnectorError: DeepSeek response ended incomplete: None (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "rag-006",
+   "status": "excluded",
+   "kind": "search_rank",
+   "behaviour": "rag",
+   "register": "chat",
+   "cluster": "PHONE:9877021926",
+   "reason": "terminated: transport: ConnectorLimit: tool call limit reached (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "sequential_chain:mailfind-002",
+   "status": "excluded",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "register": "chat",
+   "cluster": "PHONE:9031737418",
+   "reason": "terminated: transport: WriterError: 'Оформлено по письму от novikova74@bk.ru, тема «Перенос доставки».\\n\\nКлиент: Новикова Наталья Валентиновна (латиницей: Novikova Natalya Valentinovna), инициалы Н.В.\\nТелефон: +7 (903) 173-74-18\\nАдрес: Калашникова\\nДата рождения: 1965-06-15\\nEmail: novikova74@bk.ru\\n\\nПросьба клиента: оформить заявку на перенос доставки.' needs JSON escaping, and an escaped value no longer equals its span; tool-result values stay free of quotes, backslashes and control characters (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "sequential_chain:mailfind-003",
+   "status": "excluded",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "register": "chat",
+   "cluster": "PHONE:9850366925",
+   "reason": "terminated: transport: WriterError: 'По письму от 2026-09-02 (alenchiev90@mail.ru): клиент Аленчиев Аркадий Аркадьевич сообщает, что курьер не приехал.\\n\\nДанные для сверки:\\n- Телефон: +7 (985) 036-69-25\\n- Адрес доставки: Бибиревская\\n- Дата рождения: 1982-01-21\\n- Кабинет: 6\\n\\nНужно разобраться с несостоявшейся доставкой и связаться с клиентом.' needs JSON escaping, and an escaped value no longer equals its span; tool-result values stay free of quotes, backslashes and control characters (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "sequential_chain:tracker-006",
+   "status": "excluded",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "register": "sloppy",
+   "cluster": "PHONE:9614940469",
+   "reason": "terminated: transport: WriterError: 'Заявка по обращению SUP-142.\\n\\nДанные клиента:\\n- Телефон: 89614940469\\n- Объём: 22 литра\\n\\nПросьба связаться с клиентом по указанному номеру телефона и уточнить детали по обращению SUP-142.' needs JSON escaping, and an escaped value no longer equals its span; tool-result values stay free of quotes, backslashes and control characters (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "sequential_chain:tracker-005",
+   "status": "excluded",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "register": "chat",
+   "cluster": "PHONE:9525668509",
+   "reason": "terminated: transport: WriterError: 'По обращению OPS-135.\\n\\nКлиент оставил телефон: 8-952-566-85-09.\\nТакже указано: 23 километра.\\n\\nИсполнитель: Битюкова Зинаида (bityukova89@mail.ru).' needs JSON escaping, and an escaped value no longer equals its span; tool-result values stay free of quotes, backslashes and control characters (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "tool_chain-025",
+   "status": "excluded",
+   "kind": "tool_chain",
+   "behaviour": "sequential_chain",
+   "register": "voice_raw",
+   "cluster": "PHONE:9505556677",
+   "reason": "terminated: transport: ConnectorLimit: tool call limit reached (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "sequential_chain:mail-000",
+   "status": "excluded",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "register": "chat",
+   "cluster": "PHONE:9164021187",
+   "reason": "terminated: transport: ConnectorLimit: tool call limit reached (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "sequential_chain:mail-006",
+   "status": "excluded",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "register": "voice_itn",
+   "cluster": "PHONE:9278733186",
+   "reason": "terminated: transport: ConnectorLimit: tool call limit reached (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "sequential_chain:mail-010",
+   "status": "excluded",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "register": "chat",
+   "cluster": "PHONE:9037654321",
+   "reason": "terminated: transport: ConnectorLimit: tool call limit reached (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "sequential_chain:mail-007",
+   "status": "excluded",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "register": "voice_raw",
+   "cluster": "PHONE:9258343177",
+   "reason": "terminated: transport: ConnectorLimit: tool call limit reached (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "sequential_chain:mail-004",
+   "status": "excluded",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "register": "chat",
+   "cluster": "PHONE:9881944968",
+   "reason": "terminated: transport: ConnectorLimit: tool call limit reached (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "sequential_chain:mail-009",
+   "status": "excluded",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "register": "voice_raw",
+   "cluster": "PHONE:9121078654",
+   "reason": "terminated: transport: ConnectorLimit: tool call limit reached (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "sequential_chain:mail-011",
+   "status": "excluded",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "register": "voice_raw",
+   "cluster": "PHONE:9190451403",
+   "reason": "terminated: transport: ConnectorLimit: tool call limit reached (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "memory_anaphora-121",
+   "status": "excluded",
+   "kind": "long_support",
+   "behaviour": "memory_anaphora",
+   "register": "clean",
+   "cluster": "PHONE:9621121922",
+   "reason": "terminated: transport: ConnectorError: DeepSeek response ended incomplete: None (попыток 3)",
+   "arm_reasons": {}
+  },
+  {
+   "case_id": "sequential_chain:mail-003",
+   "status": "excluded",
+   "kind": "chain",
+   "behaviour": "sequential_chain",
+   "register": "chat",
+   "cluster": "PHONE:9872589069",
+   "reason": "terminated: transport: ConnectorLimit: tool call limit reached (попыток 3)",
+   "arm_reasons": {}
+  }
+ ]
+}

@@ -1,0 +1,21 @@
+{
+  "json_validity": {
+    "BUDGET.json": "valid",
+    "DECISION-COVERAGE.json": "valid",
+    "FACTS.json": "valid",
+    "GATES.json": "valid",
+    "SLICES.json": "valid"
+  },
+  "deliverables": {
+    "BUDGET.json": "9a5306683ef7e3924a4a69f41508870dc5516a13e1cff21d34b460ba9e96a36b",
+    "DECISION-COVERAGE.json": "7ff5e7327aeac558f7a7a32bb118466d322a42fd92bc6fb69dfa10cad0a7e6fa",
+    "FACTS.json": "f6731fae39819df040134f74482607dccc36f187ab8ab1a2b5142abff546c84e",
+    "GATES.json": "0bc0173b5f9264e520ac7498473c98f7968c22a9d336c518766215e18585fce1",
+    "SLICES.json": "b3e6ea93dc0623eae051a5ade82eaef4de2d84ab3c6f4823fee0e4512ce67471",
+    "CORRECTIONS.md": "ac991fa67910c4c791b01f3b48107d68f7278eaaa2c06cad2e3b30d4f1343459",
+    "D0-METRICS-CORRECTED.md": "52c3f06cc80cd149f9427d73ac81ab1a699262db58a53e91457881ee4daf5b2b",
+    "O-DATA-PROPOSAL.md": "e1e792c9657040ec4cdb85e3c657fcebbfa82af42d1eca73ebf0d316cd117dd6",
+    "OWNER-QUESTIONS-6.md": "d9715ed472901decb6c71d52d3609335abcb660b034804f822cffdc05dba6531"
+  }
+}
+EXIT 0

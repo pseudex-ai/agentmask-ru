@@ -1,0 +1,98 @@
+{
+  "artifact": "C0/INPUTS.json",
+  "task": "C0",
+  "task_title": "Secret quality contracts — CVC/CVV/CID vs OTP/SMS/3DS and the temporary-secret family",
+  "wave": "quality-sprint-design-red-1",
+  "gate_precondition": {
+    "required": "work/B0/GATE.json and durable independent work/B0/REVIEW.md",
+    "b0_gate_status": "G1 LOCAL/DESIGN PASS",
+    "b0_production_artifact_gate": "NOT_MEASURED",
+    "b0_production_blocks": "RG release-A/B",
+    "b0_review_verdict": "PASS for B0 preservation and the local source/WIP/run/runtime part of G1; production_digest remains NOT_VERIFIED"
+  },
+  "provenance": {
+    "pinned_product_source_commit": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "workspace_head_at_read_time": "890c50849a326f882eac336ba4e38c91171de473",
+    "workspace_head_note": "890c508 is research-only evidence (B0 checkpoint); the product source remains pinned at 0bfda236. Verified: `git diff 0bfda236 -- <engine files read>` is empty.",
+    "engine_source_modified_by_this_task": false,
+    "v6_snapshot_commit": "fad9c7466ea1221282214e6c747ca373ee7e6a55",
+    "git_mutations_performed": "none (no add/commit/checkout/reset/stash/revert/tag/push)"
+  },
+  "requested_routing": {
+    "provider": "deepseek-official",
+    "model": "deepseek-flash",
+    "mechanism": "explicit provider/model override in orchestration (per GOAL-BRIEF §6 and FIRST-WAVE-SCOPES.md)",
+    "self_attestation": "NOT provided and NOT claimed: this artifact cannot prove its own effective routing. The value above is the REQUESTED override recorded per contract; effective routing metadata, if any, lives with the orchestrator.",
+    "paid_benchmark_calls_authorized": false
+  },
+  "sources_read_only_all_sha256_verified": [
+    {"path": "research/quality-sprint-2026-09-30/work/B0/GATE.json", "sha256": "ed2b5d12fe78889b09871030b9645a6994a1ff773b046e7098c2878f1db7ce03", "role": "precondition gate"},
+    {"path": "research/quality-sprint-2026-09-30/work/B0/REVIEW.md", "sha256": "9056702644e907e8665b7ccd45314a4569af3a9af38b3e48f9d7b7ae31a62c87", "role": "durable independent review"},
+    {"path": "research/quality-sprint-2026-09-30/work/FIRST-WAVE-TASKS.json", "sha256": "d8d48891b8e66777df6943eff8b87a43ad74b7371733073ab87e12f087a685a5", "role": "the C0 entry executed (and no other entry)"},
+    {"path": "research/quality-sprint-2026-09-30/work/FIRST-WAVE-SCOPES.md", "sha256": "3327ba6639997238e6cb515f5aab9c27b426d7cc9f567193caca8909eb3cb725", "role": "write scope and read-only boundary"},
+    {"path": "research/quality-sprint-2026-09-30/GOAL-BRIEF.md", "sha256": "f7f7a2e2a31f54e3737c71a8dc4556aba0f7ca3b198d4430810b45b8607cfa77", "role": "execution contract, P01..P18, gates G0..G11"},
+    {"path": "research/quality-sprint-2026-09-30/OWNER-DECISIONS.md", "sha256": "d36927f51527862624666f66328c9547a1302e2cd466d00323e0ebb36b310090", "role": "two methodological polls"},
+    {"path": "research/quality-sprint-2026-09-30/REMAINING-DECISIONS.md", "sha256": "364982c8bf623f53f705afea4a0a2cea7a788db4c961406654df31c4bd9cd3ef", "role": "block 3 temporary secrets (governing clarification)"},
+    {"path": "research/quality-sprint-2026-09-30/SPRINT-PLAN.md", "sha256": "4d0a5a60e0ee603820ae87b094c50c40930d83de3a416a0eb2b334a4094618ec", "role": "approved plan, C0 scope, gate applicability"},
+    {"path": "research/quality-sprint-2026-09-30/followup/cvc-context-contract/PRIMARY-SOURCES.md", "sha256": "5dee41ac3d32cd8a828422fc8e9dbc5886c23b94ec144f329fd704a007c53abc", "role": "reused primary sources (not re-fetched)"},
+    {"path": "research/quality-sprint-2026-09-30/followup/cvc-context-contract/FINDINGS.md", "sha256": "53529ab87b7a31eef72a1a03708842bc53f52fe179b0e4cf53aa03429c655a15", "role": "reused engine facts E1..E11 and unknowns"},
+    {"path": "research/quality-sprint-2026-09-30/followup/cvc-context-contract/CONTEXT-MATRIX.json", "sha256": "cc267ab3d1edc5d9db654ea0ec7f5c9a70760e23f5e35707015ed886f30a7cfa", "role": "reused M01..M17 axis matrix and questions"},
+    {"path": "research/quality-sprint-2026-09-30/followup/cvc-context-contract/probes/mechanism_probe.py", "sha256": "4f1dfc2287d03c72641ba2f43a54e5133188429f8331c5ecd402c87cfb665f28", "role": "reused mechanism probe logic"},
+    {"path": "prototype/licensing/assets_source.py", "sha256": "2e61b814f0a40a3ecbe3d93a9b98673348e215952d6143580e9168f4e0d5cfd5", "role": "leased KEY_TYPE:1334, CTX_TYPES:1456, COMPOSITE_TYPES:1437, PRIORITY:1485"},
+    {"path": "prototype/pseudex/structured.py", "sha256": "a8bb3a0c4bcb5a5ebf191b045ff97e76f605a90282950336ab4a118754f42aa6", "role": "_NUMERIC_KEY_TYPES:55, _JSON_KV:56, _FORM_KV:67, _key_type:74, OPAQUE demotion:371"},
+    {"path": "prototype/pseudex/assets.py", "sha256": "e158f307e5a2fe7168ecf84d714508b3c60bcbb8993b51fb51d25f67b333bc28", "role": "cue+shape regex _build_ru_pii:430-432"},
+    {"path": "prototype/pseudex/credentials.py", "sha256": "f0a91007a39a65f3ebb30094ee218fbf098123fafbbf8a5cfdad29b5c06bc892", "role": "SECRET recognizer _PATTERNS:45, detect_credentials:98"},
+    {"path": "prototype/pseudex/vault.py", "sha256": "e10630e377febdefe0205ee1f733efdc8c24a3c5288816b43ede12a1f180163e", "role": "_card_length:407, _fake_secret:1765, _render_token:1838, REDACTED fallback:1929, tokens INSERT:3226, tokens PK:2153"},
+    {"path": "prototype/pseudex/audit.py", "sha256": "23e1793df117db22823fe6c10d6def751f0814f2c2dedaf71629141a7de57ea1", "role": "_preview:39 (bullets for len<=3)"},
+    {"path": "prototype/pseudex/detect_all.py", "sha256": "e2e458de6e9bbc16c5c3d91307a0076a647115c9fa7e39fd1ce667a0e5e32e69", "role": "composition point read only"},
+    {"path": "prototype/testkit.py", "sha256": "ee3e1cc254839f2514741a026d6444eca62bc556c324231b8518ca7f1622d03d", "role": "load_dev_bundle (in-memory development bundle)"},
+    {"path": "research/hop-format-audit/next-sprint-review/v6-snapshot/tz-agentpii6.md", "sha256": "b0cba57119b9ac687cf9134bd25cd0b96ced44f27a5d4ef53bae3b3d1c6e7171", "role": "v6 registry: no temporary-secret type present"},
+    {"path": "research/hop-format-audit/next-sprint-review/v6-snapshot/branch-comparison.json", "sha256": "a0aa3221cb82b4c7965cf2062a8c62fb3f3f44cbbea8b6da1c30b6266e23d222", "role": "v6 snapshot identity"}
+  ],
+  "read_only_boundaries_honored": [
+    "prototype/ engine, licensing, scorer, benchmark sources: read only, zero writes",
+    "old raw runs, corpora, wiki, git: read only; no reset/stash/revert; no commit; no tag; no push",
+    "other work folders (B0, and the other first-wave task folders): read only, not written",
+    "EXECUTION.json and work/SUBAGENT-USAGE.md: NOT modified (Lead owns both)",
+    "no dependency install, no model download, no production call, no provider benchmark call",
+    "no broad secret-path search; no host credential read or printed",
+    "no real payment instrument, real CVC/OTP value, or customer vault touched"
+  ],
+  "execution_environment": {
+    "interpreter": "/Users/igor/Projects/Obscura-hop-audit/prototype/.venv/bin/python (Python 3.12.12)",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "bundle": "testkit.load_dev_bundle() in-process before any detection; ephemeral synthetic fixtures in memory only",
+    "network": "none"
+  },
+  "write_scope": {
+    "sole_write_prefix": "research/quality-sprint-2026-09-30/work/C0/"
+  },
+  "artifacts_produced": [
+    "work/C0/INPUTS.json",
+    "work/C0/SPEC.md",
+    "work/C0/TYPE-CONTRACTS.json",
+    "work/C0/FIXTURES.json",
+    "work/C0/gen_fixtures.py",
+    "work/C0/probe_engine.py",
+    "work/C0/verify.py",
+    "work/C0/RED.log",
+    "work/C0/checks.log",
+    "work/C0/PROBE-FACTS.json",
+    "work/C0/DELTA.json",
+    "work/C0/GATE.json",
+    "work/C0/OWNER-QUESTIONS.md"
+  ],
+  "gate_scope_of_this_task": {
+    "gate": "G3 Design/RED (quality contract half) + O-SECRET",
+    "status": "OWNER_PENDING",
+    "explicitly_not_claimed": [
+      "entire quality green",
+      "paid GO",
+      "production verification",
+      "engine implementation",
+      "C1 acceptance",
+      "release or merge",
+      "PCI compliance or payment readiness"
+    ]
+  }
+}

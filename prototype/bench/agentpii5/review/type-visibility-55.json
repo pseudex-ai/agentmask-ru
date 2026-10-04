@@ -1,0 +1,2377 @@
+{
+ "generated_by": "bench.agentpii5.type_visibility",
+ "registry_sha256": "429a6a2e634fd1adb46d16d4dbd623f3bc07aad561b9ceca468d1b28a588ff2e",
+ "registry_records": 66,
+ "type_count": 55,
+ "axes": [
+  "checksum",
+  "agent_form",
+  "typed_invalid",
+  "all_parts"
+ ],
+ "axis_decisions": {
+  "checksum": "COV-CHECKSUM-INHERIT",
+  "agent_form": "COV-AGENT-FORM",
+  "typed_invalid": "COV-TYPED-INVALID",
+  "all_parts": "COV-ALL-PARTS"
+ },
+ "open_items": [
+  "GRAMMAR_UNASSERTED",
+  "NOTATION_UNASSERTED",
+  "MINT_UNASSERTED",
+  "TYPED_INVALID_PATH_UNTESTED",
+  "ENGINE_SUPPORT_NOT_CLAIMED"
+ ],
+ "claim": {
+  "claim": "REGISTRY RECORDS, NOT ENGINE SUPPORT",
+  "supported_by_engine": 0,
+  "types": 55,
+  "checksum_carrying": 11,
+  "agent_form_declared": 55,
+  "typed_context_declared": 55,
+  "all_parts_applicable": 0,
+  "all_parts_carrier": "NAME",
+  "grammar_uncertain": 9,
+  "notation_unasserted": 6,
+  "mint_unasserted": 17,
+  "engine_labels": {
+   "BANK_ACCOUNT": [
+    "ACCOUNT"
+   ],
+   "OGRNIP": [
+    "OGRN"
+   ],
+   "OMS_ENP": [
+    "OMS"
+   ],
+   "STS_NUMBER": [
+    "VEHICLE_DOC"
+   ],
+   "PTS_NUMBER": [
+    "VEHICLE_DOC"
+   ],
+   "IP_ADDRESS": [
+    "IP"
+   ]
+  },
+  "v5_slice": [
+   "NAME",
+   "PHONE",
+   "LOC",
+   "DOB",
+   "DATE",
+   "EMAIL",
+   "CARD",
+   "SNILS",
+   "INN",
+   "PASSPORT",
+   "PLATE"
+  ],
+  "type_classes": {
+   "C": 1,
+   "K": 50,
+   "KC": 4
+  }
+ },
+ "types": [
+  {
+   "type": "INTL_PASSPORT",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "BIRTH_CERT",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": true,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "GRAMMAR_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "CIVIL_ACT_CERT",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": true,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "GRAMMAR_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "RESIDENCE_PERMIT",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": true,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "GRAMMAR_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "MILITARY_ID",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "BANK_ACCOUNT",
+   "type_class": "KC",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-CHECKSUM-INHERIT",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [
+    "ACCOUNT"
+   ],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "IBAN",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-CHECKSUM-INHERIT",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "LOAN_CONTRACT_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": true,
+   "mint_unasserted": true,
+   "open_items": [
+    "NOTATION_UNASSERTED",
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "LOAN_UID",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-CHECKSUM-INHERIT",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "OGRNIP",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-CHECKSUM-INHERIT",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [
+    "OGRN"
+   ],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "CREDIT_SUBJECT_CODE",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": true,
+   "mint_unasserted": true,
+   "open_items": [
+    "NOTATION_UNASSERTED",
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "OMS_ENP",
+   "type_class": "KC",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-CHECKSUM-INHERIT",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [
+    "OMS"
+   ],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "DMS_POLICY",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": true,
+   "mint_unasserted": true,
+   "open_items": [
+    "NOTATION_UNASSERTED",
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "OSAGO_POLICY",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": true,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "GRAMMAR_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "KASKO_POLICY",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": true,
+   "mint_unasserted": true,
+   "open_items": [
+    "NOTATION_UNASSERTED",
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "INSURANCE_CLAIM_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": true,
+   "mint_unasserted": true,
+   "open_items": [
+    "NOTATION_UNASSERTED",
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "VIN",
+   "type_class": "KC",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-CHECKSUM-INHERIT",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "EPTS_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-CHECKSUM-INHERIT",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "UIN",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-CHECKSUM-INHERIT",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "COURT_CASE_UID",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "ARBITRAZH_CASE_NO",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "COURT_CASE_NO_SOU",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "FSSP_IP_NO",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "EXEC_DOC_NO",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": true,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "GRAMMAR_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "STS_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [
+    "VEHICLE_DOC"
+   ],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "PTS_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [
+    "VEHICLE_DOC"
+   ],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "DRIVER_LICENSE",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "CADASTRAL_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "GIS_ZHKH_ELS",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "UTILITY_ACCOUNT",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": true,
+   "open_items": [
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "ESIA_OID",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "IMEI",
+   "type_class": "C",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-CHECKSUM-INHERIT",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "ICCID",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-CHECKSUM-INHERIT",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "IMSI",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "MAC",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "IP_ADDRESS",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [
+    "IP"
+   ],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": true,
+   "open_items": [
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "SUBSCRIBER_ACCOUNT",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": true,
+   "open_items": [
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "MEDCARD_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": true,
+   "open_items": [
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "ELN_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "PRESCRIPTION_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": true,
+   "open_items": [
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "REFERRAL_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": true,
+   "notation_unasserted": false,
+   "mint_unasserted": true,
+   "open_items": [
+    "GRAMMAR_UNASSERTED",
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "DIPLOMA_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "SCHOOL_CERT_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "STUDENT_ID_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": true,
+   "notation_unasserted": false,
+   "mint_unasserted": true,
+   "open_items": [
+    "GRAMMAR_UNASSERTED",
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "EMPLOYEE_TAB_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": true,
+   "open_items": [
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "EMPLOYMENT_CONTRACT_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": true,
+   "open_items": [
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "ACCESS_PASS_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": true,
+   "open_items": [
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "PNR",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": true,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "GRAMMAR_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "E_TICKET_NUMBER",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": true,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "GRAMMAR_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "LOYALTY_CARD_NUMBER",
+   "type_class": "KC",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-CHECKSUM-INHERIT",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "MOBILE_AD_ID",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "APP_DEVICE_ID",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "METRICA_CLIENT_ID",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": false,
+   "open_items": [
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "CDP_CUSTOMER_ID",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": false,
+   "mint_unasserted": true,
+   "open_items": [
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  },
+  {
+   "type": "LOGIN",
+   "type_class": "K",
+   "origin": "v6",
+   "supported_by_engine": false,
+   "unsupported_reason": "registry record only; native support is proven per type after V1/N1",
+   "axes": {
+    "checksum": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": ""
+    },
+    "agent_form": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-AGENT-FORM",
+     "carrier": ""
+    },
+    "typed_invalid": {
+     "applies": true,
+     "status": "COVERED_BY_OWNER_DECISION",
+     "decision_id": "COV-TYPED-INVALID",
+     "carrier": ""
+    },
+    "all_parts": {
+     "applies": false,
+     "status": "NOT_APPLICABLE",
+     "decision_id": "",
+     "carrier": "NAME"
+    }
+   },
+   "engine_labels": [],
+   "grammar_uncertain": false,
+   "notation_unasserted": true,
+   "mint_unasserted": true,
+   "open_items": [
+    "NOTATION_UNASSERTED",
+    "MINT_UNASSERTED",
+    "TYPED_INVALID_PATH_UNTESTED",
+    "ENGINE_SUPPORT_NOT_CLAIMED"
+   ]
+  }
+ ]
+}

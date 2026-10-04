@@ -1,0 +1,104 @@
+{
+  "task": "D0",
+  "gate": "G3",
+  "status": "PASS",
+  "status_scope": "local design/RED only: the harness, its instrument controls and the availability/feasibility inventory are executed and reproducible on the pinned unchanged source",
+  "scope": "comparable detector-mechanism experiment (rules / bare NER / rules-only / union) on identical known-diagnostic gold; read-only local model inventory; no architecture choice, no product change",
+  "not_a_full_pass": true,
+  "revision": {
+    "head": "890c50849a326f882eac336ba4e38c91171de473",
+    "head_note": "evidence-only commit",
+    "product_source_pin": "0bfda2363ef1a1d552e2ac093129b1026a86ad68",
+    "harness": "work/D0/d0_arm_compare.py",
+    "harness_sha256": "ce9f0ed63aad252ff28d92bb04fe6e33512cd3a187d439f12d26a2efd1d10c6d",
+    "harness_sha256_note": "recomputed at gate time from work/D0/d0_arm_compare.py; matches work/D0/out/arm-results.json:harness_sha256",
+    "bundle_version": "2a07cebae2b050ec",
+    "bundle_sha256": "01c19f4689450b54694b7aaa4070cbaf695efc3e98f0b59471486392a0348206",
+    "bundle_matches_B0_RUNTIME": true,
+    "python": "3.12.12",
+    "generated_utc": "2026-09-30T20:12:42Z"
+  },
+  "evidence": [
+    "INPUTS.json", "SPEC.md", "DELTA.json", "OPTIONS.md", "RUNBOOK-PERF.md",
+    "MODEL-INVENTORY.json", "d0_arm_compare.py", "make_manifests.py", "smoke.log",
+    "verify_evidence.py", "verify.log",
+    "out/arm-results.json", "out/arm-summary.tsv", "out/source-hashes.json"
+  ],
+  "checks": {
+    "arms_executed": 5,
+    "unique_texts_per_arm": 791,
+    "gold_units": {"golden": 298, "dirty": 134, "gatectx": 295},
+    "gate_negative_units": 292,
+    "source_modules_hashed": 63,
+    "source_modules_matching_B0_pins": 63,
+    "source_drift": 0,
+    "model_weight_files_hashed": 5,
+    "gold_files_hashed": 4,
+    "dictionary_hashes_match_B0": 4,
+    "files_written_outside_work_D0": 0,
+    "engine_source_modified": false,
+    "scorer_or_benchmark_modified": false,
+    "holdout_read": false,
+    "paid_run_read": false,
+    "network_or_provider_calls": 0,
+    "models_downloaded_or_installed": 0,
+    "git_mutations": 0,
+    "final_command_exit": 0,
+    "self_check_exit": 0,
+    "self_check_note": "verify_evidence.py re-derives every number above from the retained raw run; it is a self-check, not the independent review",
+    "unresolved_gold_values": {"golden": 0, "dirty": 0},
+    "unlabelled_gate_occurrences_skipped": 2420,
+    "duplicate_gate_rows_deduped": 47
+  },
+  "instrument_controls": {
+    "positive": "PASS — product arm returns NAME + PHONE on a synthetic control string",
+    "positive_golden_whole_recall": 0.9597,
+    "negative": "PASS — empty string yields zero spans in every arm",
+    "fail_modes_wired": "exit 2 on positive-control failure, exit 3 on negative-control failure; neither triggered"
+  },
+  "instrument_defects_found_and_fixed": [
+    "occurrence rows counted instead of unique labelled keys (fixed before any number was kept)",
+    "prediction re-counted once per sibling occurrence in the same text (fixed before any number was kept)"
+  ],
+  "owner_gate": {
+    "id": "O-DETECT",
+    "status": "OWNER_PENDING",
+    "needs": [
+      "controlled CPU/RAM/latency (RUNBOOK-PERF.md) — currently NOT_MEASURED for every candidate",
+      "quality of each candidate on the same approved gold with x/n and CI (O-DATA protocol)",
+      "licence of candidate weights and the lease/image path they would use"
+    ]
+  },
+  "production_artifact_gate": {
+    "status": "NOT_MEASURED",
+    "blocks": "RG release-A/B",
+    "reason": "unchanged from work/B0/GATE.json: the installed production digest was not queried here; no inference from a local version file"
+  },
+  "independent_review": {
+    "status": "NOT_RUN",
+    "note": "D0 does not self-certify; an independent reviewer (not the author) is required before the Lead relies on D0 for the O-DETECT question"
+  },
+  "not_claimed": [
+    "architecture choice or ranking",
+    "raw Natasha as a production replacement",
+    "causal attribution of any quality difference",
+    "p50/p95/RSS or any admission budget",
+    "production quality, G7 acceptance, or support/CI",
+    "entire-sprint quality green",
+    "paid or live benchmark GO",
+    "production artifact verified",
+    "holdout untouched historically"
+  ],
+  "allowed_next": [
+    "Lead may use this harness, the per-type table and MODEL-INVENTORY.json to prepare the O-DETECT question",
+    "an independent reviewer may re-run the harness and check the counters against the gold files",
+    "RUNBOOK-PERF.md may be executed in an isolated phase after the Lead schedules it",
+    "unaffected parallel work (M1b, A1, S1, V0, C0, S2, M1a) continues"
+  ],
+  "blocked_next": [
+    "adoption of any mechanism (O-DETECT)",
+    "any claim about mechanism cost or quality ranking",
+    "RG release-A/B (production digest still NOT_VERIFIED)"
+  ],
+  "paid_runs_authorized": false
+}

@@ -55,6 +55,7 @@ from bench.agentpii5.contracts import (
     ToolResultRecord,
 )
 from bench.agentpii5.form import form_match
+from bench.agentpii5.metrics import NEG_TAG_PREFIX
 
 # One person, one substitute, one other person. Written out here so every
 # fixture reads as a sentence and a reader can check the expected fraction
@@ -124,7 +125,7 @@ def _case(case_id: str, behaviour: str, texts: tuple[str, ...], items: tuple[Pii
     return CaseV5(base=base, behaviour=behaviour, hops=hops, returns=(), forced=(), memory=(),
                   pick=None, branch=None, loop=None, rag=None, document=None,
                   has_result=any(hop.kind == "IN" and hop.owner == "tool" for hop in hops),
-                  streaming=False, revised_from_v4=False)
+                  streaming=False, revised_from_v4=False, v6=None)
 
 
 def _run(case_id: str) -> ArmRunV5:
@@ -135,7 +136,7 @@ def _run(case_id: str) -> ArmRunV5:
                   termination="done", cost_usd=0.0, substitutes={}, masked_spans={})
     return ArmRunV5(base=base, reply_raw="", control_reply="", tool_results=(), mentions=(),
                     turn_replies=(), call_turns=(), request_count=1, stream_mismatch=False,
-                    reply_whole="", turn_residual=0)
+                    reply_whole="", turn_residual=0, model_trace=None)
 
 
 def _with_subs(run: ArmRunV5, subs: dict[str, str]) -> ArmRunV5:
@@ -180,6 +181,14 @@ def _with_results(run: ArmRunV5, results: tuple[ToolResultRecord, ...]) -> ArmRu
 
 def _with_masked(run: ArmRunV5, spans: dict[int, tuple[tuple[int, int], ...]]) -> ArmRunV5:
     return replace(run, base=replace(run.base, masked_spans=spans))
+
+
+def _with_message_pieces(run: ArmRunV5,
+                         pieces: tuple[tuple[int, int, int, str], ...]) -> ArmRunV5:
+    """The OD-76 message-piece record: (msg, start, end, engine_type) entries a
+    v6 run writes for the IN/user leg (`ArmRunV5.message_pieces`). The v5 path
+    never sets it, so an old-corpus replay stays byte-identical."""
+    return replace(run, message_pieces=pieces)
 
 
 def _hop(kind: str, owner: str, item_id: str, index: int, turn: int, tool: str,
@@ -444,9 +453,10 @@ def _end_to_end_fixtures() -> tuple[Fixture, Fixture, Fixture]:
     #      the tool DID receive it — and it is a MISS, because the model read
     #      it too. The docstring of this line used to promise the opposite
     #      («a passthrough scores 100% here»), which is the reading F1.3 made
-    #      false and the one `report --selftest`'s `end_to_end_unmasked_is_a_hit`
-    #      mutant takes: with no `unmasked` leaf in any fixture the gate could
-    #      not tell that mutant from the shipped line.
+    #      false and the one `report --selftest`'s
+    #      `end_to_end_unmasked_is_a_hit` mutant takes: with no such leaf in any
+    #      fixture the gate could not tell that mutant from the shipped line.
+    #      The status is `not_masked` (class Е split `unmasked` in three).
     unmasked_leaf = _hop("OUT", "tool_arg", "p1", 5, 0, "crm_upsert_contact", 2, -1,
                          "contact.name")
     both = _case("fx-e2e-2", "parallel", ("…",), (NAME_ITEM, PHONE_ITEM),
@@ -456,13 +466,13 @@ def _end_to_end_fixtures() -> tuple[Fixture, Fixture, Fixture]:
                   _unseen(both, second, "PHONE", "", "", "absent"),
                   _seen(both, surname, "NAME", "Смирнова", "Пахомова"),
                   _seen(both, patronymic, "NAME", "Сергеевна", "Олеговна"),
-                  _unseen(both, unmasked_leaf, "NAME", REAL_NAME, REAL_NAME, "unmasked")))
+                  _unseen(both, unmasked_leaf, "NAME", REAL_NAME, REAL_NAME, "not_masked")))
     return (_fx("end_to_end", "zero", "", (missing,), 0, 1),
             _fx("end_to_end", "one", "", (arrived,), 1, 1),
             _fx("end_to_end", "adversarial",
                 "absent stays in the denominator; a wrong part, an unsatisfiable role and a "
-                "leaf the gateway never masked are misses — a metric counting `unmasked` as a "
-                "hit prints 2/5",
+                "leaf the gateway never masked are misses — a metric counting such a leaf "
+                "(`not_masked`) as a hit prints 2/5",
                 (mixed,), 1, 5))
 
 
@@ -625,11 +635,13 @@ def _form_out_fixtures() -> tuple[Fixture, Fixture, Fixture]:
     # another letter case — the C-153 trap. The second is a leaf the gateway
     # never masked: the agent wrote the REAL value, nothing was restored, and
     # `produced == reference` made `form_match` say «same». A gateway that
-    # masked NOTHING printed 100% on this line, so `unmasked` is a MISS and
-    # stays in the denominator; dropping it instead would let a passthrough
-    # score «н/п» and look untested rather than broken.
+    # masked NOTHING printed 100% on this line, so the fact is a MISS and stays
+    # in the denominator; dropping it instead would let a passthrough score
+    # «н/п» and look untested rather than broken. The status is `not_masked` —
+    # what the class Е split renamed `unmasked` to on this leg, the leaf
+    # already holding the real value with no substitute ever minted for it.
     trap = _obs(case, run, (_seen(case, OUT_ARG, "NAME", FAKE_MALE.upper(), FAKE_MALE),
-                            _unseen(case, OUT_ARG, "NAME", REAL_NAME, REAL_NAME, "unmasked")))
+                            _unseen(case, OUT_ARG, "NAME", REAL_NAME, REAL_NAME, "not_masked")))
     zero, one = _form_pair("form_hOUT", OUT_ARG)
     return (zero, one,
             _fx("form_hOUT", "adversarial", "a letter-case change and a leaf with nothing in it",
@@ -668,6 +680,221 @@ def _out_absent_fixtures() -> tuple[Fixture, Fixture, Fixture]:
                 "an undeclared crossing is not a skipped one; a declared OPTIONAL hop the agent "
                 "DID write stays in the denominator — a metric dropping optional hops prints 2/2",
                 (mixed, optional), 2, 3))
+
+
+# --- class Е: the split of the OUT funnel and the honest share --------------------------
+#
+# THE SIX STATUSES ARE SET BY HAND HERE, and that is the rule of this file: a
+# fixture built by running the thing under test agrees with it by construction.
+# A metric of the funnel reads `HopObservation.status` and the leaf's own value,
+# so the record has to state both — and `observed` gets the value the leaf ASKS
+# FOR (`tools.expected_leaf_value`), because a fixture that wrote the whole name
+# into `contact.last_name` would be a miss of the value predicate and would pin
+# that miss instead of the line under test.
+
+def _leaf_value(item: PiiItem, tool: str, path: str) -> str:
+    """The value a correct gateway leaves in this leaf: its part for the leaf's
+    role, the whole canonical for a leaf that names no role."""
+    from bench.agentpii5.tools import expected_leaf_value, spec_v5_for
+
+    spec = spec_v5_for(tool, path)
+    return item.canonical if spec is None else expected_leaf_value(item, spec)
+
+
+def _leaves(case_id: str, *statuses: str, tool: str = "crm_upsert_contact",
+            paths: tuple[str, ...] | None = None) -> RunObservation:
+    """One handwritten observation whose declared OUT/tool_arg leaves carry
+    `statuses`, in order. The paths default to the name parts of `NAME_ITEM`,
+    so «observed» and «the real value» are the same thing in every fixture."""
+    item = NAME_ITEM
+    chosen = paths or ("contact.last_name",) * len(statuses)
+    hops = [_hop("OUT", "tool_arg", item.id, index, 0, tool, index, -1, path)
+            for index, path in enumerate(chosen)]
+    case = _case(case_id, "single", (item.value,), (item,), tuple(hops))
+    rows: list[HopObservation] = []
+    for hop, status in zip(hops, statuses):
+        real = _leaf_value(item, tool, hop.path)
+        if status == "observed":
+            rows.append(_seen(case, hop, item.type, real, FAKE_NAME))
+        elif status == "residual":
+            rows.append(_unseen(case, hop, item.type, FAKE_NAME, FAKE_NAME, status))
+        elif status == "leaf_foreign":
+            rows.append(_unseen(case, hop, item.type, OTHER_SURNAME, FAKE_NAME, status))
+        else:                       # engine_kept / not_masked / absent
+            rows.append(_unseen(case, hop, item.type, real, real, status))
+    return _obs(case, _run(case_id), tuple(rows))
+
+
+OTHER_SURNAME = "Сидорова"
+# The substitute SPLIT into the parts a decomposed leaf asks for. A leaf named
+# for ONE role must be compared with the ONE-role spelling of the fake: handing
+# `contact.last_name` the whole «Пахомова Ольга» makes the form comparator read
+# two words against one and any turn holding such a leaf a miss of the FORM —
+# which is a fixture bug, not a finding.
+FAKE_SURNAME, FAKE_GIVEN = FAKE_NAME.split(" ")
+
+
+def _end_to_end_written_fixtures() -> tuple[Fixture, Fixture, Fixture]:
+    """The honest share. The traps are the two populations it is NOT: every
+    declared leaf (the strict line) and every leaf the engine never touched."""
+    return (_fx("end_to_end_written", "zero", "",
+                (_leaves("fx-e2ew-0", "residual"),), 0, 1),
+            _fx("end_to_end_written", "one", "",
+                (_leaves("fx-e2ew-1", "observed"),), 1, 1),
+            _fx("end_to_end_written", "adversarial",
+                "an `absent` slot and the two halves of «nothing to restore» are OUTSIDE the "
+                "honest denominator: a metric keeping the corpus timetable prints 1/4, one "
+                "crediting the engine-kept city for free prints 3/4",
+                (_leaves("fx-e2ew-2", "absent", "engine_kept", "not_masked", "observed"),), 1, 1))
+
+
+def _out_written_fixtures() -> tuple[Fixture, Fixture, Fixture]:
+    """`form_hOUT`'s population, printed."""
+    case = _plain_case("fx-ow-extra", (OUT_ARG,))
+    extra = _extra_seen(case, OUT_ARG, "NAME", REAL_NAME, FAKE_NAME)
+    skipped = _obs(case, _run("fx-ow-extra"),
+                   (_unseen(case, OUT_ARG, "NAME", "", "", "absent"), extra))
+    return (_fx("out_written", "zero", "", (_leaves("fx-ow-0", "absent", "absent"),), 0, 2),
+            _fx("out_written", "one", "",
+                (_leaves("fx-ow-1", "observed", "not_masked"),), 2, 2),
+            _fx("out_written", "adversarial",
+                "a crossing the case never DECLARED is not a leaf the agent owed — a metric "
+                "counting every OUT hop prints 1/2",
+                (skipped,), 0, 1))
+
+
+def _out_no_mint_fixtures() -> tuple[Fixture, Fixture, Fixture]:
+    """The population `end_to_end_written` subtracts, in one count."""
+    return (_fx("out_no_mint", "zero", "",
+                (_leaves("fx-onm-0", "observed", "absent"),), 0, 2),
+            _fx("out_no_mint", "one", "",
+                (_leaves("fx-onm-1", "engine_kept", "not_masked"),), 2, 2),
+            _fx("out_no_mint", "adversarial",
+                "a THIRD value in the leaf is not «nothing to restore»: a metric lumping every "
+                "non-observed status prints 3/3",
+                (_leaves("fx-onm-2", "engine_kept", "not_masked", "leaf_foreign"),), 2, 3))
+
+
+def _out_engine_kept_fixtures() -> tuple[Fixture, Fixture, Fixture]:
+    """The deliberate exception, which the two halves must not be merged into."""
+    return (_fx("out_engine_kept", "zero", "",
+                (_leaves("fx-oek-0", "not_masked"),), 0, 1),
+            _fx("out_engine_kept", "one", "",
+                (_leaves("fx-oek-1", "engine_kept"),), 1, 1),
+            _fx("out_engine_kept", "adversarial",
+                "a passthrough and a leftover fake are not decisions of the engine: a metric "
+                "counting «the engine did not mask it» prints 3/3",
+                (_leaves("fx-oek-2", "engine_kept", "not_masked", "residual"),), 1, 3))
+
+
+def _out_not_masked_fixtures() -> tuple[Fixture, Fixture, Fixture]:
+    """The passthrough, which is a failure of the IN leg and no decision."""
+    return (_fx("out_not_masked", "zero", "",
+                (_leaves("fx-onk-0", "engine_kept"),), 0, 1),
+            _fx("out_not_masked", "one", "",
+                (_leaves("fx-onk-1", "not_masked"),), 1, 1),
+            _fx("out_not_masked", "adversarial",
+                "«the leaf already held the real value» is neither a third value nor an empty "
+                "slot: a metric counting every miss prints 3/3",
+                (_leaves("fx-onk-2", "not_masked", "leaf_foreign", "absent"),), 1, 3))
+
+
+def _out_leaf_foreign_fixtures() -> tuple[Fixture, Fixture, Fixture]:
+    """The third value, which `form_match` cannot see at all."""
+    return (_fx("out_leaf_foreign", "zero", "",
+                (_leaves("fx-olf-0", "not_masked"),), 0, 1),
+            _fx("out_leaf_foreign", "one", "",
+                (_leaves("fx-olf-1", "leaf_foreign"),), 1, 1),
+            _fx("out_leaf_foreign", "adversarial",
+                "a leftover fake and an empty slot are not third values: a metric counting every "
+                "status that is not `observed` prints 3/3",
+                (_leaves("fx-olf-2", "leaf_foreign", "residual", "absent"),), 1, 3))
+
+
+def _two_leaf_case(case_id: str) -> tuple[CaseV5, Hop, Hop]:
+    """One turn, two declared non-optional OUT leaves — `_multi_turns`'
+    population, the one g02's 56 turns are counted over."""
+    first = _hop("OUT", "tool_arg", "p1", 0, 0, "crm_upsert_contact", 0, -1, "contact.last_name")
+    second = _hop("OUT", "tool_arg", "p1", 1, 0, "crm_upsert_contact", 1, -1, "contact.first_name")
+    return _case(case_id, "parallel", (REAL_NAME,), (NAME_ITEM,), (first, second)), first, second
+
+
+def _multi_all_out_written_fixtures() -> tuple[Fixture, Fixture, Fixture]:
+    """The honest twin of `multi_all_out`: 55 of g02's 56 turns had neither
+    leaf written and the strict line read 0/56 — a fact about the scene."""
+    case, first, second = _two_leaf_case("fx-maow")
+    broke = _obs(case, _run("fx-maow"),
+                 (_unseen(case, first, "NAME", OTHER_SURNAME, FAKE_SURNAME, "leaf_foreign"),
+                  _unseen(case, second, "NAME", "", "", "absent")))
+    whole = _obs(case, _run("fx-maow"),
+                 (_seen(case, first, "NAME", "Иванова", FAKE_SURNAME),
+                  _seen(case, second, "NAME", "Елена", FAKE_GIVEN)))
+    # ADVERSARIAL. The turn where the agent wrote ONE of the two leaves and got
+    # it right is OUTSIDE `multi_all_out`'s «every argument» reading and INSIDE
+    # this one (1/1); a metric that demanded every declared leaf would print
+    # 0/1 and score the agent down for a scene that never offered the second.
+    # SECOND CLAUSE: both values right, one in the tool's CANON form — the value
+    # half passes and the form half fails, as `multi_all_out`'s own ruling says.
+    half_case, half_first, half_second = _two_leaf_case("fx-maow-2")
+    half = _obs(half_case, _run("fx-maow-2"),
+                (_unseen(half_case, half_first, "NAME", "Иванова", FAKE_SURNAME, "not_masked"),
+                 _seen(half_case, half_second, "NAME", "Елена", FAKE_GIVEN)))
+    form_case, form_first, form_second = _two_leaf_case("fx-maow-3")
+    formless = _obs(form_case, _run("fx-maow-3"),
+                    (_seen(form_case, form_first, "NAME", "Иванова", FAKE_SURNAME),
+                     _seen(form_case, form_second, "NAME", "Елена", "ЕЛЕНА")))
+    return (_fx("multi_all_out_written", "zero", "", (broke,), 0, 1),
+            _fx("multi_all_out_written", "one", "", (whole,), 1, 1),
+            _fx("multi_all_out_written", "adversarial",
+                "one written leaf of a two-leaf turn is judged on what was written; and the "
+                "right value in the tool's canon form still fails — a metric checking the value "
+                "alone prints 2/2",
+                (half, formless), 1, 2))
+
+
+def _chain_written_pair(case_id: str, out_status: str, produced: str) -> RunObservation:
+    """An A→B transition whose OUT(B) leaf carries `out_status`."""
+    case, source, target = _chain_case(case_id, "p1", (NAME_ITEM,))
+    written = (_seen(case, source, "NAME", FAKE_NAME, REAL_NAME),
+               _seen(case, target, "NAME", produced, FAKE_NAME) if out_status == "observed"
+               else _unseen(case, target, "NAME", produced, FAKE_NAME, out_status))
+    return _obs(case, _run(case_id), written)
+
+
+def _chain_value_written_fixtures() -> tuple[Fixture, Fixture, Fixture]:
+    """`chain_value` over the hand-overs the engine was asked to perform."""
+    other = _item("p9", "NAME", OTHER_NAME, OTHER_NAME, "i2", _in_seed("s2", "name"))
+    cross_case, cross_source, cross_target = _chain_case("fx-cvw-3", "p9", (NAME_ITEM, other))
+    crossed = _obs(cross_case, _run("fx-cvw-3"),
+                   (_seen(cross_case, cross_source, "NAME", FAKE_NAME, REAL_NAME),
+                    _seen(cross_case, cross_target, "NAME", REAL_NAME, FAKE_NAME)))
+    absent_case, absent_source, absent_target = _chain_case("fx-cvw-4", "p1", (NAME_ITEM,))
+    silent = _obs(absent_case, _run("fx-cvw-4"),
+                  (_seen(absent_case, absent_source, "NAME", FAKE_NAME, REAL_NAME),
+                   _unseen(absent_case, absent_target, "NAME", "", "", "absent")))
+    return (_fx("chain_value_written", "zero", "",
+                (_chain_written_pair("fx-cvw-0", "leaf_foreign", OTHER_SURNAME),), 0, 1),
+            _fx("chain_value_written", "one", "",
+                (_chain_written_pair("fx-cvw-1", "observed", REAL_NAME),), 1, 1),
+            _fx("chain_value_written", "adversarial",
+                "the right string for ANOTHER person is a miss; and an A→B whose B the agent "
+                "never wrote is outside this denominator (a metric over every scheduled "
+                "transition prints 0/2)",
+                (crossed, silent), 0, 1))
+
+
+def _chain_form_written_fixtures() -> tuple[Fixture, Fixture, Fixture]:
+    """The same population, the form question."""
+    return (_fx("chain_form_written", "zero", "",
+                (_chain_written_pair("fx-cfw-0", "observed", "ИВАНОВА ЕЛЕНА"),), 0, 1),
+            _fx("chain_form_written", "one", "",
+                (_chain_written_pair("fx-cfw-1", "observed", REAL_NAME),), 1, 1),
+            _fx("chain_form_written", "adversarial",
+                "a substitute still standing (`residual`) is in the population and has no form to "
+                "compare, while a leaf the engine never masked is outside it — a metric over "
+                "every written leaf prints 0/2",
+                (_chain_written_pair("fx-cfw-2", "residual", OTHER_SURNAME),
+                 _chain_written_pair("fx-cfw-3", "not_masked", REAL_NAME)), 0, 1))
 
 
 def _stream_fidelity_fixtures() -> tuple[Fixture, Fixture, Fixture]:
@@ -1299,6 +1526,15 @@ FIXTURES: dict[str, tuple[Fixture, Fixture, Fixture]] = {
     "form_hIN": _form_in_fixtures(),
     "form_hOUT": _form_out_fixtures(),
     "out_absent": _out_absent_fixtures(),
+    "end_to_end_written": _end_to_end_written_fixtures(),
+    "out_written": _out_written_fixtures(),
+    "out_no_mint": _out_no_mint_fixtures(),
+    "out_engine_kept": _out_engine_kept_fixtures(),
+    "out_not_masked": _out_not_masked_fixtures(),
+    "out_leaf_foreign": _out_leaf_foreign_fixtures(),
+    "multi_all_out_written": _multi_all_out_written_fixtures(),
+    "chain_value_written": _chain_value_written_fixtures(),
+    "chain_form_written": _chain_form_written_fixtures(),
     "stream_fidelity": _stream_fidelity_fixtures(),
     "toolresult_masked": _toolresult_masked_fixtures(),
     "answer_real": _answer_real_fixtures(),
@@ -1314,6 +1550,108 @@ FIXTURES: dict[str, tuple[Fixture, Fixture, Fixture]] = {
     "doc_masked": _doc_masked_fixtures(),
     "doc_extracted": _doc_extracted_fixtures(),
     "residual": _residual_fixtures(),
+}
+
+
+# --- §6.3 the three v6 rows (OD-54) ---------------------------------------------------
+#
+# Each ships its own zero / one / adversarial, exactly like a v5 metric, but in a
+# SEPARATE table: `FIXTURES` is the closed v5 surface `test_fixtures` pins, and a
+# v6 row registered there would turn the v5 gate red without a v6 case anywhere.
+# The report gates these rows on a v6 case and runs them against this table.
+
+
+def _enp_item(item_id: str, value: str, start: int, end: int) -> PiiItem:
+    """An OMS_ENP item: a Luhn checksum type with `engine_labels` = («OMS»,)."""
+    return _item(item_id, "OMS_ENP", value, value, "i1", _in_message(0, start, end))
+
+
+def _typed_user_fixtures() -> tuple[Fixture, Fixture, Fixture]:
+    item = _enp_item("e1", "7707536455681514", 0, 16)
+    hop = _hop("IN", "user", "e1", 0, 0, "", -1, -1, "")
+    case = _case("fx-typed_user", "single", ("7707536455681514",), (item,), (hop,))
+
+    def one(engine_type: str) -> RunObservation:
+        run = _with_message_pieces(_run("fx-typed_user"), ((0, 0, 16, engine_type),))
+        return _obs(case, run, (_seen(case, hop, "OMS_ENP", "0030869788914847", item.value),))
+
+    # ADVERSARIAL. ONE piece covers the ENP and the customer's NAME, labelled
+    # OMS: the ENP hop is a hit (OMS is its alias), the NAME hop is a miss (OMS
+    # is nobody's alias for a name). Counted per HOP it is 1/2; a metric that
+    # counted PIECES instead of hops prints 1/1.
+    name_item = _item("p1", "NAME", REAL_NAME, REAL_NAME, "i1", _in_message(0, 17, 17 + len(REAL_NAME)))
+    name_hop = _hop("IN", "user", "p1", 1, 0, "", -1, -1, "")
+    both_case = _case("fx-typed_user-2", "single",
+                      (f"7707536455681514 {REAL_NAME}",), (item, name_item), (hop, name_hop))
+    shared_run = _with_message_pieces(_run("fx-typed_user-2"),
+                                      ((0, 0, 17 + len(REAL_NAME), "OMS"),))
+    shared = _obs(both_case, shared_run,
+                  (_seen(both_case, hop, "OMS_ENP", "0030869788914847", item.value),
+                   _seen(both_case, name_hop, "NAME", FAKE_NAME, REAL_NAME)))
+    return (_fx("typed_user", "zero", "", (one("CARD"),), 0, 1),
+            _fx("typed_user", "one", "", (one("OMS"),), 1, 1),
+            _fx("typed_user", "adversarial", "one piece covering the ENP and a name "
+                "is two hops — counted per piece a wrong metric prints 1/1", (shared,), 1, 2))
+
+
+def _fake_checksum_fixtures() -> tuple[Fixture, Fixture, Fixture]:
+    item = _enp_item("e1", "7707536455681514", 0, 16)
+    case = _case("fx-fcs", "single", ("7707536455681514",), (item,), ())
+
+    def one(substitute: str) -> RunObservation:
+        return _obs(case, _with_subs(_run("fx-fcs"), {"e1": substitute}), ())
+
+    # ADVERSARIAL. The substitute is GROUPED with spaces and its digit run IS
+    # Luhn-valid («7707536455681514»). The correct metric folds by
+    # `value_notation` and sees a valid substitute — not an invalid one — so it
+    # prints 0/1; a metric that feeds the raw grouped string to the validator
+    # rejects it for its spaces and prints 1/1.
+    return (_fx("fake_checksum_invalid", "zero", "",
+                (one("7707536455681514"),), 0, 1),
+            _fx("fake_checksum_invalid", "one", "",
+                (one("7707536455681515"),), 1, 1),
+            _fx("fake_checksum_invalid", "adversarial",
+                "a grouped substitute whose digit run IS valid — the correct metric strips "
+                "the separators (0/1), a raw-string metric prints 1/1",
+                (one("7707 5364 5568 1514"),), 0, 1))
+
+
+def _overmask_result_fixtures() -> tuple[Fixture, Fixture, Fixture]:
+    # A statement result carrying a BIK NEGATIVE tagged in `spans_real` under
+    # `NEG_TAG_PREFIX`. `text_real` is the mock's output; `text_masked` is what
+    # the model read after the gateway's `pieces` were laid down.
+    real = "БИК 044525225, счёт 0445252259876543210987"
+    bik_span = (4, 13)
+
+    def case_with(pieces: tuple[tuple[int, int, str, str], ...], masked: str) -> RunObservation:
+        case = _plain_case("fx-omr", ())
+        run = _with_results(_run("fx-omr"), (_result(
+            "account_statement", 0, 0, "list", real, masked,
+            {NEG_TAG_PREFIX + "n1": bik_span}, pieces, False),))
+        return _obs(case, run, ())
+
+    masked = case_with(((bik_span[0], bik_span[1], "000000000", "BIK"),),
+                       "БИК 000000000, счёт 0445252259876543210987")
+    free = case_with((), real)
+    # ADVERSARIAL. The BIK is MASKED (over-masking, the defect) while its digits
+    # also OPEN the neighbouring account, which is left standing. A span-reading
+    # metric sees the BIK's own slot covered and prints 0/1; a needle-reading
+    # metric finds «044525225» inside the account and reports a survival (1/1).
+    return (_fx("overmask_result", "zero", "", (masked,), 0, 1),
+            _fx("overmask_result", "one", "", (free,), 1, 1),
+            _fx("overmask_result", "adversarial",
+                "the BIK is masked and its digits open the neighbouring account — a span "
+                "metric prints 0/1, a needle metric finds the digits in the account and "
+                "prints 1/1",
+                (masked,), 0, 1))
+
+
+# The OD-54 rows' fixtures. NOT in `FIXTURES` (the v5 gate); `report` runs them
+# through the same `report.gate` shape only on a v6 run (TZ §6.3).
+V6_FIXTURES: dict[str, tuple[Fixture, Fixture, Fixture]] = {
+    "typed_user": _typed_user_fixtures(),
+    "fake_checksum_invalid": _fake_checksum_fixtures(),
+    "overmask_result": _overmask_result_fixtures(),
 }
 
 

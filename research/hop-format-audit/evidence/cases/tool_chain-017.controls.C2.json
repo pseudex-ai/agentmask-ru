@@ -1,0 +1,197 @@
+{
+  "arm": "C2",
+  "calls": [
+    {
+      "name": "crm_find_contact",
+      "parsed": {
+        "query": {
+          "phone": "+79823859329"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "query": {
+          "phone": "+79823859329"
+        }
+      },
+      "seq": 1,
+      "written": {
+        "query": {
+          "phone": "+79823859329"
+        }
+      }
+    },
+    {
+      "name": "address_suggest",
+      "parsed": {
+        "count": 10,
+        "query": "гектаров"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "count": 10,
+        "query": "гектаров"
+      },
+      "seq": 2,
+      "written": {
+        "count": 10,
+        "query": "гектаров"
+      }
+    },
+    {
+      "name": "address_suggest",
+      "parsed": {
+        "count": 10,
+        "query": "Казань, ул. Зацепская, д. 7"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "count": 10,
+        "query": "Казань, ул. Зацепская, д. 7"
+      },
+      "seq": 3,
+      "written": {
+        "count": 10,
+        "query": "Казань, ул. Зацепская, д. 7"
+      }
+    },
+    {
+      "name": "delivery_create_order",
+      "parsed": {
+        "comment": "",
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Бударин Ефим Ефимович",
+          "phones": [
+            "+79823859329"
+          ]
+        },
+        "to_location": {
+          "address": "ул. Зацепская, д. 7, кв. 31",
+          "city": "казань",
+          "postal_code": "420282"
+        }
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Бударин Ефим Ефимович",
+          "phones": [
+            {
+              "number": "+79823859329"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "ул. Зацепская, д. 7, кв. 31",
+          "city": "Казань",
+          "postal_code": "420282"
+        }
+      },
+      "seq": 4,
+      "written": {
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Бударин Ефим Ефимович",
+          "phones": [
+            {
+              "number": "+79823859329"
+            }
+          ]
+        },
+        "to_location": {
+          "address": "ул. Зацепская, д. 7, кв. 31",
+          "city": "Казань",
+          "postal_code": "420282"
+        }
+      }
+    },
+    {
+      "name": "order_status",
+      "parsed": {
+        "order_id": "ord-1"
+      },
+      "refusal_path": "",
+      "refusal_rule": "",
+      "residual": {},
+      "restored": {
+        "order_id": "ord-1"
+      },
+      "seq": 5,
+      "written": {
+        "order_id": "ord-1"
+      }
+    }
+  ],
+  "case_id": "tool_chain-017",
+  "cluster": "PHONE:9823859329",
+  "cost_usd": 0.006462,
+  "key": "tool_chain-017|C2|0",
+  "kind": "tool_chain",
+  "masked_spans": {},
+  "meta": {
+    "api_error_status": null,
+    "cap_usd": 0.28,
+    "duration_ms": 25893,
+    "errors": [],
+    "is_error": false,
+    "model": "deepseek-flash",
+    "reason": "",
+    "session_id": "deepseek-1790440073215919000",
+    "subtype": "success",
+    "turns": 44
+  },
+  "register": "chat",
+  "repeat": 0,
+  "reply": "Статус заказа **ord-1** — **ACCEPTED** (принят в обработку, ещё не передан курьеру).\n\n- Получатель: Бударин Ефим Ефимович, +7 982 385-93-29\n- Адрес: г. Казань, ул. Зацепская, д. 7, кв. 31, индекс 420282\n- Вес: 1000 г\n\nНапоминаю, для вызова курьера мне нужен интервал времени (дата и время), а также уточнение по «2 гектаров» — это вес 2 кг или что-то другое?",
+  "state": [
+    {
+      "fields": {
+        "comment": "",
+        "packages": [
+          {
+            "weight": 1000
+          }
+        ],
+        "recipient": {
+          "name": "Бударин Ефим Ефимович",
+          "phones": [
+            "+79823859329"
+          ]
+        },
+        "to_location": {
+          "address": "ул. Зацепская, д. 7, кв. 31",
+          "city": "казань",
+          "postal_code": "420282"
+        }
+      },
+      "id": "ord-1",
+      "seq": 4,
+      "table": "orders",
+      "tool": "delivery_create_order"
+    }
+  ],
+  "substitutes": {},
+  "termination": "done"
+}

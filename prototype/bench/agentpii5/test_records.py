@@ -81,7 +81,7 @@ def _arm_v5(case_id: str) -> ArmRunV5:
                                 substitute="Пахомова Ольга", request_index=2),),
         turn_replies=("Секунду, ищу.", "Нашёл Елену Иванову."),
         call_turns=(1,), request_count=3, stream_mismatch=False,
-        reply_whole="Нашёл Елену Иванову.", turn_residual=1)
+        reply_whole="Нашёл Елену Иванову.", turn_residual=1, model_trace=None)
 
 
 def _hop() -> Hop:
@@ -280,7 +280,8 @@ def test_merged_done_wins() -> list[str]:
                              substitutes={}, masked_spans={})
         broken = ArmRunV5(base=broken_base, reply_raw="", control_reply="", tool_results=(),
                           mentions=(), turn_replies=(), call_turns=(), request_count=0,
-                          stream_mismatch=False, reply_whole="", turn_residual=0)
+                          stream_mismatch=False, reply_whole="", turn_residual=0,
+                          model_trace=None)
         # The failure sorts FIRST by file name and the retry second, and then
         # the other way round: «prefer done» must not be «prefer the later file».
         r.append_row(run_dir / "111.arms.v5.jsonl", r.arm_v5_record(broken, _meta(), case))
