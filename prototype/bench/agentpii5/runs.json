@@ -828,6 +828,76 @@
         "image_digest": null,
         "learned_from": null
       }
+    },
+    {
+      "run_id": "b4e00a8c-ce29-4e0d-b53a-563b6b44cf79",
+      "benchmark": "agentpii5",
+      "started": "2026-10-04T08:51:21.240199+00:00",
+      "finished": "2026-10-04T09:40:49.011534+00:00",
+      "state": "finished",
+      "tier": "ids",
+      "cases": 337,
+      "repeats": 1,
+      "triples_done": 337,
+      "transport_terminated": 0,
+      "model": "deepseek-flash",
+      "judge_model": "",
+      "concurrency": 10,
+      "corpus_digest": "3de9f13199ac957870f30c552988623d76bc15fd076ac3f0cc27fa747a0ef6a6",
+      "ladder_digest": "7f7b1a80ba0c8fb3928d3105f9226646bc0950d65be97d37f9d4b8c7aabb8e52",
+      "label": "v5-clean-all-fixes",
+      "note": "clean before/after: identity split + кабинет/type-slot + date/DOB + age, seed 42, 337 frozen",
+      "ceiling_usd": 300.0,
+      "spent_usd": 9.149477,
+      "wall_s": 2922.1,
+      "verdict": "НЕПОЛНЫЙ: судья не откалиброван",
+      "worktree": "чисто b6211532189f (fix/agent-hop-integrity)",
+      "run_dir": "bench/runs/2026-10-03/v5-clean-all-fixes",
+      "provider": {
+        "provider": "deepseek",
+        "base_url": "https://api.deepseek.com",
+        "shape": "responses",
+        "key_env": [
+          "DEEPSEEK_API_KEY"
+        ],
+        "key_present": true,
+        "models": [
+          {
+            "role": "agent",
+            "provider": "deepseek",
+            "model_id": "deepseek-flash",
+            "price": {
+              "input_usd_per_mtok": 0.3,
+              "output_usd_per_mtok": 1.2,
+              "as_of": "2026-09-26",
+              "source": "https://api-docs.deepseek.com/quick_start/pricing/ (peak-rate estimate)"
+            },
+            "unpriced_reason": ""
+          }
+        ],
+        "connectors": {
+          "agent": "deepseek",
+          "judge": "claude",
+          "sdk": "openai==3.19.2; openai-agents==0.22.3; openai-codex==0.157.1",
+          "agent_effort": "low",
+          "judge_effort": "medium",
+          "max_tokens": 20000000,
+          "agent_turn_limit": 50000,
+          "judge_request_limit": 2,
+          "max_calls": 8192,
+          "timeout_scale": 1.0,
+          "agent_cost_basis": "deepseek_peak_estimate_2026-09-26",
+          "judge_cost_basis": "claude_sdk_reported_usd",
+          "temperature": "not configurable by Codex; legacy temperature field is not measured"
+        }
+      },
+      "gateway": {
+        "mode": "inprocess",
+        "base_url": null,
+        "engine_version": null,
+        "image_digest": null,
+        "learned_from": null
+      }
     }
   ]
 }

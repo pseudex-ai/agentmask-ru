@@ -77,7 +77,7 @@ async def _ask(client: AsyncOpenAI, model: str, prompt: str) -> str:
             instructions=SYSTEM,
             input=[{"role": "user", "content": prompt}],
             reasoning={"effort": "low"},
-            max_output_tokens=1000,
+            max_output_tokens=8000,
             store=False,
         )
         text = resp.output_text or ""
@@ -101,6 +101,7 @@ async def main(argv: list[str]) -> int:
     ap.add_argument("--model", default="deepseek-flash")
     ap.add_argument("--base-url", default="https://api.deepseek.com")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--concurrency", type=int, default=8)
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
     arms = load_arms(Path(args.run_dir))
@@ -113,14 +114,15 @@ async def main(argv: list[str]) -> int:
         print("DEEPSEEK_API_KEY is not set", file=sys.stderr)
         return 2
     client = AsyncOpenAI(api_key=key, base_url=args.base_url)
-    rows = []
-    for case_id in case_ids:
+
+    async def one(case_id: str) -> dict:
         i = arms.get((case_id, "I"))
         c = arms.get((case_id, "C"))
         c2 = arms.get((case_id, "C2"))
-        if not (i and c and c2):
-            continue
         det = _deterministic_labels(arms, case_id)
+        if not (i and c and c2):
+            return {"case_id": case_id, "verdict": "unclear", "reason": "none",
+                    "impact": "none", "evidence": "(нет плеч)", "deterministic": det}
         facts = (f"ДЕТЕРМИНИРОВАННЫЕ ФАКТЫ (проверено движком, не оспаривай):\n"
                  f"  durable residual = {[(r['call'], r['leak_type'], r['leak']) for r in det['durable']]}\n"
                  f"  readonly residual = {[(r['call'], r['leak_type'], r['leak']) for r in det['readonly']]}\n"
@@ -131,12 +133,19 @@ async def main(argv: list[str]) -> int:
         answer = await _ask(client, args.model, prompt)
         verdict = _parse(answer)
         verdict["case_id"] = case_id
-        verdict["deterministic"] = _deterministic_labels(arms, case_id)
-        rows.append(verdict)
+        verdict["deterministic"] = det
         if not args.json:
             print(f"{case_id}: {verdict['verdict']}/{verdict['reason']} "
-                  f"durable={len(verdict['deterministic']['durable'])} "
-                  f"parity={len(verdict['deterministic']['parity'])}")
+                  f"dur={len(det['durable'])} par={len(det['parity'])}")
+        return verdict
+
+    sem = asyncio.Semaphore(args.concurrency)
+
+    async def bounded(case_id: str) -> dict:
+        async with sem:
+            return await one(case_id)
+
+    rows = await asyncio.gather(*(bounded(cid) for cid in case_ids))
     if args.json:
         print(json.dumps(rows, ensure_ascii=False, indent=2))
     return 0
