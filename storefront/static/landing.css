@@ -757,3 +757,29 @@ body.v2 .cfg-mark.no  { color: var(--amber); }
   body.v2 section [style*="font-size:10.5px"],
   body.v2 section [style*="font-size:11px"] { font-size: 11.5px !important; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   СВЁРТКА ВТОРОСТЕПЕННОГО НА ТЕЛЕФОНЕ
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Узлы `<details class="m-fold">` строит `landing.js` и только при
+   `max-width: 760px`, поэтому на большом экране правила ниже не находят ничего.
+   Строка свёртки — цель в 52 px (палец, а не курсор), набрана тем же моно, что и
+   служебные подписи, и не выглядит кнопкой «показать ещё» из интернет-магазина:
+   это оглавление, а не приманка. */
+@media (max-width: 760px) {
+  .m-fold > summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    min-height: 52px; padding: 0 16px; cursor: pointer; list-style: none;
+    border: 1px solid var(--line-2); background: var(--panel);
+    font-family: 'JetBrains Mono', monospace; font-size: 11.5px;
+    letter-spacing: .16em; color: var(--text-2);
+  }
+  .m-fold > summary::-webkit-details-marker { display: none; }
+  .m-fold > summary::after { content: "+"; color: var(--accent); font-size: 15px; }
+  .m-fold[open] > summary::after { content: "–"; }
+  .m-fold[open] > summary { margin-bottom: 20px; }
+  /* Секция, у которой содержимое ушло в свёртку, больше не держит свои 44 px
+     поля: строка свёртки и есть её начало. */
+  .m-fold { width: 100%; }
+}
