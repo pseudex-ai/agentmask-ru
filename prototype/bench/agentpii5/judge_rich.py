@@ -67,11 +67,23 @@ def _deterministic_labels(arms: dict, case_id: str) -> dict:
 
 
 async def _ask(client: AsyncOpenAI, model: str, prompt: str) -> str:
-    resp = await client.chat.completions.create(
-        model=model, messages=[{"role": "system", "content": SYSTEM},
-                               {"role": "user", "content": prompt}],
-        temperature=0.0, max_tokens=400)
-    return resp.choices[0].message.content or ""
+    # deepseek-flash is a REASONING model: it needs `reasoning.effort` and a
+    # large enough `max_output_tokens` (reasoning consumes output budget before
+    # the text), otherwise `output_text` is empty. Use the RESPONSES API the same
+    # way the agent connector does.
+    for _ in range(3):
+        resp = await client.responses.create(
+            model=model,
+            instructions=SYSTEM,
+            input=[{"role": "user", "content": prompt}],
+            reasoning={"effort": "low"},
+            max_output_tokens=1000,
+            store=False,
+        )
+        text = resp.output_text or ""
+        if text.strip():
+            return text
+    return ""
 
 
 def _parse(answer: str) -> dict:
@@ -86,7 +98,7 @@ def _parse(answer: str) -> dict:
 async def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("run_dir")
-    ap.add_argument("--model", default="deepseek-chat")
+    ap.add_argument("--model", default="deepseek-flash")
     ap.add_argument("--base-url", default="https://api.deepseek.com")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--json", action="store_true")

@@ -78,7 +78,7 @@ async def _ask(client: AsyncOpenAI, model: str, prompt: str) -> str:
 async def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("run_dir")
-    ap.add_argument("--model", default="deepseek-chat")
+    ap.add_argument("--model", default="deepseek-flash")
     ap.add_argument("--base-url", default="https://api.deepseek.com")
     ap.add_argument("--limit", type=int, default=0, help="max cases (0 = all flags)")
     args = ap.parse_args(argv)
