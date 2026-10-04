@@ -15,24 +15,23 @@
 
 <section>
   <div class="sec-head">
-    <h2>Ядро</h2>
-    <div class="sec-meta">{{ core|length }} ТИПОВ В КАЖДОЙ ПЕРЕПИСКЕ</div>
+    <h2>Что мы находим</h2>
+    <div class="sec-meta">ЯДРО И {{ industries|length }} ОТРАСЛЕЙ</div>
   </div>
-  <div style="border:1px solid var(--accent);padding:24px 26px;margin-top:28px">
-    <div style="display:flex;flex-wrap:wrap;gap:8px">
-      {% for t in core %}<span style="font-size:14px;color:var(--text-2);border:1px solid var(--line);padding:5px 12px;border-radius:2px">{{ t.label }}</span>{% endfor %}
-    </div>
-  </div>
-</section>
+  <p class="sub">Ядро движок находит в любой переписке. Отрасли — свои типы сверх него.</p>
 
-<section>
-  <div class="sec-head">
-    <h2>По отраслям</h2>
-    <div class="sec-meta">{{ industries|length }} ОТРАСЛЕЙ</div>
-  </div>
-  <p class="sub">Сверх ядра — типы, которые встречаются в переписке конкретной отрасли.</p>
-
+  {% comment %}ЯДРО — ПЕРВАЯ ЯЧЕЙКА ТОЙ ЖЕ СЕТКИ, А НЕ ОТДЕЛЬНЫЙ БЛОК НАД НЕЙ.
+     Отдельный блок давал 15 карточек в сетке на четыре колонки — незанятый угол
+     в правом нижнем ряду, который читается как «здесь что-то не поместилось».
+     Шестнадцатая ячейка закрывает ряд ровно, а акцентная обводка отличает ядро
+     без второго заголовка и без разрыва между «ядром» и «отраслями».{% endcomment %}
   <div class="cards cards--n4" style="border:1px solid var(--line-3);margin-top:28px">
+    <div style="padding:22px 24px;box-shadow:inset 0 0 0 1px var(--accent)">
+      <div style="font-size:14.5px;font-weight:650;color:var(--text-2);letter-spacing:-.01em;margin-bottom:14px">Ядро</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        {% for t in core %}<span style="font-size:12.5px;color:var(--text-2);border:1px solid var(--line);padding:3px 9px;border-radius:2px">{{ t.label }}</span>{% endfor %}
+      </div>
+    </div>
     {% for ind in industries %}
     <div style="padding:22px 24px">
       <div style="font-size:14.5px;font-weight:650;color:var(--text-2);letter-spacing:-.01em;margin-bottom:14px">{{ ind.label }}</div>
