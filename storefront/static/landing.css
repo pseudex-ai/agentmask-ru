@@ -560,7 +560,7 @@ body.v2 .cfg-mark.no  { color: var(--amber); }
 @media (max-width: 760px) {
   section[style*="padding:120px"],
   section[style*="padding:140px"] { padding: 44px 18px 0 !important; }
-  #top[style] { padding: 18px 18px 0 !important; }
+  #top[style] { padding: 26px 18px 0 !important; }
 
   /* СЕТКИ ОСТАЮТСЯ СЕТКАМИ. Одна колонка превращала покрытие в 3 012 px, а
      тарифы — в 2 843 px: горизонтальная сетка — это способ показать МНОГО
