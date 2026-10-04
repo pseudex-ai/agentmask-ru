@@ -1406,5 +1406,19 @@ def _check_reconciliation(staff_client, base: str, org) -> None:
           org.display_name not in csv_response.headers.get("Content-Disposition", ""),
           csv_response.headers.get("Content-Disposition", ""))
 
+    # СКРИНЯЩИЕ СКОБКИ — ЭТО НЕ СТИЛЬ, А РАБОТОСПОСОБНОСТЬ. Лишняя `}` на верхнем
+    # уровне (нашлась 4 октября в `landing.css`: 256 `{` против 257 `}`) не даёт
+    # ошибки и не видна в браузере — она просто выбрасывает часть файла, и всё,
+    # что ниже неё, перестаёт применяться. Именно так три захода на мобильную
+    # шапку «не срабатывали»: правила были верны и не доезжали. Проверка ловит
+    # ровно этот класс: файл обязан быть сбалансирован, а незакрытый блок —
+    # таким же красным, как разбаланс.
+    _static = Path(__file__).resolve().parent / "static"
+    for sheet in sorted(_static.glob("*.css")):
+        text = sheet.read_text(encoding="utf-8")
+        opens, closes = text.count("{"), text.count("}")
+        check(f"{sheet.name}: скобки блоков сбалансированы",
+              opens == closes, f"{opens} открытых против {closes} закрытых")
+
 if __name__ == "__main__":
     sys.exit(main())
