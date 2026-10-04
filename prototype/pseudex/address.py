@@ -579,13 +579,23 @@ _TIME_AFTER = re.compile(r"\s*(?:[а-яё]\s+)?(?:в|к|до|с|на|около|
 # ПЕРЕД голой улицей и не является ни возрастом, ни домом. Без него «Победы 12»
 # читалась улицей, а «40 лет» — отдельным AGE, и адрес разрывался (P2).
 _NUMERAL_YEARS_PREFIX = re.compile(r"(?i)(?:\d{1,3})\s*(?:лет|года|год)\s*$")
+# Слово-СРОК прямо перед «N лет»: «работает 40 лет Победы 12» — это СТАЖ, а не
+# название улицы. Тогда префикс не подхватывается, иначе срок вмораживается в адрес.
+_YEARS_DURATION_BEFORE = re.compile(
+    r"(?i)(?:работа\w*|проработа\w*|опыт\w*|стаж\w*|срок\w*|гарант\w*|выслуг\w*"
+    r"|через|спустя|более|менее|уже)\s*$")
 
 
 def _years_prefix_start(text: str, start: int) -> int:
     """Начало числового префикса «N лет», стоящего прямо перед улицей, иначе
-    сам `start`. «40 лет Победы 12» -> начало «40», «Победы 12» -> без изменений."""
+    сам `start`. «40 лет Победы 12» -> начало «40»; «работает 40 лет Победы 12»
+    -> без изменений («40 лет» — срок)."""
     prefix = _NUMERAL_YEARS_PREFIX.search(text[:start])
-    return prefix.start() if prefix is not None else start
+    if prefix is None:
+        return start
+    if _YEARS_DURATION_BEFORE.search(text[:prefix.start()]):
+        return start
+    return prefix.start()
 
 
 def _bare_street_candidates(text: str, address: AddressAssets
