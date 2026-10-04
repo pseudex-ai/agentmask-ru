@@ -2298,6 +2298,13 @@ def main() -> int:
             args.corpus = str(here / "v6" / "corpus.v5.json")
         if args.ladder == default_ladder:
             args.ladder = str(here / "v6" / "ladder.json")
+        # v6 tools enter the LIVE tool registry the same way v5 did: the v4
+        # `REGISTRY` dict is widened with each v6 spec's base ToolSpec, so
+        # `gateway.tools()` can read `.schema` and the model is offered the v6
+        # tools. Lazy, so a v5 run never imports the v6 tool set.
+        from bench.agentpii4.tools import REGISTRY as _v4_registry
+        from bench.agentpii5.mock_v6 import V6_SPECS
+        _v4_registry.update({name: spec.base for name, spec in V6_SPECS.items()})
 
     # ОБА БЕСПЛАТНЫХ ПУТИ — ДО ВСЕГО ОСТАЛЬНОГО, и оба возвращаются отсюда: ни
     # бандла, ни модели, ни каталога прогона, ни строки в реестре. `--replay`
