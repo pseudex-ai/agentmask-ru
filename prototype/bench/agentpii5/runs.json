@@ -568,10 +568,80 @@
       "label": "v6-after-identity-split",
       "note": "v6 full run after identity split, seed 42",
       "ceiling_usd": 300.0,
-      "spent_usd": 0,
+      "spent_usd": 0.0,
       "wall_s": 0.1,
       "verdict": "прогон прерван: KeyError: \"unknown table 'v6_record'; tables are ['addresses', 'appointments', 'bank_clients', 'calendar', 'callbacks', 'cards', 'claims', 'contacts', 'documents', 'emails', 'escalations', 'events', 'issues', 'kb_chunks', 'mailbox', 'memories', 'notes', 'orders', 'patients', 'payments', 'referrals', 'reminders', 'sheets', 'sms', 'snils_records', 'ticket_events', 'tickets', 'tracker_users', 'vehicles', 'verifications']\"",
       "worktree": "грязно 768d54b1f871 (fix/agent-hop-integrity): 1 файлов — к коммиту не привязан",
+      "run_dir": "bench/runs/2026-10-03/v6-after-identity-split",
+      "provider": {
+        "provider": "deepseek",
+        "base_url": "https://api.deepseek.com",
+        "shape": "responses",
+        "key_env": [
+          "DEEPSEEK_API_KEY"
+        ],
+        "key_present": true,
+        "models": [
+          {
+            "role": "agent",
+            "provider": "deepseek",
+            "model_id": "deepseek-flash",
+            "price": {
+              "input_usd_per_mtok": 0.3,
+              "output_usd_per_mtok": 1.2,
+              "as_of": "2026-09-26",
+              "source": "https://api-docs.deepseek.com/quick_start/pricing/ (peak-rate estimate)"
+            },
+            "unpriced_reason": ""
+          }
+        ],
+        "connectors": {
+          "agent": "deepseek",
+          "judge": "claude",
+          "sdk": "openai==3.19.2; openai-agents==0.22.3; openai-codex==0.157.1",
+          "agent_effort": "low",
+          "judge_effort": "medium",
+          "max_tokens": 20000000,
+          "agent_turn_limit": 50000,
+          "judge_request_limit": 2,
+          "max_calls": 8192,
+          "timeout_scale": 1.0,
+          "agent_cost_basis": "deepseek_peak_estimate_2026-09-26",
+          "judge_cost_basis": "claude_sdk_reported_usd",
+          "temperature": "not configurable by Codex; legacy temperature field is not measured"
+        }
+      },
+      "gateway": {
+        "mode": "inprocess",
+        "base_url": null,
+        "engine_version": null,
+        "image_digest": null,
+        "learned_from": null
+      }
+    },
+    {
+      "run_id": "6787bc20-44c0-41a3-b691-35fa5d1aa7b6",
+      "benchmark": "agentpii5",
+      "started": "2026-10-04T06:54:06.689616+00:00",
+      "finished": "2026-10-04T06:54:08.964321+00:00",
+      "state": "finished",
+      "tier": "max",
+      "cases": 500,
+      "repeats": 1,
+      "triples_done": 500,
+      "transport_terminated": 0,
+      "model": "deepseek-flash",
+      "judge_model": "",
+      "concurrency": 10,
+      "corpus_digest": "18ed3a98526dc9360a683b9f8b7fa12f170c9535ee00b23b61dbc7c19c1cf993",
+      "ladder_digest": "cf1d55d14f9fb5efc700a459eb90ffe3d8e2950d7e816dbb88569113b75089b1",
+      "label": "v6-after-identity-split",
+      "note": "v6 full run after identity split, seed 42",
+      "ceiling_usd": 300.0,
+      "spent_usd": 0.0,
+      "wall_s": 0.3,
+      "verdict": "НЕПОЛНЫЙ: судья не откалиброван",
+      "worktree": "грязно 517bf79cd54f (fix/agent-hop-integrity): 1 файлов — к коммиту не привязан",
       "run_dir": "bench/runs/2026-10-03/v6-after-identity-split",
       "provider": {
         "provider": "deepseek",

@@ -88,6 +88,15 @@ from bench.agentpii5.judge import (
     JUDGE_TEMPERATURE, ConnectedJudgeConfig, JudgeConfig, LeakedPrompt, OracleLeak, build_prompt, judge_input,
     judge_prompt, masked_dialogue, prompt_sha256, residual_pregate_of)
 from bench.agentpii5.mock import BackendV5, seed_backend_v5
+
+
+def _backend_for(case: CaseV5):
+    """The mock backend for a case: v6 cases seed `v6_record` rows and need the v6
+    backend (imported lazily so the v5 path never widens the tool registry)."""
+    if any(record.table == "v6_record" for record in case.base.seed_records):
+        from bench.agentpii5.mock_v6 import seed_backend_v6  # local: v6 registry
+        return seed_backend_v6(case)
+    return seed_backend_v5(case)
 from bench.agentpii5 import payload_canaries as canaries
 from bench.agentpii5.observe import observe
 from bench.agentpii5.schema import case_v5_from_json, case_v5_to_json, corpus_digest_v5
@@ -1362,7 +1371,7 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
     # persists both manifest and delivered bytes after intervention.
     captures: tuple[canaries.RunCapture, ...] = ()
     try:
-        control = await arms.control(case, "C", repeat, seed_backend_v5(case),
+        control = await arms.control(case, "C", repeat, _backend_for(case),
                                          model, cap, run_id)
         outcomes.append(control)
         spent += control.run.cost_usd
@@ -1373,8 +1382,8 @@ async def run_triple_v5(case: CaseV5, repeat: int, detector: Detector,
         gateway = GatewayV5(case, detector, Vault(":memory:", _ORG), AuditLog(":memory:"),
                             MaskCache(256), capture=True)
         intervention, second = await asyncio.gather(
-            arms.intervention(case, repeat, gateway, seed_backend_v5(case), model, cap, run_id),
-            arms.control(case, "C2", repeat, seed_backend_v5(case), model, cap, run_id))
+            arms.intervention(case, repeat, gateway, _backend_for(case), model, cap, run_id),
+            arms.control(case, "C2", repeat, _backend_for(case), model, cap, run_id))
         outcomes.extend((intervention.base, second))
         spent += intervention.base.run.cost_usd + second.run.cost_usd
         # THE CAPTURE IS TAKEN FROM THE ARM THAT ACTUALLY RAN THE GATEWAY, after
