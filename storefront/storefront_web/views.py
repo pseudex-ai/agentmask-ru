@@ -259,6 +259,10 @@ def landing(request):
         # следующий добавленный тип сделал бы страницу противоречащей
         # собственной таблице.
         "found_count": len(detection_types.FOUND),
+        # СЛОВО, А НЕ ЧИСЛО: «61 типов» — то же враньё, что и неверная цифра,
+        # и человек читает его как небрежность ко всему продукту. Склонение
+        # живёт рядом со списком типов, а не в шаблоне: список там же меняется.
+        "found_word": detection_types.ru_types(len(detection_types.FOUND)),
         **_meta("landing"),
         "trial_days": services.trial_days(),
         "due_days": services.INVOICE_DUE_DAYS,

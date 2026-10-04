@@ -340,9 +340,13 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
     <div class="eyebrow" data-reveal><i></i><span>ПОКРЫТИЕ ПО ОТРАСЛЯМ</span></div>
     <div style="display:flex;align-items:baseline;justify-content:space-between;gap:32px;flex-wrap:wrap;margin-bottom:14px" data-reveal>
       <h2 style="margin:0;font-size:clamp(28px,3.6vw,46px);font-weight:900;letter-spacing:-.035em;max-width:20ch;text-wrap:balance">Одно ядро. Пятнадцать отраслей.</h2>
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">{{ found_count }} ТИПОВ, НЕ СЧИТАЯ ПОДМЕНЫ ФОРМ</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">{{ found_count }} {{ found_word|upper }}</div>
     </div>
-    <p style="margin:0 0 36px;font-size:16px;line-height:1.65;color:var(--dim);max-width:70ch" data-reveal>Ядро движок находит в любой переписке. Сверх него — отраслевые типы: от VIN и IBAN до кадастрового номера, номера судебного дела и диплома по реестру ФРДО.</p>
+    {% comment %}ЗДЕСЬ БЫЛ АБЗАЦ, ПЕРЕСКАЗЫВАВШИЙ СОБСТВЕННЫЙ ЗАГОЛОВОК: «Ядро
+    движок находит в любой переписке. Сверх него — отраслевые типы: от VIN и
+    IBAN до кадастрового номера…». Заголовок уже говорит «Одно ядро. Пятнадцать
+    отраслей», а сетка ниже показывает, что именно, поимённо и полнее любого
+    перечисления. Абзац занимал четыре строки и не сообщал ничего нового.{% endcomment %}
 
     {% comment %}ЯДРО — ПЕРВАЯ ЯЧЕЙКА ТОЙ ЖЕ СЕТКИ, А НЕ ОТДЕЛЬНЫЙ БЛОК НАД НЕЙ.
        Отдельный блок давал 15 карточек в сетке на четыре колонки — незанятый
@@ -377,7 +381,12 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       <h2 style="margin:0;font-size:clamp(28px,3.4vw,42px);font-weight:900;letter-spacing:-.035em">Цены</h2>
       <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">ЦЕНЫ НА САЙТЕ · ENTERPRISE — ПО ДОГОВОРУ</div>
     </div>
-    <p style="margin:0 0 40px;font-size:16px;line-height:1.6;color:var(--dim);max-width:62ch">Абонплата включает объём запросов, а не число контейнеров. Перерасход по умолчанию выключен: после включённого объёма — остановка, не дополнительный счёт.</p>
+    {% comment %}ЗДЕСЬ БЫЛ АБЗАЦ ПРО «ЧИСЛО КОНТЕЙНЕРОВ». Читатель пришёл
+    узнать цену, а ему объясняли, чего в абонплате нет: контейнеров. Такого
+    счётчика у нас не существует, и в голове человека он не жил до этой строки —
+    то есть строка создавала вопрос, которого не было. То же самое, что она
+    сообщала по делу («1 000 запросов включено», «дальше — остановка, не счёт»),
+    уже напечатано в каждой карточке тарифа.{% endcomment %}
     {% comment %}
 ЧИСЛО КОЛОНОК ЗНАЕТ ШАБЛОН, А НЕ ШИРИНА ОКНА. Тарифы — единственная
        сетка, число карточек в которой меняется; `auto-fit` на пяти тарифах оставлял
