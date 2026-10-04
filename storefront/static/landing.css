@@ -186,9 +186,27 @@ body.v2 .cfg-mark.no  { color: var(--amber); }
    105 px липкой шапки на 844-px экране — это восьмая часть вьюпорта, отданная
    под то, что человек уже прочитал. */
 @media (max-width: 760px) {
-  body.v2 header.top { height: auto; min-height: 0; padding: 10px 20px 0;
-                       flex-wrap: wrap; position: static; }
+  body.v2 header.top { height: auto; min-height: 0; padding: 8px 18px 0;
+                       flex-wrap: wrap; position: static; row-gap: 6px; }
   body.v2 header.top nav { flex: 1 1 100%; width: 100%; }
+  /* КНОПКИ ВИТРИНЫ — КРУПНЫЕ, И ЭТО ЛОМАЛО ШАПКУ. `hv-btn-glow`/`hv-btn-ghost`
+     несут паддинг 14×24 px: втроём со знаком они не влезали в 354 px и
+     переносились на СВОЮ строку — знак, кнопки и ссылки занимали три ряда и
+     152 px, пятая часть экрана. С паддингом 9×11 они делят строку со знаком,
+     а шапка возвращается к двум рядам. */
+  /* ИНЛАЙН, А НЕ СЕЛЕКТОР. Кнопки шапки на витрине несут
+     `style="padding:10px 15px;font-size:11.5px"` прямо в разметке, и ни один
+     селектор этого не перебьёт — предыдущие три подхода к шапке не сработали
+     именно поэтому. Три кнопки по 76/75/83 px со знаком не влезали в 354 px,
+     переносились на свою строку, и шапка занимала ТРИ ряда (152 px, пятая часть
+     экрана). `!important` здесь — единственный способ дотянуться до инлайна;
+     расплата — эти значения придётся держать в согласии с разметкой. */
+  body.v2 header.top .head-cta a,
+  body.v2 header.top .head-cta button {
+    padding: 8px 8px !important; font-size: 11px !important;
+  }
+  body.v2 header.top .head-cta { gap: 6px !important; }
+  body.v2 header.top .brand b { font-size: 17px; }
 }
 
 /* ПАНЕЛЬ ДЕМО: СЛУЖЕБНАЯ СТРОКА ВЛЕЗАЕТ В ДВЕ. Заголовок «один заказ, целиком»
@@ -284,7 +302,6 @@ body.v2 .cfg-mark.no  { color: var(--amber); }
 .hero-rail i.is-on { background: var(--accent); }
 .hero-rail i.is-current { background: var(--accent-2); }
 
-}
 @media (prefers-reduced-motion: reduce) {
   .hero-rail i { transition: none; }
 }
@@ -637,4 +654,106 @@ body.v2 .cfg-mark.no  { color: var(--amber); }
   #coverage .cards > * { padding: 14px 12px !important; }
   #coverage .cards span { font-size: 11px !important; padding: 2px 7px !important; }
   #coverage .cards > * > div:first-child { font-size: 13px !important; margin-bottom: 10px !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ПАЛЕЦ, А НЕ КУРСОР — то, чего на телефоне не хватало вовсе
+   ═══════════════════════════════════════════════════════════════════════════
+
+   ЗАМЕРЕНО ДО: ссылки навигации 14–15 px высотой, кнопки шапки 32 px, знак
+   24 px, а моно-подписи («КЛИЕНТ ПИШЕТ», «1/6 · КЛИЕНТ», «СВЕТ») — 9.5–10.5 px.
+   Это размеры под курсор: палец промахивается по цели ниже ~40 px, а 10 px
+   текста на телефоне не читается вовсе — человек не «плохо видит», он видит
+   серую кашу и уходит.
+
+   Пол по цели касания — 44 px (Apple HIG; Material допускает 40), по кеглю —
+   11.5 px для служебных подписей. Видимый размер подписи при этом не растёт:
+   у ссылок навигации увеличивается ПАДДИНГ, а не кегль, поэтому ряд выглядит
+   так же плотно, но по нему можно попасть. */
+@media (max-width: 760px) {
+  /* ЦЕЛЬ 40 px — ПАДДИНГОМ, НЕ ВЫСОТОЙ ШАПКИ. Паддинг 13 px растянул шапку до
+     160 px: пятая часть экрана до первого слова. 11 px держит ту же плотность
+     ряда и оставляет шапке ~120 px. */
+  header.top nav a { padding: 12px 0; }
+  header.top .brand { min-height: 44px; }
+  /* ВИТРИНА ЗОВЁТ СВОИ КНОПКИ ИНАЧЕ (`hv-btn-glow`, `hv-btn-ghost`), поэтому
+     селектор по `.btn` их не ловил и пол по цели касания не срабатывал. Берём
+     все ссылки и кнопки шапки: у остальных страниц это `.btn`, у витрины —
+     свои классы, и правило обязано покрывать оба случая. */
+  header.top .head-cta a,
+  header.top .head-cta button {
+    min-height: 40px; display: inline-flex; align-items: center; justify-content: center;
+  }
+  /* СТРЕЛКИ ДЕМО. 22×34 px — вдвое меньше пальца, а ими листают шесть шагов. */
+  .hero-ctl button { min-width: 40px; min-height: 38px; }
+  /* ССЫЛКИ-ДЕЙСТВИЯ ВНУТРИ БЛОКОВ. В абзаце ссылка обязана остаться строкой,
+     поэтому пол ставится только тем, что стоит отдельно. */
+  .cards a, .rows a, .trust-row a, .kb-list > a { min-height: 40px; display: inline-flex; align-items: center; }
+  /* ФЛАЖКИ КОНФИГУРАТОРА: 15×15 px. Отметить группу пальцем нельзя. */
+  input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; }
+  label:has(input[type="checkbox"]), label:has(input[type="radio"]) { min-height: 44px; }
+  /* Подвал: ссылки в столбик — тоже цели, а не подписи. */
+  footer a { min-height: 40px; display: inline-flex; align-items: center; }
+
+  /* ПОЛ ЧИТАЕМОСТИ. Селектор привязан к самому инлайновому кеглю: часть подписей
+     задана в разметке атрибутом `style`, и перебить их иначе нечем. Область
+     сужена до панели демо и служебных меток — правило не трогает ни один
+     содержательный абзац. */
+  #hero-panel [style*="font-size:9.5px"],
+  #hero-panel [style*="font-size:10px"],
+  #hero-panel [style*="font-size:10.5px"],
+  .hero-ctl button { min-height: 34px; }
+  #hero-panel [style*="font-size:9.5px"],
+  #hero-panel [style*="font-size:10.5px"] { font-size: 11.5px !important; }
+  .metric-label, .cfg-mark, .eyebrow span { font-size: 11.5px !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ОСТАТКИ ПОЛА: ТО, ЧТО ЗАДАНО ИНЛАЙНОМ И ПОЭТОМУ НЕ ПЕРЕБИРАЛОСЬ
+   ═══════════════════════════════════════════════════════════════════════════
+
+   Флажок конфигуратора несёт `style="width:15px;height:15px"`, а метка группы —
+   `style="font-size:10px"`. Инлайновое значение сильнее селектора, поэтому
+   первый заход по цели касания их не задел: галка осталась 15×15, подпись —
+   10 px. Здесь `!important` не украшение, а единственный способ дотянуться. */
+@media (max-width: 760px) {
+  #cfg input[type="checkbox"] { width: 22px !important; height: 22px !important; }
+  #cfg label.cfg-item { min-height: 52px; }
+  #cfg span[style*="font-size:10px"] { font-size: 11.5px !important; }
+  /* Метки в пузырях диалога рисует скрипт классом, а не инлайном. */
+  .hero-bubble-label { font-size: 11.5px; }
+  /* Кнопки шапки: 10.5 px латиницей в разрядку на телефоне сливаются. */
+  header.top .head-cta a, header.top .head-cta button { font-size: 11.5px; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ПОСЛЕДНИЕ ДВА МЕСТА, ГДЕ ПОЛ НЕ ДОСТАВАЛ
+   ═══════════════════════════════════════════════════════════════════════════
+
+   КНОПКИ ШАПКИ. Правило в `site.css` написано как
+   `header.top .head-cta .btn, … .theme-toggle` — это три класса (0,3,1), а моё
+   `header.top .head-cta a` — два (0,2,2). Классов больше, поэтому 10.5 px
+   выигрывало. Здесь тот же селектор по классам, что и там, но этот файл
+   подключается позже — и правило доходит.
+
+   СТРЕЛКИ ДЕМО. `min-height: 38px` не срабатывал по той же причине: у кнопки
+   стояла явная высота. `!important` здесь — потому что высоту задаёт правило
+   для десктопа, а мельче 38 px палец по стрелке не попадает. */
+@media (max-width: 760px) {
+  header.top .head-cta .btn,
+  header.top .head-cta .theme-toggle,
+  header.top .head-cta a,
+  header.top .head-cta button { font-size: 11.5px; }
+  #hero-panel .hero-ctl button { min-width: 40px !important; height: 38px !important; }
+  .hero-record-label { font-size: 11.5px; }
+  /* Согласие на обработку — тоже цель: 36 px при рекомендованных 44. */
+  #signup-form label { min-height: 44px; }
+}
+
+/* СЛУЖЕБНЫЕ НАДЗАГОЛОВКИ СЕКЦИЙ — тоже инлайном (10.5–11 px). Это не декор:
+   ими подписаны блоки («ЧТО НАПИСАЛ КЛИЕНТ», «ТЕЛО ОТЧЁТА, ДОСЛОВНО»), и на
+   телефоне 10 px в разрядку читаются как серая полоса. */
+@media (max-width: 760px) {
+  body.v2 section [style*="font-size:10.5px"],
+  body.v2 section [style*="font-size:11px"] { font-size: 11.5px !important; }
 }

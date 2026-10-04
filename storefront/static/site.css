@@ -255,12 +255,12 @@ header.top nav a { flex: none; white-space: nowrap; }
    высоты: 76 px в две строки не влезают, и текст вылезал за границу. */
 @media (max-width: 760px) {
   header.top { height: auto; min-height: 0; flex-wrap: wrap;
-               padding: 10px 20px 0; gap: 10px 12px;
+               padding: 8px 18px 0; gap: 6px 12px;
                /* НЕ ЛИПНЕТ: две строки — это 83–111 px, восьмая часть экрана.
                   Всё, что человек уже прочитал, не должно занимать вьюпорт. */
                position: static; }
   header.top nav { order: 3; flex: 1 1 100%; width: 100%; gap: 16px;
-                   font-size: 11px; padding-bottom: 8px; }
+                   font-size: 11px; padding-bottom: 4px; }
   header.top .brand b { font-size: 18px; }
   header.top .head-cta { gap: 8px; margin-left: auto; }
   header.top .head-cta .btn,
