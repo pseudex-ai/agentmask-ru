@@ -575,6 +575,19 @@ def _address_continues(text: str, end: int, address: AddressAssets) -> bool:
 _TIME_AFTER = re.compile(r"\s*(?:[а-яё]\s+)?(?:в|к|до|с|на|около|после)\s+\d{1,2}[:.]\d{2}\b")
 
 
+# «40 лет Победы», «30 лет Октября»: числовой префикс НАЗВАНИЯ улицы. Стоит
+# ПЕРЕД голой улицей и не является ни возрастом, ни домом. Без него «Победы 12»
+# читалась улицей, а «40 лет» — отдельным AGE, и адрес разрывался (P2).
+_NUMERAL_YEARS_PREFIX = re.compile(r"(?i)(?:\d{1,3})\s*(?:лет|года|год)\s*$")
+
+
+def _years_prefix_start(text: str, start: int) -> int:
+    """Начало числового префикса «N лет», стоящего прямо перед улицей, иначе
+    сам `start`. «40 лет Победы 12» -> начало «40», «Победы 12» -> без изменений."""
+    prefix = _NUMERAL_YEARS_PREFIX.search(text[:start])
+    return prefix.start() if prefix is not None else start
+
+
 def _bare_street_candidates(text: str, address: AddressAssets
                             ) -> list[tuple[int, int, bool]]:
     """A lower-case street name with no type word at all, plus a house number.
@@ -803,7 +816,15 @@ def _bare_street_candidates(text: str, address: AddressAssets
         # clear; the agreement veto is about a bare number, and «кв18» is not.
         if not re.search(r"\d(?:кв|к)\.?\d", number) and _counts_next_word(text, match.end("bnum"), number, address):
             continue
-        out.append((match.start(), match.end(), True))   # core: street + house
+        start = match.start()
+        # «40 лет Победы 12» — «40 лет» это числовой префикс улицы, а не возраст.
+        # «Победы 12» уже прошло все гейты как улица, поэтому цифра прямо перед
+        # ним — её собственный номер, и подхватываем «N лет» назад в спан, чтобы
+        # age-gate не маскировал его отдельно.
+        prefix = _NUMERAL_YEARS_PREFIX.search(text[:start])
+        if prefix is not None:
+            start = prefix.start()
+        out.append((start, match.end(), True))   # core: street + house
     return out
 
 
@@ -2527,6 +2548,13 @@ def detect_address(text: str) -> list[Span]:
     cands = (natasha + regex + _fuzzy_street_candidates(text, address)
              + _bare_street_candidates(text, address)
              + _city_street_house_candidates(text, address))
+    # «40 лет Победы 12»: «40 лет» — числовой префикс НАЗВАНИЯ улицы, а не
+    # возраст. Любой найденный адрес подхватывает стоящий прямо перед ним «N
+    # лет», чтобы age-gate не маскировал его отдельно (P2). Единый проход здесь,
+    # а не в каждом из рукавов: и regex-улица «Победы 12», и голая строчная, и
+    # Наташа — все расширяются одинаково.
+    cands = [(min(start, _years_prefix_start(text, start)), stop, core)
+             for start, stop, core in cands]
     if not cands:
         return []
     cands = cands + _street_before_house(text, cands, address)

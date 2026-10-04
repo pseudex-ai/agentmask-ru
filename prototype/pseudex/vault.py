@@ -4446,19 +4446,17 @@ class Vault:
         return True
 
     def _place_row_canonical(self, plain: str, value: str) -> str:
-        """Ключ строки волта для упоминания с частями.
+        """Ключ строки волта для упоминания С ЧАСТЯМИ — всегда хвост-подпись.
 
-        ПЕРВАЯ подпись частей остаётся на ОБЫЧНОМ ключе: `peek_token`,
-        `place_parts` и `canonical LIKE «основа%»` читают его и работают ровно
-        как прежде. Как только обычный ключ занят ДРУГИМИ частями, строка
-        получает хвост-подпись (`place_parts_key`) — иначе вторая квартира
-        одного дома нашла бы строку первой и вернула инструменту чужой адрес.
+        Раньше ПЕРВАЯ подпись частей оставалась на обычном ключе, чтобы
+        `peek_token` и `canonical LIKE «основа%»` читали её как прежде. Но после
+        identity-split `address_key` ВЫБРАСЫВАЕТ значения частей, поэтому обычный
+        ключ «энгельс 54» теперь один и тот же и для «Энгельса 54 кв 189», и для
+        «Энгельса 54»: строка с квартирой, лежащая под обычным ключом, отдавала
+        короткому упоминанию без квартиры ФАНТОМНУЮ квартиру (P1). Строка с
+        частями обязана всегда жить под `place_parts_key` — хвост-подписью, а не
+        обычным ключом; `canonical LIKE` её всё равно видит (хвост, не префикс).
         """
-        row = self._conn.execute(
-            "SELECT 1 FROM tokens WHERE customer=? AND canonical=?",
-            (self._customer, plain)).fetchone()
-        if row is None:
-            return plain
         return morph_places.place_parts_key(value)
 
     def _short_place_core_owner(self, canonical: str, value: str,
@@ -5931,30 +5929,38 @@ class Vault:
         # originals under one fake/name_key. Exact indexed alternatives preserve
         # every other component and do not let an arbitrary prefix steal its owner.
         typed_keys = tuple(plain + " " + kind for kind in morph_places._GENERIC)
-        placeholders = ",".join("?" for _ in typed_keys)
+        # After the identity-split a row WITH parts lives under `typed_key +
+        # PART_SEPARATOR + signature` (a SUFFIX), so a prefix match finds both the
+        # exact row and every parts-signed row. The suffix is stripped before
+        # counting, so several flats of one place stay ONE owner, not two.
+        sep = morph_places.PART_SEPARATOR
+        or_clauses = " OR ".join("canonical LIKE ?" for _ in typed_keys)
         typed_rows = self._conn.execute(
             "SELECT canonical, token FROM tokens WHERE customer=? AND entity_type='LOC' "
-            f"AND canonical IN ({placeholders}) LIMIT 2",
-            (self._customer, *typed_keys),
+            f"AND ({or_clauses})",
+            (self._customer, *(key + "%" for key in typed_keys)),
         ).fetchall()
+        owners: dict[str, str] = {}
+        for row_canonical, token in typed_rows:
+            owners.setdefault(morph_places.strip_parts_key(row_canonical), token)
         if len(base) == len(words):
             # БЕЗ ТИПА: ровно одно продолжение — это одно место; два («переулок»
             # и «улица») — два разных места, и ответа нет.
-            return typed_rows[0][1] if len(typed_rows) == 1 else None
+            return next(iter(owners.values())) if len(owners) == 1 else None
         # С ТИПОМ: ДРУГОЙ ТИП НА ТОЙ ЖЕ ОСНОВЕ ЗАКРЫВАЕТ ВОПРОС. «переулок
         # Пушкина 5» и «улица Пушкина 5» — два места (решение владельца), и
         # связать второе с бестиповой строкой, которую занял первый, значило бы
         # слить их в одну подмену.
         mine = frozenset(morph_places.key_type(canonical))
-        if any(frozenset(morph_places.key_type(other)) != mine
-               for other, _token in typed_rows):
+        if any(frozenset(morph_places.key_type(other)) != mine for other in owners):
             return None
-        rows = self._conn.execute(
+        bare_rows = self._conn.execute(
             "SELECT token FROM tokens WHERE customer=? AND entity_type='LOC' "
-            "AND canonical=?",
-            (self._customer, plain),
+            "AND (canonical=? OR canonical LIKE ?)",
+            (self._customer, plain, plain + sep + "%"),
         ).fetchall()
-        return rows[0][0] if len(rows) == 1 else None
+        # Several flats of the SAME no-type place are still one place.
+        return bare_rows[0][0] if bare_rows else None
 
     def holds_minted_place(self, value: str) -> bool:
         """A LOC mention that CONTAINS a substitute of this conversation.
@@ -6771,7 +6777,8 @@ class Vault:
         For UI highlighting: shows what a value WAS replaced with if it has been
         masked before; None if it never went through the model. Never mutates the
         vault, so rendering a dialog can't mint tokens."""
-        canonical = canonicalize(entity_type, value)
+        canonical = (morph_places.place_parts_key(value) if entity_type == "LOC"
+                     else canonicalize(entity_type, value))
         # Hold the lock around the SQLite read: the single connection is shared
         # across worker threads (check_same_thread=False), so reads must be
         # serialized with writes or sqlite3 can raise / interleave cursors.
