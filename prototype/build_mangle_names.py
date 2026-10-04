@@ -101,7 +101,15 @@ def _our_refs(trees: dict, stems: set[str]) -> set[str]:
     """Names that denote OUR code: `self`/`cls`, our submodule names, and anything bound
     by a pseudex import. `obj.attr` is renamed only when `obj` is one of these — so a
     cross-module `morph_places.to_nominative` is rewritten, but a stdlib `re.escape` whose
-    method name happens to collide with one of ours is left untouched."""
+    method name happens to collide with one of ours is left untouched.
+
+    ЛОКАЛЬНЫЙ АЛИАС МОДУЛЯ — ЧАСТЬ ТОГО ЖЕ ПРАВИЛА, и без него пасс ломает продукт
+    молча. `ru_pii.py` пишет `v6 = ru_pii_v6` (импорт внутри функции, чтобы разорвать
+    цикл) и дальше зовёт `v6.detect_checksum_anchored(...)`. По имени `v6` нельзя
+    понять, что это наш модуль, поэтому `def` уезжал в `_z0xxx`, а вызов оставался под
+    старым именем — и падал `AttributeError` в СОБРАННОМ образе, на старте sidecar, то
+    есть там, где диагностика стоит получаса Nuitka. Транзитивное замыкание по
+    присваиванию закрывает и `v6 = ru_pii_v6`, и цепочки `m = mod; x = m`."""
     refs: set[str] = {"self", "cls"} | set(stems)
     for tree in trees.values():
         for node in ast.walk(tree):
@@ -112,6 +120,26 @@ def _our_refs(trees: dict, stems: set[str]) -> set[str]:
                 for a in node.names:
                     if a.name.startswith("pseudex"):
                         refs.add(a.asname or a.name.split(".")[0])
+    # ЗАМЫКАНИЕ ПО ПРИСВАИВАНИЮ: `alias = <имя, которое уже наше>` делает алиас нашим.
+    # AnnAssign покрыт тем же правилом (`v6: ModuleType = ru_pii_v6`).
+    added = True
+    while added:
+        added = False
+        for tree in trees.values():
+            for node in ast.walk(tree):
+                value: ast.expr | None = None
+                targets: list[ast.expr] = []
+                if isinstance(node, ast.Assign) and isinstance(node.value, ast.Name):
+                    value, targets = node.value, list(node.targets)
+                elif (isinstance(node, ast.AnnAssign) and isinstance(node.value, ast.Name)
+                        and node.target is not None):
+                    value, targets = node.value, [node.target]
+                if value is None or value.id not in refs:
+                    continue
+                for target in targets:
+                    if isinstance(target, ast.Name) and target.id not in refs:
+                        refs.add(target.id)
+                        added = True
     return refs
 
 
@@ -162,10 +190,66 @@ def main(paths: list[str]) -> int:
     our_refs = _our_refs(trees, stems)
     candidates = sorted(_collect(trees))
     mapping = {name: f"_z{i:04d}" for i, name in enumerate(candidates)}
+    mangled: dict[Path, str] = {}
     for f, tree in trees.items():
         new_tree = ast.fix_missing_locations(_Renamer(mapping, our_refs).visit(tree))
         out = ast.unparse(new_tree)
         ast.parse(out)  # the mangled source must still parse
+        mangled[f] = out
+    # САМОПРОВЕРКА, И ОНА ЖЕ — ЕДИНСТВЕННОЕ, ЧТО ЛОВИТ ЭТОТ КЛАСС ДЕФЕКТА ДО ОБРАЗА.
+    # `ast.parse` выше доказывает, что мангленный файл — синтаксически питон; он НЕ
+    # доказывает, что вызов нашёл своё определение. Ровно так пасс и ломал продукт:
+    # `v6.detect_checksum_anchored` остался старым именем рядом с переименованным
+    # `def`, синтаксис цел, а sidecar падал `AttributeError` на старте.
+    #
+    # И СВОЙ НАБОР БАЗ, НЕЗАВИСИМЫЙ ОТ `our_refs`. Это не дублирование ради
+    # дублирования: `v6` не попал в `our_refs` — ЭТО И ЕСТЬ причина дефекта, и
+    # проверка, спрашивающая `our_refs`, ослепла бы ровно там, где нужно зрение
+    # (первая версия этой строки так и молчала). Свидетель считает сам: наши модули —
+    # это стемы файлов, алиас — присваивание имени, которое уже нашим является.
+    # Считаются ТОЛЬКО модули и их алиасы, без `self`/`cls`: база `self` потянула бы
+    # `self.attr` на чужом методе и превратила бы проверку в источник ложных отказов.
+    module_bases: set[str] = set(stems)
+    for tree in trees.values():
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("pseudex"):
+                for a in node.names:
+                    module_bases.add(a.asname or a.name)
+            elif isinstance(node, ast.Import):
+                for a in node.names:
+                    if a.name.startswith("pseudex"):
+                        module_bases.add(a.asname or a.name.split(".")[0])
+    grew = True
+    while grew:
+        grew = False
+        for tree in trees.values():
+            for node in ast.walk(tree):
+                src: ast.expr | None = None
+                dst: list[ast.expr] = []
+                if isinstance(node, ast.Assign) and isinstance(node.value, ast.Name):
+                    src, dst = node.value, list(node.targets)
+                elif (isinstance(node, ast.AnnAssign) and isinstance(node.value, ast.Name)
+                        and node.target is not None):
+                    src, dst = node.value, [node.target]
+                if src is None or src.id not in module_bases:
+                    continue
+                for target in dst:
+                    if isinstance(target, ast.Name) and target.id not in module_bases:
+                        module_bases.add(target.id)
+                        grew = True
+    dangling: list[str] = []
+    for f, out in mangled.items():
+        for node in ast.walk(ast.parse(out)):
+            if (isinstance(node, ast.Attribute) and node.attr in mapping
+                    and isinstance(node.value, ast.Name)
+                    and node.value.id in module_bases):
+                dangling.append(f"{f.name}:{node.lineno}: {node.value.id}.{node.attr}")
+    if dangling:
+        print("mangle left dangling references — refusing to write:", file=sys.stderr)
+        for line in dangling[:20]:
+            print(f"  {line}", file=sys.stderr)
+        return 1
+    for f, out in mangled.items():
         f.write_text(out + "\n", encoding="utf-8")
     print(f"mangled {len(mapping)} private crown symbols across {len(files)} files "
           f"(e.g. {candidates[:3]} -> _z0000..)")
