@@ -53,15 +53,17 @@
   </div>
   <p class="sub">Если нужного вам типа здесь нет — <a href="#configurator">отметьте его в конфигураторе</a> ниже: мы делаем то, за что платят.</p>
 
-  <div class="rows" style="margin-top:36px">
-    <div>
-      {% for m in missing %}
-      <div class="numbered"><div class="n">{{ m.n }}</div><div>
-        <h3>{{ m.title }}</h3>
-        <p>{{ m.text }}</p>
-      </div></div>
-      {% endfor %}
-    </div>
+  {% comment %}`.rows` — сетка «260px + контент»: слева заголовок раздела, справа
+     пункты. Он осмыслен, только когда заголовок есть; с одним ребёнком пункты
+     уезжают в узкую колонку и заголовок переносится по слову. Здесь заголовка
+     нет (все пункты — общие), поэтому `.numbered` стоит сам по себе.{% endcomment %}
+  <div style="margin-top:36px;max-width:980px">
+    {% for m in missing %}
+    <div class="numbered"><div class="n">{{ m.n }}</div><div>
+      <h3>{{ m.title }}</h3>
+      <p>{{ m.text }}</p>
+    </div></div>
+    {% endfor %}
   </div>
 </section>
 
