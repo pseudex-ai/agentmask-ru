@@ -299,7 +299,12 @@ def _date_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
 # Целыми словами, в отличие от общего DENY (там «ту» подстрокой бьёт «пациенту»).
 _AGE_DENY = re.compile(
     r"(?i)(?:^|[^а-яёa-z0-9])(?:опыт\w*|стаж\w*|выслуг\w*|гарант\w*|подписк\w*"
-    r"|аренд\w*|срок\w*)\s*$")
+    r"|аренд\w*|срок\w*|более|менее|спустя|через)\s*$")
+# Сравнительное слово ПОСЛЕ числа: «на 10 лет моложе Зюганова» — это СРАВНЕНИЕ,
+# не возраст. Без него «Зюганова» (имя в 80 знаках) легализует «10 лет» как его
+# возраст (NEREL precision: «10 лет моложе»).
+_AGE_COMPARE_TAIL = re.compile(
+    r"(?i)^\s*(?:моложе|старше|младше|раньше|позже|меньше|больше)\b")
 # Дательный падеж местоимений/субъектов ПЕРЕД числом возраста («ему/ей/мне»,
 # «пациенту/клиенту»); «исполнилось» допущено как мостик.
 _AGE_PERSON = re.compile(
@@ -323,6 +328,11 @@ def _age_is_personal(text: str, span: Span, spans: list[Span]) -> bool:
     # WHOLE-WORD, not the shared DENY's substring list («ту» in «пациенту»).
     lead = text[max(0, span.start - 26):span.start].lower()
     if _AGE_DENY.search(lead):
+        return False
+    # A comparative word right AFTER («на 10 лет моложе») is a comparison, not
+    # the person's age — deny before the name association below fires.
+    tail = text[span.end:span.end + 16].lower()
+    if _AGE_COMPARE_TAIL.search(tail):
         return False
     if _AGE_PERSON.search(before):
         return True
