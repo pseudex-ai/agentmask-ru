@@ -639,17 +639,20 @@ def _corpus_texts() -> list[dict]:
     """
     rows: list[dict] = []
     try:
-        try:
-            import pandas as pd
-        except ImportError:  # venv has pyarrow, the bench's pandas is not shipped
-            shim = pathlib.Path(os.environ.get("R1_PANDAS_SHIM", "/tmp/r1-shim"))
-            if not (shim / "pandas.py").exists():
-                raise
-            sys.path.insert(0, str(shim))
-            import pandas as pd  # type: ignore  (pyarrow-backed, see GATE.json)
-        files = [MASSIVE_CACHE / f"massive_ru_{p}.parquet"
-                 for p in ("train", "validation", "test")]
-        frame = pd.concat([pd.read_parquet(f) for f in files if f.exists()])
+        import pandas as pd
+    except ImportError:  # venv has pyarrow, the bench's pandas is not shipped
+        shim = pathlib.Path(os.environ.get("R1_PANDAS_SHIM", "/tmp/r1-shim"))
+        if not (shim / "pandas.py").exists():
+            raise
+        sys.path.insert(0, str(shim))
+        import pandas as pd  # type: ignore  (pyarrow-backed, see GATE.json)
+    files = [MASSIVE_CACHE / f"massive_ru_{p}.parquet"
+             for p in ("train", "validation", "test")]
+    # The corpus is OPTIONAL: skip it when no shard is downloaded, fail closed
+    # when a present shard will not read — never swallow a read error as «absent».
+    present = [f for f in files if f.exists()]
+    if present:
+        frame = pd.concat([pd.read_parquet(f) for f in present])
         slot = __import__("re").compile(r"\[([a-z_]+)\s*:\s*([^\]]+)\]")
         for utt, annot in zip(frame["utt"], frame["annot_utt"]):
             text = str(utt)
@@ -657,8 +660,6 @@ def _corpus_texts() -> list[dict]:
                        if k == "person"]
             rows.append({"corpus": "MASSIVE", "text": text, "gold_person": persons,
                          "gold_spans": []})
-    except Exception as exc:  # pragma: no cover - corpus may be absent
-        print(f"  MASSIVE unavailable: {exc!r}")
     if NEREL_DIR.exists():
         ann_re = __import__("re").compile(r"^T\d+\t(\w+) (\d+) (\d+)\t(.*)$")
         for split in ("dev", "test"):
