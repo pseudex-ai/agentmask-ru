@@ -1210,6 +1210,27 @@ def _fake_date(original: str) -> str:
     return date_form.render_like(rendered, original) if original else rendered
 
 
+_AGE_DIGITS = re.compile(r"\d+")
+
+
+def _fake_age(original: str) -> str:
+    """A number CLOSE to the real age, in the same notation («28 лет» -> «30 лет»).
+
+    Age is a quasi-identifier the model derives a slot/tariff from, so the
+    substitute must stay a number and stay near the real one — «REDACTED<hex>» or
+    a random decade both break the agent. A ±2 years delta keeps the derived
+    value near the real without revealing the exact age; the year of the DOB is
+    already preserved (D-081), so the two stay within a couple of years of each
+    other rather than contradicting.
+    """
+    match = _AGE_DIGITS.search(original)
+    if match is None:
+        return original
+    age = int(match.group())
+    fake = max(0, age + _rng.randbelow(5) - 2)
+    return original[:match.start()] + str(fake) + original[match.end():]
+
+
 def _fake_phone() -> str:
     """A mobile number whose 11 digits are deliberately NOT a valid СНИЛС.
 
@@ -2439,6 +2460,14 @@ def _render_token(entity_type: str, gender: str | None = None,
         # a masked value their validator rejects — and it arrives on the leg
         # where a model is most tempted to «repair» what it was given.
         return _fake_date(original)
+    if entity_type == "AGE":
+        # SAME FAILURE AS DOB. Age fell through to «REDACTED<hex>» inside prose
+        # («ему 28 лет» -> «ему REDACTED…»), which a model reading a numeric age
+        # cannot use — the agent's slot/tariff derivation breaks. A number CLOSE
+        # to the real age is format-preserving and keeps the derived value near
+        # the real one without revealing the exact age (age is a quasi-identifier,
+        # a random decade is not).
+        return _fake_age(original)
     if entity_type == "NAME":
         return _fake_name(gender, morph_names.name_shape(original) if original else (),
                           original=original)
