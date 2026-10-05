@@ -79,6 +79,52 @@ def main() -> int:
     seo_api.search_index_count = lambda: 11
     seo_api.search_positions = positions
 
+    # ── 0. СВЯЗКА С ВЕБМАСТЕРОМ: ТО, ЧТО НЕ РАБОТАЛО МЕСЯЦАМИ ──────────────
+    # Два дефекта жили в `seo_api` и не были видны: снимок писал «источник
+    # недоступен», а это считалось нормальным ответом. Оба стоят здесь.
+    from ops import yandex_api as _ya
+    real_request, real_post, real_token = (seo_api._webmaster_request, seo_api.httpx.post,
+                                           _ya.access_token)
+    _ya.access_token = lambda: "test-token"   # токен здесь не проверяем, сеть не трогаем
+    try:
+        # Хост Вебмастер отдаёт СО СХЕМОЙ: https://pseudex.ru/. Сравнение с
+        # SITE_URL без схемы не совпадало никогда.
+        seo_api._webmaster_request = lambda path, params=None: (
+            {"user_id": 2435923507} if path == "/user/"
+            else {"hosts": [{"ascii_host_url": "https://pseudex.ru/",
+                             "host_url": "https://pseudex.ru/",
+                             "verified": True, "host_id": "https:pseudex.ru:443"}]})
+        try:
+            user, host = seo_api._webmaster_ids()
+        except Exception as error:  # noqa: BLE001 — отказ и есть результат проверки
+            host = f"{type(error).__name__}: {error}"
+        check(host == "https:pseudex.ru:443", "хост Вебмастера находится по домену",
+              f"получили {host}")
+
+        # Переобход: API принимает ОДИН адрес на запрос. Тело со списком он
+        # отвергает, и прежняя версия функции не отправляла ничего.
+        sent = []
+
+        class _Reply:
+            status_code = 202
+            text = ""
+
+            def json(self):
+                return {"task_id": "t", "quota_remainder": 148}
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            sent.append(json)
+            return _Reply()
+
+        seo_api.httpx.post = fake_post
+        result = seo_api.webmaster_recrawl(["https://pseudex.ru/a", "https://pseudex.ru/b"])
+        check(sent == [{"url": "https://pseudex.ru/a"}, {"url": "https://pseudex.ru/b"}],
+              "переобход шлёт по одному адресу на запрос", str(sent))
+        check(result["submitted"] == 2 and result["quota_remainder"] == 148,
+              "принятые адреса и остаток квоты записаны", str(result))
+    finally:
+        (seo_api._webmaster_request, seo_api.httpx.post, _ya.access_token) = (real_request, real_post, real_token)
+
     today = datetime.date(2026, 9, 30)
     yesterday = today - datetime.timedelta(days=1)
 
