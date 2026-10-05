@@ -19,6 +19,7 @@ No pytest, matching the engine repo: run it, read the lines, non-zero is broken.
 """
 
 import os
+import re
 import pathlib
 import subprocess
 import sys
@@ -171,6 +172,31 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     # браузерным тестом, но заметить по странице было нечем).
     check("страница с конфигуратором ставит csrftoken",
           "csrftoken" in client.get("/detection").cookies)
+    # ВНУТРЕННЯЯ ССЫЛКА — ЭТО ОБЕЩАНИЕ, ЧТО СТРАНИЦА ЕСТЬ. В новой статье я
+    # написал слаг с лишней буквой (`...-dannyh`), и ссылка вела в 404: снаружи
+    # это выглядит как небрежность сайта целиком, а Яндекс считает битые ссылки
+    # отдельным дефектом. Проверяются ВСЕ внутренние ссылки из карты сайта —
+    # список берётся оттуда, а не вписан руками, поэтому новая статья попадает
+    # под проверку сама.
+    sitemap = client.get("/sitemap.xml").content.decode()
+    internal = sorted(set(re.findall(r"<loc>https?://[^/]+(/[^<]*)</loc>", sitemap)))
+    broken: list[str] = []
+    seen_links: set[str] = set()
+    for path in internal:
+        page = client.get(path)
+        if page.status_code != 200:
+            broken.append(f"{path} -> {page.status_code}")
+            continue
+        body_html = page.content.decode()
+        for href in re.findall(r'href="(/[a-z0-9/_-]*)"', body_html):
+            if href in seen_links or href.startswith("/static") or href == path:
+                continue
+            seen_links.add(href)
+            if client.get(href).status_code != 200:
+                broken.append(f"{path} → {href}")
+    check("все внутренние ссылки со страниц ведут на существующие адреса",
+          not broken, "; ".join(broken[:4]))
+
     from storefront_web import detection_types
     types_page = client.get("/types")
     check("справочник типов открывается", types_page.status_code == 200,
