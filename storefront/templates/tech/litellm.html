@@ -1,22 +1,25 @@
 {% extends "base.html" %}
 {% load static %}
 {% block title %}{{ page_title }}{% endblock %}
-{% comment %}НАГЛЯДНО, А НЕ ТЕКСТОМ. Прогон показан выводом команд, вывод — блоками
-   моно, выводы — подписями в одну строку. Смысл страницы держится на одном
-   сравнении: что видит модель и что получает инструмент в трёх конфигурациях.
-   Прогон снят живьём: настоящий агент, настоящие инструменты. Сырые выводы лежат
-   в `research/2026-10-05-litellm-masking-vs-pseudex.md`.{% endcomment %}
+{% comment %}СТРАНИЦА ЧИТАЕТСЯ СВЕРХУ ВНИЗ В ДВА ЭТАПА, и это принципиально.
+   Сначала — видит ли шлюз персональные данные вообще (у них 0 срабатываний из
+   пяти типов, у нас 5). Потом — что происходит, когда он всё-таки увидел: он
+   ставит подстановку, подстановку нечем вернуть, модель выдумывает адрес, и
+   инструмент создаёт доставку по чужому адресу. Раньше эти два разных провала
+   стояли вперемешку, и было не понять, что за чем идёт.
+   Прогон живой: настоящий агент, настоящие инструменты; сырые выводы лежат в
+   `research/2026-10-05-litellm-masking-vs-pseudex.md`.{% endcomment %}
 {% block head %}<link rel="stylesheet" href="{% static 'landing.css' %}">{% endblock %}
 {% block content %}
 <section>
   <div class="eyebrow"><i></i><span>ИНТЕГРАЦИЯ · LITELLM</span></div>
   <h1 class="hero" style="font-size:clamp(28px,4.2vw,48px)">LiteLLM и персональные данные</h1>
-  <p class="lede" style="margin-top:22px;max-width:60ch">LiteLLM — шлюз перед моделями. У него есть готовое маскирование, и вот что оно делает с обычным русским чатом: <b>плейсхолдер вместо адреса доезжает до инструмента</b>.</p>
+  <p class="lede" style="margin-top:22px;max-width:62ch">LiteLLM — шлюз перед моделями. У него есть готовое маскирование персональных данных, и ниже — два живых прогона: сначала <b>видит ли оно данные вообще</b>, потом — <b>что бывает, когда оно их всё-таки увидело</b>.</p>
 </section>
 
 <section>
   <div class="sec-head">
-    <h2>Что такое LiteLLM</h2>
+    <h2>Как устроен шлюз</h2>
     <div class="sec-meta">ОДИН ВХОД, МНОГО ПРОВАЙДЕРОВ</div>
   </div>
   <div class="cards cards--n4" style="border:1px solid var(--line-3);margin-top:24px">
@@ -29,105 +32,76 @@
 
 <section>
   <div class="sec-head">
-    <h2>Живой агент с настоящими инструментами</h2>
-    <div class="sec-meta">ОДИН ЦИКЛ, ОДИН ИНСТРУМЕНТ, ОДНО СООБЩЕНИЕ</div>
+    <h2><span class="stage">ЭТАП 1</span> Видит ли оно персональные данные</h2>
+    <div class="sec-meta">ОДНО И ТО ЖЕ СООБЩЕНИЕ</div>
   </div>
-  <p class="sub">Ниже — не макет. Агент реально работает: ищет клиента в CRM, оформляет доставку инструментом, инструмент проверяет адрес по зоне доставки и возвращает настоящий номер доставки. Меняется ровно одно: что стоит между агентом и моделью.</p>
   <div class="mono-block" style="border-color:var(--line-2);color:var(--text-2);margin-top:16px">здрасьте! это волков дмитрий, заказ 4471 привезти завтра? адрес манчжурская 12 кв 84, тел 89178347030, снилс 112-233-445 95</div>
+  <p class="sub" style="margin-top:18px">Ниже — то, что реально получила модель. Пять типов персональных данных: <b>ФИО</b>, <b>адрес</b>, <b>телефон</b>, <b>СНИЛС</b> и <b>номер заказа рядом с адресом</b>.</p>
 
-  <div class="arm" style="margin-top:30px">
-    <div class="arm-h" style="color:var(--amber)">ИХ МАСКИРОВАНИЕ · ГЕЙТРЕЙЛ ВКЛЮЧЁН</div>
-    <div class="arm-g">
-      <div>
-        <div class="arm-l">ЧТО УВИДЕЛА МОДЕЛЬ</div>
-        <div class="mono-block bad">улица подставлена. ФИО, телефон и СНИЛС — <b>как есть</b></div>
-        <div class="arm-cap">Подстановку вернуть нечем: настоящего адреса у модели нет.</div>
-      </div>
-      <div>
-        <div class="arm-l">ЧТО МОДЕЛЬ ПОЛОЖИЛА В ВЫЗОВ</div>
-        <div class="mono-block bad">"address": "<b>ул. Ленина 12</b>, кв. 84"</div>
-        <div class="arm-cap">Адрес, которого клиент не называл. Модель его придумала, чтобы заполнить подстановку.</div>
-      </div>
+  <div class="vis" style="margin-top:22px">
+    <div class="vis-r">
+      <div class="vis-k">ИХ МАСКИРОВАНИЕ<br><span>язык по умолчанию</span></div>
+      <div class="mono-s">здрасьте! это <b class="leak">волков дмитрий</b>, заказ <b class="leak">4471</b> привезти завтра? <b class="leak">&lt;PERSON&gt;</b> <b class="leak">манчжурская 12 кв 84</b>, тел <b class="leak">89178347030</b>, снилс <b class="leak">112-233-445 95</b></div>
+      <div class="vis-v"><span class="badge-bad">найдено типов ПД: 0 из 5</span></div>
+      <div class="vis-c">Единственное срабатывание — ложное: заменено слово <b>«адрес»</b>. Сами данные ушли в модель как есть.</div>
+      <div class="chips"><span class="chip leak">ФИО утекло</span><span class="chip leak">адрес утёк</span><span class="chip leak">телефон утёк</span><span class="chip leak">СНИЛС утёк</span></div>
     </div>
-    <div class="arm-g" style="border-top:1px solid var(--line-3)">
-      <div>
-        <div class="arm-l">ЧТО ВЕРНУЛ ИНСТРУМЕНТ</div>
-        <div class="mono-block bad">{"ok": true, "delivery_id": "DL-D0CE25", "address": "ленина 12"}</div>
-        <div class="arm-cap">Ошибки нет. Доставка <b>создана по чужому адресу</b> — заметить это некому.</div>
-      </div>
-      <div>
-        <div class="arm-l">ЧТО ПОЛУЧИЛ КЛИЕНТ</div>
-        <div class="mono-block bad">«Готово, <b>&lt;LOCATION&gt;</b>! Заказ 4471 оформлен: ул. Ленина 12…»</div>
-        <div class="arm-cap">Подстановка уехала клиенту прямо в тексте ответа.</div>
-      </div>
+    <div class="vis-r">
+      <div class="vis-k">ИХ МАСКИРОВАНИЕ<br><span>настроено на русский</span></div>
+      <div class="mono-s">здрасьте! это <b class="leak">волков дмитрий</b>, заказ 4471 привезти завтра? адрес <b>&lt;PERSON&gt;</b> 12 кв 84, тел <b class="leak">89178347030</b>, снилс <b class="leak">112-233-445 95</b></div>
+      <div class="vis-v"><span class="badge-bad">найдено типов ПД: 1 из 5</span></div>
+      <div class="vis-c">Поймана улица — и тоже как «человек». ФИО, телефон и СНИЛС остались открытыми.</div>
+      <div class="chips"><span class="chip leak">ФИО утекло</span><span class="chip leak">телефон утёк</span><span class="chip leak">СНИЛС утёк</span><span class="chip ok">улица заменена</span></div>
+    </div>
+    <div class="vis-r vis-us">
+      <div class="vis-k">PSEUDEX</div>
+      <div class="mono-s">здрасьте! это <b class="good">цветков виталий</b>, заказ 4471 привезти завтра? адрес <b class="good">лавандовая 65 кв 459</b>, тел <b class="good">89412828688</b>, снилс <b class="good">183-906-458 00</b></div>
+      <div class="vis-v"><span class="badge-good">заменено типов ПД: 5 из 5</span></div>
+      <div class="vis-c">Подмены того же рода: имя именем, улица улицей, формат документа форматом. Настоящего — ничего.</div>
+      <div class="chips"><span class="chip ok">ФИО заменено</span><span class="chip ok">адрес заменён</span><span class="chip ok">телефон заменён</span><span class="chip ok">СНИЛС заменён</span><span class="chip ok">номер заказа сохранён</span></div>
     </div>
   </div>
-
-  <div class="arm arm-us" style="margin-top:18px">
-    <div class="arm-h" style="color:var(--accent)">ТО ЖЕ САМОЕ ЧЕРЕЗ PSEUDEX</div>
-    <div class="arm-g">
-      <div>
-        <div class="arm-l">ЧТО УВИДЕЛА МОДЕЛЬ</div>
-        <div class="mono-block good">здрасьте! это <b>цветков виталий</b>, заказ 4471 привезти завтра? адрес <b>лавандовая 65 кв 459</b>, тел <b>89412828688</b>, снилс <b>183-906-458 00</b></div>
-        <div class="arm-cap">Подмены того же рода: имя именем, улица улицей, формат документа форматом. Настоящего — ничего.</div>
-      </div>
-      <div>
-        <div class="arm-l">ЧТО МОДЕЛЬ ПОЛОЖИЛА В ВЫЗОВ</div>
-        <div class="mono-block good">"address": "<b>Манчжурская 12 кв 84</b>"</div>
-        <div class="arm-cap">Агент рассуждал про подмены, а шлюз раскрыл аргумент перед инструментом.</div>
-      </div>
-    </div>
-    <div class="arm-g" style="border-top:1px solid var(--line-3)">
-      <div>
-        <div class="arm-l">ЧТО ВЕРНУЛ ИНСТРУМЕНТ</div>
-        <div class="mono-block good">{"ok": true, "delivery_id": "DL-34D959", "address": "манчжурская 12"}</div>
-        <div class="arm-cap">Доставка создана по адресу, который назвал клиент.</div>
-      </div>
-      <div>
-        <div class="arm-l">ЧТО ПОЛУЧИЛ КЛИЕНТ</div>
-        <div class="mono-block good">«Готово! Доставка оформлена: заказ 4471, адрес Манчжурская 12, кв. 84…»</div>
-        <div class="arm-cap">Ответ верный: ни подстановок, ни выдуманного адреса.</div>
-      </div>
-    </div>
-  </div>
+  <p class="cap">Прогон живого агента: детекция работает до модели, на её входе. Типы считаны по тому, что реально ушло в модель.</p>
 </section>
 
 <section>
   <div class="sec-head">
-    <h2>В чём настоящая проблема</h2>
-    <div class="sec-meta">ДЕЛО НЕ В ТОМ, ЧТО МОДЕЛЬ УВИДЕЛА</div>
+    <h2><span class="stage">ЭТАП 2</span> Что бывает, когда данные всё-таки увидели</h2>
+    <div class="sec-meta">ЖИВОЙ АГЕНТ · НАСТОЯЩИЕ ИНСТРУМЕНТЫ</div>
   </div>
-  <div class="cards cards--n2" style="border:1px solid var(--line-3);margin-top:22px">
-    <div style="padding:22px">
-      <div class="out-k bad">ПОДСТАНОВКА ВМЕСТО ЗНАЧЕНИЯ</div>
-      <div class="out-r bad" style="margin-top:12px">Модель не может ни произнести адрес, ни передать его инструменту — и заполняет дыру тем, что похоже на адрес. <b>Инструмент принимает выдумку.</b></div>
-    </div>
-    <div style="padding:22px">
-      <div class="out-k bad">ОШИБКИ НЕ ВОЗНИКАЕТ</div>
-      <div class="out-r bad" style="margin-top:12px">Ответ инструмента — успех, статус 200, доставка создана. <b>Такую ошибку не поймает ни мониторинг, ни проверяющий:</b> адрес настоящий, просто не тот.</div>
-    </div>
-    <div style="padding:22px">
-      <div class="out-k bad">ПОДСТАНОВКА УЕЗЖАЕТ КЛИЕНТУ</div>
-      <div class="out-r bad" style="margin-top:12px">В том же прогоне клиент получил «Готово, <b>&lt;LOCATION&gt;</b>!» — текст, адресованный человеку, сломан.</div>
-    </div>
-    <div style="padding:22px">
-      <div class="out-k good">ЧТО ДЕЛАЕМ МЫ</div>
-      <div class="out-r good" style="margin-top:12px">Значение заменяется не подстановкой, а другой улицей, и <b>раскрывается обратно в аргументе вызова</b>. Агент работает как обычно, инструмент получает настоящее, клиент — верный ответ.</div>
-    </div>
+  <p class="sub">Дальше агент работает по-настоящему: ищет клиента в CRM и оформляет доставку. Инструмент проверяет адрес по зоне доставки — как настоящий API доставки. Шаги идут по порядку, сверху вниз.</p>
+
+  <div class="flow-h" style="margin-top:26px;color:var(--amber)">ОНИ: УЛИЦА ЗАМЕНЕНА ПОДСТАНОВКОЙ</div>
+  <div class="flow">
+    <div class="flow-i"><span class="flow-n">1</span><div><div class="flow-k">КЛИЕНТ НАПИСАЛ</div><div class="flow-v mono-s">привезти завтра, адрес манчжурская 12 кв 84</div></div></div>
+    <div class="flow-i"><span class="flow-n">2</span><div><div class="flow-k">МОДЕЛЬ УВИДЕЛА</div><div class="flow-v mono-s">адрес <b class="bad">&lt;PERSON&gt;</b> 12 кв 84 → <b class="bad">настоящего адреса у неё нет</b></div></div></div>
+    <div class="flow-i flow-bad"><span class="flow-n bad">3</span><div><div class="flow-k bad">МОДЕЛЬ ПОЛОЖИЛА В ВЫЗОВ</div><div class="flow-v mono-s">"address": "<b class="bad">ул. Ленина 12</b>, кв. 84"</div><div class="flow-c">Адрес, которого клиент не называл: модель заполнила подстановку правдоподобной улицей.</div></div></div>
+    <div class="flow-i flow-bad"><span class="flow-n bad">4</span><div><div class="flow-k bad">ИНСТРУМЕНТ ОТВЕТИЛ</div><div class="flow-v mono-s">{"ok": true, "delivery_id": "DL-D0CE25", "address": "ленина 12"}</div><div class="flow-c"><b>Ошибки нет.</b> Доставка создана по чужому адресу — такую ошибку не поймает ни мониторинг, ни проверяющий.</div></div></div>
+    <div class="flow-i flow-bad"><span class="flow-n bad">5</span><div><div class="flow-k bad">КЛИЕНТ ПОЛУЧИЛ</div><div class="flow-v mono-s">«Готово, <b class="bad">&lt;LOCATION&gt;</b>! Заказ 4471 оформлен: ул. Ленина 12…»</div><div class="flow-c">Подстановка доехала до человека прямо в тексте ответа.</div></div></div>
   </div>
+
+  <div class="flow-h" style="margin-top:34px;color:var(--accent)">МЫ: ТЕ ЖЕ ШАГИ, ТО ЖЕ СООБЩЕНИЕ</div>
+  <div class="flow">
+    <div class="flow-i"><span class="flow-n">1</span><div><div class="flow-k">КЛИЕНТ НАПИСАЛ</div><div class="flow-v mono-s">привезти завтра, адрес манчжурская 12 кв 84</div></div></div>
+    <div class="flow-i flow-us"><span class="flow-n us">2</span><div><div class="flow-k us">МОДЕЛЬ УВИДЕЛА</div><div class="flow-v mono-s">адрес <b class="good">лавандовая 65 кв 459</b> → настоящего адреса у неё тоже нет, но есть <b>подмена того же рода</b></div></div></div>
+    <div class="flow-i flow-us"><span class="flow-n us">3</span><div><div class="flow-k us">В ВЫЗОВ УШЛО</div><div class="flow-v mono-s">"address": "<b class="good">Манчжурская 12 кв 84</b>"</div><div class="flow-c">Шлюз раскрыл аргумент перед инструментом: подстановка живёт только на стороне модели.</div></div></div>
+    <div class="flow-i flow-us"><span class="flow-n us">4</span><div><div class="flow-k us">ИНСТРУМЕНТ ОТВЕТИЛ</div><div class="flow-v mono-s">{"ok": true, "delivery_id": "DL-34D959", "address": "манчжурская 12"}</div><div class="flow-c">Доставка по адресу, который назвал клиент.</div></div></div>
+    <div class="flow-i flow-us"><span class="flow-n us">5</span><div><div class="flow-k us">КЛИЕНТ ПОЛУЧИЛ</div><div class="flow-v mono-s">«Готово! Доставка оформлена: заказ 4471, адрес Манчжурская 12, кв. 84…»</div><div class="flow-c">Ни подстановок, ни выдуманного адреса.</div></div></div>
+  </div>
+  <p class="cap">Разница не в том, что мы «лучше маскируем». Разница в том, что подстановка возвращается на своём месте — в аргумент вызова, а не в голову модели, где её придётся домысливать.</p>
 </section>
 
 <section>
   <div class="sec-head">
     <h2>Грязные формы, которые мы видим</h2>
-    <div class="sec-meta">РЕАЛЬНЫЕ ВЫВОДЫ ТОГО ЖЕ ПРОГОНА</div>
+    <div class="sec-meta">ВЫВОДЫ ТОГО ЖЕ ДВИЖКА</div>
   </div>
   <p class="sub">Строчными, без «ул.», в падеже, с пропущенной буквой — всё это уходит в модель подменой.</p>
   <div class="cards cards--n4" style="border:1px solid var(--line-3);margin-top:22px">
-    <div style="padding:18px 20px"><div class="arm-l">КАК НАПИСАЛИ</div><div class="mono-s">адрес манчжурская 12 кв 84</div><div class="arm-l" style="margin-top:14px">ЧТО УВИДЕЛА МОДЕЛЬ</div><div class="mono-s good">адрес осиновая 55 кв 138</div></div>
-    <div style="padding:18px 20px"><div class="arm-l">ПРОПУЩЕНА БУКВА</div><div class="mono-s">адрес манжурская 12 кв 84</div><div class="arm-l" style="margin-top:14px">ЧТО УВИДЕЛА МОДЕЛЬ</div><div class="mono-s good">адрес ивовая 40 кв 680</div></div>
-    <div style="padding:18px 20px"><div class="arm-l">ПАДЕЖ</div><div class="mono-s">заказ на манчжурскую 12 кв 84</div><div class="arm-l" style="margin-top:14px">ЧТО УВИДЕЛА МОДЕЛЬ</div><div class="mono-s good">заказ на улицу Пихтовую 46, кв. 685</div></div>
-    <div style="padding:18px 20px"><div class="arm-l">СТРОЧНЫМИ, БЕЗ «УЛ.»</div><div class="mono-s">адрес: г. москва, ул. манчжурская, д. 12</div><div class="arm-l" style="margin-top:14px">ЧТО УВИДЕЛА МОДЕЛЬ</div><div class="mono-s good">адрес: родниковая ул., д. 30, кв. 667</div></div>
+    <div style="padding:18px 20px"><div class="arm-l">СТРОЧНЫМИ, БЕЗ «УЛ.»</div><div class="mono-s">адрес манчжурская 12 кв 84</div><div class="arm-l" style="margin-top:14px">МОДЕЛЬ УВИДЕЛА</div><div class="mono-s good">адрес осиновая 55 кв 138</div></div>
+    <div style="padding:18px 20px"><div class="arm-l">ПРОПУЩЕНА БУКВА</div><div class="mono-s">адрес манжурская 12 кв 84</div><div class="arm-l" style="margin-top:14px">МОДЕЛЬ УВИДЕЛА</div><div class="mono-s good">адрес ивовая 40 кв 680</div></div>
+    <div style="padding:18px 20px"><div class="arm-l">ПАДЕЖ</div><div class="mono-s">заказ на манчжурскую 12 кв 84</div><div class="arm-l" style="margin-top:14px">МОДЕЛЬ УВИДЕЛА</div><div class="mono-s good">заказ на улицу Пихтовую 46, кв. 685</div></div>
+    <div style="padding:18px 20px"><div class="arm-l">ГОРОД, УЛИЦА, ДОМ, КВАРТИРА</div><div class="mono-s">г. москва, ул. манчжурская, д. 12</div><div class="arm-l" style="margin-top:14px">МОДЕЛЬ УВИДЕЛА</div><div class="mono-s good">родниковая ул., д. 30, кв. 667</div></div>
   </div>
   <p style="margin-top:16px;font-size:13.5px;line-height:1.6;color:var(--dim-2);max-width:70ch">Замену буквы в названии улицы мы не восстанавливаем намеренно: «манчгорская» слишком далеко от «манчжурская», и попытка угадать притянула бы под подмену чужие улицы.</p>
 </section>
@@ -144,11 +118,11 @@
       model: openai/gpt-4o
       api_base: http://pseudex:4000/v1     # наш прокси
       api_key: os.environ/PSEUDEX_TENANT_KEY</div>
-  <div class="cards cards--n4" style="border:1px solid var(--line-3);margin-top:24px">
-    <div style="padding:20px"><div class="mono" style="color:var(--accent)">01</div><div class="ds-t">Поднять контейнер</div><div class="ds-n">У себя, в своём контуре. Ключ к подменам остаётся у вас.</div></div>
-    <div style="padding:20px"><div class="mono" style="color:var(--accent)">02</div><div class="ds-t">Взять ключ арендатора</div><div class="ds-n">Он выдаётся в кабинете и работает как обычный ключ провайдера.</div></div>
-    <div style="padding:20px"><div class="mono" style="color:var(--accent)">03</div><div class="ds-t">Заменить <code>api_base</code></div><div class="ds-n">Гейтрейл маскирования выключить: он заменит значение на <code>&lt;PERSON&gt;</code>, и вернуть его будет нечем.</div></div>
-    <div style="padding:20px"><div class="mono" style="color:var(--accent)">04</div><div class="ds-t">Проверить на своём чате</div><div class="ds-n">Тот же запрос: модель должна видеть подмену, инструмент — настоящее значение.</div></div>
+  <div class="flow" style="margin-top:24px">
+    <div class="flow-i"><span class="flow-n">1</span><div><div class="flow-k">ПОДНЯТЬ КОНТЕЙНЕР</div><div class="flow-v">У себя, в своём контуре. Ключ к подменам остаётся у вас.</div></div></div>
+    <div class="flow-i"><span class="flow-n">2</span><div><div class="flow-k">ВЗЯТЬ КЛЮЧ АРЕНДАТОРА</div><div class="flow-v">Выдаётся в кабинете и работает как обычный ключ провайдера.</div></div></div>
+    <div class="flow-i"><span class="flow-n">3</span><div><div class="flow-k">ЗАМЕНИТЬ <code>api_base</code></div><div class="flow-v">Гейтрейл маскирования выключить: он поставит подстановку, и вернуть её будет нечем.</div></div></div>
+    <div class="flow-i"><span class="flow-n">4</span><div><div class="flow-k">ПРОВЕРИТЬ НА СВОЁМ ЧАТЕ</div><div class="flow-v">Тот же запрос: модель должна видеть подмену, инструмент — настоящее значение.</div></div></div>
   </div>
   <div style="margin-top:28px;display:flex;gap:12px;flex-wrap:wrap">
     <a class="btn accent lg" href="/#start">ПОПРОБОВАТЬ</a>
