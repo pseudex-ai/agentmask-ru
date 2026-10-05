@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.29](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.28...platform/v0.3.29) (2026-10-05)
+
+
+### Исправления
+
+* **cabinet:** полоса расхода показывает реальный расход, а не ноль ([91677a7](https://github.com/Isk4R1oT/Obscura/commit/91677a7f163ac7f62ca61490bc8964c047f75287))
+* **cabinet:** полоса расхода показывает реальный расход, а не ноль ([167770d](https://github.com/Isk4R1oT/Obscura/commit/167770d97eb1964b194584504f79a1612a624a20))
+* **payments:** CSP блокировала оплату картой — form-action не пропускал перенаправление ([0355353](https://github.com/Isk4R1oT/Obscura/commit/03553533825d9d679ce1c8de4d3946c89f3d073b))
+
 ## [0.3.28](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.27...platform/v0.3.28) (2026-10-05)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.29](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.28...platform/v0.3.29) (2026-10-05)
+
+
+### Прочее
+
+* **platform:** Synchronize platform versions
+
 ## [0.3.28](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.27...platform/v0.3.28) (2026-10-05)
 
 
