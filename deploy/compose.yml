@@ -227,6 +227,11 @@ services:
       YANDEX_OAUTH_CLIENT_ID: ${YANDEX_OAUTH_CLIENT_ID:-}
       YANDEX_OAUTH_CLIENT_SECRET: ${YANDEX_OAUTH_CLIENT_SECRET:-}
       YANDEX_OAUTH_REFRESH_TOKEN: ${YANDEX_OAUTH_REFRESH_TOKEN:-}
+      # Частотности и позиции (Wordstat живёт в Search API, а не в OAuth
+      # Директа: другие права, другой тариф). Ключ каталога, а не пользователя,
+      # поэтому он едет сюда напрямую и НЕ участвует в OAuth-лестнице.
+      # Пусто — интеграция выключена, снимок честно пишет «нет ключа Search API».
+      PSEUDEX_SEARCH_API_KEY: ${PSEUDEX_SEARCH_API_KEY:-}
       # Отправка офлайн-конверсий. Пусто — выключено, и это состояние по
       # умолчанию: конверсия уходит с сервера и не спрашивает согласия
       # баннером, поэтому включается отдельным решением, а не наличием токена.
