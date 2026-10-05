@@ -194,7 +194,7 @@ Microsoft Presidio с русской моделью spaCy единственны
 
 У бенчмарка, написанного вендором, одна обязанность: уметь провалить вендора. У нас есть опыт обратного. Наш внутренний бенчмарк предыдущего поколения в четырёх местах не мог провалиться в принципе. Скорер возвращал `not any([])` на пустом списке полей, то есть «всё верно». Обязательность полей была объявлена и не читалась. Уровня «а вызвал ли агент инструмент вообще» не существовало. Негативы были объявлены и не проверялись. Все четыре работали в пользу шлюза, и ни одна цифра не двинулась.
 
-Поэтому в открытом бенчмарке гейты стоят в CI:
+Поэтому в открытом бенчмарке гейты стоят в CI. Код и корпус лежат тут: [github.com/pseudex-ai/agentmask-ru](https://github.com/pseudex-ai/agentmask-ru).
 
 - **G6**: маскер, который ничего не делает, обязан пройти каждый случай. Если значение не переживает passthrough, сломан случай, а не маскер.
 - **G7**: наивный regex обязан оставить след на каждом случае, который не объясняет в поле `hard.why`, почему не может. Корпус, где наивная планка равна passthrough, не различает ничего.
@@ -227,3 +227,35 @@ Microsoft Presidio с русской моделью spaCy единственны
 ---
 
 Пишите в комментариях, если хотите прогнать свою систему через корпус или поспорить с метрикой. Корпус и харнесс открыты.
+
+## Источники
+
+**Наш продукт и бенчмарк**
+
+  * Pseudex: [pseudex.ru](https://pseudex.ru)
+  * AgentMask-RU, код и корпус: [github.com/pseudex-ai/agentmask-ru](https://github.com/pseudex-ai/agentmask-ru)
+
+**Системы, которые мы прогнали**
+
+  * Cloud.ru guardrails-llm-filter: [github.com/KAP-AI/guardrails-llm-filter](https://github.com/KAP-AI/guardrails-llm-filter)
+  * LiteLLM и его guardrails: [github.com/BerriAI/litellm](https://github.com/BerriAI/litellm), [документация по guardrails](https://docs.litellm.ai/docs/proxy/guardrails/quick_start). Обсуждения, о которых речь в тексте: [#31950](https://github.com/BerriAI/litellm/issues/31950), [#32014](https://github.com/BerriAI/litellm/pull/32014), [#42130](https://github.com/BerriAI/litellm/issues/42130)
+  * LLM Guard: [github.com/protectai/llm-guard](https://github.com/protectai/llm-guard)
+  * Microsoft Presidio: [github.com/microsoft/presidio](https://github.com/microsoft/presidio), русская модель [spaCy ru](https://spacy.io/models/ru)
+
+**Чем собирали корпус**
+
+  * [Natasha](https://github.com/natasha/natasha) и размеченный ею корпус имён (NEN)
+  * [pymorphy3](https://github.com/no-plagiarism/pymorphy3)
+  * [libphonenumber](https://github.com/google/libphonenumber)
+  * [Wikidata](https://www.wikidata.org), [mimesis](https://github.com/lk-geimfari/mimesis), [Faker](https://github.com/joke2k/faker)
+  * Резервные DEF-коды российского плана нумерации (Приказ Минцифры России № 75)
+
+**Корпуса и стенды, о которых говорим в тексте**
+
+  * NEREL: [github.com/nerel-ds/NEREL](https://github.com/nerel-ds/NEREL)
+  * RuNNE-2022: [разбор задания](https://arxiv.org/abs/2205.11159)
+  * hivetrace/pii-bench: [huggingface.co/datasets/hivetrace/pii-bench](https://huggingface.co/datasets/hivetrace/pii-bench)
+  * ai4privacy/pii-masking-200k: [huggingface.co/datasets/ai4privacy/pii-masking-200k](https://huggingface.co/datasets/ai4privacy/pii-masking-200k)
+  * BFCL: [gorilla.cs.berkeley.edu](https://gorilla.cs.berkeley.edu/leaderboard.html)
+  * τ-bench: [github.com/sierra-research/tau-bench](https://github.com/sierra-research/tau-bench)
+  * GorillaHard в MERA: [mera.a-ai.ru](https://mera.a-ai.ru)
