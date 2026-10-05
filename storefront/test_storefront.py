@@ -178,6 +178,15 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     # отдельным дефектом. Проверяются ВСЕ внутренние ссылки из карты сайта —
     # список берётся оттуда, а не вписан руками, поэтому новая статья попадает
     # под проверку сама.
+    # ОПЛАТА КАРТОЙ БЫЛА НЕДОСТУПНА ИЗ-ЗА НАШЕЙ ЖЕ CSP. `form-action` браузер
+    # проверяет и для ЦЕЛИ ПЕРЕНАПРАВЛЕНИЯ формы: POST на /app/subscribe уходил,
+    # сервер отвечал 302 на checkout ЮKassa, и навигация отменялась — человек
+    # видел «страница обновилась», а деньги не платились. Проверка держит в
+    # политике ровно те домены провайдера, куда уводит оплата.
+    _csp = client.get("/").headers.get("Content-Security-Policy", "")
+    check("политика пропускает перенаправление формы на страницу оплаты",
+          "form-action 'self' https://yoomoney.ru" in _csp, _csp[:160])
+
     sitemap = client.get("/sitemap.xml").content.decode()
     internal = sorted(set(re.findall(r"<loc>https?://[^/]+(/[^<]*)</loc>", sitemap)))
     broken: list[str] = []

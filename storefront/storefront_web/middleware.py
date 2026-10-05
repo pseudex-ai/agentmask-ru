@@ -111,7 +111,17 @@ _POLICY = "; ".join([
     # page a logged-in customer is looking at, which is exactly the shape of
     # data flow this product exists to prevent.
     "connect-src 'self'",
-    "form-action 'self'",
+    # РЕДИРЕКТ ПОСЛЕ ОТПРАВКИ ФОРМЫ — ТОЖЕ `form-action`, И ЭТО НЕ ОЧЕВИДНО.
+    # Форма уходит на свой origin (можно), сервер отвечает 302 на страницу оплаты
+    # провайдера, и браузер проверяет ЦЕЛЬ ПЕРЕНАПРАВЛЕНИЯ по тому же списку. С
+    # одним `'self'` он её режет: POST уходит, 302 приходит, навигация
+    # отменяется — человек видит «нажал, страница просто обновилась», а в
+    # консоли «Sending form data to … violates form-action 'self'». Так была
+    # недоступна оплата картой во всём кабинете.
+    #
+    # Домены провайдера, а не произвольные: это ровно те страницы, куда ЮKassa
+    # уводит плательщика (checkout), и ничего больше.
+    "form-action 'self' https://yoomoney.ru https://yookassa.ru",
     "frame-ancestors 'none'",
     "base-uri 'none'",
 ])
