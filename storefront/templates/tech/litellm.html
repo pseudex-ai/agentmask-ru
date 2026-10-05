@@ -1,88 +1,135 @@
 {% extends "base.html" %}
 {% load static %}
 {% block title %}{{ page_title }}{% endblock %}
-{% comment %}ТЕХНИЧЕСКАЯ СТРАНИЦА, А НЕ СТАТЬЯ БАЗЫ ЗНАНИЙ. Здесь другой читатель:
-он уже поставил шлюз и выбирает, чем закрыть обезличивание. Ему нужен не разбор
-закона, а прогон, который он может повторить у себя, и конфиг, который можно
-скопировать. Прогон воспроизведён локально на LiteLLM 1.104.0 — выводы ниже
-напечатаны командами, а не пересказаны.{% endcomment %}
+{% comment %}НАГЛЯДНО, А НЕ ТЕКСТОМ. Прогон показан выводом команд, вывод — блоками
+   моно, выводы — подписями в одну строку. Смысл страницы держится на одном
+   сравнении: что видит модель и что получает инструмент в трёх конфигурациях.
+   Прогон снят живьём: настоящий агент, настоящие инструменты. Сырые выводы лежат
+   в `research/2026-10-05-litellm-masking-vs-pseudex.md`.{% endcomment %}
 {% block head %}<link rel="stylesheet" href="{% static 'landing.css' %}">{% endblock %}
 {% block content %}
 <section>
   <div class="eyebrow"><i></i><span>ИНТЕГРАЦИЯ · LITELLM</span></div>
-  <h1 class="hero" style="font-size:clamp(28px,4.2vw,48px)">LiteLLM и персональные данные: что не работает в его маскировании</h1>
-  <p class="lede" style="margin-top:24px">LiteLLM — шлюз перед моделями: один OpenAI-совместимый вход, за которым любой провайдер, ключи, бюджеты и гейтрейлы. У него есть готовое маскирование персональных данных, и вот что оно делает на обычном русском чате. Ниже — реальный прогон, который можно повторить.</p>
+  <h1 class="hero" style="font-size:clamp(28px,4.2vw,48px)">LiteLLM и персональные данные</h1>
+  <p class="lede" style="margin-top:22px;max-width:60ch">LiteLLM — шлюз перед моделями. У него есть готовое маскирование, и вот что оно делает с обычным русским чатом: <b>плейсхолдер вместо адреса доезжает до инструмента</b>.</p>
 </section>
 
 <section>
   <div class="sec-head">
-    <h2>Как устроен LiteLLM</h2>
+    <h2>Что такое LiteLLM</h2>
     <div class="sec-meta">ОДИН ВХОД, МНОГО ПРОВАЙДЕРОВ</div>
   </div>
-  <p class="sub">Приложение обращается к LiteLLM как к OpenAI, а LiteLLM решает, куда пойти дальше. Всё, что можно включить по дороге — логи, бюджеты, ключи, проверки — включается гейтрейлами.</p>
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:1px;background:var(--line-3);border:1px solid var(--line-3);margin-top:28px">
-    <div style="background:var(--card-bg);padding:22px">
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--accent)">01</div>
-      <div style="margin-top:10px;font-size:17px;font-weight:700">Ваше приложение</div>
-      <div style="margin-top:8px;font-size:14px;line-height:1.6;color:var(--dim)">Отправляет запрос на <code style="font-size:12.5px">/v1/chat/completions</code> — так же, как в OpenAI. Ничего знать про шлюз ему не нужно.</div>
+  <div class="cards cards--n4" style="border:1px solid var(--line-3);margin-top:24px">
+    <div style="padding:20px"><div class="mono" style="color:var(--accent)">ОДИН ВХОД</div><div class="ds-t">Совместим с OpenAI</div><div class="ds-n">Приложение шлёт <code>/v1/chat/completions</code> и не знает, кто за шлюзом.</div></div>
+    <div style="padding:20px"><div class="mono" style="color:var(--accent)">МАРШРУТИЗАЦИЯ</div><div class="ds-t">Любой провайдер</div><div class="ds-n">OpenAI, Anthropic, локальные модели, свои шлюзы — одной конфигурацией.</div></div>
+    <div style="padding:20px"><div class="mono" style="color:var(--accent)">КЛЮЧИ И БЮДЖЕТЫ</div><div class="ds-t">Лимиты на команду</div><div class="ds-n">Свои ключи, квоты и расход по каждому потребителю.</div></div>
+    <div style="padding:20px"><div class="mono" style="color:var(--accent)">ГЕЙТРЕЙЛЫ</div><div class="ds-t">Проверки по дороге</div><div class="ds-n">Маскирование персональных данных — один из них, через Presidio.</div></div>
+  </div>
+</section>
+
+<section>
+  <div class="sec-head">
+    <h2>Живой агент с настоящими инструментами</h2>
+    <div class="sec-meta">ОДИН ЦИКЛ, ОДИН ИНСТРУМЕНТ, ОДНО СООБЩЕНИЕ</div>
+  </div>
+  <p class="sub">Ниже — не макет. Агент реально работает: ищет клиента в CRM, оформляет доставку инструментом, инструмент проверяет адрес по зоне доставки и возвращает настоящий номер доставки. Меняется ровно одно: что стоит между агентом и моделью.</p>
+  <div class="mono-block" style="border-color:var(--line-2);color:var(--text-2);margin-top:16px">здрасьте! это волков дмитрий, заказ 4471 привезти завтра? адрес манчжурская 12 кв 84, тел 89178347030, снилс 112-233-445 95</div>
+
+  <div class="arm" style="margin-top:30px">
+    <div class="arm-h" style="color:var(--amber)">ИХ МАСКИРОВАНИЕ · ГЕЙТРЕЙЛ ВКЛЮЧЁН</div>
+    <div class="arm-g">
+      <div>
+        <div class="arm-l">ЧТО УВИДЕЛА МОДЕЛЬ</div>
+        <div class="mono-block bad">улица подставлена. ФИО, телефон и СНИЛС — <b>как есть</b></div>
+        <div class="arm-cap">Подстановку вернуть нечем: настоящего адреса у модели нет.</div>
+      </div>
+      <div>
+        <div class="arm-l">ЧТО МОДЕЛЬ ПОЛОЖИЛА В ВЫЗОВ</div>
+        <div class="mono-block bad">"address": "<b>ул. Ленина 12</b>, кв. 84"</div>
+        <div class="arm-cap">Адрес, которого клиент не называл. Модель его придумала, чтобы заполнить подстановку.</div>
+      </div>
     </div>
-    <div style="background:var(--card-bg);padding:22px">
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--accent)">02</div>
-      <div style="margin-top:10px;font-size:17px;font-weight:700">LiteLLM</div>
-      <div style="margin-top:8px;font-size:14px;line-height:1.6;color:var(--dim)">Выбирает провайдера, подставляет ключ, считает расход и прогоняет гейтрейлы. Маскирование — один из гейтрейлов.</div>
+    <div class="arm-g" style="border-top:1px solid var(--line-3)">
+      <div>
+        <div class="arm-l">ЧТО ВЕРНУЛ ИНСТРУМЕНТ</div>
+        <div class="mono-block bad">{"ok": true, "delivery_id": "DL-D0CE25", "address": "ленина 12"}</div>
+        <div class="arm-cap">Ошибки нет. Доставка <b>создана по чужому адресу</b> — заметить это некому.</div>
+      </div>
+      <div>
+        <div class="arm-l">ЧТО ПОЛУЧИЛ КЛИЕНТ</div>
+        <div class="mono-block bad">«Готово, <b>&lt;LOCATION&gt;</b>! Заказ 4471 оформлен: ул. Ленина 12…»</div>
+        <div class="arm-cap">Подстановка уехала клиенту прямо в тексте ответа.</div>
+      </div>
     </div>
-    <div style="background:var(--card-bg);padding:22px">
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--accent)">03</div>
-      <div style="margin-top:10px;font-size:17px;font-weight:700">Модель</div>
-      <div style="margin-top:8px;font-size:14px;line-height:1.6;color:var(--dim)">Получает то, что до неё донесли. Всё, что увидит модель, увидит и провайдер.</div>
+  </div>
+
+  <div class="arm arm-us" style="margin-top:18px">
+    <div class="arm-h" style="color:var(--accent)">ТО ЖЕ САМОЕ ЧЕРЕЗ PSEUDEX</div>
+    <div class="arm-g">
+      <div>
+        <div class="arm-l">ЧТО УВИДЕЛА МОДЕЛЬ</div>
+        <div class="mono-block good">здрасьте! это <b>цветков виталий</b>, заказ 4471 привезти завтра? адрес <b>лавандовая 65 кв 459</b>, тел <b>89412828688</b>, снилс <b>183-906-458 00</b></div>
+        <div class="arm-cap">Подмены того же рода: имя именем, улица улицей, формат документа форматом. Настоящего — ничего.</div>
+      </div>
+      <div>
+        <div class="arm-l">ЧТО МОДЕЛЬ ПОЛОЖИЛА В ВЫЗОВ</div>
+        <div class="mono-block good">"address": "<b>Манчжурская 12 кв 84</b>"</div>
+        <div class="arm-cap">Агент рассуждал про подмены, а шлюз раскрыл аргумент перед инструментом.</div>
+      </div>
+    </div>
+    <div class="arm-g" style="border-top:1px solid var(--line-3)">
+      <div>
+        <div class="arm-l">ЧТО ВЕРНУЛ ИНСТРУМЕНТ</div>
+        <div class="mono-block good">{"ok": true, "delivery_id": "DL-34D959", "address": "манчжурская 12"}</div>
+        <div class="arm-cap">Доставка создана по адресу, который назвал клиент.</div>
+      </div>
+      <div>
+        <div class="arm-l">ЧТО ПОЛУЧИЛ КЛИЕНТ</div>
+        <div class="mono-block good">«Готово! Доставка оформлена: заказ 4471, адрес Манчжурская 12, кв. 84…»</div>
+        <div class="arm-cap">Ответ верный: ни подстановок, ни выдуманного адреса.</div>
+      </div>
     </div>
   </div>
 </section>
 
 <section>
   <div class="sec-head">
-    <h2>Что не работает: реальный прогон</h2>
-    <div class="sec-meta">LITELLM 1.104.0 · PRESIDIO · ЛОКАЛЬНО</div>
+    <h2>В чём настоящая проблема</h2>
+    <div class="sec-meta">ДЕЛО НЕ В ТОМ, ЧТО МОДЕЛЬ УВИДЕЛА</div>
   </div>
-  <p class="sub">Вместо модели — заглушка, которая записывает, что до неё дошло. Сообщение обычное, чатовое, с опечатками:</p>
-  <div style="border:1px solid var(--line-2);background:var(--panel);padding:18px;margin-top:18px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;color:var(--text-2);white-space:pre-wrap">здрасьте! это волков дмитрий, заказ 4471 привезти завтра? адрес манчгорская 12 кв 84, тел 89178347030, снилс 112-233-445 95</div>
-
-  <h3 style="margin-top:44px;font-size:20px">Сначала — чтобы маскирование вообще включилось</h3>
-  <p style="margin-top:10px;font-size:15px;line-height:1.7;color:var(--text-2);max-width:70ch">Оно не включается строкой в конфиге. Прокси отказывается стартовать три раза подряд, и каждый отказ — это требование:</p>
-  <div style="border:1px solid var(--line-2);background:var(--panel);padding:18px;margin-top:16px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.9;color:var(--text-3);white-space:pre-wrap">Missing `PRESIDIO_ANALYZER_API_BASE` from environment
-Missing `PRESIDIO_ANONYMIZER_API_BASE` from environment
-UnsafeMasterKeyError: the master key is a publicly known default</div>
-  <p style="margin-top:14px;font-size:15px;line-height:1.7;color:var(--dim);max-width:70ch">То есть нужны <b>два отдельных сервиса</b> Presidio рядом и отдельный ключ прокси. И даже после этого гейтрейл не применяется, пока не выставлен <code style="font-size:13px">default_on: true</code> — без него он молча ждёт, пока его попросят в каждом запросе.</p>
-
-  <h3 style="margin-top:44px;font-size:20px">Прогон 1. Как из коробки</h3>
-  <p style="margin-top:10px;font-size:15px;line-height:1.7;color:var(--text-2);max-width:70ch">Язык по умолчанию у их гейтрейла — <code style="font-size:13px">en</code>. Вот что увидела модель:</p>
-  <div style="border:1px solid var(--amber-bg);background:var(--warn-bg-deep);padding:18px;margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;color:var(--text-2);white-space:pre-wrap">здрасьте! это волков дмитрий, заказ 4471 привезти завтра? &lt;PERSON&gt; манчгорская 12 кв 84, тел 89178347030, снилс 112-233-445 95</div>
-  <p style="margin-top:14px;font-size:15px;line-height:1.7;color:var(--text-2);max-width:70ch">Замаскировано <b>слово «адрес»</b> — ложное срабатывание. Проверка анализатора напрямую на этом тексте возвращает ровно одну сущность: <code style="font-size:13px">PERSON</code> на слове «адрес», 0.85. Фамилия, улица, телефон и СНИЛС ушли в модель <b>целиком</b>.</p>
-  <p style="margin-top:14px;font-size:15px;line-height:1.7;color:var(--text-2);max-width:70ch">И это не безобидно. Агент вызывает инструмент тем, что видит, и аргумент вызова получается такой:</p>
-  <div style="border:1px solid var(--line-2);background:var(--panel);padding:18px;margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.7;color:var(--text-3);white-space:pre-wrap">{"address": "здрасьте! это волков дмитрий, заказ 4471 привезти завтра? &lt;P"}</div>
-
-  <h3 style="margin-top:44px;font-size:20px">Прогон 2. Настроено на русский</h3>
-  <p style="margin-top:10px;font-size:15px;line-height:1.7;color:var(--text-2);max-width:70ch">Ставим <code style="font-size:13px">presidio_language: ru</code> и русскую модель spaCy. Модель увидела сообщение <b>без единого изменения</b>: анализатор вернул ноль сущностей. Причина видна на уровне самой модели:</p>
-  <div style="border:1px solid var(--line-2);background:var(--panel);padding:18px;margin-top:16px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.9;color:var(--text-3);white-space:pre-wrap">ru_core_news_sm:  []                                    ← ничего
-en_core_web_sm:   «адрес» PERSON · «12 кв 84» DATE ·
-                  «89178347030» DATE · «112» CARDINAL</div>
-  <p style="margin-top:14px;font-size:15px;line-height:1.7;color:var(--dim);max-width:70ch">Русская модель не размечает ни имя, ни адрес. Английская размечает, но неверно. Дообучить это можно — своими распознавателями, словарями и падежами, — но это отдельный проект, а не галочка в конфиге.</p>
+  <div class="cards cards--n2" style="border:1px solid var(--line-3);margin-top:22px">
+    <div style="padding:22px">
+      <div class="out-k bad">ПОДСТАНОВКА ВМЕСТО ЗНАЧЕНИЯ</div>
+      <div class="out-r bad" style="margin-top:12px">Модель не может ни произнести адрес, ни передать его инструменту — и заполняет дыру тем, что похоже на адрес. <b>Инструмент принимает выдумку.</b></div>
+    </div>
+    <div style="padding:22px">
+      <div class="out-k bad">ОШИБКИ НЕ ВОЗНИКАЕТ</div>
+      <div class="out-r bad" style="margin-top:12px">Ответ инструмента — успех, статус 200, доставка создана. <b>Такую ошибку не поймает ни мониторинг, ни проверяющий:</b> адрес настоящий, просто не тот.</div>
+    </div>
+    <div style="padding:22px">
+      <div class="out-k bad">ПОДСТАНОВКА УЕЗЖАЕТ КЛИЕНТУ</div>
+      <div class="out-r bad" style="margin-top:12px">В том же прогоне клиент получил «Готово, <b>&lt;LOCATION&gt;</b>!» — текст, адресованный человеку, сломан.</div>
+    </div>
+    <div style="padding:22px">
+      <div class="out-k good">ЧТО ДЕЛАЕМ МЫ</div>
+      <div class="out-r good" style="margin-top:12px">Значение заменяется не подстановкой, а другой улицей, и <b>раскрывается обратно в аргументе вызова</b>. Агент работает как обычно, инструмент получает настоящее, клиент — верный ответ.</div>
+    </div>
+  </div>
 </section>
 
 <section>
   <div class="sec-head">
-    <h2>То же сообщение через Pseudex</h2>
-    <div class="sec-meta">МОДЕЛЬ ВИДИТ ПОДМЕНУ, ИНСТРУМЕНТ — НАСТОЯЩЕЕ</div>
+    <h2>Грязные формы, которые мы видим</h2>
+    <div class="sec-meta">РЕАЛЬНЫЕ ВЫВОДЫ ТОГО ЖЕ ПРОГОНА</div>
   </div>
-  <p class="sub">Та же фраза, тот же порядок: сначала то, что уходит в модель, потом то, что получает инструмент.</p>
-  <div style="border:1px solid var(--accent);padding:18px;margin-top:18px;font-family:'JetBrains Mono',monospace;font-size:13px;line-height:1.7;color:var(--text-2);white-space:pre-wrap">здрасьте! это шилов фёдор, заказ 4471 привезти завтра? адрес манчгорская 12 кв 84, тел 89406407713, снилс 233-260-080 20</div>
-  <p style="margin-top:16px;font-size:15px;line-height:1.7;color:var(--text-2);max-width:70ch">Фамилия, телефон и СНИЛС заменены на подмены того же рода — женское имя женским, формат документа форматом. Инструмент при этом получает настоящее значение: агент работает, а модель персональных данных не видит.</p>
-
-  <div class="kb-note" style="border:1px solid var(--line-2);background:var(--panel);padding:20px;margin-top:24px">
-    <b>Честная граница, замеренная в том же прогоне.</b> Улица в этом сообщении написана строчными, без слова-маркера и с опечаткой — и она <b>не подменяется</b>. Это тот самый остаток, о котором мы говорим открыто: <a href="/how">имена и улицы вне словарей</a>. Если улица записана узнаваемо, подменяется и она:
-    <div style="margin-top:14px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.9;color:var(--text-3);white-space:pre-wrap">адрес: ул. Манчжурская, д. 12, кв. 84    →  адрес: ул. Барбарисовая, д. 48, кв. 140
-адрес: г. Москва, ул. Манчжурская, 12-84  →  адрес: г. Москва, ул. Полевая, 42-84</div>
+  <p class="sub">Строчными, без «ул.», в падеже, с пропущенной буквой — всё это уходит в модель подменой.</p>
+  <div class="cards cards--n4" style="border:1px solid var(--line-3);margin-top:22px">
+    <div style="padding:18px 20px"><div class="arm-l">КАК НАПИСАЛИ</div><div class="mono-s">адрес манчжурская 12 кв 84</div><div class="arm-l" style="margin-top:14px">ЧТО УВИДЕЛА МОДЕЛЬ</div><div class="mono-s good">адрес осиновая 55 кв 138</div></div>
+    <div style="padding:18px 20px"><div class="arm-l">ПРОПУЩЕНА БУКВА</div><div class="mono-s">адрес манжурская 12 кв 84</div><div class="arm-l" style="margin-top:14px">ЧТО УВИДЕЛА МОДЕЛЬ</div><div class="mono-s good">адрес ивовая 40 кв 680</div></div>
+    <div style="padding:18px 20px"><div class="arm-l">ПАДЕЖ</div><div class="mono-s">заказ на манчжурскую 12 кв 84</div><div class="arm-l" style="margin-top:14px">ЧТО УВИДЕЛА МОДЕЛЬ</div><div class="mono-s good">заказ на улицу Пихтовую 46, кв. 685</div></div>
+    <div style="padding:18px 20px"><div class="arm-l">СТРОЧНЫМИ, БЕЗ «УЛ.»</div><div class="mono-s">адрес: г. москва, ул. манчжурская, д. 12</div><div class="arm-l" style="margin-top:14px">ЧТО УВИДЕЛА МОДЕЛЬ</div><div class="mono-s good">адрес: родниковая ул., д. 30, кв. 667</div></div>
   </div>
+  <p style="margin-top:16px;font-size:13.5px;line-height:1.6;color:var(--dim-2);max-width:70ch">Замену буквы в названии улицы мы не восстанавливаем намеренно: «манчгорская» слишком далеко от «манчжурская», и попытка угадать притянула бы под подмену чужие улицы.</p>
 </section>
 
 <section>
@@ -91,39 +138,22 @@ en_core_web_sm:   «адрес» PERSON · «12 кв 84» DATE ·
     <div class="sec-meta">БЕЗ ГЕЙТРЕЙЛА И БЕЗ ВТОРОГО СЕРВИСА</div>
   </div>
   <p class="sub">Маскирование у нас — не отдельный сервис, а сам шлюз. LiteLLM ходит в наш прокси как в обычного провайдера: он OpenAI-совместимый.</p>
-  <div style="border:1px solid var(--line-2);background:var(--panel);padding:20px;margin-top:20px;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.9;color:var(--text-2);white-space:pre-wrap">model_list:
+  <div class="mono-block" style="margin-top:18px;color:var(--text-2)">model_list:
   - model_name: gpt-4o
     litellm_params:
       model: openai/gpt-4o
       api_base: http://pseudex:4000/v1     # наш прокси
       api_key: os.environ/PSEUDEX_TENANT_KEY</div>
-  <p style="margin-top:18px;font-size:15px;line-height:1.7;color:var(--text-2);max-width:70ch">Порядок: поднять контейнер у себя, получить ключ арендатора, заменить <code style="font-size:13px">api_base</code>. Гейтрейл маскирования при этом выключается — иначе получится двойная работа: Presidio заменит значение на <code style="font-size:13px">&lt;PERSON&gt;</code>, и вернуть его в аргумент вызова будет уже нечем.</p>
-  <p style="margin-top:14px;font-size:15px;line-height:1.7;color:var(--text-2);max-width:70ch">Второй способ — обратный: оставить LiteLLM моделью, а нас поставить sidecar'ом перед вашим шлюзом. Тогда маскируются и запросы к модели, и аргументы вызовов, а ключ к подменам остаётся в вашем контуре.</p>
+  <div class="cards cards--n4" style="border:1px solid var(--line-3);margin-top:24px">
+    <div style="padding:20px"><div class="mono" style="color:var(--accent)">01</div><div class="ds-t">Поднять контейнер</div><div class="ds-n">У себя, в своём контуре. Ключ к подменам остаётся у вас.</div></div>
+    <div style="padding:20px"><div class="mono" style="color:var(--accent)">02</div><div class="ds-t">Взять ключ арендатора</div><div class="ds-n">Он выдаётся в кабинете и работает как обычный ключ провайдера.</div></div>
+    <div style="padding:20px"><div class="mono" style="color:var(--accent)">03</div><div class="ds-t">Заменить <code>api_base</code></div><div class="ds-n">Гейтрейл маскирования выключить: он заменит значение на <code>&lt;PERSON&gt;</code>, и вернуть его будет нечем.</div></div>
+    <div style="padding:20px"><div class="mono" style="color:var(--accent)">04</div><div class="ds-t">Проверить на своём чате</div><div class="ds-n">Тот же запрос: модель должна видеть подмену, инструмент — настоящее значение.</div></div>
+  </div>
   <div style="margin-top:28px;display:flex;gap:12px;flex-wrap:wrap">
     <a class="btn accent lg" href="/#start">ПОПРОБОВАТЬ</a>
     <a class="btn lg" href="/how">ПОЧЕМУ ЭТО СЛОЖНЕЕ</a>
     <a class="btn lg" href="/types">ЧТО ИМЕННО НАХОДИМ</a>
-  </div>
-</section>
-
-<section>
-  <div class="sec-head">
-    <h2>Что запомнить</h2>
-    <div class="sec-meta">КОРОТКО</div>
-  </div>
-  <div class="rows" style="margin-top:24px;max-width:980px">
-    <div class="numbered"><div class="n">01</div><div>
-      <h3>Маскирование LiteLLM — это Presidio</h3>
-      <p>Два отдельных сервиса рядом, отдельный ключ прокси и <code style="font-size:13px">default_on</code>, без которого гейтрейл не работает. На русском тексте из коробки он либо не находит ничего, либо заменяет не то слово.</p>
-    </div></div>
-    <div class="numbered"><div class="n">02</div><div>
-      <h3>Маскирование без возврата ломает агента</h3>
-      <p>Чат-боту достаточно спрятать значение. Агенту нужно вернуть настоящее в аргумент вызова — иначе курьер едет по подмене, а инструмент получает <code style="font-size:13px">&lt;PERSON&gt;</code>.</p>
-    </div></div>
-    <div class="numbered"><div class="n">03</div><div>
-      <h3>Мы встаём в тот же слот и не требуют переделки</h3>
-      <p>LiteLLM остаётся на месте: меняется <code style="font-size:13px">api_base</code>. Модель видит подмену, инструмент — настоящее значение, ключ остаётся у вас.</p>
-    </div></div>
   </div>
 </section>
 {% endblock %}
