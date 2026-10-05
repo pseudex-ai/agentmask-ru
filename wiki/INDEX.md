@@ -86,6 +86,7 @@ Not in root `docs/`: `storefront/docs/tz-site.md` and `storefront/docs/tz-site-s
 | file | answers | STATE |
 |---|---|---|
 | `research/2026-08-15-ru-market-billing.md` | who else solves this in Russia, and the tier-ladder arithmetic bug | D-030 |
+| `research/2026-10-05-b21-roundtrip-residual.md` | Б21 не флейк теста: воспроизведённый остаточный дефект обратного пути (дательный падеж при подмене, собранной фамилией вперёд), 9/200 провалов, воспроизводитель и причина, по которой форсирование пула лечит симптом | evidence (fix + engine release pending) |
 | `research/2026-10-05-litellm-masking-vs-pseudex.md` | real local run: what LiteLLM's Presidio masking does on Russian chat (false positive on the word «адрес», zero entities when configured for ru) versus Pseudex on the same message, including our own measured boundary | evidence for `/litellm` |
 | `research/2026-09-08-rynok-i-cena.md` | who we are compared to; reversibility is not our novelty | D-042 |
 | `research/2026-08-15-ru-payments.md` | taking money from RU legal entities: card vs invoice | D-031 |
