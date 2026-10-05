@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.30](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.29...platform/v0.3.30) (2026-10-05)
+
+
+### Новое
+
+* **cabinet:** выбор тарифа — наш элемент вместо системного select ([4888b95](https://github.com/Isk4R1oT/Obscura/commit/4888b9561f7cdfcca37d86890e4e7980d88635a3))
+* **landing:** тот же выбор тарифа, что в кабинете, — вместо системного select ([646118f](https://github.com/Isk4R1oT/Obscura/commit/646118fe967d06a1217efc42d2c22d4f05e19816))
+
+
+### Исправления
+
+* **cabinet:** переключатель тарифа перестал обещать контейнеры ([a3cebf6](https://github.com/Isk4R1oT/Obscura/commit/a3cebf6a33f231b2cbad8a8de95804613ac69241))
+* **cabinet:** переключатель тарифа перестал обещать контейнеры ([8838b06](https://github.com/Isk4R1oT/Obscura/commit/8838b063fd8deebb86decdfdd32b0ea25628f26b))
+
 ## [0.3.29](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.28...platform/v0.3.29) (2026-10-05)
 
 
