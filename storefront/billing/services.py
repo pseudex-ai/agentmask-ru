@@ -907,10 +907,24 @@ def period_billable(organization: Organization, reported: dict) -> int:
     (порог/письма/стоп) и кабинета (зона/цена): два ответа на «сколько за
     период» разошлись бы — полоса показывала бы одно, счёт приходил бы на другое.
     """
-    billable = _int_or_zero(reported.get("capacity_billable"))
     previous = _last_metered_invoice(organization)
     watermark = max(0, previous.requests_billable_at_period_end if previous else 0)
-    return max(0, billable - watermark)
+    confirmed = max(0, _int_or_zero(reported.get("capacity_billable")) - watermark)
+    # РЕАЛЬНЫЙ РАСХОД ИЗ ОТЧЁТОВ КОНТЕЙНЕРОВ — И ОН ЖЕ ВЕРХНЯЯ ГРАНИЦА ПОКАЗА.
+    #
+    # Полоса считалась ТОЛЬКО по подтверждённой ёмкости. Подтверждение приходит
+    # вместе с покупкой следующего кванта, и пока контейнер работает внутри
+    # первого, в кабинете стоит ноль: человек видит «израсходовано 0 из 10 000»
+    # при семистах обслуженных запросах и справедливо считает, что учёта нет.
+    # Расход при этом УЖЕ на нашей стороне — контейнер отчитывается отдельно и
+    # подписанно, `usage.requests`, — и он обновляется в реальном времени.
+    #
+    # Берём БОЛЬШЕЕ из двух: показать меньше фактического нельзя (это ложь в
+    # пользу продавца), а показать меньше подтверждённого — расхождение с счётом.
+    # Ватермарка у каждого счётчика своя: у ёмкости и у расхода они разные.
+    reported_requests = max(0, _int_or_zero(reported.get("requests"))
+                            - max(0, previous.requests_at_period_end if previous else 0))
+    return max(confirmed, reported_requests)
 
 
 def annual_price(organization: Organization, plan) -> dict:

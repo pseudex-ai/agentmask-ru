@@ -1037,6 +1037,26 @@ def _check_ops_console(client, admin_url: str, public_url: str,
                    "instances": [{"instance_id": "e470e29290f94009985f031f692f5f22",
                                   "last_lease_at": 1791208176.7, "engine_version": "0.3.21"}],
                    "instance_count": 1, "ceiling_requests": 10000, "granted": 800}
+    # ПОЛОСА РАСХОДА НЕ МОЖЕТ ПОКАЗЫВАТЬ МЕНЬШЕ ФАКТА. Подтверждение ёмкости
+    # приходит вместе с покупкой следующего кванта, поэтому внутри первого кванта
+    # кабинет показывал ноль при семистах обслуженных запросах: 05.10 на этом
+    # аккаунте стояло «израсходовано 0 из 10 000» при `usage.requests = 742`.
+    # Числа в проверке — снятые с прода, а не выдуманные.
+    from billing import services as _services
+    _real_invoice = _services._last_metered_invoice
+    _services._last_metered_invoice = lambda organization: None
+    try:
+        check("при живом расходе полоса показывает расход, а не ноль",
+              _services.period_billable(None, {"capacity_billable": 0,
+                                               "requests": 742}) == 742,
+              f"вышло {_services.period_billable(None, {'capacity_billable': 0, 'requests': 742})}")
+        check("подтверждённая ёмкость не теряется, когда она больше расхода",
+              _services.period_billable(None, {"capacity_billable": 900,
+                                               "requests": 742}) == 900,
+              f"вышло {_services.period_billable(None, {'capacity_billable': 900, 'requests': 742})}")
+    finally:
+        _services._last_metered_invoice = _real_invoice
+
     check("кабинет называет число инстансов там же, где консоль (instance_count)",
           _slots.describe(real_answer, 0.0) == {"known": True, "instances": 1},
           f"кабинет: {_slots.describe(real_answer, 0.0)}")
