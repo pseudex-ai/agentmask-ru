@@ -290,25 +290,4 @@
   </table>
 </section>
 {% endblock %}
-{% block script %}{% load static %}<script src="{% static 'landing.js' %}"></script>
-<script>
-(function () {
-  document.querySelectorAll('.planpick').forEach(function (box) {
-    var name = box.querySelector('.pp-name'), meta = box.querySelector('.pp-meta');
-    box.querySelectorAll('input[type=radio]').forEach(function (radio) {
-      radio.addEventListener('change', function () {
-        var item = radio.closest('.pp-item');
-        box.querySelectorAll('.pp-item').forEach(function (i) { i.classList.toggle('on', i === item); });
-        name.textContent = item.dataset.name;
-        meta.textContent = item.dataset.meta;
-        box.open = false;
-      });
-    });
-  });
-  document.addEventListener('click', function (event) {
-    document.querySelectorAll('.planpick[open]').forEach(function (box) {
-      if (!box.contains(event.target)) { box.open = false; }
-    });
-  });
-})();
-</script>{% endblock %}
+{% block script %}{% load static %}<script src="{% static 'landing.js' %}"></script>{% endblock %}

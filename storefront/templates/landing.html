@@ -537,9 +537,27 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
         и «оплатить» — разные обещания, и одна кнопка на оба была бы неправдой
         для одного из них.
 {% endcomment %}
-        <select name="plan" style="background:var(--panel);border:1px solid var(--line);color:var(--text);font-family:'JetBrains Mono',monospace;font-size:13px;padding:15px;outline:none;width:100%;grid-column:1 / -1">
-          {% for plan in signup_plans %}<option value="{{ plan.code }}" data-paid="{% if plan.is_trial %}0{% else %}1{% endif %}">{% if plan.is_trial %}{{ plan.title }} — 0 ₽ · {{ plan.trial_days }} дней · {{ plan.included_requests }} запросов{% else %}{{ plan.title }} — {{ plan.monthly_price|floatformat:0 }} ₽/мес · {{ plan.included_requests }} запросов{% endif %}</option>{% endfor %}
-        </select>
+        <details class="planpick" style="grid-column:1 / -1">
+          <summary>
+            {% for plan in signup_plans %}{% if forloop.first %}
+            <span class="pp-name">{{ plan.title }}</span>
+            <span class="pp-meta">{% if plan.is_trial %}0 ₽ · {{ plan.trial_days }} дней · {{ plan.included_requests }} запросов{% else %}{{ plan.monthly_price|floatformat:0 }} ₽/мес · {{ plan.included_requests }} запросов{% endif %}</span>
+            {% endif %}{% endfor %}
+            <span class="pp-caret">▾</span>
+          </summary>
+          <div class="pp-list">
+            {% for plan in signup_plans %}
+            <label class="pp-item{% if forloop.first %} on{% endif %}"{% if plan.is_trial %} data-paid="0"{% else %} data-paid="1"{% endif %}
+                   data-name="{{ plan.title }}"
+                   data-meta="{% if plan.is_trial %}0 ₽ · {{ plan.trial_days }} дней · {{ plan.included_requests }} запросов{% else %}{{ plan.monthly_price|floatformat:0 }} ₽/мес · {{ plan.included_requests }} запросов{% endif %}">
+              <input type="radio" name="plan" value="{{ plan.code }}"{% if plan.is_trial %} data-paid="0"{% else %} data-paid="1"{% endif %}{% if forloop.first %} checked{% endif %}>
+              <span class="pp-t">{{ plan.title }}</span>
+              <span class="pp-p">{% if plan.is_trial %}0 ₽{% else %}{{ plan.monthly_price|floatformat:0 }} ₽/мес{% endif %}</span>
+              <span class="pp-v">{% if plan.is_trial %}{{ plan.trial_days }} дней · {{ plan.included_requests }} запросов{% else %}{{ plan.included_requests }} запросов{% endif %}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </details>
         <label style="grid-column:1 / -1;display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.5;color:var(--dim-2);cursor:pointer">
           <input type="checkbox" name="consent" value="1" required style="margin-top:2px;flex:none;accent-color:var(--accent)">
           <span>Я даю <a href="{% url 'consent' %}" target="_blank">согласие на обработку персональных данных</a> — только почты и реквизитов для счёта.</span>

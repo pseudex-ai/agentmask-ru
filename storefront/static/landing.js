@@ -640,26 +640,50 @@ if (document.getElementById("setup")) showProvider(0);
    ключ», платный — «зарегистрироваться и оплатить»: ключ на платном выпускается
    после денег, и обещать его кнопкой значило бы обещать то, чего форма не
    делает. Без JS остаётся бесплатная подпись — она же выбрана по умолчанию. */
-const signupPlanSelect = document.querySelector('#signup-form select[name="plan"]');
+/* ВЫБОР ТАРИФА — РАДИОКНОПКИ В НАШЕМ СПИСКЕ, А НЕ СИСТЕМНЫЙ `<select>`.
+   Скрытый `<option data-paid>` держал признак «платный», и на нём висела
+   подпись кнопки; теперь тот же признак лежит на радиокнопке, а сводку списка
+   рисует общий код `.planpick` ниже. Без JS форма отправляет выбранное радио и
+   обе подписи остаются неверными только в одном направлении — как и раньше. */
+const signupPlanRadios = document.querySelectorAll('#signup-form input[name="plan"]');
 function reflectSignupPlan() {
-  if (!signupPlanSelect) return;
-  const option = signupPlanSelect.options[signupPlanSelect.selectedIndex];
-  const paid = option && option.dataset.paid === "1";
+  const radio = document.querySelector('#signup-form input[name="plan"]:checked');
+  if (!radio) return;
+  const paid = radio.dataset.paid === "1";
   const button = document.querySelector('#signup-form button[type="submit"]');
   if (button) button.textContent = paid ? button.dataset.labelPaid : button.dataset.labelFree;
   document.querySelectorAll('#signup-form [data-when]').forEach((note) => {
     note.hidden = (note.dataset.when === "paid") !== paid;
   });
 }
-if (signupPlanSelect) {
-  signupPlanSelect.addEventListener("change", reflectSignupPlan);
-  reflectSignupPlan();
-}
+signupPlanRadios.forEach((radio) => radio.addEventListener("change", reflectSignupPlan));
+if (signupPlanRadios.length) reflectSignupPlan();
+
+/* ОБЩИЙ СПИСОК `.planpick` — НА ОБЕИХ СТРАНИЦАХ. Живёт здесь, а не в шаблонах:
+   кабинет и лендинг грузят этот файл, и вторая копия разъехалась бы с первой.
+   Без JS ничего не ломается — список раскрывается силами <details>. */
+document.querySelectorAll('.planpick').forEach((box) => {
+  const name = box.querySelector('.pp-name'), meta = box.querySelector('.pp-meta');
+  box.querySelectorAll('input[type=radio]').forEach((radio) => {
+    radio.addEventListener('change', () => {
+      const item = radio.closest('.pp-item');
+      box.querySelectorAll('.pp-item').forEach((i) => i.classList.toggle('on', i === item));
+      if (name) name.textContent = item.dataset.name;
+      if (meta) meta.textContent = item.dataset.meta;
+      box.open = false;
+    });
+  });
+});
+document.addEventListener('click', (event) => {
+  document.querySelectorAll('.planpick[open]').forEach((box) => {
+    if (!box.contains(event.target)) box.open = false;
+  });
+});
 
 document.querySelectorAll("[data-plan]").forEach((link) => {
   link.addEventListener("click", () => {
-    const select = document.querySelector('#signup-form select[name="plan"]');
-    if (select) select.value = link.dataset.plan;
+    const radio = document.querySelector(`#signup-form input[name="plan"][value="${link.dataset.plan}"]`);
+    if (radio) { radio.checked = true; radio.dispatchEvent(new Event("change")); }
     reflectSignupPlan();
     const email = document.querySelector('#signup-form input[name="email"]');
     /* Фокус — после прокрутки: поставленный сразу, он прокручивает страницу сам
