@@ -1,7 +1,7 @@
 {
   "product": "pseudex",
   "schema": 1,
-  "updated_at": "2026-10-04T20:45:24Z",
+  "updated_at": "2026-10-05T13:01:18Z",
   "support": {
     "maintenance_months": 6,
     "eol_notice_days": 90
@@ -15,9 +15,9 @@
       "eol": null,
       "eol_announced": null,
       "latest": {
-        "version": "0.3.20",
-        "date": "2026-10-04",
-        "digest": "sha256:7b97bdfdda6132a870f9a758845b8521a0c770b004ea1cd1ae03400e0a69adf8"
+        "version": "0.3.21",
+        "date": "2026-10-05",
+        "digest": "sha256:162ca2598b03bd7b6509602313157b4b5d4456f130f29c2b19d54a3ec88a34fa"
       },
       "aliases": [
         "0.3",
