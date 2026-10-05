@@ -85,6 +85,18 @@ def _check(response: httpx.Response, what: str) -> Any:
         raise SeoError(f"{what}: ответ не JSON ({error})") from error
 
 
+def _host_name(url: str) -> str:
+    """Имя хоста без схемы и завершающей косой черты.
+
+    СХЕМУ СНИМАЕМ С ОБЕИХ СТОРОН, И ЭТО НЕ ПРИДИРКА. Вебмастер отдаёт
+    `ascii_host_url` как `https://pseudex.ru/`, а `SITE_URL` у нас без схемы.
+    Сравнение «как есть» не совпадало НИКОГДА: источник молчал месяцами, снимок
+    писал «сайта pseudex.ru нет среди хостов», хотя хост подтверждён и API
+    отвечал 200. Отказ выглядел как «Вебмастер недоступен», а не как наша
+    ошибка, — поэтому и не был замечен."""
+    return url.replace("https://", "").replace("http://", "").strip("/").lower()
+
+
 def _webmaster_ids() -> tuple[int, str]:
     """Идентификатор пользователя и ПОДТВЕРЖДЁННОГО хоста.
 
@@ -94,9 +106,11 @@ def _webmaster_ids() -> tuple[int, str]:
     """
     user = _webmaster_request("/user/")["user_id"]
     hosts = _webmaster_request(f"/user/{user}/hosts/")["hosts"]
-    site = str(getattr(settings, "SITE_URL", "")).replace("https://", "").replace("http://", "").strip("/")
+    site = _host_name(str(getattr(settings, "SITE_URL", "")))
     for host in hosts:
-        if str(host.get("ascii_host_url", "")).strip("/") == site:
+        names = {_host_name(str(host.get("ascii_host_url", ""))),
+                 _host_name(str(host.get("host_url", "")))}
+        if site in names:
             if not host.get("verified"):
                 raise SeoError(f"хост {site} не подтверждён — Вебмастер данных не отдаёт")
             return int(user), str(host["host_id"])
@@ -129,32 +143,48 @@ def webmaster_popular(limit: int = 20) -> list[dict[str, Any]]:
 
 
 def webmaster_recrawl(urls: list[str]) -> dict[str, Any]:
-    """Поставить адреса в очередь переобхода. Единственная запись, что мы делаем.
+    """Поставить адреса в очередь переобхода.
 
-    Квота дневная и она возвращается вместе с результатом: если она исчерпана,
-    это НЕ ошибка сбора, и снимок за сутки обязан остаться валидным.
-    """
+    ПО ОДНОМУ АДРЕСУ НА ЗАПРОС, и это выяснилось только на живом API. Тело
+    `{"urls": ["…", "…"]}` он отвергает `ENTITY_VALIDATION_ERROR` «Cannot parse
+    request entity»; принимает `{"url": "…"}` и отвечает `202` с `task_id` и
+    остатком квоты. То есть первая версия этой функции не отправляла НИЧЕГО, а в
+    снимок за сутки писала ошибку — и выглядела исправной, потому что «источник
+    недоступен» уже считалось нормальным ответом.
+
+    Отказ по одному адресу не отменяет остальные: исчерпанная квота — не ошибка
+    сбора, и снимок обязан остаться валидным. Поэтому отказы собираются списком,
+    а не бросаются исключением."""
     if not urls:
         return {"submitted": 0, "quota_remainder": None}
     user, host = _webmaster_ids()
-    body = {"urls": urls[: settings.YANDEX_RECRAWL_LIMIT]}
     from ops import yandex_api
 
-    response = httpx.post(
-        f"{WEBMASTER_API}/user/{user}/hosts/{host}/recrawl/queue",
-        json=body,
-        headers={"Authorization": f"OAuth {yandex_api.access_token()}"},
-        timeout=_TIMEOUT,
-    )
-    data = _check(response, "Вебмастер recrawl")
+    token = yandex_api.access_token()
+    limit = urls[: settings.YANDEX_RECRAWL_LIMIT]
+    submitted, tasks, refused, quota = 0, [], [], None
+    for one in limit:
+        response = httpx.post(
+            f"{WEBMASTER_API}/user/{user}/hosts/{host}/recrawl/queue",
+            json={"url": one},
+            headers={"Authorization": f"OAuth {token}"},
+            timeout=_TIMEOUT,
+        )
+        if response.status_code == 202:
+            data = response.json()
+            submitted += 1
+            quota = data.get("quota_remainder")
+            tasks.append(data.get("task_id"))
+        else:
+            refused.append({"url": one, "status": response.status_code,
+                            "body": response.text[:120]})
     return {
-        "submitted": len(urls[: settings.YANDEX_RECRAWL_LIMIT]),
-        "quota_remainder": data.get("quota_remainder"),
-        "raw": data,
+        "submitted": submitted,
+        "quota_remainder": quota,
+        "tasks": tasks,
+        "refused": refused,
+        "requested": len(limit),
     }
-
-
-# ── Search API (ключ сервисного аккаунта) ────────────────────────────────────
 
 def search_configured() -> bool:
     return bool(getattr(settings, "SEARCH_API_KEY", ""))
