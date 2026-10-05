@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.26](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.25...platform/v0.3.26) (2026-10-05)
+
+
+### Новое
+
+* **kb:** два pillar'а под реальный спрос + доказательства для /litellm ([f7273b2](https://github.com/Isk4R1oT/Obscura/commit/f7273b267c3b3c77f5e713158daff7e62ebf7fac))
+* **seo:** /litellm с реальным прогоном + статьи под «ИИ» и «утечку» ([b300699](https://github.com/Isk4R1oT/Obscura/commit/b300699abc8d08211038858f5f66222da0f3ce21))
+
+
+### Исправления
+
+* **ci:** линтер тестов и вики — два моих дефекта, найденных проверками PR ([cd254b4](https://github.com/Isk4R1oT/Obscura/commit/cd254b4581839369bd19b16dfec81374ad54e5b6))
+* **seo:** lastmod изменённых страниц + связка с Вебмастером, которая не работала никогда ([4f4a001](https://github.com/Isk4R1oT/Obscura/commit/4f4a00149eca9ac769e88da869e0f749fc56da29))
+* **seo:** lastmod у изменённых страниц — сегодняшний, а не недельной давности ([773268c](https://github.com/Isk4R1oT/Obscura/commit/773268c2e329b5506bf59cefa7e0522db6c5e5a3))
+* **seo:** связка с Вебмастером не работала никогда — два дефекта, оба молчаливые ([b0dbe78](https://github.com/Isk4R1oT/Obscura/commit/b0dbe786d91a2cdedd05670497e0378c0ebbcb2d))
+
 ## [0.3.25](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.24...platform/v0.3.25) (2026-10-04)
 
 
