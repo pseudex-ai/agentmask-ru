@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.27](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.26...platform/v0.3.27) (2026-10-05)
+
+
+### Новое
+
+* **seo:** /litellm — два этапа по порядку вместо перемешанных провалов ([e2e57ca](https://github.com/Isk4R1oT/Obscura/commit/e2e57cac4676e1a391212b820c5c961665551aa2))
+* **seo:** /litellm — живой агент с настоящими инструментами вместо стенда ([04d2282](https://github.com/Isk4R1oT/Obscura/commit/04d22829bba748e29ba18d48229c998a5614db5b))
+* **seo:** /litellm — живой агент, два этапа, без блока про грязные формы ([cf03a66](https://github.com/Isk4R1oT/Obscura/commit/cf03a6689c05776b69e5dcbb1b602cf5a09d97aa))
+
 ## [0.3.26](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.25...platform/v0.3.26) (2026-10-05)
 
 
