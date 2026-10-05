@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.28](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.27...platform/v0.3.28) (2026-10-05)
+
+
+### Исправления
+
+* **cabinet:** кабинет называет число инстансов — контракт разъехался с консолью ([4e73a26](https://github.com/Isk4R1oT/Obscura/commit/4e73a26d2aeb48828859a0883ed6524693844408))
+* **cabinet:** кабинет называет число инстансов — контракт разъехался с консолью ([55dd110](https://github.com/Isk4R1oT/Obscura/commit/55dd11099fef7d160a9c3c0363d1c5c4960cf29f))
+
 ## [0.3.27](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.26...platform/v0.3.27) (2026-10-05)
 
 
