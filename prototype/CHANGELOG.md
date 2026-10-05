@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.21](https://github.com/Isk4R1oT/Obscura/compare/v0.3.20...v0.3.21) (2026-10-05)
+
+
+### Исправления
+
+* **names:** фамилия на -ова больше не выдаёт имя за фамилию — Б21 закрыт ([4dcc351](https://github.com/Isk4R1oT/Obscura/commit/4dcc3519e7b3179949431edd03c74a7fae755369))
+* **names:** фамилия на -ова больше не выдаёт имя за фамилию — Б21 закрыт ([9c1ef5e](https://github.com/Isk4R1oT/Obscura/commit/9c1ef5ebeb1483ddf1c5082c4346008e7454e2b3))
+
 ## [0.3.20](https://github.com/Isk4R1oT/Obscura/compare/v0.3.19...v0.3.20) (2026-10-04)
 
 
