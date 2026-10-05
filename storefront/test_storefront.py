@@ -1027,6 +1027,24 @@ def _check_ops_console(client, admin_url: str, public_url: str,
                            ).json()["instances"]
     # ЧИСЛО ИНСТАНСОВ, А НЕ ЗАНЯТОСТЬ ПРОТИВ ПОТОЛКА. Аренда выше взята одна,
     # значит инстанс ровно один. После удаления слотов счётчик переехал в
+    # КАБИНЕТ ЧИТАЕТ ТО ЖЕ, ЧТО КОНСОЛЬ. Сервер называет число инстансов в
+    # `instance_count`, а сырой список — в `instances`. Консоль новое имя читала,
+    # кабинет нет, и человек видел «количество инстансов неизвестно, сервер не
+    # назвал» — про сервер, который назвал его в том же ответе. Проверка идёт на
+    # НАСТОЯЩЕМ ответе `/admin/instances`, снятом с прода, а не на выдуманном.
+    from billing import slots as _slots
+    real_answer = {"org_id": "org_x", "plan": "start",
+                   "instances": [{"instance_id": "e470e29290f94009985f031f692f5f22",
+                                  "last_lease_at": 1791208176.7, "engine_version": "0.3.21"}],
+                   "instance_count": 1, "ceiling_requests": 10000, "granted": 800}
+    check("кабинет называет число инстансов там же, где консоль (instance_count)",
+          _slots.describe(real_answer, 0.0) == {"known": True, "instances": 1},
+          f"кабинет: {_slots.describe(real_answer, 0.0)}")
+    check("сырой список арен из /admin/usage числом не считается",
+          _slots.describe({"instances": [{"instance_id": "a"}, {"instance_id": "b"}]},
+                          0.0)["instances"] is None,
+          "список приняли за количество — это ответ, которого сервер не давал")
+
     # `instance_count` (а `instances` стало СПИСКОМ строк-инстансов); имя поля
     # читаем мягко: новое `instance_count`, затем прежнее `occupied` — витрина
     # и сервер могут ехать не одномоментно.
