@@ -350,8 +350,12 @@ def main() -> int:
     waiting_cabinet = waiting_client.get("/app/").content.decode()
     check("ЖДЁТ ОПЛАТЫ" in waiting_cabinet,
           "выбравшему платный тариф кабинет говорит, что ждёт оплату")
-    check('value="work" selected' in waiting_cabinet,
-          "и в форме оплаты подставлен выбранный тариф")
+    # ВЫБОР ТАРИФА ПЕРЕЕХАЛ С СИСТЕМНОГО `<select>` НА НАШ СПИСОК РАДИОКНОПОК,
+    # и признак выбранного теперь `checked` у радио плюс отметка `on` у строки.
+    # Проверка держит СМЫСЛ (выбранный тариф предподставлен в форме), а не тег.
+    check('name="plan" value="work" checked' in waiting_cabinet,
+          "и в форме оплаты подставлен выбранный тариф",
+          "в форме нет предвыбранного тарифа")
     check('action="/app/keys/new"' not in waiting_cabinet
           and "после оплаты" in waiting_cabinet,
           "формы выпуска ключа нет, вместо неё — почему",
