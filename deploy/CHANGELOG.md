@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.26](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.25...platform/v0.3.26) (2026-10-05)
+
+
+### Новое
+
+* **ops:** ключ Search API доезжает до контейнера — Wordstat и позиции ([d7b7694](https://github.com/Isk4R1oT/Obscura/commit/d7b7694cd09c86256659e37c16c972082feda02e))
+* **ops:** ключ Search API доезжает до контейнера (Wordstat, позиции) ([ab35f98](https://github.com/Isk4R1oT/Obscura/commit/ab35f98ef87c4f84e2493c3b9b10cec147e52773))
+
 ## [0.3.25](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.24...platform/v0.3.25) (2026-10-04)
 
 
