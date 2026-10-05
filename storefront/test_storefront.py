@@ -187,6 +187,17 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     check("политика пропускает перенаправление формы на страницу оплаты",
           "form-action 'self' https://yoomoney.ru" in _csp, _csp[:160])
 
+    # КОНТЕЙНЕРЫ УБРАНЫ ИЗ ПРИНУЖДЕНИЯ — ЗНАЧИТ ИХ НЕТ И В ОБЕЩАНИЯХ. Слот-счёт
+    # как лимит удалён (docs/tz-license-volume-quota.md §A), принуждение стало
+    # объёмным, а переключатель тарифа обещал «4 контейнера» — цифру, которой мы
+    # больше не управляем. Само слово «контейнер» в кабинете законно (движок и
+    # есть контейнер), поэтому проверяется ИМЕННО переключатель: он не должен
+    # тянуть в тариф слот-лимит.
+    _tpl = (pathlib.Path(__file__).parent / "templates/app/cabinet.html").read_text()
+    check("переключатель тарифа не обещает контейнеры",
+          "option.max_instances" not in _tpl,
+          f"max_instances в шаблоне: {'option.max_instances' in _tpl}")
+
     sitemap = client.get("/sitemap.xml").content.decode()
     internal = sorted(set(re.findall(r"<loc>https?://[^/]+(/[^<]*)</loc>", sitemap)))
     broken: list[str] = []

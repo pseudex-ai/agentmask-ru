@@ -577,10 +577,12 @@ def main() -> int:  # noqa: C901 — линейный сценарий из пр
 
         # Первый пункт выпадашки — то, что отправил бы браузер без клика;
         # умолчания на сервере нет.
-        select = _re.search(r'<select[^>]*name="plan"[^>]*>(.*?)</select>',
-                            landing_body, _re.S)
-        plan_match = (_re.search(r'<option[^>]*value="([^"]+)"', select.group(1))
-                      if select else None)
+        # ТАРИФ ЛЕЖИТ В СПИСКЕ РАДИОКНОПОК, а не в системном `<select>`: выбор
+        # тарифа переехал, и разметка стала другой. Первый пункт списка — то же,
+        # что отправил бы браузер без единого клика, и сервер умолчания не
+        # подставляет, поэтому без тарифа регистрация не проходит вовсе.
+        plan_match = _re.search(r'<input[^>]*name="plan"[^>]*value="([^"]+)"',
+                                landing_body)
         payload = {"email": "goal-probe@example.test", "consent": "1", "terms": "1"}
         if plan_match:
             payload["plan"] = plan_match.group(1)

@@ -768,3 +768,40 @@ html[data-theme-direction="to-dark"]::view-transition-old(root) {
   .numbered > * { min-width: 0; }
   .numbered h3, .numbered p, .numbered pre { overflow-wrap: anywhere; }
 }
+
+/* ── ВЫБОР ТАРИФА: НАШ ЭЛЕМЕНТ, А НЕ СИСТЕМНЫЙ SELECT ─────────────────────────
+   Системный <select> рисует браузер: в нём нельзя ни нашего шрифта, ни цены с
+   объёмом рядом, ни отметки текущего тарифа — а тариф выбирают один раз и
+   деньгами. Здесь <details> с радиокнопками: без JS форма отправляет выбранное
+   (радио в форме), с JS сводка следует за выбором, а клик мимо закрывает. */
+.planpick { position: relative; width: min(430px, 100%); }
+.planpick summary {
+  list-style: none; cursor: pointer; box-sizing: border-box;
+  display: grid; grid-template-columns: 1fr auto; gap: 3px 12px;
+  border: 1px solid var(--line-2); padding: 11px 15px; min-height: 48px;
+}
+.planpick summary::-webkit-details-marker { display: none; }
+.planpick[open] summary { border-color: var(--accent); }
+.pp-name { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+.pp-meta { grid-column: 1 / 2; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--dim); }
+.pp-caret { grid-row: 1 / 3; grid-column: 2; align-self: center; color: var(--accent); }
+.pp-list {
+  position: absolute; z-index: 40; left: 0; right: 0; margin-top: 6px;
+  border: 1px solid var(--accent); background: var(--card-bg);
+  box-shadow: 0 20px 44px rgba(0, 0, 0, .55);
+}
+.pp-item {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 14px;
+  align-items: baseline; padding: 13px 15px; cursor: pointer;
+  border-bottom: 1px solid var(--line-2);
+}
+.pp-item:last-child { border-bottom: 0; }
+.pp-item:hover { background: rgba(179, 160, 234, .10); }
+.pp-item.on { background: rgba(179, 160, 234, .14); }
+.pp-item input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.pp-t { font-size: 14.5px; color: inherit; }
+.pp-item.on .pp-t { color: var(--accent); font-weight: 700; }
+.pp-p, .pp-v { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--dim); white-space: nowrap; }
+@media (max-width: 720px) {
+  .pp-item { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}
