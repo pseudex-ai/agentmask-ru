@@ -783,3 +783,107 @@ body.v2 .cfg-mark.no  { color: var(--amber); }
      поля: строка свёртки и есть её начало. */
   .m-fold { width: 100%; }
 }
+
+/* ── страница интеграции с LiteLLM: выводы команд вместо абзацев ─────────────
+   Смысл страницы — сравнение, поэтому оно нарисовано блоками и стрелками, а
+   пояснений ровно по строке на блок. Классы живут здесь, а не инлайном: один и
+   тот же блок встречается шесть раз, и шесть копий стиля разъедутся. */
+.mono-block {
+  border: 1px solid var(--line-2); background: var(--panel); padding: 14px 16px;
+  font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.75;
+  color: var(--text-3); white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.mono-block.bad  { border-color: var(--amber-bg); background: var(--warn-bg-deep); }
+.mono-block.good { border-color: var(--accent); }
+.mono-block b    { color: var(--amber); font-weight: 400; }
+.mono-block.good b { color: var(--accent-2); }
+.arm { border: 1px solid var(--line-3); background: var(--card-bg); }
+.arm-us { border-color: var(--accent); }
+.arm-h {
+  padding: 12px 18px; border-bottom: 1px solid var(--line-3);
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .16em;
+}
+.arm-g { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 1px; background: var(--line-3); }
+.arm-g > div { background: var(--card-bg); padding: 18px; min-width: 0; }
+.arm-l { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .18em; color: var(--dim-3); margin-bottom: 8px; }
+.arm-cap { margin-top: 10px; font-size: 13px; line-height: 1.55; color: var(--dim); }
+.mono { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .16em; }
+.mono-s { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.6; color: var(--text-3); overflow-wrap: anywhere; }
+.mono-s.good { color: var(--accent-2); }
+.ds-t { margin-top: 8px; font-size: 16px; font-weight: 700; letter-spacing: -.02em; color: var(--text); }
+.ds-n { margin-top: 6px; font-size: 13.5px; line-height: 1.55; color: var(--dim); }
+.chain { display: grid; grid-template-columns: minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr); gap: 10px; align-items: stretch; }
+.chain-i { border: 1px solid var(--line-3); background: var(--card-bg); padding: 16px; min-width: 0; }
+.chain-i-bad  { border-color: var(--amber-bg); background: var(--warn-bg-deep); }
+.chain-i-us   { border-color: var(--accent); }
+.chain-i-good { border-color: var(--green); }
+.chain-k { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .18em; color: var(--dim-3); }
+.chain-v { margin-top: 8px; font-size: 14.5px; line-height: 1.45; color: var(--text-2); overflow-wrap: anywhere; }
+.chain-b { margin-top: 8px; font-size: 12.5px; line-height: 1.5; color: var(--dim); }
+.chain-a { align-self: center; color: var(--accent); font-size: 18px; }
+@media (max-width: 760px) {
+  .chain { grid-template-columns: minmax(0, 1fr); }
+  .chain-a { transform: rotate(90deg); text-align: center; }
+}
+
+/* исходы для агента: подпись, значение, результат одной строкой */
+.out-k { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .16em; color: var(--dim-3); }
+.out-k.bad { color: var(--amber); }
+.out-k.good { color: var(--accent); }
+.out-r { margin-top: 12px; font-size: 13.5px; line-height: 1.6; color: var(--dim); }
+.out-r b { color: var(--text-2); }
+.out-r.bad b { color: var(--amber); }
+.out-r.good b { color: var(--accent-2); }
+
+/* ── /litellm: два этапа, шаги по порядку ─────────────────────────────────────
+   Страница читается сверху вниз: сначала «видит ли данные», потом «что бывает,
+   когда увидел». Шаги пронумерованы и соединены линией, потому что порядок тут —
+   смысл: выдуманный адрес появляется на шаге 3 и доезжает до клиента на шаге 5. */
+.stage {
+  display: inline-block; padding: 3px 9px; margin-right: 12px; vertical-align: middle;
+  border: 1px solid var(--accent); color: var(--accent);
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .16em;
+}
+.vis { display: grid; gap: 1px; background: var(--line-3); border: 1px solid var(--line-3); }
+.vis-r { display: grid; grid-template-columns: 190px minmax(0, 1fr) 200px; gap: 20px; padding: 20px; background: var(--card-bg); align-items: start; }
+.vis-r.vis-us { background: var(--card-bg-2); box-shadow: inset 3px 0 0 var(--accent); }
+.vis-k { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .14em; color: var(--dim-3); line-height: 1.7; }
+.vis-k span { color: var(--dim-2); letter-spacing: .04em; }
+.vis-v { text-align: right; }
+.vis-c { grid-column: 2 / 4; font-size: 13px; line-height: 1.55; color: var(--dim); }
+.badge-bad, .badge-good { display: inline-block; padding: 4px 10px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: .1em; white-space: nowrap; }
+.badge-bad { border: 1px solid var(--amber-bg); color: var(--amber); }
+.badge-good { border: 1px solid var(--accent); color: var(--accent); }
+.mono-s b.leak { color: var(--amber); font-weight: 400; }
+.mono-s b.good { color: var(--accent-2); font-weight: 400; }
+.flow-h { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .18em; margin-bottom: 14px; }
+.flow { display: grid; gap: 0; }
+.flow-i { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 16px; padding: 16px 18px; border: 1px solid var(--line-3); border-bottom: 0; background: var(--card-bg); }
+.flow-i:last-child { border-bottom: 1px solid var(--line-3); }
+.flow-i.flow-bad { background: var(--warn-bg-deep); border-color: var(--amber-bg); }
+.flow-i.flow-us { box-shadow: inset 3px 0 0 var(--accent); }
+.flow-n { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--line-2); font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--dim-2); }
+.flow-n.bad { border-color: var(--amber-bg); color: var(--amber); }
+.flow-n.us { border-color: var(--accent); color: var(--accent); }
+.flow-k { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; letter-spacing: .18em; color: var(--dim-3); }
+.flow-k.bad { color: var(--amber); }
+.flow-k.us { color: var(--accent); }
+.flow-v { margin-top: 8px; font-size: 14px; line-height: 1.55; color: var(--text-2); overflow-wrap: anywhere; }
+.flow-c { margin-top: 8px; font-size: 13px; line-height: 1.55; color: var(--dim); }
+.flow-c b { color: var(--text-2); }
+.mono-s b.bad { color: var(--amber); font-weight: 400; }
+.cap { margin-top: 14px; font-size: 13px; line-height: 1.6; color: var(--dim-2); max-width: 74ch; }
+@media (max-width: 860px) {
+  .vis-r { grid-template-columns: minmax(0, 1fr); }
+  .vis-v { text-align: left; }
+  .vis-c { grid-column: 1 / 2; }
+  .flow-i { grid-template-columns: 40px minmax(0, 1fr); padding: 14px; }
+  .flow-n { width: 30px; height: 30px; font-size: 12px; }
+}
+
+/* чипы «что утекло / что заменено»: список читается быстрее, чем подсветка в строке */
+.chips { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.chip { padding: 3px 9px; font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: .06em; border: 1px solid var(--line-2); color: var(--dim-2); }
+.chip.leak { border-color: var(--amber-bg); background: var(--warn-bg-deep); color: var(--amber); }
+.chip.ok { border-color: var(--accent); color: var(--accent-2); }
+@media (max-width: 860px) { .chips { grid-column: 1 / 2; } }
