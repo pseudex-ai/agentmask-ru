@@ -1,0 +1,135 @@
+/* СТРАНИЦЫ КОМАНДЫ `/i/` и `/i/<slug>` — НАДСТРОЙКА НАД `site.css` И `landing.css`,
+ * А НЕ СВОЯ ВЁРСТКА.
+ *
+ * Здесь только то, чего в сайте нет: узкая мера для личной страницы, крупное имя,
+ * снимок и раскладка строк контактов. Всё остальное — готовые классы сайта:
+ * `.frame`, `header.top`, `section`, `.eyebrow`, `.label`, `.fineprint`,
+ * `.cards cards--n3` (сетка с зазором 1px), `.hv-row`/`.hv-cell` (ховер: фон
+ * панели и акцентная полоса 2px слева), `.btn`, `footer`.
+ *
+ * ПЕРВАЯ ВЕРСИЯ ЭТИХ СТРАНИЦ БЫЛА ОТСЕБЯТИНОЙ, И ЭТО ВИДНО ПО ЧИСЛАМ: она несли
+ * `border-radius:10px`, которых в дизайне нет вообще (во всём сайте `2px` и
+ * `50%`), кнопку со своими размерами и ховеры, написанные заново. Кнопка,
+ * карточка и реакция на наведение — это не оформление, а словарь: своя копия
+ * расходится с сайтом на первой правке темы.
+ *
+ * ЧИСЛА ЗДЕСЬ — ИЗ ПРОТОТИПА (`brand/veilgate-local-ui.dc.html`) И РЕАЛИЗАЦИИ:
+ * подписи моно 11px/.18em, ряды `13px 18px`, снимок — прямоугольник с рамкой
+ * `--line-2`, имя — как `h2` сайта (900, отрицательная разрядка), но крупнее.
+ */
+
+/* ── Мера ─────────────────────────────────────────────────────────────────── */
+
+/* Личная страница — документ для чтения, а не лендинг: узкая мера, как у
+   `.legal-doc` (780px). На 1440px строка без неё растянулась бы. */
+.team-col { max-width: 720px; }
+
+/* ── Личная страница: герой ───────────────────────────────────────────────── */
+
+/* Снимок слева, текст справа — раскладка лендингового `.hero-grid`. На телефоне
+   одна колонка, снимок первым: страница выглядит карточкой человека, а не
+   абзацем с картинкой в середине. */
+.team-hero {
+  display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 40px;
+  align-items: start;
+}
+.team-hero--no-photo { grid-template-columns: minmax(0, 1fr); }
+
+.team-photo {
+  display: block; inline-size: 100%; block-size: auto; aspect-ratio: 1;
+  object-fit: cover; background: var(--panel); border: 1px solid var(--line-2);
+}
+
+/* Имя — герой страницы. Вес и разрядка от `h1.hero` (900, -.035em), размер
+   меньше: это человек, а не обещание. */
+.team-name {
+  margin: 0 0 14px; font-size: clamp(34px, 5vw, 60px); line-height: .98;
+  font-weight: 900; letter-spacing: -.035em;
+}
+.team-lede {
+  margin: 0; font-size: 17px; line-height: 1.62; color: var(--text-3);
+  max-width: 52ch; text-wrap: pretty;
+}
+.team-lede b { color: var(--text-2); font-weight: 500; }
+
+/* Кнопки — `.btn` сайта; здесь только раскладка. На телефоне в столбик на всю
+   ширину: палец после сканирования QR должен попадать не целясь. */
+.team-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 32px; }
+@media (max-width: 700px) {
+  .team-actions { display: grid; }
+  .team-actions .btn { width: 100%; text-align: center; }
+}
+
+/* ── Контакты ─────────────────────────────────────────────────────────────── */
+
+/* Ряд — как `.kv` в кабинете: хайрлайны между строками, ничего лишнего.
+   Наведение и акцентная полоса берутся у `.hv-row`, поэтому своего ховера
+   здесь нет. */
+.contacts { border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); }
+.contact {
+  display: flex; align-items: center; gap: 16px; padding: 13px 18px;
+  border-bottom: 1px solid var(--line-3); text-decoration: none; color: var(--text);
+}
+.contact:last-child { border-bottom: 0; }
+.contact .k {
+  font-family: var(--mono); font-size: 11px; letter-spacing: .18em;
+  color: var(--dim-2); width: 52px; flex: none; text-transform: uppercase;
+}
+.contact .v {
+  position: relative; flex: 1; min-width: 0; font-family: var(--mono); font-size: 14px;
+  color: var(--text-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+/* Плашка акцента уезжает и открывает значение — та же метафора, что на лице
+   визитки, где контакты стоят под акцентными прямоугольниками. */
+.contact .v .mask {
+  position: absolute; inset: -6px 0; background: var(--accent);
+  transform-origin: left center;
+  animation: unmask .85s cubic-bezier(.2,.85,.15,1) forwards;
+}
+.contact:nth-child(2) .v .mask { animation-delay: .12s }
+.contact:nth-child(3) .v .mask { animation-delay: .24s }
+@keyframes unmask { to { transform: scaleX(0) } }
+@media (prefers-reduced-motion: reduce) { .contact .v .mask { display: none } }
+
+/* ── Документы ────────────────────────────────────────────────────────────── */
+
+/* `.cards cards--n3` даёт сетку с зазором 1px и сама складывается в колонку на
+   760px — правило живёт в `landing.css`, и повторять его здесь значило бы
+   завести вторую копию. */
+.team-docs > a {
+  display: block; padding: 20px; background: var(--panel);
+  text-decoration: none; color: var(--text); font-size: 15px; line-height: 1.5;
+}
+.team-docs .a {
+  display: block; margin-top: 10px; font-family: var(--mono); font-size: 11px;
+  letter-spacing: .14em; color: var(--dim-2);
+}
+
+/* ── Заглушка на месте снимка ─────────────────────────────────────────────── */
+
+/* ПУСТОЕ МЕСТО ВЫГЛЯДИТ НЕДОДЕЛКОЙ, А ТЕНЬ — МЕСТОМ ПОД СНИМОК. Плита того же
+   размера и с той же рамкой, что фотография, от `--panel-2` к `--bg`: читается
+   как тень, не как дырка. Ни буквы, ни иконки здесь нет намеренно — брендбук §8
+   запрещает на карточке чужие материалы, а §0 сводит её к одному знаку, одной
+   палитре и одной идее; второй знак был бы второй идеей. */
+.shot--empty,
+.team-photo--empty {
+  background: linear-gradient(180deg, var(--panel-2), var(--bg));
+}
+
+/* ── Индекс `/i/`: карточки команды ───────────────────────────────────────── */
+
+/* Карточка человека внутри `.cards cards--n3`: снимок сверху во всю ширину, имя,
+   роль моношрифтом, «чем могу помочь». Ховер — `.hv-cell` сайта. */
+.person { display: block; padding: 24px; background: var(--panel);
+          text-decoration: none; color: var(--text); }
+.person .shot {
+  display: block; inline-size: 100%; block-size: auto; aspect-ratio: 4/5;
+  object-fit: cover; margin-bottom: 20px; border: 1px solid var(--line-2); background: var(--bg);
+}
+.person .n { display: block; font-size: 21px; font-weight: 700; letter-spacing: -.02em; }
+.person .r { display: block; margin-top: 8px; font-family: var(--mono); font-size: 11px;
+             letter-spacing: .18em; color: var(--dim-2); text-transform: uppercase; }
+.person .w { display: block; margin-top: 14px; font-size: 14px; line-height: 1.6; color: var(--dim); }
+.person .go { display: block; margin-top: 20px; font-family: var(--mono); font-size: 13px;
+              color: var(--accent); }

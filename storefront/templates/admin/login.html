@@ -1,0 +1,82 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{# ВХОД В АДМИНКУ — ДВЕ ДВЕРИ, И ЭТО НАРОЧНО.                         #}
+{#                                                                    #}
+{# SSO через Authelia — обычный путь: один вход на все инструменты,   #}
+{# второй фактор спрашивает портал.                                   #}
+{#                                                                    #}
+{# Форма ниже — АВАРИЙНЫЙ ВХОД. Он остаётся рабочим без Authelia и    #}
+{# по-прежнему требует пароль И код из приложения (django-otp), то    #}
+{# есть упавший портал не превращается в открытую админку. Убирать    #}
+{# его нельзя: это единственный способ войти, когда портал лежит.     #}
+
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static "admin/css/login.css" %}">
+{{ form.media }}{% endblock %}
+
+{% block bodyclass %}{{ block.super }} login{% endblock %}
+{% block usertools %}{% endblock %}
+{% block nav-global %}{% endblock %}
+{% block nav-sidebar %}{% endblock %}
+{% block content_title %}{% endblock %}
+{% block nav-breadcrumbs %}{% endblock %}
+
+{% block content %}
+{% if form.errors and not form.non_field_errors %}
+<p class="errornote">
+{% blocktranslate count counter=form.errors.items|length %}Please correct the error below.{% plural %}Please correct the errors below.{% endblocktranslate %}
+</p>
+{% endif %}
+
+{% if form.non_field_errors %}
+{% for error in form.non_field_errors %}
+<p class="errornote">{{ error }}</p>
+{% endfor %}
+{% endif %}
+
+<div id="content-main">
+{% if user.is_authenticated %}
+<p class="errornote">
+{% blocktranslate trimmed %}
+    You are authenticated as {{ username }}, but are not authorized to
+    access this page. Would you like to login to a different account?
+{% endblocktranslate %}
+</p>
+{% endif %}
+
+{% if sso_login_url %}
+<div id="pseudex-sso" style="margin-bottom:24px;padding:16px;border:1px solid var(--hairline-color,#e0e0e0);border-radius:4px">
+  <p style="margin:0 0 12px"><strong>Вход для команды</strong></p>
+  <p style="margin:0 0 12px">Один вход на все внутренние инструменты, второй фактор — на портале.</p>
+  <a class="button" href="{{ sso_login_url }}?next={{ sso_login_redirect|urlencode }}"
+     style="display:inline-block;padding:10px 16px;background:var(--button-bg,#417690);color:var(--button-fg,#fff);border-radius:4px;text-decoration:none">
+    Войти через pseudex SSO
+  </a>
+</div>
+<p style="margin:0 0 16px;color:var(--body-quiet-color,#666);font-size:12px">
+  Ниже — аварийный вход: работает, даже когда портал недоступен.
+</p>
+{% endif %}
+
+<form action="{{ app_path }}" method="post" id="login-form">{{ csrf_token }}
+  <div class="form-row">
+    {{ form.username.errors }}
+    {{ form.username.label_tag }} {{ form.username }}
+  </div>
+  <div class="form-row">
+    {{ form.password.errors }}
+    {{ form.password.label_tag }} {{ form.password }}
+    <input type="hidden" name="next" value="{{ next }}">
+  </div>
+  {% url 'admin_password_reset' as password_reset_url %}
+  {% if password_reset_url %}
+  <div class="password-reset-link">
+    <a href="{{ password_reset_url }}">{% translate 'Forgotten your password or username?' %}</a>
+  </div>
+  {% endif %}
+  <div class="submit-row">
+    <input type="submit" value="{% translate 'Log in' %}">
+  </div>
+</form>
+</div>
+{% endblock %}

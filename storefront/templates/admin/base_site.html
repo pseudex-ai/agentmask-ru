@@ -1,0 +1,34 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{# ОДИН ШАБЛОН НА ВСЮ АДМИНКУ, ВКЛЮЧАЯ ВХОД.                                  #}
+{#                                                                            #}
+{# Django рисует шапку отсюда, а страницу входа — из `otp/admin111/login.html`,#}
+{# который наследует ЭТОТ файл. Поэтому знак, палитра и ссылки на соседние     #}
+{# инструменты появляются везде сразу, а не в двух местах по отдельности.      #}
+
+{% block title %}{{ title }} | {{ site_title|default:'pseudex' }}{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'admin-pseudex.css' %}">
+{% endblock %}
+
+{% block branding %}
+  <div id="site-name">
+    <a href="{% url 'admin:index' %}">{{ site_header|default:'pseudex' }}<span class="pseudex-sub">операции</span></a>
+  </div>
+{% endblock %}
+
+{# Соседние внутренние инструменты. Адрес доски НЕ ЗАШИТ ЗДЕСЬ: он приходит из  #}
+{# настроек, потому что на стенде это `board.lvh.me:8443`, а на боевом — другой #}
+{# домен, и константа в шаблоне разошлась бы с реальностью при первой выкатке.  #}
+{# Пусто в настройках — пусто и в шапке: ссылка в никуда хуже её отсутствия.    #}
+{% block nav-global %}
+  {% if board_url %}
+    <div id="nav-global-links">
+      <a href="/">сайт</a>
+      <a href="{{ board_url }}">доска</a>
+    </div>
+  {% endif %}
+{% endblock %}
