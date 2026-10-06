@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.31](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.30...platform/v0.3.31) (2026-10-06)
+
+
+### Новое
+
+* **deploy:** стенд доски задач — Vikunja в нашем бренде под Authelia ([261c2ba](https://github.com/Isk4R1oT/Obscura/commit/261c2ba08766f1d74a14e9002a70d4609515fd04))
+* страницы команды по адресам из QR, админка в бренде, вход по SSO ([c9b0bfb](https://github.com/Isk4R1oT/Obscura/commit/c9b0bfbbc8b2cc489a5c4bd7dbb593561be66507))
+* страницы команды по адресам из QR, админка в бренде, вход по SSO ([#63](https://github.com/Isk4R1oT/Obscura/issues/63)) ([c9b0bfb](https://github.com/Isk4R1oT/Obscura/commit/c9b0bfbbc8b2cc489a5c4bd7dbb593561be66507))
+
+
+### Исправления
+
+* **deploy:** бот поддержки — правки патчем, а конфиг сверяется на сборке ([2cad8ce](https://github.com/Isk4R1oT/Obscura/commit/2cad8ce623750a04e390fb9eb649825bbff122e0))
+
 ## [0.3.30](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.29...platform/v0.3.30) (2026-10-05)
 
 
