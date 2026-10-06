@@ -1,0 +1,11 @@
+BEGIN:VCARD
+VERSION:3.0
+N:;Георгий;;;
+FN:Георгий
+ORG:Pseudex
+TITLE:Продажи · маркетинг
+TEL;TYPE=CELL:+79655228758
+EMAIL;TYPE=WORK:g.tolkachev@pseudex.ru
+URL:https://pseudex.ru
+NOTE:Маскирование персональных данных для LLM-агентов. 152-ФЗ, контейнер в контуре клиента.
+END:VCARD

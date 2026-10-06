@@ -1,0 +1,11 @@
+BEGIN:VCARD
+VERSION:3.0
+N:;Слава;;;
+FN:Слава
+ORG:Pseudex
+TITLE:Инженер · разработчик
+TEL;TYPE=CELL:+79935247303
+EMAIL;TYPE=WORK:s.gabanyan@pseudex.ru
+URL:https://pseudex.ru
+NOTE:Маскирование персональных данных для LLM-агентов. 152-ФЗ, контейнер в контуре клиента.
+END:VCARD
