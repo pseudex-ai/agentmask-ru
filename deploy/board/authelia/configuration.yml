@@ -1,0 +1,133 @@
+# Authelia — единственная дверь ко всем нашим внутренним сервисам.
+#
+# ЭТО ШАБЛОН, А НЕ ЖИВОЙ КОНФИГ. Секреты подставляет `up.sh` в
+# `configuration.rendered.yml`, и уже он монтируется в контейнер — тем же
+# приёмом, что у бота поддержки и Alertmanager: вторая копия секрета в гите
+# однажды разойдётся с первой, и выяснится это при входе, который не пускает.
+#
+# ЧТО ЭТО ДАЁТ ВМЕСТО ОТДЕЛЬНЫХ ПАРОЛЕЙ. Один вход на всё: доска, Grafana,
+# что угодно следующее. Люди заводятся файлом (для команды из трёх человек это
+# ровно то, что нужно — без базы и админки), у каждого свой пароль и TOTP.
+# Ротировать и отзывать — по человеку, а не «поменять общий пароль».
+#
+# ЗДЕСЬ ЖЕ OIDC-ПРОВАЙДЕР. Authelia отдаёт токены, и доска ходит в неё как в
+# обычный SSO — поэтому второй учётки внутри Vikunja не существует, а в задачах
+# видно, кто есть кто.
+#
+# 2FA ЧЕРЕЗ DJANGO НЕ ЛОМАЕТСЯ И НЕ ПЕРЕНОСИТСЯ. У витрины остаётся своя
+# django-otp для клиентского кабинета и админки — это другая аудитория и другой
+# контур. Authelia берёт на себя НАШИ инструменты; свести два 2FA в один слой
+# значило бы строить IdP внутри приложения, которое смотрит в интернет.
+
+---
+theme: dark
+
+server:
+  address: 'tcp://0.0.0.0:9091'
+
+log:
+  level: info
+
+totp:
+  issuer: 'pseudex'
+  period: 30
+  skew: 1
+
+authentication_backend:
+  file:
+    path: '/config/users.yml'
+    password:
+      algorithm: 'argon2id'
+      iterations: 1
+      memory: 65536
+      parallelism: 8
+      key_length: 32
+
+# ДВЕРЬ. `deny` по умолчанию — забытая строка не открывает ничего; каждое
+# исключение названо явно.
+access_control:
+  default_policy: 'deny'
+  rules:
+    - domain: 'board.lvh.me'
+      policy: 'two_factor'
+
+session:
+  name: 'pseudex_session'
+  secret: '__SESSION_SECRET__'
+  expiration: '1h'
+  inactivity: '15m'
+  # КУКА ЖИВЁТ НА БАЗОВОМ ДОМЕНЕ, А НЕ НА ПОДДОМЕНЕ ПОРТАЛА. Портал (`auth.`)
+  # и доска (`board.`) — разные имена, и без общего домена браузер не пошлёт
+  # куку на `forward_auth`: получится петля редиректов.
+  cookies:
+    - domain: 'lvh.me'
+      authelia_url: 'https://auth.lvh.me:8443'
+      # Страховка на случай, если адрес ресурса не доехал: лучше привести
+      # человека на доску, чем на её 404.
+      default_redirection_url: 'https://board.lvh.me:8443/ops-7f3a/'
+
+regulation:
+  max_retries: 5
+  find_time: '2m'
+  ban_time: '5m'
+
+storage:
+  encryption_key: '__STORAGE_KEY__'
+  local:
+    path: '/config/data/db.sqlite3'
+
+notifier:
+  # Писем не шлём: служебного SMTP-ящика у нас нет, а тихо «отправлять в никуда»
+  # сброс пароля хуже, чем его отсутствие. Файл виден в контейнере и годится для
+  # стенда; на проде здесь SMTP.
+  filesystem:
+    filename: '/config/data/notification.txt'
+
+identity_validation:
+  reset_password:
+    jwt_secret: '__RESET_JWT_SECRET__'
+
+identity_providers:
+  oidc:
+    hmac_secret: '__OIDC_HMAC_SECRET__'
+    jwks:
+      - key: |
+__OIDC_RSA_KEY__
+    clients:
+      - client_id: 'vikunja'
+        client_name: 'pseudex доска'
+        public: false
+        # ВНИМАНИЕ: дайджест, а не сам секрет — Authelia сравнивает хеш, а
+        # Vikunja получает пароль открытым текстом из .env.
+        client_secret: '__OIDC_CLIENT_SECRET_DIGEST__'
+        # РЕДИРЕКТ РОВНО ТОТ, ЧТО СТРОИТ ФРОНТЕНД: `<origin><base>auth/openid/<key>`
+        # (frontend/src/helpers/redirectToProvider.ts). Другой путь Authelia
+        # отклонит, и вход отвалится на последнем шаге.
+        redirect_uris:
+          - 'https://board.lvh.me:8443/ops-7f3a/auth/openid/authelia'
+        scopes: ['openid', 'profile', 'email', 'groups', 'offline_access']
+        grant_types: ['authorization_code', 'refresh_token']
+        response_types: ['code']
+        authorization_policy: 'two_factor'
+        token_endpoint_auth_method: 'client_secret_basic'
+        consent_mode: 'implicit'
+
+      # ВИТРИНА: вход сотрудников в админку и /ops/. Отдельный клиент, а не
+      # тот же, что у доски: у них разные права и разные редиректы, и общий
+      # клиент означал бы, что утечка одного секрета открывает и второе.
+      - client_id: 'storefront'
+        client_name: 'pseudex витрина'
+        public: false
+        client_secret: '__OIDC_STOREFRONT_SECRET_DIGEST__'
+        redirect_uris:
+          # Путь СКРЫТЫЙ и совпадает с PSEUDEX_ADMIN_PATH витрины: отдельный
+          # публичный /oidc/ был бы вторым угадываемым входом.
+          - 'https://pseudex.lvh.me:8443/backstage-7f3a/oidc/callback/'
+        scopes: ['openid', 'profile', 'email']
+        grant_types: ['authorization_code']
+        response_types: ['code']
+        # two_factor — здесь это не украшение: именно наличие второго фактора
+        # витрина читает из claim `amr` и по нему пропускает django-otp.
+        authorization_policy: 'two_factor'
+        token_endpoint_auth_method: 'client_secret_basic'
+        consent_mode: 'implicit'

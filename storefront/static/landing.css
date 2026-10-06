@@ -846,7 +846,7 @@ body.v2 .cfg-mark.no  { color: var(--amber); }
 }
 .vis { display: grid; gap: 1px; background: var(--line-3); border: 1px solid var(--line-3); }
 .vis-r { display: grid; grid-template-columns: 190px minmax(0, 1fr) 200px; gap: 20px; padding: 20px; background: var(--card-bg); align-items: start; }
-.vis-r.vis-us { background: var(--card-bg-2); box-shadow: inset 3px 0 0 var(--accent); }
+.vis-r.vis-us { background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
 .vis-k { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .14em; color: var(--dim-3); line-height: 1.7; }
 .vis-k span { color: var(--dim-2); letter-spacing: .04em; }
 .vis-v { text-align: right; }

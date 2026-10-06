@@ -1,0 +1,96 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <link rel="stylesheet" type="text/css" href="{% static "admin/css/login.css" %}" />
+    <link rel="stylesheet" type="text/css" href="{% static "django_otp/css/login.css" %}" />
+    {{ form.media }}
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} login{% endblock %}
+
+{% block usertools %}{% endblock %}
+
+{% block nav-global %}{% endblock %}
+
+{% block content_title %}{% endblock %}
+
+{% block breadcrumbs %}{% endblock %}
+
+{% block nav-sidebar %}{% endblock %}
+
+{% block content %}
+{% if sso_login_url %}
+<div id="pseudex-sso" style="margin-bottom:24px;padding:16px;border:1px solid var(--hairline-color,#e0e0e0);border-radius:4px">
+  <p style="margin:0 0 12px"><strong>Вход для команды</strong></p>
+  <p style="margin:0 0 12px">Один вход на все внутренние инструменты, второй фактор — на портале.</p>
+  <a class="button" href="{{ sso_login_url }}?next={{ sso_login_redirect|urlencode }}"
+     style="display:inline-block;padding:10px 16px;background:var(--button-bg,#417690);color:var(--button-fg,#fff);border-radius:4px;text-decoration:none">
+    Войти через pseudex SSO
+  </a>
+</div>
+<p style="margin:0 0 16px;color:var(--body-quiet-color,#666);font-size:12px">
+  Ниже — аварийный вход: работает, даже когда портал недоступен.
+</p>
+{% endif %}
+{% if form.errors and not form.non_field_errors %}
+<p class="errornote">
+{% if form.errors.items|length == 1 %}{% trans "Please correct the error below." %}{% else %}{% trans "Please correct the errors below." %}{% endif %}
+</p>
+{% endif %}
+
+{% if form.non_field_errors %}
+{% for error in form.non_field_errors %}
+<p class="errornote">
+    {{ error }}
+</p>
+{% endfor %}
+{% endif %}
+
+<div id="content-main">
+
+{% if user.is_authenticated %}
+<p class="errornote">
+{% blocktrans trimmed %}
+    You are authenticated as {{ username }}, but are not authorized to
+    access this page. Would you like to login to a different account?
+{% endblocktrans %}
+</p>
+{% endif %}
+
+<form action="{{ app_path }}" method="post" id="login-form">{% csrf_token %}
+  <div class="form-row">
+    {{ form.username.errors }}
+    {{ form.username.label_tag }} {{ form.username }}
+  </div>
+  <div class="form-row">
+    {{ form.password.errors }}
+    {{ form.password.label_tag }} {{ form.password }}
+    <input type="hidden" name="next" value="{{ next }}" />
+  </div>
+  {% if form.get_user %}
+  <div class="form-row">
+    {{ form.otp_device.errors }}
+    <label for="id_otp_device">{% trans 'OTP Device:' %}</label> {{ form.otp_device }}
+  </div>
+  {% endif %}
+  <div class="form-row">
+    {{ form.otp_token.errors }}
+    <label for="id_otp_token" class="required">{% trans 'OTP Token:' %}</label> {{ form.otp_token }}
+  </div>
+  {% url 'admin_password_reset' as password_reset_url %}
+  {% if password_reset_url %}
+  <div class="password-reset-link">
+    <a href="{{ password_reset_url }}">{% trans 'Forgotten your password or username?' %}</a>
+  </div>
+  {% endif %}
+  <div class="submit-row">
+    <label>&nbsp;</label><input type="submit" value="{% trans 'Log in' %}" />
+    {% if form.get_user %}
+    <label>&nbsp;</label><input type="submit" name="otp_challenge" value="{% trans 'Get OTP Challenge' %}" />
+    {% endif %}
+  </div>
+</form>
+</div>
+{% endblock %}

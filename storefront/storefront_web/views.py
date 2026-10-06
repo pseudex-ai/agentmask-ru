@@ -36,6 +36,10 @@ from storefront_web import engine_release
 from ops.analytics_models import Funnel
 from ops.models import DemandDay
 from storefront_web import detection_types
+# `team_data`, а НЕ `team`: ниже есть view с именем `team`, и модуль под тем же
+# именем был бы им заслонён — ошибка, которая всплыла бы не при импорте, а на
+# первом обращении к данным.
+from storefront_web import team as team_data
 
 _log = logging.getLogger("storefront")
 
@@ -971,6 +975,63 @@ def litellm_integration(request):
     на LiteLLM 1.104.0 и лежит в `research/2026-10-05-litellm-masking-vs-pseudex.md`;
     на странице напечатаны его выводы, а не пересказ."""
     return render(request, "tech/litellm.html", _legal_context() | _meta("litellm"))
+
+
+# ── КОМАНДА ─────────────────────────────────────────────────────────────────
+#
+# Страницы `/i/<slug>` открывают по QR с визитки. Отсюда три следствия, и все
+# три — про то, чего здесь НЕ делается:
+#
+#   * ОТДЕЛЬНЫЙ ДОКУМЕНТ, БЕЗ ОБЩЕГО КАРКАСА. Человек отсканировал визитку,
+#     чтобы позвонить. Меню, баннер оффера и баннер cookie на этом пути стоят
+#     между ним и кнопкой «Позвонить»; шаблоны команды не наследуют `base.html`
+#     и не подключают ни счётчиков, ни аналитики. Заодно это единственный способ
+#     выполнить следующее требование;
+#   * НИ ОДНОГО ВНЕШНЕГО ЗАПРОСА. Не «для скорости»: страница-визитка, которая
+#     уведомляет третью сторону о факте сканирования, — это ровно та передача
+#     данных, против которой продукт и продаётся. Строгий CSP витрины
+#     (`storefront_web/middleware._POLICY`) это и требует, и проверяет;
+#   * ТЕКСТ БЕРЁТСЯ ИЗ ОДНОГО МЕСТА. Телефон и почта стоят и на визитке, и
+#     здесь; набранные дважды, они разъедутся на первой правке. Источник один —
+#     `storefront_web/team.py`, а совпадение с макетом печати проверяет
+#     `test_team_pages.py`.
+
+
+def team(request):
+    """`/i/` — индекс команды: три человека, с которых начинается разговор."""
+    return render(request, "team/index.html", {"people": team_data.TEAM, "web": team_data.WEB})
+
+
+def team_person(request, slug):
+    """`/i/<slug>` — страница человека. Незнакомый адрес — 404, не «похожий»."""
+    person = team_data.by_slug(slug)
+    if person is None:
+        raise Http404(f"нет такого человека: {slug}")
+    return render(request, "team/person.html", {
+        "person": person,
+        "tel_href": team_data.tel_href(person["tel"]),
+        "web": team_data.WEB,
+    })
+
+
+def team_vcard(request, slug):
+    """`/i/<slug>.vcf` — контакт файлом, `text/vcard`.
+
+    ТИП СОДЕРЖИМОГО ЗДЕСЬ ГЛАВНОЕ. `.vcf`, отданный как `octet-stream` или
+    `text/plain`, iOS открывает неохотно (а иногда показывает как текст);
+    `text/vcard` он распознаёт сам и предлагает добавить контакт. Поэтому файл
+    отдаёт сервер, а не собирает страница через `Blob`: на витрине строгий CSP
+    (`script-src 'self'`), встроенный скрипт там не выполнится, и кнопка,
+    которая «в обычном браузере работает», на телефоне после сканирования
+    оказалась бы нерабочей.
+    """
+    person = team_data.by_slug(slug)
+    if person is None:
+        raise Http404(f"нет такого человека: {slug}")
+    response = HttpResponse(team_data.vcard(person), content_type="text/vcard; charset=utf-8")
+    # Имя файла — то, что человек увидит в «Файлах»: `igor.vcf`, не `download`.
+    response["Content-Disposition"] = f'attachment; filename="{person["slug"]}.vcf"'
+    return response
 
 
 @ensure_csrf_cookie

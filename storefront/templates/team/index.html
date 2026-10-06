@@ -1,0 +1,86 @@
+{% load static %}<!doctype html>
+{% comment %}
+   ИНДЕКС КОМАНДЫ `/i/` — тот же отдельный документ и та же причина: сюда приходят
+   по визитке, и человеку нужен не сайт, а тот, кто ответит на его вопрос. Роль у
+   каждого своя, и она видна строкой — иначе три имени выглядят как три равные
+   ссылки, а они не равные. Собран из классов сайта, подробности в `static/team.css`.
+{% endcomment %}
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#17171a">
+<title>Команда · Pseudex</title>
+<meta name="description" content="Команда Pseudex: кто за что отвечает и как связаться напрямую. Маскирование персональных данных для LLM-агентов.">
+<meta property="og:title" content="Команда — Pseudex">
+<meta property="og:description" content="Маскирование персональных данных для LLM-агентов. Модель видит подмену — инструмент получает настоящее значение.">
+<link rel="stylesheet" href="{% static 'site.css' %}">
+<link rel="stylesheet" href="{% static 'landing.css' %}">
+<link rel="stylesheet" href="{% static 'team.css' %}">
+</head>
+<body>
+<div class="frame">
+
+  <header class="top">
+    <a class="brand" href="/">
+      <svg width="26" height="26" viewBox="0 0 32 32" fill="none" style="display:block">
+        <rect x="3" y="11" width="18" height="18" rx="5" fill="#b3a0ea"></rect>
+        <rect x="11" y="3" width="18" height="18" rx="5" fill="#17171a" stroke="#b3a0ea" stroke-width="2.6"></rect>
+      </svg>
+      <b>pseudex</b>
+    </a>
+    <div class="head-cta">
+      <a class="btn" href="/">НА САЙТ</a>
+    </div>
+  </header>
+
+  <section style="padding:64px 36px 0">
+    <div class="team-col">
+      {% comment %}
+        «ЯДРО КОМАНДЫ», А НЕ «КОМАНДА» И НЕ СЧЁТ ЛЮДЕЙ. Слово «ядро» само говорит,
+        что вокруг есть ещё, и не требует ни считать людей («три человека» —
+        читается как «и больше никого»), ни писать «это не вся команда»: объяснять
+        очевидное хуже, чем дать почувствовать. Подзаголовок — одна строка о
+        продукте; всё остальное клиент читает в карточках, где у каждого своя роль.
+      {% endcomment %}
+      <div class="eyebrow"><i></i><span>PSEUDEX</span></div>
+      <h1 class="team-name">Ядро команды</h1>
+      <p class="team-lede">Маскирование персональных данных для LLM-агентов.</p>
+    </div>
+  </section>
+
+  <section style="padding:56px 36px 0">
+    <div class="cards cards--n3 team-docs">
+      {% for p in people %}
+      {# Карточка человека: снимок сверху во всю ширину, имя, роль, «чем могу помочь». Ховер — `.hv-cell` сайта. #}
+      <a class="person hv-cell" href="{% url 'team-person' p.slug %}">
+        {% comment %}
+          Снимок или ЗАГЛУШКА ТОГО ЖЕ РАЗМЕРА — тень, а не знак: брендбук
+          запрещает на карточке чужие материалы и сводит её к одному знаку, одной
+          палитре и одной идее (§8), поэтому на месте снимка нет ни буквы, ни
+          иконки. Заглушка держит раскладку: карточки не перестраиваются в тот
+          день, когда снимки придут.
+        {% endcomment %}
+        {% if p.photo %}
+          <img class="shot" src="{% static p.photo %}" alt="" width="640" height="800">
+        {% else %}
+          <span class="shot shot--empty" aria-hidden="true"></span>
+        {% endif %}
+        <span class="n">{{ p.name }}</span>
+        <span class="r">{{ p.title }}</span>
+        <span class="w">{{ p.help }}</span>
+        <span class="go">→</span>
+      </a>
+      {% endfor %}
+    </div>
+  </section>
+
+  <footer>
+    <div>152-ФЗ · ХОСТИНГ В РФ</div>
+    <div style="display:flex;gap:24px;flex-wrap:wrap">
+      <a href="https://{{ web }}">{{ web }}</a>
+    </div>
+  </footer>
+</div>
+</body>
+</html>

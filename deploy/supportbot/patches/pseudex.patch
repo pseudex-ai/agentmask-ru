@@ -1,0 +1,291 @@
+diff --git a/src/db.ts b/src/db.ts
+index 0dcf075..9859466 100644
+--- a/src/db.ts
++++ b/src/db.ts
+@@ -165,7 +165,7 @@ export async function getTicketById(
+ ): Promise<ISupportee | null> {
+   const query = {
+     $or: [{ ticketId: ticketId }],
+-    ...(category ? { category } : { category: null }),
++    ...(category ? { category } : {}),
+   };
+   const result = await Supportee.findOne(query);
+   return result as ISupportee | null;
+@@ -181,13 +181,31 @@ export async function getTicketByInternalId (
+   return result as ISupportee | null;
+ }
+ 
++/**
++ * One Telegram id, three spellings. A text message carries the id as a NUMBER
++ * (`text.ts:72`) and a file message as a STRING (`files.ts:163`), and MongoDB
++ * does not match across types — so one client held two tickets, and the
++ * screenshot they sent «быстрее описания» landed in the second one. Every
++ * lookup goes through here, so the difference cannot decide anything again.
++ */
++export const idVariants = (
++  id: string | number,
++): Array<{ userid: string | number }> => {
++  const seen: Array<string | number> = [];
++  for (const v of [id, String(id), Number(id)] as Array<string | number>) {
++    if (typeof v === 'number' && Number.isNaN(v)) continue;
++    if (!seen.includes(v)) seen.push(v);
++  }
++  return seen.map(userid => ({ userid }));
++};
++
+ export async function getTicketByUserId (
+   userId: string | number,
+   category: string | null
+ ) {
+   const query = {
+-    $or: [{ userid: userId }],
+-    ...(category ? { category } : { category: null }),
++    $or: idVariants(userId),
++    ...(category ? { category } : {}),
+   };
+   const result = await Supportee.findOne(query);
+   return result;
+@@ -229,7 +247,10 @@ export const closeAll = async () => {
+ export const reopen = async (userid: any, category: string, messenger: string) => {
+   const query = {
+     messenger,
+-    $or: [{ userid: userid }, { ticketId: userid }],
++    $or: [
++      ...idVariants(userid),
++      ...idVariants(userid).map(v => ({ ticketId: v.userid })),
++    ],
+     ...(category && { category }),
+   };
+   await Supportee.updateMany(query, { $set: { status: 'open' } });
+diff --git a/src/files.ts b/src/files.ts
+index 1be64f8..9179b79 100644
+--- a/src/files.ts
++++ b/src/files.ts
+@@ -162,9 +162,14 @@ async function fileHandler(type: string, bot: Addon, ctx: Context) {
+ async function forwardFile(ctx: Context): Promise<string | undefined> {
+   const ticket = await db.getTicketByUserId(ctx.message.from.id.toString(), ctx.session.groupCategory);
+   let ok = false;
+-  if (!ticket || !ticket.status || ticket.status === 'closed') {
++  if (!ticket) {
+     await db.add(ctx.message.from.id.toString(), 'open', null, ctx.messenger);
+     ok = true;
++  } else if (ticket.status !== 'open' && ticket.status !== 'banned') {
++    // `add(..., 'open')` REPLACES the record and mints a NEW ticket number, so a
++    // screenshot sent after a closed conversation opened a second ticket for the
++    // same person. Reopen the one that exists instead.
++    await db.reopen(ticket.userid, '', ctx.messenger);
+   }
+   if (ok || (ticket && ticket.status !== 'banned')) {
+     const sentCount = cache.ticketSent[cache.userId];
+diff --git a/src/handlers.ts b/src/handlers.ts
+index 445fc7d..f476ce9 100644
+--- a/src/handlers.ts
++++ b/src/handlers.ts
+@@ -56,7 +56,7 @@ export function registerCommonHandlers(addon: Addon, keys?: string[][]) {
+     const subcategories: string[] = [];
+     for (const cat of cache.config.categories) {
+       if (cat) {
+-        for (const subgroup of cat.subgroups) {
++        for (const subgroup of cat.subgroups || []) {
+           if (subgroup) {
+             const catName = subgroup.name;
+             const id = (cat.name + subgroup.name)
+@@ -144,9 +144,15 @@ export function registerCommonHandlers(addon: Addon, keys?: string[][]) {
+         const replyText = replyMsg.text || replyMsg.caption;
+         const match = replyText.match(/#T(.*)/);
+         if (match) {
+-          // Store canned text on context for staff handler to pick up
++          // The chain has to be CONTINUED here, not merely returned from:
++          // grammY stops at the first handler that does not call next(), so the
++          // operator's template vanished without a trace — nothing reached the
++          // client and nothing appeared in the group. Verified against
++          // grammy@1.43.0: `hears` is `filter`, and a handler without next()
++          // ends the chain.
+           ctx.message.text = cannedText;
+-          return; // Let the regular chat handler process it
++          await text.handleText(addon, ctx, keys || []);
++          return;
+         }
+       }
+       middleware.reply(ctx, `Template "${cmd}":\n\n${cannedText}`, { parse_mode: cache.config.parse_mode });
+diff --git a/src/staff.ts b/src/staff.ts
+index e576042..60f90de 100644
+--- a/src/staff.ts
++++ b/src/staff.ts
+@@ -125,7 +125,7 @@ async function chat(ctx: Context) {
+   if (!replyMsg) return;
+ 
+   const replyText = replyMsg.text || replyMsg.caption;
+-  const replyMessageId = ctx.message.external_reply?.message_id;
++  const replyMessageId = ctx.message.external_reply?.message_id ?? (replyMsg as { message_id?: number }).message_id;
+   if (!replyText && !replyMessageId) return;
+ 
+   let ticket: ISupportee | null = null;
+diff --git a/src/text.ts b/src/text.ts
+index 22992ba..118d494 100644
+--- a/src/text.ts
++++ b/src/text.ts
+@@ -72,6 +72,11 @@ export async function ticketHandler(bot: Addon, ctx: Context): Promise<ISupporte
+     const ticket = await db.getTicketByUserId(message.from.id, session.groupCategory);
+     if (!ticket) {
+       await db.add(message.from.id, 'open', session.groupCategory, messenger);
++    } else if (ticket.status !== 'open' && ticket.status !== 'banned') {
++      // A closed ticket reopens when the client writes again. «Закрыт» means
++      // «разговор закончен» and must not stay written while the conversation is
++      // going on — otherwise /open hides a live thread and the number lies.
++      await db.reopen(message.from.id, '', messenger);
+     }
+     await users.chat(ctx, message.chat);
+     return ticket;
+diff --git a/src/users.ts b/src/users.ts
+index b69963b..410a25b 100644
+--- a/src/users.ts
++++ b/src/users.ts
+@@ -265,7 +265,7 @@ async function chat(ctx: Context, chat: { id: string }) {
+     cache.ticketSent[cache.userId] = sentCount + 1;
+     const ticket = await db.getTicketByUserId(cache.userId, ctx.session.groupCategory);
+     if (!ticket) return;
+-    sendMessage(
++    const sentMessageId = await sendMessage(
+       config.staffchat_id,
+       config.staffchat_type,
+       formatMessageAsTicket(
+@@ -273,7 +273,18 @@ async function chat(ctx: Context, chat: { id: string }) {
+         ctx,
+         autoReplyInfo,
+       ),
+-    ).catch(log.error);
++    );
++    // The operator's reply is matched by the id of the message they replied to,
++    // and only the FIRST card registered its id — so a reply to the second and
++    // every later card fell through to a category filter and was answered with
++    // «тикет закрыт» while the ticket was open. Every card registers now.
++    if (sentMessageId) {
++      await db.addIdAndName(
++        ticket.ticketId,
++        sentMessageId,
++        ctx.message.from.first_name,
++      );
++    }
+     if (ctx.session.group && ctx.session.group !== config.staffchat_id) {
+       sendMessage(
+         ctx.session.group,
+diff --git a/src/workflows.ts b/src/workflows.ts
+index 11ddb58..d125c5e 100644
+--- a/src/workflows.ts
++++ b/src/workflows.ts
+@@ -108,7 +108,10 @@ export async function checkAutoClose(): Promise<void> {
+                 await db.recordAnalyticsEvent('ticket_closed', ticket.ticketId, null, { reason: 'auto_close_inactivity' });
+ 
+                 // Notify user
+-                const msg = `${cache.config.language.ticket} #T${ticket.ticketId.toString().padStart(6, '0')} ${cache.config.language.closed}\n\nYour ticket was auto-closed due to inactivity (${days} days). You can open a new ticket at any time.`;
++                // Upstream hardcodes this sentence in English; the client here
++                // reads Russian. Kept as a patch rather than a language key so a
++                // new key cannot silently stay empty.
++                const msg = `${cache.config.language.ticket} #T${ticket.ticketId.toString().padStart(6, '0')} ${cache.config.language.closed} — по молчанию с обеих сторон (${days} дн.).\n\nНапишите сюда — ответим в этом же обращении.`;
+                 await middleware.sendMessage(ticket.userid, ticket.messenger, msg);
+ 
+                 log.info(`Auto-closed ticket #T${ticket.ticketId} (inactivity ${days}d)`);
+diff --git a/test/pseudex-regressions.test.ts b/test/pseudex-regressions.test.ts
+new file mode 100644
+index 0000000..ce029fa
+--- /dev/null
++++ b/test/pseudex-regressions.test.ts
+@@ -0,0 +1,97 @@
++// РЕГРЕССИИ, КОТОРЫЕ ПРИНЕСЛИ МЫ, А НЕ АПСТРИМ (deploy/supportbot/patches).
++//
++// Каждый тест здесь падает на НЕПАТЧЕННОМ апстриме v5.0.0 — это проверено
++// снятием патча, а не предположением. Смысл файла в том, что ошибки эти были
++// НЕМЫМИ: клиент не получал ответа, а оператор не видел ни ошибки, ни причины.
++// Молчаливый отказ обязан ломать сборку, иначе он вернётся.
++
++// `test/mocks.ts` подключён глобально (setupFiles) и подменяет ../src/db
++// частичной заглушкой — из-за неё тесты самого апстрима в db.test.ts уходят в
++// ветку `else { expect(true).toBe(true) }` и не проверяют ничего. Здесь модуль
++// нужен настоящий.
++jest.unmock('../src/db');
++
++const mockFindOne = jest.fn();
++const mockUpdateMany = jest.fn();
++const mockFindOneAndReplace = jest.fn();
++
++jest.mock('mongoose', () => {
++  const schema: any = jest.fn().mockImplementation(() => ({ plugin: jest.fn() }));
++  schema.Types = { Mixed: 'Mixed', ObjectId: 'ObjectId' };
++  return {
++    connect: jest.fn().mockResolvedValue({}),
++    Schema: schema,
++    Types: { ObjectId: jest.fn() },
++    model: jest.fn().mockReturnValue({
++      // Обёртки, а не ссылки: фабрика jest.mock выполняется раньше, чем
++      // инициализируются const'ы выше, и прямая ссылка упала бы в TDZ.
++      findOne: (...a: unknown[]) => mockFindOne(...a),
++      updateMany: (...a: unknown[]) => mockUpdateMany(...a),
++      findOneAndReplace: (...a: unknown[]) => mockFindOneAndReplace(...a),
++    }),
++    connection: { on: jest.fn() },
++  };
++});
++
++jest.mock('../src/cache', () => ({
++  config: { mongodb_uri: 'mongodb://localhost:27017/test' },
++}));
++
++import * as db from '../src/db';
++
++describe('категория оператора не означает «тикет без категории»', () => {
++  beforeEach(() => jest.clearAllMocks());
++
++  it('поиск по номеру тикета БЕЗ категории не добавляет фильтр по категории', async () => {
++    mockFindOne.mockResolvedValue(null);
++    await db.getTicketById(1, null);
++    const query = mockFindOne.mock.calls[0][0] as Record<string, unknown>;
++    // На апстриме здесь стояло `category: null` — и тикет с категорией
++    // «не существовал», поэтому ответ оператора отбивался как «закрыт».
++    expect(Object.prototype.hasOwnProperty.call(query, 'category')).toBe(false);
++    expect(query.$or).toEqual([{ ticketId: 1 }]);
++  });
++
++  it('поиск по пользователю без категории не сужается до тикетов без категории', async () => {
++    mockFindOne.mockResolvedValue(null);
++    await db.getTicketByUserId(1159307721, null);
++    const query = mockFindOne.mock.calls[0][0] as Record<string, unknown>;
++    expect(Object.prototype.hasOwnProperty.call(query, 'category')).toBe(false);
++  });
++
++  it('когда категория у вызывающего ЕСТЬ, фильтр остаётся', async () => {
++    mockFindOne.mockResolvedValue(null);
++    await db.getTicketById(1, 'Ключ и аренда');
++    const query = mockFindOne.mock.calls[0][0] as Record<string, unknown>;
++    expect(query.category).toBe('Ключ и аренда');
++  });
++});
++
++describe('один telegram id — число и строка одновременно', () => {
++  beforeEach(() => jest.clearAllMocks());
++
++  it('текст даёт число, файл — строку, и оба находят один тикет', async () => {
++    mockFindOne.mockResolvedValue(null);
++    // text.ts ищет числом, files.ts — строкой; Mongo не сравнивает типы, и один
++    // клиент получал два тикета: сообщение и скриншот в разных.
++    await db.getTicketByUserId(1159307721, null);
++    const query = mockFindOne.mock.calls[0][0] as { $or: Array<{ userid: unknown }> };
++    expect(query.$or).toEqual(
++      expect.arrayContaining([{ userid: 1159307721 }, { userid: '1159307721' }]),
++    );
++  });
++
++  it('reopen находит тикет и по userid, и по ticketId в обеих формах', async () => {
++    mockUpdateMany.mockResolvedValue({});
++    await db.reopen(1159307721, '', 'telegram');
++    const filter = mockUpdateMany.mock.calls[0][0] as { $or: unknown[] };
++    expect(filter.$or).toEqual(
++      expect.arrayContaining([
++        { userid: 1159307721 },
++        { userid: '1159307721' },
++        { ticketId: 1159307721 },
++        { ticketId: '1159307721' },
++      ]),
++    );
++  });
++});

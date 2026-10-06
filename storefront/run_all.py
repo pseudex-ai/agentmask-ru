@@ -82,7 +82,13 @@ STEPS = [
     ("04b-offers", "test_offers.py", lambda: True, ""),
     ("04c-hardcap", "test_hardcap.py", lambda: True, ""),
     ("04d-annual", "test_annual.py", lambda: True, ""),
+    # ПАЛИТРА И ШРИФТЫ — ДО ОСТАЛЬНОГО: если файл стилей разошёлся с site.css,
+    # все страничные проверки пройдут (разметка-то цела), а сайт будет
+    # разноцветным. Проверка дешёвая и на всех CSS сразу.
+    ("04d2-brand-palette", "test_brand_palette.py", lambda: True, ""),
     ("04e-auth-style", "test_auth_style.py", lambda: True, ""),
+    ("04e2-team-pages", "test_team_pages.py", lambda: True, ""),
+    ("04e3-admin-sso", "test_admin_sso.py", lambda: True, ""),
     ("04f-admin-2fa", "test_admin_2fa.py", lambda: True, ""),
     ("04g-passwordless", "test_passwordless.py", lambda: True, ""),
     ("04h-signup-forms", "test_signup_forms.py", lambda: True, ""),

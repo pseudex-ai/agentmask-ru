@@ -1,0 +1,11 @@
+BEGIN:VCARD
+VERSION:3.0
+N:;Игорь;;;
+FN:Игорь
+ORG:Pseudex
+TITLE:Архитектор · основатель
+TEL;TYPE=CELL:+79935040147
+EMAIL;TYPE=WORK:i.afonin@pseudex.ru
+URL:https://pseudex.ru
+NOTE:Маскирование персональных данных для LLM-агентов. 152-ФЗ, контейнер в контуре клиента.
+END:VCARD

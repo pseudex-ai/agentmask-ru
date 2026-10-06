@@ -90,6 +90,10 @@ MIDDLEWARE = [
     # OTP-устройство и выставляет request.user.is_verified(). Без него ни
     # OTPAdminSite, ни otp_required на /ops/ не увидят второй фактор.
     "django_otp.middleware.OTPMiddleware",
+    # СРАЗУ ЗА НИМ: OTPMiddleware первым выставляет otp_device из сессии, а этот
+    # дополняет его подтверждением от Authelia, когда устройства нет. Порядок
+    # обязателен — наоборот, и django-otp перезаписал бы флаг своим None.
+    "pseudex_site.middleware.SSOMfaMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
@@ -356,6 +360,63 @@ LICENSE_URL = _env("PSEUDEX_LICENSE_URL", "")
 # scanner tries; moving it is not security, but it removes the background noise
 # that hides a real attempt in the logs.
 ADMIN_PATH = _env("PSEUDEX_ADMIN_PATH", "admin").strip("/")
+
+# АДРЕС ДОСКИ ЦЕЛИКОМ, ВМЕСТЕ С ПУТЁМ — для ссылки в шапке админки. Путь
+# `/ops-7f3a` принадлежит доске (он вшит в её сборку и в её Caddy), и
+# вторая копия здесь разошлась бы с первой. Пусто — ссылки нет.
+BOARD_URL = _env("PSEUDEX_BOARD_URL", "").rstrip("/")
+
+# ── ЕДИНЫЙ ВХОД СОТРУДНИКОВ ЧЕРЕЗ AUTHELIA (OIDC) ───────────────────────────
+#
+# ВЫКЛЮЧЕНО ПО УМОЛЧАНИЮ, И ЭТО НЕ ОСТОРОЖНОСТЬ, А УСЛОВИЕ. Витрина смотрит в
+# интернет и держит данные клиентов; включение нового пути аутентификации в ней
+# — решение, а не настройка. Пока флага нет, ни INSTALLED_APPS, ни бэкендов, ни
+# маршрутов не меняется, и поведение ровно то же, что было.
+#
+# ЧТО ЭТО ДАЁТ: один вход на все внутренние инструменты. Второй фактор
+# спрашивает Authelia; django-otp остаётся АВАРИЙНЫМ входом на случай, когда
+# портал недоступен, — и именно поэтому он не снимается.
+#
+# ЧЕГО ЗДЕСЬ НЕТ: OIDC_CREATE_USER. Неизвестный адрес не заводит аккаунт:
+# доступ к ПД клиентов выдаётся человеком в витрине, а не тем, что кто-то
+# завёл себе учётку в портале.
+OIDC_ENABLED = _flag("PSEUDEX_OIDC_ENABLED", False)
+if OIDC_ENABLED:
+    INSTALLED_APPS.append("mozilla_django_oidc")
+    # ПЕРВЫМ В СПИСКЕ: свой бэкенд отвечает по нашему правилу (только
+    # существующие staff по email), а ModelBackend остаётся для формы
+    # аварийного входа — она никуда не девается.
+    AUTHENTICATION_BACKENDS.insert(0, "pseudex_site.oidc.PseudexOIDCBackend")
+
+    OIDC_RP_CLIENT_ID = _env("PSEUDEX_OIDC_CLIENT_ID", "storefront")
+    OIDC_RP_CLIENT_SECRET = _env("PSEUDEX_OIDC_CLIENT_SECRET", "")
+    _OIDC_ISSUER = _env("PSEUDEX_OIDC_ISSUER", "").rstrip("/")
+    # Discovery: адреса эндпоинтов берём у провайдера, а не переписываем сюда —
+    # вторая копия расходится с первой при первом же обновлении Authelia.
+    OIDC_OP_AUTHORIZATION_ENDPOINT = f"{_OIDC_ISSUER}/api/oidc/authorization"
+    OIDC_OP_TOKEN_ENDPOINT = f"{_OIDC_ISSUER}/api/oidc/token"
+    # АДРЕС USERINFO ОБЯЗАН БЫТЬ ЗАДАН, НО ЗАПРОС ПО НЕМУ НЕ ИДЁТ.
+    # Библиотека падает с ImproperlyConfigured, если настройки нет, — а нам
+    # нужен обратный эффект: клеймы берутся из подписанного ID-токена, потому
+    # что в ответе userinfo нет `amr` (второй фактор) и сам ответ не подписан.
+    # Требование библиотеки и наше решение расходятся, и это место — ровно то,
+    # где расхождение видно: настройка есть, вызов переопределён в
+    # `pseudex_site/oidc.py`.
+    OIDC_OP_USER_ENDPOINT = f"{_OIDC_ISSUER}/api/oidc/userinfo"
+    OIDC_OP_JWKS_ENDPOINT = f"{_OIDC_ISSUER}/jwks.json"
+    OIDC_RP_SIGN_ALGO = "RS256"
+    OIDC_RP_SCOPES = "openid email profile"
+    OIDC_CREATE_USER = False
+    OIDC_STORE_ID_TOKEN = False
+    # СЕКРЕТ В ЗАГОЛОВКЕ, А НЕ В ТЕЛЕ ЗАПРОСА. `client_secret_basic` —
+    # рекомендованный метод: тело запроса оседает в логах прокси, заголовок —
+    # нет. Библиотека по умолчанию кладёт секрет в тело и получает 401 от
+    # провайдера, настроенного на basic; включаем явно.
+    OIDC_TOKEN_USE_BASIC_AUTH = True
+    # Куда вернуться после успешного входа. Ведём в админку: этот вход заводят
+    # ради неё, а не ради кабинета.
+    OIDC_LOGIN_REDIRECT = f"/{ADMIN_PATH}/"
+
 
 # Имя эмитента в приложении-аутентификаторе: строка «pseudex (email)» вместо
 # голого email. Только визуал, на проверку кода не влияет.

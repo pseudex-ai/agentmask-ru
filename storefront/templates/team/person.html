@@ -1,0 +1,129 @@
+{% load static %}<!doctype html>
+{% comment %}
+   СТРАНИЦА ЧЕЛОВЕКА. Её открывает QR с визитки, и это ОТДЕЛЬНЫЙ ДОКУМЕНТ: он не
+   наследует base.html — с визитки человек хочет позвонить, а не читать меню и
+   баннеры, — но собран ИЗ КЛАССОВ САЙТА (`.frame`, `header.top`, `section`,
+   `.eyebrow`, `.label`, `.btn`, `.cards`, `footer`), а не из своей вёрстки.
+   Причины — в `storefront_web/views.py` (`team_person`) и в `static/team.css`.
+{% endcomment %}
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#17171a">
+<title>{{ person.name }} · Pseudex</title>
+<meta name="description" content="{{ person.name }} — {{ person.title }}. Маскирование персональных данных для LLM-агентов: контейнер работает в вашем контуре.">
+<meta property="og:title" content="{{ person.name }} — Pseudex">
+<meta property="og:description" content="Маскирование персональных данных для LLM-агентов. Модель видит подмену — инструмент получает настоящее значение.">
+<meta property="og:type" content="profile">
+<link rel="stylesheet" href="{% static 'site.css' %}">
+<link rel="stylesheet" href="{% static 'landing.css' %}">
+<link rel="stylesheet" href="{% static 'team.css' %}">
+</head>
+<body>
+<div class="frame">
+
+  <header class="top">
+    <a class="brand" href="/">
+      <svg width="26" height="26" viewBox="0 0 32 32" fill="none" style="display:block">
+        <rect x="3" y="11" width="18" height="18" rx="5" fill="#b3a0ea"></rect>
+        <rect x="11" y="3" width="18" height="18" rx="5" fill="#17171a" stroke="#b3a0ea" stroke-width="2.6"></rect>
+      </svg>
+      <b>pseudex</b>
+    </a>
+    <div class="head-cta">
+      <a class="btn" href="{% url 'team' %}">КОМАНДА</a>
+    </div>
+  </header>
+
+  <section style="padding:64px 36px 0">
+    <div class="team-hero{% if not person.photo %} team-hero--no-photo{% endif %}">
+      {% comment %}
+        Снимок или ЗАГЛУШКА ТОГО ЖЕ РАЗМЕРА. Пустая серая плита на месте снимка —
+        это тень, а не знак: брендбук §8 запрещает на карточке чужие материалы и
+        сводит её к одному знаку, одной палитре и одной идее, поэтому здесь нет ни
+        буквы, ни иконки — только место. Заглушка держит раскладку: страница не
+        перестраивается в тот день, когда снимок появится.
+      {% endcomment %}
+      {% if person.photo %}
+        <img class="team-photo" src="{% static person.photo %}" alt="" width="640" height="640">
+      {% else %}
+        <span class="team-photo team-photo--empty" aria-hidden="true"></span>
+      {% endif %}
+
+      <div>
+        <div class="eyebrow"><i></i><span>{{ person.title }}</span></div>
+        <h1 class="team-name">{{ person.name }}</h1>
+        <p class="team-lede"><b>Чем могу помочь:</b> {{ person.help }}.</p>
+
+        <div class="team-actions">
+          <a class="btn accent lg" href="tel:{{ tel_href }}">ПОЗВОНИТЬ</a>
+          <a class="btn lg hv-btn-ghost" href="mailto:{{ person.mail }}?subject=Pseudex">НАПИСАТЬ</a>
+          <a class="btn lg hv-btn-ghost" href="{% url 'team-vcard' person.slug %}" download>СОХРАНИТЬ КОНТАКТ</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding:56px 36px 0">
+    <div class="team-col">
+      <div class="label" style="margin-bottom:14px">КОНТАКТЫ</div>
+      <div class="contacts">
+        <a class="contact hv-row" href="tel:{{ tel_href }}">
+          <span class="k">tel</span>
+          <span class="v">{{ person.tel }}<span class="mask"></span></span>
+        </a>
+        <a class="contact hv-row" href="mailto:{{ person.mail }}">
+          <span class="k">mail</span>
+          <span class="v">{{ person.mail }}<span class="mask"></span></span>
+        </a>
+        <a class="contact hv-row" href="https://{{ web }}">
+          <span class="k">web</span>
+          <span class="v">{{ web }}<span class="mask"></span></span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding:56px 36px 0">
+    <div class="team-col">
+      <div class="label" style="margin-bottom:14px">ДЛЯ ВАШЕГО БЕЗОПАСНИКА И ЮРИСТА</div>
+      <div class="cards cards--n3 team-docs">
+        {% comment %}
+          НАЗВАНИЕ ДОКУМЕНТА — КАК НА САМОЙ СТРАНИЦЕ, а не лозунгом. Здесь стояло
+          «Описание архитектуры „мы не обработчик“»: двойные кавычки внутри
+          кавычек и внутренний слоган вместо названия. Маркер `PDF` убран по той
+          же причине: `/architecture` — страница, а не файл, и обещать PDF,
+          которого нет, хуже, чем не обещать ничего.
+        {% endcomment %}
+        <a class="hv-cell" href="https://{{ web }}/architecture">
+          Архитектура: что уходит наружу, а что нет
+          <span class="a">→</span>
+        </a>
+        <a class="hv-cell" href="https://{{ web }}/policy">
+          Политика обработки персональных данных
+          <span class="a">→</span>
+        </a>
+        <a class="hv-cell" href="https://{{ web }}/offer">
+          Оферта
+          <span class="a">→</span>
+        </a>
+      </div>
+
+      <p class="fineprint" style="margin-top:22px">
+        Эти три документа можно переслать внутри компании как есть — с них обычно
+        и начинается разговор со службой безопасности. Контейнер работает в вашем
+        периметре: персональные данные не покидают его, к нам уходят только счётчики.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    <div>152-ФЗ · ХОСТИНГ В РФ</div>
+    <div style="display:flex;gap:24px;flex-wrap:wrap">
+      <a href="https://{{ web }}">{{ web }}</a>
+    </div>
+  </footer>
+</div>
+</body>
+</html>
