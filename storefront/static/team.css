@@ -97,7 +97,7 @@
    760px — правило живёт в `landing.css`, и повторять его здесь значило бы
    завести вторую копию. */
 .team-docs > a {
-  display: block; padding: 20px; background: var(--panel);
+  display: block; padding: 20px 20px 22px; background: var(--panel);
   text-decoration: none; color: var(--text); font-size: 15px; line-height: 1.5;
 }
 .team-docs .a {
@@ -121,7 +121,7 @@
 
 /* Карточка человека внутри `.cards cards--n3`: снимок сверху во всю ширину, имя,
    роль моношрифтом, «чем могу помочь». Ховер — `.hv-cell` сайта. */
-.person { display: block; padding: 24px; background: var(--panel);
+.person { display: block; padding: 28px 26px; background: var(--panel);
           text-decoration: none; color: var(--text); }
 .person .shot {
   display: block; inline-size: 100%; block-size: auto; aspect-ratio: 4/5;
