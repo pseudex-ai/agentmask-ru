@@ -26,22 +26,46 @@ RUN git init -q . \
  && git checkout -q FETCH_HEAD \
  && test "$(git rev-parse HEAD)" = "${UPSTREAM_COMMIT}"
 
-# ОДНОСТРОЧНЫЙ ПАТЧ, И ОН ОБЯЗАН ПОПАСТЬ РОВНО ОДИН РАЗ. В v5.0.0 ответ
-# оператора ищет тикет по `external_reply.message_id` (только форум-темы), а
-# для обычного «Ответить» — по `#T…` и по id клиента из текста, оба С ФИЛЬТРОМ
-# ПО КАТЕГОРИИ из сессии оператора. Категорию в сессию ставит только клиент
-# при выборе; у оператора она пуста всегда, и любой тикет с категорией для него
-# «не существует»: «This ticket is closed». Единственный путь без фильтра —
-# `getTicketByInternalId`, и ему просто не передавали id сообщения, на которое
-# ответили. Найдено первым же ответом на первый же тикет. Приведение типа —
-# потому что их интерфейс объявляет `reply_to_message` уже, чем объект
-# Telegram: `message_id` в рантайме есть, в типе нет.
+# НАШИ ИСПРАВЛЕНИЯ — ОДНИМ ФАЙЛОМ ПАТЧА, А НЕ ЦЕПОЧКОЙ `sed`.
 #
-# `grep -c … = 1` до и после — чтобы обновление апстрима, изменившее эту
-# строку, сломало СБОРКУ, а не молча вернуло баг в прод.
-RUN test "$(grep -c 'const replyMessageId = ctx.message.external_reply?.message_id;' src/staff.ts)" = 1 \
- && sed -i 's/const replyMessageId = ctx.message.external_reply?.message_id;/const replyMessageId = ctx.message.external_reply?.message_id ?? (replyMsg as { message_id?: number }).message_id;/' src/staff.ts \
- && test "$(grep -c '?? (replyMsg as { message_id?: number }).message_id' src/staff.ts)" = 1
+# Первым здесь стоял один `sed` по `staff.ts`: ответ оператора искался только по
+# `external_reply.message_id` (форум-темы), а для обычного «Ответить» падал в
+# ветку с фильтром по категории, которой у оператора не бывает. Найдено первым
+# же ответом на первый же тикет, и лечилось одной строкой.
+#
+# Вторым — и это уже не одна строка — оказалось то же самое место: фильтр по
+# пустой категории (`{ category: null }`) означал «тикет БЕЗ категории», а не
+# «категория неизвестна», поэтому ЛЮБОЙ ответ, кроме ответа на первую карточку,
+# отбивался текстом «Этот тикет закрыт» — при открытом тикете. Цепочка `sed`
+# растёт вместе с числом таких находок и молчит, когда строка изменилась.
+#
+# `git apply` НЕ МОЛЧИТ: он либо кладёт всё, либо падает и роняет сборку. Это
+# ровно то поведение, которое нужно при обновлении апстрима — изменившуюся
+# строку видно на сборке, а не в проде.
+COPY patches/ /patches/
+RUN git apply --verbose /patches/pseudex.patch
+
+# КОНФИГ СВЕРЯЕТСЯ ЗДЕСЬ, ГДЕ АПСТРИМ ЛЕЖИТ РЯДОМ. Семь ключей нашей первой
+# версии (`allow_user_close`, `ticket_per_message`, `allow_broadcast`,
+# `forward_edited_messages`, `forward_stickers`, `show_replied_mark`,
+# `user_commands`) в v5.0.0 не существуют: они молча ничего не делали, а
+# комментарии рядом описывали поведение, которого нет. `user_commands` стоил
+# дороже всех — он объявлял `/docs` и `/cabinet`, которых бот не знает, а
+# неизвестный текст у клиента становится тикетом.
+#
+# Ключ, которого нет в исходниках, — это опечатка, которую нельзя поймать
+# глазами: список ключей меняется от версии к версии, а `config-sample.yaml`
+# документирует не всё, что читает код. Проверка стоит секунду и падает один
+# раз — на сборке.
+COPY config.yaml /check/config.yaml
+RUN set -eu; \
+    for k in $(grep -E '^[a-z_]+:' /check/config.yaml | cut -d: -f1); do \
+      grep -rq "$k" src/ || { \
+        echo "deploy/supportbot/config.yaml: ключ ${k} отсутствует в апстриме ${UPSTREAM_COMMIT}."; \
+        echo "Такой ключ молча ничего не делает: уберите его или почините имя."; \
+        exit 1; }; \
+    done; \
+    echo "все ключи config.yaml существуют в исходниках апстрима"
 
 FROM node:22-alpine AS builder
 WORKDIR /bot
@@ -50,7 +74,23 @@ RUN apk add --no-cache python3 build-base
 RUN npm ci
 COPY --from=source /src/src /bot/src
 COPY --from=source /src/tsconfig.json /bot/tsconfig.json
+COPY --from=source /src/jest.config.js /bot/jest.config.js
+COPY --from=source /src/jest.setup.js /bot/jest.setup.js
+COPY --from=source /src/test /bot/test
 RUN npm run build
+# ТЕСТЫ АПСТРИМА И НАШИ РЕГРЕССИИ — ЧАСТЬ СБОРКИ, А НЕ ПОЖЕЛАНИЕ.
+#
+# Патч может отвалиться не только целиком (`git apply` такое ловит), но и
+# частично: строка изменилась так, что патч лёг, а поведение не то. Тесты
+# `pseudex-regressions.test.ts` падают именно на непатченном апстриме — это
+# проверено снятием патча, — поэтому здесь ловится и такой случай.
+#
+# ВАЖНО ПРО `test/mocks.ts`: он подключён через `setupFiles` и подменяет
+# `../src/db` частичной заглушкой, из-за чего тесты самого апстрима в
+# `db.test.ts` уходят в ветку `else { expect(true).toBe(true) }` — проходят, не
+# проверив ничего. Наши тесты вызывают `jest.unmock('../src/db')` и работают с
+# настоящим модулем.
+RUN npm test
 
 FROM node:22-alpine AS production
 WORKDIR /bot

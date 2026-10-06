@@ -70,4 +70,14 @@ def analytics(request) -> dict[str, object]:
             "indexable": not private_page(request.path),
             # Абсолютный адрес нужен канонической ссылке и карточке для
             # мессенджеров: относительный путь в `og:url` не работает нигде.
-            "site_url": settings.SITE_URL}
+            "site_url": settings.SITE_URL,
+            # ЕДИНЫЙ ВХОД СОТРУДНИКОВ, ЕСЛИ ОН ВКЛЮЧЁН, И ПУСТО, ЕСЛИ НЕТ.
+            # Шаблон входа в админку показывает кнопку ровно тогда, когда путь
+            # существует: кнопка, ведущая в 404, хуже отсутствующей.
+            "sso_login_url": (f"/{settings.ADMIN_PATH}/oidc/authenticate/"
+                              if getattr(settings, "OIDC_ENABLED", False) else ""),
+            "sso_login_redirect": (f"/{settings.ADMIN_PATH}/"
+                                   if getattr(settings, "OIDC_ENABLED", False) else ""),
+            # Доска — в шапке админки. Пусто, если адрес не задан: ссылка
+            # в никуда на экране оператора хуже, чем её отсутствие.
+            "board_url": settings.BOARD_URL}

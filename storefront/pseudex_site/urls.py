@@ -10,14 +10,19 @@ from django.conf import settings
 from django.contrib import admin
 from django.views.generic import RedirectView
 from django.urls import include, path, re_path
+
 from django_otp.admin import OTPAdminSite
 
 from storefront_web import views
 
 # Второй фактор на входе в админку. Меняем КЛАСС уже собранного admin.site, а не
 # заводим новый сайт: все модели зарегистрированы на дефолтном сайте, и новый
-# отдал бы пустую админку. OTPAdminSite.has_permission требует is_verified(), так
-# что staff без подтверждённого TOTP видит форму входа, а не данные клиентов.
+# отдал бы пустую админку. has_permission требует подтверждённый второй фактор, и
+# способов его предъявить два: код из приложения (django-otp) или подтверждение
+# от Authelia в токене. Второй способ превращается в первый ОДНИМ механизмом —
+# `pseudex_site.middleware.SSOMfaMiddleware`, — поэтому админка и /ops/ не могут
+# разойтись в том, что считать подтверждением. Staff без ни того, ни другого
+# видит форму входа, а не данные клиентов.
 admin.site.__class__ = OTPAdminSite
 admin.site.site_header = "pseudex"
 admin.site.site_title = "pseudex"
@@ -64,6 +69,24 @@ urlpatterns = [
     path("baza-znaniy", views.kb, name="kb"),
     path("baza-znaniy/<slug:slug>", views.kb_article, name="kb_article"),
     path("resend", views.resend_activation, name="resend"),
+
+    # КОМАНДА. АДРЕСА УЖЕ НАПЕЧАТАНЫ В QR НА ВИЗИТКАХ — смена маршрута это
+    # перепечатка тиража, а не правка кода. Поэтому здесь литерал `/i/`, а не
+    # настройка: путь, который нельзя менять, не должен выглядеть настраиваемым.
+    #
+    # `.vcf` стоит ПЕРЕД `<slug>` нарочно. Слаг точек не содержит, так что
+    # `/i/igor.vcf` в него и не попал бы, — но полагаться на это значит поставить
+    # порядок строк в зависимость от внутренностей конвертера Django.
+    path("i/<slug:slug>.vcf", views.team_vcard, name="team-vcard"),
+    # СЛЭШ НА КОНЦЕ — НЕ ТУПИК. Канонический адрес без слэша (он в QR), но
+    # адрес, скопированный из письма или из мессенджера, приезжает со слэшем, и
+    # `test_seo` требует, чтобы такой адрес уводил на канонический постоянным
+    # редиректом, а не в 404. Постоянным (301): визитка напечатана, и «временный»
+    # редирект означал бы, что поисковик будет спрашивать снова и снова.
+    path("i/<slug:slug>/",
+         RedirectView.as_view(pattern_name="team-person", permanent=True)),
+    path("i/<slug:slug>", views.team_person, name="team-person"),
+    path("i/", views.team, name="team"),
 
     path("app/", views.cabinet, name="cabinet"),
     path("app/keys/new", views.new_key, name="new_key"),
@@ -114,3 +137,15 @@ urlpatterns = [
     path(f"{settings.ADMIN_PATH}/ops/", include("ops.urls")),
     path(f"{settings.ADMIN_PATH}/", admin.site.urls),
 ]
+
+if settings.OIDC_ENABLED:
+    # OIDC ЖИВЁТ ПОД ТЕМ ЖЕ СКРЫТЫМ ПРЕФИКСОМ, ЧТО АДМИНКА. Отдельный
+    # публичный `/oidc/` был бы вторым угадываемым путём к тому же входу, и
+    # скрывать один, оставив второй, — это не скрывать.
+    #
+    # Вставляем ПЕРЕД `admin.site.urls`, иначе админка перехватила бы путь
+    # своим catch-all, и callback отвечал бы её страницей «не найдено».
+    urlpatterns.insert(
+        len(urlpatterns) - 1,
+        path(f"{settings.ADMIN_PATH}/oidc/", include("mozilla_django_oidc.urls")),
+    )
