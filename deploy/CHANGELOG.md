@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.32](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.31...platform/v0.3.32) (2026-10-06)
+
+
+### Исправления
+
+* **supportbot:** исправимые CRITICAL в зависимостях бота — патчем в lockfile ([8f0116c](https://github.com/Isk4R1oT/Obscura/commit/8f0116c9cad804cff23d88ed7a7807c006c19a5d))
+* **supportbot:** исправимые CRITICAL в зависимостях бота — патчем в lockfile ([24f1d4b](https://github.com/Isk4R1oT/Obscura/commit/24f1d4b8e5b47a593400208df7a000559b1a746f))
+* **supportbot:** исправимые CRITICAL в зависимостях бота — патчем в lockfile ([#64](https://github.com/Isk4R1oT/Obscura/issues/64)) ([8f0116c](https://github.com/Isk4R1oT/Obscura/commit/8f0116c9cad804cff23d88ed7a7807c006c19a5d))
+
 ## [0.3.31](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.30...platform/v0.3.31) (2026-10-06)
 
 
