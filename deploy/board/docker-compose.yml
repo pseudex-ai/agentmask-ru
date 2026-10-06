@@ -1,0 +1,138 @@
+# Локальный стенд доски: Caddy → Authelia (дверь) → наша сборка Vikunja.
+#
+# ЭТО НЕ ПРОД. Домены `*.lvh.me` публично резолвятся в 127.0.0.1 — благодаря
+# этому браузер и контейнеры видят провайдера идентичности по одному адресу, и
+# OIDC работает без правки /etc/hosts. HTTPS обязателен: Authelia не принимает
+# http для сессионной куки. На проде вместо `tls internal` — настоящий
+# сертификат Caddy на реальном домене.
+#
+# ДОСТУП: доска живёт под скрытым префиксом и целиком за порталом Authelia.
+# Посторонний не видит даже формы входа доски — Caddy спрашивает Authelia
+# раньше, чем что-либо отдаёт.
+
+name: pseudex-board
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - authelia
+      - frontend
+      - vikunja
+
+  authelia:
+    image: authelia/authelia:4.39
+    restart: unless-stopped
+    volumes:
+      # РЕНДЕР, А НЕ ШАБЛОН: секреты подставляет up.sh, и в контейнер уезжает
+      # файл с ними. Шаблон остаётся читаемым и ревьюится глазами.
+      - ./authelia/configuration.rendered.yml:/config/configuration.yml:ro
+      - ./authelia/users.yml:/config/users.yml:ro
+      - authelia-data:/config/data
+
+  vikunja:
+    image: vikunja/vikunja:2.7.0
+    restart: unless-stopped
+    # ЖДЁМ ИМЕННО ЗДОРОВЬЯ AUTHELIA. Discovery OIDC тянется один раз на старте
+    # с тремя короткими попытками; если провайдер ещё поднимается, Vikunja
+    # остаётся без SSO до перезапуска — и вход не работает.
+    depends_on:
+      authelia:
+        condition: service_healthy
+    volumes:
+      # Bind-mount, а не том: контейнер работает под uid 1000, а созданный
+      # Docker'ом том принадлежит root — «permission denied» на своей же
+      # директории файлов. Каталоги готовит up.sh с нужными правами.
+      - ./data/db:/db
+      - ./data/files:/app/vikunja/files
+      # Корневой сертификат локального CA Caddy: без него контейнер не поверит
+      # `https://auth.lvh.me:8443` и discovery OIDC отвалится. Файл выгружает
+      # up.sh из контейнера Caddy до старта остальных.
+      - ./caddy-root.crt:/etc/ssl/caddy-root.crt:ro
+    environment:
+      SSL_CERT_FILE: /etc/ssl/caddy-root.crt
+      VIKUNJA_SERVICE_PUBLICURL: https://board.lvh.me:8443/ops-7f3a
+      VIKUNJA_SERVICE_INTERFACE: ":3456"
+      VIKUNJA_SERVICE_ENABLEREGISTRATION: "false"
+      VIKUNJA_SERVICE_TIMEZONE: Europe/Moscow
+      VIKUNJA_DATABASE_TYPE: sqlite
+      VIKUNJA_DATABASE_PATH: /db/vikunja.db
+      # ЛОКАЛЬНЫЙ ВХОД ВЫКЛЮЧЕН: внутрь пускает только Authelia, и пароля от
+      # самой доски ни у кого нет — один вход на все инструменты.
+      VIKUNJA_AUTH_LOCAL_ENABLED: "false"
+      VIKUNJA_AUTH_OPENID_ENABLED: "true"
+      VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHELIA_NAME: "pseudex"
+      VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHELIA_AUTHURL: https://auth.lvh.me:8443
+      VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHELIA_CLIENTID: vikunja
+      VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHELIA_CLIENTSECRET: ${OIDC_CLIENT_SECRET:?запустите ./up.sh}
+      VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHELIA_SCOPE: "openid profile email groups"
+    # Контейнер обязан видеть провайдера по тому же имени, что и браузер:
+    # discovery тянется с сервера, а редирект уходит в браузер.
+    extra_hosts:
+      - "auth.lvh.me:host-gateway"
+
+  storefront:
+    # ВИТРИНА ЛОКАЛЬНО — ТОЛЬКО РАДИ ДЕМОНСТРАЦИИ ВХОДА В АДМИНКУ ЧЕРЕЗ SSO.
+    # Она смотрит в интернет и держит данные клиентов, поэтому здесь стоит с
+    # DEBUG и SQLite: это стенд, а не второй прод. Меняем в ней ровно одно —
+    # включённый флагом OIDC; без флага поведение прежнее.
+    build:
+      context: ../../storefront
+    restart: unless-stopped
+    volumes:
+      - storefront-data:/data
+      # Корневой сертификат локального CA: витрина ходит в Authelia по HTTPS
+      # (token и userinfo), и без него не поверит нашему же порталу.
+      - ./caddy-root.crt:/etc/ssl/caddy-root.crt:ro
+    environment:
+      PSEUDEX_DEBUG: "1"
+      PSEUDEX_SECRET_KEY: local-stand-only
+      PSEUDEX_SITE_URL: https://pseudex.lvh.me:8443
+      PSEUDEX_ALLOWED_HOSTS: pseudex.lvh.me,localhost,127.0.0.1
+      PSEUDEX_CSRF_ORIGINS: https://pseudex.lvh.me:8443
+      PSEUDEX_DB_PATH: /data/storefront.sqlite3
+      # СКРЫТЫЙ ПУТЬ АДМИНКИ. Тот же, что в redirect_uris у клиента `storefront`
+      # в Authelia: разойдутся — callback уедет в 404, и вход не сработает.
+      PSEUDEX_ADMIN_PATH: backstage-7f3a
+      PSEUDEX_SMTP_HOST: ""
+      PSEUDEX_OIDC_ENABLED: "1"
+      PSEUDEX_OIDC_CLIENT_ID: storefront
+      PSEUDEX_OIDC_CLIENT_SECRET: ${OIDC_STOREFRONT_SECRET:?запустите ./up.sh}
+      PSEUDEX_OIDC_ISSUER: https://auth.lvh.me:8443
+      # Ссылка на доску в шапке админки — целиком, вместе с её скрытым путём.
+      PSEUDEX_BOARD_URL: https://board.lvh.me:8443/ops-7f3a
+      # ДВА РАЗНЫХ ИМЕНИ ОДНОГО И ТОГО ЖЕ, И ЭТО НЕ ИЗБЫТОЧНОСТЬ:
+      # `SSL_CERT_FILE` читает Go и OpenSSL, `REQUESTS_CA_BUNDLE` — библиотека
+      # requests, которой mozilla-django-oidc ходит за токеном. С одним из них
+      # обмен токена падает на проверке сертификата, и снаружи это выглядит как
+      # «SSO не работает», а не как «не тот CA».
+      SSL_CERT_FILE: /etc/ssl/caddy-root.crt
+      REQUESTS_CA_BUNDLE: /etc/ssl/caddy-root.crt
+    extra_hosts:
+      - "auth.lvh.me:host-gateway"
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+      python manage.py seed_plans &&
+      gunicorn pseudex_site.wsgi:application --bind 0.0.0.0:8000
+      --workers 2 --threads 4 --access-logfile - --error-logfile -"
+
+  frontend:
+    build:
+      # Контекст — корень репозитория: шрифты и знак берутся оттуда же, где
+      # лежат для сайта, без второй копии в гите.
+      context: ../..
+      dockerfile: deploy/board/Dockerfile.frontend
+      args:
+        FRONTEND_PATH: /ops-7f3a
+    restart: unless-stopped
+
+volumes:
+  caddy-data:
+  authelia-data:
+  storefront-data:

@@ -1,0 +1,8 @@
+# Секреты и производные локального стенда — не в гит.
+.env
+authelia/users.yml
+authelia/configuration.rendered.yml
+authelia/oidc.key
+authelia/data/
+caddy-root.crt
+data/

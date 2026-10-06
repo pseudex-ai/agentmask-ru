@@ -1,0 +1,62 @@
+# Фронтенд доски: апстрим Vikunja + наш брендовый слой.
+#
+# ПОЧЕМУ ОТДЕЛЬНЫЙ ОБРАЗ, А НЕ ФОРК РЕПОЗИТОРИЯ. Правки — это тема, шрифты,
+# логотип и имя продукта; ядро (Go-API) остаётся неприкосновенным. Патч лежит
+# рядом, применяется `git apply` и падает громко, если апстрим изменил те же
+# строки — то же правило, что у бота поддержки.
+#
+# КОНТЕКСТ СБОРКИ — КОРЕНЬ РЕПОЗИТОРИЯ, а не этот каталог: шрифты и знак уже
+# лежат в `storefront/static` и `brand/logo`, и вторая их копия в гите разошлась
+# бы с первой. Собирается так:
+#
+#     docker build -f deploy/board/Dockerfile.frontend -t pseudex-board-frontend .
+#
+# По умолчанию ставится образ Vikunja v2.7.0 (коммит, а не тег: тег
+# переставляют). Обновление версии — осознанная правка строки ниже.
+
+FROM node:22-alpine AS build
+RUN apk add --no-cache git python3 make g++
+
+ARG UPSTREAM_REPO=https://github.com/go-vikunja/vikunja.git
+ARG UPSTREAM_COMMIT=a16be96aa454671fdf213b0fbe411dd38a098418
+# Скрытый префикс, по которому живёт доска. Он же — база сборки фронтенда, и он
+# же должен совпадать с `handle` в Caddyfile. Смена префикса = пересборка.
+ARG FRONTEND_PATH=/ops-7f3a
+
+WORKDIR /src
+RUN git init -q . \
+ && git remote add origin "${UPSTREAM_REPO}" \
+ && git fetch -q --depth 1 origin "${UPSTREAM_COMMIT}" \
+ && git checkout -q FETCH_HEAD \
+ && test "$(git rev-parse HEAD)" = "${UPSTREAM_COMMIT}"
+
+# НАШ СЛОЙ: тема, шрифты, логотип, имя. Текстовый патч; бинарные ассеты
+# копируются ниже, чтобы не тащить их в diff.
+COPY deploy/board/patches/pseudex-brand.patch /tmp/pseudex-brand.patch
+RUN git apply --verbose /tmp/pseudex-brand.patch
+
+# Наши шрифты, знак и иконки — из репозитория, те же файлы, что на сайте.
+COPY storefront/static/fonts/Inter-latin.woff2 \
+     storefront/static/fonts/Inter-cyrillic.woff2 \
+     storefront/static/fonts/JetBrainsMono-latin.woff2 \
+     storefront/static/fonts/JetBrainsMono-cyrillic.woff2 \
+     frontend/src/assets/fonts/
+COPY deploy/board/assets/icons/ frontend/public/images/icons/
+COPY deploy/board/assets/favicon.ico frontend/public/favicon.ico
+
+# АДРЕС API ПОДСТАВЛЯЕТСЯ ЗДЕСЬ, А НЕ В ПАТЧЕ. Иначе путь оказался бы зашит в
+# diff и смена префикса превращалась бы в правку патча.
+RUN sed -i "s|window.API_URL = ''|window.API_URL = '${FRONTEND_PATH}'|" frontend/index.html \
+ && grep -q "window.API_URL = '${FRONTEND_PATH}'" frontend/index.html
+
+RUN npm i -g pnpm@10 \
+ && echo "manage-package-manager-versions=false" >> frontend/.npmrc \
+ && cd frontend \
+ && pnpm install --frozen-lockfile \
+ && VIKUNJA_FRONTEND_BASE="${FRONTEND_PATH}/" pnpm build \
+ && test -f dist/index.html
+
+FROM nginx:alpine
+COPY --from=build /src/frontend/dist /usr/share/nginx/html
+# SPA: любой неизвестный путь отдаёт index.html — роутер разбирается сам.
+RUN printf 'server {\n  listen 80;\n  root /usr/share/nginx/html;\n  location / { try_files $uri $uri/ /index.html; }\n}\n' > /etc/nginx/conf.d/default.conf

@@ -1,0 +1,79 @@
+# Дверь к нашим внутренним сервисам: скрытый префикс + Authelia.
+#
+# ПОЧЕМУ ПУТЬ, А НЕ ПОДДОМЕН. Так же спрятана админка витрины
+# (`PSEUDEX_ADMIN_PATH`): посторонний не должен даже знать, что здесь что-то
+# есть. Префикс задаётся сборкой фронтенда и здесь обязан совпадать с ней —
+# иначе ассеты уедут в 404.
+#
+# ПОЧЕМУ `forward_auth` НА КАЖДОМ ПУТИ. Спрашиваем Authelia ДО того, как отдать
+# хоть один байт: неавторизованный не увидит ни доски, ни её формы входа.
+#
+# ПОЧЕМУ HTTPS И СВОЙ CA. Authelia отказывается работать с http: её сессионная
+# кука должна быть `secure`, и это не придирка — кука даёт доступ ко всем
+# инструментам сразу. `tls internal` — сертификат от локального CA Caddy; браузер
+# его не знает и один раз покажет предупреждение (см. README, как принять).
+
+{
+	admin off
+}
+
+# ── Портал идентичности ──────────────────────────────────────────────────────
+auth.lvh.me:8443 {
+	tls internal
+	reverse_proxy authelia:9091
+}
+
+# ── Витрина: только ради демонстрации входа в админку через SSO ──────────────
+#
+# ЗДЕСЬ НЕТ forward_auth И ЭТО НАРОЧНО. Витрина — клиентская поверхность, её
+# открывают клиенты; дверь Authelia стоит ВНУТРИ неё, на одном скрытом пути
+# (`PSEUDEX_ADMIN_PATH`), а не на входе в сайт.
+pseudex.lvh.me:8443 {
+	tls internal
+	reverse_proxy storefront:8000
+}
+
+# ── Доска ────────────────────────────────────────────────────────────────────
+board.lvh.me:8443 {
+	tls internal
+	log {
+		output stdout
+		format console
+	}
+
+	# `route` ЗАДАЁТ ПОРЯДОК, КОТОРЫЙ Caddy сам не сохраняет. Его встроенный
+	# порядок директив ставит `uri` (перезапись пути) ВЫШЕ `forward_auth`,
+	# поэтому `strip_prefix` срезал префикс раньше, чем Authelia видела адрес:
+	# в `X-Original-URL` уезжал корень, и после входа человек попадал на 404
+	# вместо доски. Внутри `route` шаги выполняются как написано.
+	handle /ops-7f3a/api/* {
+		route {
+			forward_auth authelia:9091 {
+				uri /api/authz/forward-auth
+				copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+				header_up X-Original-URL {scheme}://{host}{uri}
+			}
+			uri strip_prefix /ops-7f3a
+			reverse_proxy vikunja:3456
+		}
+	}
+
+	# Сама доска
+	handle /ops-7f3a/* {
+		route {
+			forward_auth authelia:9091 {
+				uri /api/authz/forward-auth
+				copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+				header_up X-Original-URL {scheme}://{host}{uri}
+			}
+			uri strip_prefix /ops-7f3a
+			reverse_proxy frontend:80
+		}
+	}
+
+	# 404, А НЕ РЕДИРЕКТ: адрес по умолчанию не подтверждает, что здесь есть
+	# что-то защищённое. Перебор префиксов не отличит живой путь от мёртвого.
+	handle {
+		respond 404
+	}
+}
