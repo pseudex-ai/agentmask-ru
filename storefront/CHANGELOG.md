@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.31](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.30...platform/v0.3.31) (2026-10-06)
+
+
+### Новое
+
+* **storefront:** отдавать картинки статьи для Хабра ([e3f5da7](https://github.com/Isk4R1oT/Obscura/commit/e3f5da7484a46fee18cdc52a309e4eed32709e57))
+* **storefront:** страницы команды по адресам из QR, админка в бренде, вход по SSO ([b62a97d](https://github.com/Isk4R1oT/Obscura/commit/b62a97d0688633ac9de0bd30659b9a5fa0834239))
+* страницы команды по адресам из QR, админка в бренде, вход по SSO ([c9b0bfb](https://github.com/Isk4R1oT/Obscura/commit/c9b0bfbbc8b2cc489a5c4bd7dbb593561be66507))
+* страницы команды по адресам из QR, админка в бренде, вход по SSO ([#63](https://github.com/Isk4R1oT/Obscura/issues/63)) ([c9b0bfb](https://github.com/Isk4R1oT/Obscura/commit/c9b0bfbbc8b2cc489a5c4bd7dbb593561be66507))
+
+
+### Исправления
+
+* **storefront:** страницы команды встали на сетку сайта ([d10d752](https://github.com/Isk4R1oT/Obscura/commit/d10d752235e0f5379b2b8fe309d19af67abe9ac6))
+* **storefront:** у выделенной строки в лендинге не было фона — токен не объявлен ([be3817a](https://github.com/Isk4R1oT/Obscura/commit/be3817a87304bfd6764a05f216c10725dbbf086d))
+
 ## [0.3.30](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.29...platform/v0.3.30) (2026-10-05)
 
 
