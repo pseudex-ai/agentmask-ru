@@ -41,8 +41,11 @@ echo "OK   прод и стенд монтируют один и тот же к�
 # 3. Файлы есть и они того рода, который ждёт Authelia.
 [ -s "$ASSETS/logo.png" ] || fail "нет assets/logo.png"
 [ -s "$ASSETS/favicon.ico" ] || fail "нет assets/favicon.ico"
+# `RGBA` — это и есть альфа-канал в выводе `file`. Второй шаблон вида
+# `*8-bit/color RGBA*` был бы мёртвым: первый его уже покрывает, и shellcheck
+# справедливо ругается на недостижимую ветку.
 case "$(file -b "$ASSETS/logo.png")" in
-    *RGBA*|*"8-bit/color RGBA"*) : ;;
+    *RGBA*) : ;;
     *) fail "logo.png без альфа-канала — на тёмной карточке портала будет фон" ;;
 esac
 case "$(file -b "$ASSETS/favicon.ico")" in
