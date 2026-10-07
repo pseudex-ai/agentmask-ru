@@ -1097,7 +1097,7 @@ Docs: `docs/sprint-cabinet-and-pricing.md`, `docs/billing-integrity.md`,
 
 | file | what |
 |---|---|
-| `deploy/compose.yml` | OUR side: licensing server, storefront, their database, the billing-cycle service, observability. `$VAR` in `command:` is interpolated by compose — escape as `$$VAR` |
+| `deploy/compose.yml` (also the board, the identity portal and the storefront's SSO — behind the `board` profile, so a half-configured portal cannot roll the site back) | OUR side: licensing server, storefront, their database, the billing-cycle service, observability. `$VAR` in `command:` is interpolated by compose — escape as `$$VAR` |
 | `deploy/compose.local.yml` | the whole product on one machine (the stand the gates and `deploy/local.sh` use); builds `pseudex:local` |
 | `deploy/local.sh` | brings the stand up and PROVES it is up (a 401 from the admin port is proof of life) before printing the walkthrough |
 | `deploy/bootstrap.sh` | clean Ubuntu 24.04 → production host, one idempotent command |
@@ -1117,8 +1117,8 @@ Docs: `docs/sprint-cabinet-and-pricing.md`, `docs/billing-integrity.md`,
 | `deploy/loki.yml`, `deploy/promtail.yml`, `deploy/grafana-dashboard.json`, `deploy/grafana-provisioning/` | logs by LABEL (content not indexed); the one dashboard |
 | `deploy/fail2ban/` | jails + the crawler allowlist (`storefront/test_crawler_allowlist.py`) |
 | `deploy/supportbot/` | the Telegram support bot container: `deploy/supportbot/config.yaml`, whose keys are checked against the pinned upstream at build, and `deploy/supportbot/patches/pseudex.patch` — our fixes carried onto that commit (D-085) |
-| `deploy/board/` | the team task board: our branded build of Vikunja (`deploy/board/patches/pseudex-brand.patch`) behind Authelia, on a hidden path (D-086) |
-| `deploy/board/authelia/` | the local stand's identity portal: door, SSO, OIDC clients for the board and the storefront (D-086, D-087) |
+| `deploy/board/` | the team task board: our branded build of Vikunja (`deploy/board/patches/pseudex-brand.patch`) behind Authelia, on a hidden path (D-086). Two halves, one design: the IMAGE is built and signed by the platform release (`pseudex-board`), and the SERVICES live in `deploy/compose.yml` behind the `board` profile — the stand in this directory is the local half, with `deploy/board/up.sh` for secrets and rendering |
+| `deploy/board/authelia/configuration.yml` | THE identity portal's config, ONE file for the stand and production: the domain comes from placeholders (`__AUTH_URL__`, `__BOARD_DOMAIN__`, …), filled by `deploy/board/up.sh` locally and by the `authelia-config` service on the host. Access is `two_factor`, `default_policy: deny`, and two OIDC clients with different secrets — a leak of one must not open the other (D-086, D-087) |
 | `deploy/make-release-keys.sh` | the Ed25519 pair: public half compiled into the release binary, private on the server. A fresh one forces a full Nuitka rebuild |
 | `deploy/build-arkari-clang.sh` | the obfuscating clang for the Nuitka build — one time, pinned |
 | `deploy/check-dns.sh` | what the OUTSIDE world thinks of the domain |
