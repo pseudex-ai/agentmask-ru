@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.36](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.35...platform/v0.3.36) (2026-10-07)
+
+
+### Исправления
+
+* **storefront:** страницы команды читаются на телефоне, фоновая сетка убрана ([b71072d](https://github.com/Isk4R1oT/Obscura/commit/b71072d3a42611098e1380c6c82e0e16da1e98af))
+* **storefront:** страницы команды читаются на телефоне, фоновая сетка убрана ([8040718](https://github.com/Isk4R1oT/Obscura/commit/80407180416216a6e5190f387f88172f7995e395))
+* **storefront:** страницы команды читаются на телефоне, фоновая сетка убрана ([#73](https://github.com/Isk4R1oT/Obscura/issues/73)) ([b71072d](https://github.com/Isk4R1oT/Obscura/commit/b71072d3a42611098e1380c6c82e0e16da1e98af))
+
 ## [0.3.35](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.34...platform/v0.3.35) (2026-10-07)
 
 
