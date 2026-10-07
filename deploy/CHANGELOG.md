@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.34](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.33...platform/v0.3.34) (2026-10-07)
+
+
+### Исправления
+
+* **deploy:** портал обязан уметь слать письма — без них вход не пройти ([c6add14](https://github.com/Isk4R1oT/Obscura/commit/c6add14f4ed347889863ec2582989a48ad76926f))
+* **deploy:** портал обязан уметь слать письма — без них вход не пройти ([4139db4](https://github.com/Isk4R1oT/Obscura/commit/4139db40819ec02bb66d0b079635300d86027ca5))
+* **deploy:** портал обязан уметь слать письма — без них вход не пройти ([#68](https://github.com/Isk4R1oT/Obscura/issues/68)) ([c6add14](https://github.com/Isk4R1oT/Obscura/commit/c6add14f4ed347889863ec2582989a48ad76926f))
+
 ## [0.3.33](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.32...platform/v0.3.33) (2026-10-07)
 
 
