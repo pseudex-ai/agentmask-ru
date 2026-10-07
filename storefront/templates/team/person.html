@@ -20,7 +20,7 @@
 <link rel="stylesheet" href="{% static 'landing.css' %}">
 <link rel="stylesheet" href="{% static 'team.css' %}">
 </head>
-<body>
+<body class="team-page">
 <div class="frame">
 
   <header class="top">
@@ -36,7 +36,7 @@
     </div>
   </header>
 
-  <section style="padding:64px 36px 0">
+  <section class="team-section team-section--intro">
     <div class="team-hero{% if not person.photo %} team-hero--no-photo{% endif %}">
       {% comment %}
         Снимок или ЗАГЛУШКА ТОГО ЖЕ РАЗМЕРА. Пустая серая плита на месте снимка —
@@ -65,56 +65,56 @@
     </div>
   </section>
 
-  <section style="padding:56px 36px 0">
-    <div class="team-col">
-      <div class="label" style="margin-bottom:14px">КОНТАКТЫ</div>
-      <div class="contacts">
-        <a class="contact hv-row" href="tel:{{ tel_href }}">
-          <span class="k">tel</span>
-          <span class="v">{{ person.tel }}<span class="mask"></span></span>
-        </a>
-        <a class="contact hv-row" href="mailto:{{ person.mail }}">
-          <span class="k">mail</span>
-          <span class="v">{{ person.mail }}<span class="mask"></span></span>
-        </a>
-        <a class="contact hv-row" href="https://{{ web }}">
-          <span class="k">web</span>
-          <span class="v">{{ web }}<span class="mask"></span></span>
-        </a>
-      </div>
-    </div>
-  </section>
-
-  <section style="padding:56px 36px 0">
-    <div class="team-col">
-      <div class="label" style="margin-bottom:14px">ДЛЯ ВАШЕГО БЕЗОПАСНИКА И ЮРИСТА</div>
-      <div class="cards cards--n3 team-docs">
-        {% comment %}
-          НАЗВАНИЕ ДОКУМЕНТА — КАК НА САМОЙ СТРАНИЦЕ, а не лозунгом. Здесь стояло
-          «Описание архитектуры „мы не обработчик“»: двойные кавычки внутри
-          кавычек и внутренний слоган вместо названия. Маркер `PDF` убран по той
-          же причине: `/architecture` — страница, а не файл, и обещать PDF,
-          которого нет, хуже, чем не обещать ничего.
-        {% endcomment %}
-        <a class="hv-cell" href="https://{{ web }}/architecture">
-          Архитектура: что уходит наружу, а что нет
-          <span class="a">→</span>
-        </a>
-        <a class="hv-cell" href="https://{{ web }}/policy">
-          Политика обработки персональных данных
-          <span class="a">→</span>
-        </a>
-        <a class="hv-cell" href="https://{{ web }}/offer">
-          Оферта
-          <span class="a">→</span>
-        </a>
+  <section class="team-section">
+    <div class="team-body">
+      <div class="team-col">
+        <div class="label" style="margin-bottom:14px">КОНТАКТЫ</div>
+        <div class="contacts">
+          <a class="contact hv-row" href="tel:{{ tel_href }}">
+            <span class="k">tel</span>
+            <span class="v">{{ person.tel }}<span class="mask"></span></span>
+          </a>
+          <a class="contact hv-row" href="mailto:{{ person.mail }}">
+            <span class="k">mail</span>
+            <span class="v">{{ person.mail }}<span class="mask"></span></span>
+          </a>
+          <a class="contact hv-row" href="https://{{ web }}">
+            <span class="k">web</span>
+            <span class="v">{{ web }}<span class="mask"></span></span>
+          </a>
+        </div>
       </div>
 
-      <p class="fineprint" style="margin-top:22px">
-        Эти три документа можно переслать внутри компании как есть — с них обычно
-        и начинается разговор со службой безопасности. Контейнер работает в вашем
-        периметре: персональные данные не покидают его, к нам уходят только счётчики.
-      </p>
+      <div class="team-col">
+        <div class="label" style="margin-bottom:14px">ДЛЯ ВАШЕГО БЕЗОПАСНИКА И ЮРИСТА</div>
+        <div class="cards cards--n3 team-docs">
+          {% comment %}
+            НАЗВАНИЕ ДОКУМЕНТА — КАК НА САМОЙ СТРАНИЦЕ, а не лозунгом. Здесь стояло
+            «Описание архитектуры „мы не обработчик“»: двойные кавычки внутри
+            кавычек и внутренний слоган вместо названия. Маркер `PDF` убран по той
+            же причине: `/architecture` — страница, а не файл, и обещать PDF,
+            которого нет, хуже, чем не обещать ничего.
+          {% endcomment %}
+          <a class="hv-cell" href="https://{{ web }}/architecture">
+            Архитектура: что уходит наружу, а что нет
+            <span class="a">→</span>
+          </a>
+          <a class="hv-cell" href="https://{{ web }}/policy">
+            Политика обработки персональных данных
+            <span class="a">→</span>
+          </a>
+          <a class="hv-cell" href="https://{{ web }}/offer">
+            Оферта
+            <span class="a">→</span>
+          </a>
+        </div>
+
+        <p class="fineprint" style="margin-top:22px">
+          Эти три документа можно переслать внутри компании как есть — с них обычно
+          и начинается разговор со службой безопасности. Контейнер работает в вашем
+          периметре: персональные данные не покидают его, к нам уходят только счётчики.
+        </p>
+      </div>
     </div>
   </section>
 
