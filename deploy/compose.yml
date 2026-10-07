@@ -787,6 +787,8 @@ services:
     volumes:
       - authelia-config:/config/rendered:ro
       - ./secrets/authelia-users.yml:/config/users.yml:ro
+      # Наш знак на странице входа: `server.asset_path` в шаблоне указывает сюда.
+      - ./board/authelia/assets:/config/assets:ro
       - authelia-data:/config/data
     # Конфиг читается из тома рендера, и портал не стартует, пока рендер не
     # удался: наполовину подставленный конфиг до него не доедет.

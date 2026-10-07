@@ -30,6 +30,7 @@ services:
     image: authelia/authelia:4.39
     restart: unless-stopped
     volumes:
+      - ./authelia/assets:/config/assets:ro
       # РЕНДЕР, А НЕ ШАБЛОН: секреты подставляет up.sh, и в контейнер уезжает
       # файл с ними. Шаблон остаётся читаемым и ревьюится глазами.
       - ./authelia/configuration.rendered.yml:/config/configuration.yml:ro
