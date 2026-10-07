@@ -51,6 +51,35 @@ while :; do
     # `-shm` wal-index beside it to read one, and `-shm` is absent exactly when
     # the licensing container is stopped — so on `:ro` this branch failed on the
     # night the backup mattered most, and the watchdog only checks file age.
+    # ── БАЗА ДОСКИ ЗАДАЧ ────────────────────────────────────────────────────
+    #
+    # КАКОЙ ФАЙЛ ЗДЕСЬ ЛЕЖИТ И ПОЧЕМУ НЕ В ТОМ ЖЕ МЕСТЕ, ЧТО ВИДИТ ДОСКА. Доска
+    # читает `./board-data/db/vikunja.db` (bind-mount), а бэкапу смонтирован
+    # весь каталог `./board-data` в `/board` — так копия берётся из того же
+    # файла, что и живые данные, без второй монтировки одного и того же пути
+    # внутрь двух контейнеров.
+    #
+    # Копируется `sqlite3 .backup`, а не `cp`, по той же причине, что
+    # лицензионная: у базы живой писатель, и копия живого WAL-файла может быть
+    # рваной — файл откроется и будет неверным.
+    #
+    # ПУСТО, ПОКА ПРОФИЛЬ `board` ВЫКЛЮЧЕН, И ЭТО НЕ ОШИБКА. Каталог появится
+    # только когда доска поднята; отсутствие файла — не повод красить ночной
+    # бэкап в красное (иначе первый же деплой без доски начнёт кричать).
+    if [ -f /board/db/vikunja.db ]; then
+        if sqlite3 /board/db/vikunja.db ".backup '/backups/board-${stamp}.db.tmp'" 2>/tmp/board.err; then
+            if mv "/backups/board-${stamp}.db.tmp" "/backups/board-${stamp}.db"; then
+                echo "backup: board ${stamp} ok"
+            else
+                echo "backup: BOARD COPY TAKEN BUT NOT PUBLISHED at ${stamp}" >&2
+                rm -f "/backups/board-${stamp}.db.tmp"
+            fi
+        else
+            echo "backup: BOARD COPY FAILED at ${stamp}: $(cat /tmp/board.err 2>/dev/null)" >&2
+            rm -f "/backups/board-${stamp}.db.tmp"
+        fi
+    fi
+
     if [ -f /license/license.db ]; then
         # `cp`-ВЕТКИ БОЛЬШЕ НЕТ, И ЭТО ГЛАВНОЕ ИЗМЕНЕНИЕ ЗДЕСЬ. Она стояла как
         # запасной путь на случай отсутствия `sqlite3` — и была ЕДИНСТВЕННЫМ

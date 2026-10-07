@@ -94,7 +94,14 @@ out = (tpl
        .replace("__OIDC_HMAC_SECRET__", pathlib.Path(".env").read_text().split("OIDC_HMAC_SECRET=")[1].splitlines()[0])
        .replace("__OIDC_CLIENT_SECRET_DIGEST__", digest)
        .replace("__OIDC_STOREFRONT_SECRET_DIGEST__", storefront_digest)
-       .replace("__OIDC_RSA_KEY__", key_block))
+       .replace("__OIDC_RSA_KEY__", key_block)
+       # ДОМЕНЫ СТЕНДА. Тот же шаблон служит и проду: там эти пять строк
+       # подставляет рендер в deploy/compose.yml, а здесь — стенд.
+       .replace("__AUTH_URL__", "https://auth.lvh.me:8443")
+       .replace("__COOKIE_DOMAIN__", "lvh.me")
+       .replace("__BOARD_DOMAIN__", "board.lvh.me")
+       .replace("__BOARD_URL__", "https://board.lvh.me:8443/ops-7f3a")
+       .replace("__STOREFRONT_REDIRECT__", "https://pseudex.lvh.me:8443/backstage-7f3a/oidc/callback/"))
 if "__" in out.replace("__", "__", 1):
     leftovers = [l for l in out.splitlines() if "__" in l]
     if leftovers:

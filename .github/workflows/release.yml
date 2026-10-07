@@ -269,13 +269,13 @@ jobs:
           case "${GITHUB_REF_NAME}" in
             platform/v[0-9]*)
               STREAM=platform; VERSION="${GITHUB_REF_NAME#platform/v}"
-              IMAGES="pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot" ;;
+              IMAGES="pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot pseudex-board" ;;
             v[0-9]*)
               STREAM=engine; VERSION="${GITHUB_REF_NAME#v}"
               IMAGES="${IMAGE}" ;;
             *)
               STREAM=dev; VERSION="$(git rev-parse --short HEAD)"
-              IMAGES="${IMAGE} pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot" ;;
+              IMAGES="${IMAGE} pseudex-licensing pseudex-storefront pseudex-backup pseudex-supportbot pseudex-board" ;;
           esac
           {
             echo "STREAM=${STREAM}"; echo "VERSION=${VERSION}"; echo "IMAGES=${IMAGES}"
@@ -348,7 +348,7 @@ jobs:
         if: env.STREAM != 'engine'
         run: |
           set -eu
-          for pair in "licensing:prototype:licensing/Dockerfile" "storefront:storefront:Dockerfile" "backup:deploy:Dockerfile.backup" "supportbot:deploy/supportbot:Dockerfile"; do
+          for pair in "licensing:prototype:licensing/Dockerfile" "storefront:storefront:Dockerfile" "backup:deploy:Dockerfile.backup" "supportbot:deploy/supportbot:Dockerfile" "board:.:deploy/board/Dockerfile.frontend"; do
             NAME="${pair%%:*}"; REST="${pair#*:}"
             CTX="${REST%%:*}"; FILE="${REST#*:}"
             REF="${REGISTRY}/pseudex-${NAME}:${VERSION}"
