@@ -88,6 +88,7 @@ STEPS = [
     ("04d2-brand-palette", "test_brand_palette.py", lambda: True, ""),
     ("04e-auth-style", "test_auth_style.py", lambda: True, ""),
     ("04e2-team-pages", "test_team_pages.py", lambda: True, ""),
+    ("04e2b-team-renders", "test_team_renders.py", lambda: True, ""),
     ("04e3-admin-sso", "test_admin_sso.py", lambda: True, ""),
     ("04f-admin-2fa", "test_admin_2fa.py", lambda: True, ""),
     ("04g-passwordless", "test_passwordless.py", lambda: True, ""),
