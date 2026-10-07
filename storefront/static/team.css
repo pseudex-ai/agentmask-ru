@@ -23,6 +23,22 @@
 /* Личная страница — документ для чтения, а не лендинг: узкая мера, как у
    `.legal-doc` (780px). На 1440px строка без неё растянулась бы. */
 .team-col { max-width: 720px; }
+.team-section { padding: 56px 36px 0; }
+.team-section--intro { padding-top: 64px; }
+
+/* НИЖНЯЯ ЧАСТЬ СТРАНИЦЫ ЧЕЛОВЕКА — ДВЕ КОЛОНКИ НА ШИРОКОМ ЭКРАНЕ.
+   Контакты стояли узкой полосой слева, а правая половина страницы пустовала:
+   на 1320 px это ~700 px ничем не занятой ширины, и читается это не как воздух,
+   а как недоделанная страница. Левая колонка шириной с фотографию — то есть
+   контакты продолжают её линию, — а документы занимают остаток. Ниже 1024 px
+   колонки складываются, и страница снова читается сверху вниз, как на телефоне. */
+.team-body { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 48px;
+             align-items: start; }
+.team-body > * { min-width: 0; }
+.team-body .team-col { max-width: none; }
+@media (max-width: 1024px) {
+  .team-body { grid-template-columns: minmax(0, 1fr); gap: 40px; }
+}
 
 /* ── Личная страница: герой ───────────────────────────────────────────────── */
 
@@ -34,6 +50,13 @@
   align-items: start;
 }
 .team-hero--no-photo { grid-template-columns: minmax(0, 1fr); }
+.team-hero > * { min-width: 0; }
+/* The fixed portrait used to consume the whole mobile width, leaving a zero
+   width text column off-screen. Stack before the text becomes too narrow. */
+@media (max-width: 900px) {
+  .team-hero { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .team-photo { max-width: 320px; }
+}
 
 .team-photo {
   display: block; inline-size: 100%; block-size: auto; aspect-ratio: 1;
@@ -56,8 +79,23 @@
    ширину: палец после сканирования QR должен попадать не целясь. */
 .team-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 32px; }
 @media (max-width: 700px) {
-  .team-actions { display: grid; }
-  .team-actions .btn { width: 100%; text-align: center; }
+  .team-page .frame { border-left: 0; border-right: 0; }
+  .team-page header.top { padding: 0 20px; gap: 12px; }
+  .team-page .brand { gap: 8px; }
+  .team-page .brand b { font-size: 18px; }
+  .team-page .head-cta .btn { padding: 10px 12px; letter-spacing: .08em; }
+  .team-section { padding: 36px 20px 0; }
+  .team-section--intro { padding-top: 32px; }
+  .team-photo { max-width: 360px; justify-self: center; }
+  .team-page .eyebrow { gap: 12px; margin-bottom: 20px; }
+  .team-page .eyebrow i { width: 24px; flex: none; }
+  .team-page .eyebrow span { font-size: 12px; line-height: 1.5; letter-spacing: .1em; }
+  .team-page .label { font-size: 12px; line-height: 1.6; letter-spacing: .12em; }
+  .team-lede { font-size: 16px; }
+  .team-actions { display: grid; grid-template-columns: minmax(0, 1fr); margin-top: 24px; }
+  .team-actions .btn { width: 100%; min-height: 48px; text-align: center; }
+  .team-page footer { padding: 28px 20px; gap: 16px; font-size: 12px; }
+  .team-page .fineprint { font-size: 13px; line-height: 1.7; }
 }
 
 /* ── Контакты ─────────────────────────────────────────────────────────────── */
@@ -90,6 +128,13 @@
 .contact:nth-child(3) .v .mask { animation-delay: .24s }
 @keyframes unmask { to { transform: scaleX(0) } }
 @media (prefers-reduced-motion: reduce) { .contact .v .mask { display: none } }
+/* An ellipsis hides the actual address on narrow phones. Contacts must remain
+   readable, not merely clickable; long addresses can wrap without widening. */
+@media (max-width: 700px) {
+  .contact { gap: 12px; padding: 14px 12px; min-height: 48px; }
+  .contact .k { width: 36px; font-size: 12px; letter-spacing: .1em; }
+  .contact .v { font-size: 13px; line-height: 1.6; white-space: normal; overflow-wrap: anywhere; }
+}
 
 /* ── Документы ────────────────────────────────────────────────────────────── */
 
@@ -133,3 +178,9 @@
 .person .w { display: block; margin-top: 14px; font-size: 14px; line-height: 1.6; color: var(--dim); }
 .person .go { display: block; margin-top: 20px; font-family: var(--mono); font-size: 13px;
               color: var(--accent); }
+@media (max-width: 700px) {
+  .person { padding: 20px; }
+  .person .shot { aspect-ratio: 1; }
+  .person .r { font-size: 12px; line-height: 1.5; letter-spacing: .1em; }
+  .person .w { font-size: 15px; }
+}

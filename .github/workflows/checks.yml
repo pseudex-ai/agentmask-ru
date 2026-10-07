@@ -280,6 +280,8 @@ jobs:
       # перебивает браузерное `[hidden]{display:none}`.
       - name: браузер для проверки конфигуратора
         run: .venv/bin/pip install -q playwright && .venv/bin/python -m playwright install --with-deps chromium
+      - name: team content stays on screen from 320px to desktop, without a background grid
+        run: .venv/bin/python test_team_renders.py
       - name: браузер исполняет consent, signup и маскирование email
         run: .venv/bin/python test_analytics_browser.py
       - name: конфигуратор исполняется, а не просто отдаёт 200

@@ -95,6 +95,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
   <a href="/how" style="color:var(--dim)" class="hv-text">ПОЧЕМУ ЭТО СЛОЖНЕЕ</a>
   <a href="/detection" style="color:var(--dim)" class="hv-text">ЧТО НАХОДИМ</a>
   <a href="#pricing" style="color:var(--dim)" class="hv-text">ЦЕНЫ</a>
+  <a href="/i/" style="color:var(--dim)" class="hv-text">КОМАНДА</a>
   <a href="#legal" style="color:var(--dim)" class="hv-text nav-secondary">152-ФЗ</a>
   <a href="/faq" style="color:var(--dim)" class="hv-text nav-secondary">FAQ</a>
 </nav>
@@ -661,6 +662,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
     <a href="{% url 'requisites' %}" style="color:var(--dim-3)" class="hv-muted">РЕКВИЗИТЫ</a>
     <a href="/baza-znaniy" style="color:var(--dim-3)" class="hv-muted">БАЗА ЗНАНИЙ</a>
     <a href="{% url 'architecture' %}" style="color:var(--dim-3)" class="hv-muted">АРХИТЕКТУРА</a>
+    <a href="{% url 'team' %}" style="color:var(--dim-3)" class="hv-muted">КОМАНДА</a>
     {% if support_bot %}<a href="https://t.me/{{ support_bot }}" rel="noopener" target="_blank"
        style="color:var(--accent-2)" class="hv-muted">TELEGRAM</a>{% endif %}
     {% if support_email %}<a href="mailto:{{ support_email }}"
