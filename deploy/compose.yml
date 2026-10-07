@@ -712,6 +712,14 @@ services:
       AUTHELIA_OIDC_HMAC_SECRET: ${AUTHELIA_OIDC_HMAC_SECRET:-}
       AUTHELIA_OIDC_BOARD_SECRET: ${AUTHELIA_OIDC_BOARD_SECRET:-}
       AUTHELIA_OIDC_STOREFRONT_SECRET: ${AUTHELIA_OIDC_STOREFRONT_SECRET:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      # Отправитель берётся у витрины (`FROM_EMAIL`): письма портала и сайта
+      # должны приходить с одного адреса, иначе часть уедет в спам.
+      SMTP_SENDER: ${FROM_EMAIL:-}
+      SMTP_CHECK_ADDRESS: ${PSEUDEX_SUPPORT_EMAIL:-${FROM_EMAIL:-}}
       PSEUDEX_CONF_REV: *conf-rev
     command:
       - sh
@@ -720,7 +728,8 @@ services:
         set -eu
         for v in PSEUDEX_AUTH_HOST PSEUDEX_BOARD_HOST PSEUDEX_SITE_HOST ADMIN_PATH \
                  AUTHELIA_SESSION_SECRET AUTHELIA_STORAGE_KEY AUTHELIA_RESET_JWT_SECRET \
-                 AUTHELIA_OIDC_HMAC_SECRET AUTHELIA_OIDC_BOARD_SECRET AUTHELIA_OIDC_STOREFRONT_SECRET; do
+                 AUTHELIA_OIDC_HMAC_SECRET AUTHELIA_OIDC_BOARD_SECRET AUTHELIA_OIDC_STOREFRONT_SECRET \
+                 SMTP_HOST SMTP_USER SMTP_PASSWORD SMTP_SENDER SMTP_CHECK_ADDRESS; do
           eval "val=\$$$$v"; [ -n "$$val" ] || { echo "в deploy/.env пуст $$v — портал не поднимется"; exit 1; }
         done
         board_digest="$$(authelia crypto hash generate pbkdf2 --password "$$AUTHELIA_OIDC_BOARD_SECRET" --variant sha512 | sed -n 's/^Digest: //p')"
@@ -730,6 +739,10 @@ services:
         # фронтенда (`ARG FRONTEND_PATH` в `deploy/board/Dockerfile.frontend`) и
         # повторяет `handle` в Caddyfile: настраиваемая переменная разошлась бы
         # с образом, и ассеты уехали бы в 404.
+        esc() { printf '%s' "$$1" | sed 's/[&|\\]/\\&/g'; }
+        smtp_host="$$(esc "$$SMTP_HOST")"; smtp_user="$$(esc "$$SMTP_USER")"
+        smtp_pass="$$(esc "$$SMTP_PASSWORD")"; smtp_sender="$$(esc "$$SMTP_SENDER")"
+        smtp_check="$$(esc "$$SMTP_CHECK_ADDRESS")"
         sed -e "s|__AUTH_URL__|https://$$PSEUDEX_AUTH_HOST|g" \
             -e "s|__COOKIE_DOMAIN__|$$PSEUDEX_SITE_HOST|g" \
             -e "s|__BOARD_DOMAIN__|$$PSEUDEX_BOARD_HOST|g" \
@@ -741,6 +754,14 @@ services:
             -e "s|__OIDC_HMAC_SECRET__|$$AUTHELIA_OIDC_HMAC_SECRET|" \
             -e "s|__OIDC_CLIENT_SECRET_DIGEST__|$$board_digest|" \
             -e "s|__OIDC_STOREFRONT_SECRET_DIGEST__|$$storefront_digest|" \
+            -e "s|__SMTP_DISABLE_CHECK__|false|" \
+            -e "s|__SMTP_HOST__|$$smtp_host|g" \
+            -e "s|__SMTP_PORT__|$$SMTP_PORT|" \
+            -e "s|__SMTP_USER__|$$smtp_user|" \
+            -e "s|__SMTP_PASSWORD__|$$smtp_pass|" \
+            -e "s|__SMTP_SENDER__|$$smtp_sender|" \
+            -e "s|__SMTP_IDENTIFIER__|$$PSEUDEX_SITE_HOST|" \
+            -e "s|__SMTP_CHECK_ADDRESS__|$$smtp_check|" \
             /in/configuration.yml > /out/configuration.yml.part
         # КЛЮЧ OIDC — МНОГОСТРОЧНЫЙ, И ЭТО НЕ СТИЛИСТИКА. `jwks.key` без
         # переводов строк не разберётся, а `sed` их съел бы; `awk` вставляет

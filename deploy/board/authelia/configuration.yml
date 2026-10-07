@@ -77,11 +77,28 @@ storage:
     path: '/config/data/db.sqlite3'
 
 notifier:
-  # Писем не шлём: служебного SMTP-ящика у нас нет, а тихо «отправлять в никуда»
-  # сброс пароля хуже, чем его отсутствие. Файл виден в контейнере и годится для
-  # стенда; на проде здесь SMTP.
-  filesystem:
-    filename: '/config/data/notification.txt'
+  # ПОЧТА ВКЛЮЧЕНА, И ЭТО ОБЯЗАТЕЛЬНО. Перед регистрацией второго фактора
+  # Authelia подтверждает личность ОДНОРАЗОВЫМ КОДОМ и шлёт его уведомителем.
+  # С файловым уведомителем код ложится в файл внутри контейнера: на первом же
+  # живом входе человек встал на этом шаге и не мог его пройти — «письмо не
+  # пришло, в спаме пусто», а пройти было нечем.
+  #
+  # Ящик тот же, что у витрины (`SMTP_*` в `.env`): вторая учётная запись для
+  # служебных писем — это второй пароль, который надо хранить и ротировать.
+  # `startup_check_address` — адрес, на который Authelia шлёт проверочное письмо
+  # при старте: пустой или неверный ящик делает проверку бессмысленной.
+  disable_startup_check: __SMTP_DISABLE_CHECK__
+  smtp:
+    host: '__SMTP_HOST__'
+    port: __SMTP_PORT__
+    username: '__SMTP_USER__'
+    password: '__SMTP_PASSWORD__'
+    sender: '__SMTP_SENDER__'
+    identifier: '__SMTP_IDENTIFIER__'
+    subject: '[pseudex] {title}'
+    startup_check_address: '__SMTP_CHECK_ADDRESS__'
+    tls:
+      server_name: '__SMTP_HOST__'
 
 identity_validation:
   reset_password:
