@@ -47,6 +47,12 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./backups:/backups
+      # БАЗА ДОСКИ. Копируется тем же `sqlite3 .backup`, что лицензионная, и
+      # по той же причине: у неё живой писатель. Каталог монтируется
+      # read-write — `.backup` создаёт рядом `-shm` wal-index, и на `:ro` копия
+      # молча не получается (разбор — в комментарии ниже про лицензионную).
+      # Пусто, пока профиль `board` выключен: бэкап не падает, а пропускает.
+      - ./board-data:/board
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pseudex}"]
       interval: 10s
@@ -214,6 +220,17 @@ services:
       PSEUDEX_ANALYTICS_MODE: ${PSEUDEX_ANALYTICS_MODE:-off}
       PSEUDEX_ANALYTICS_HOST: ${PSEUDEX_ANALYTICS_HOST:-}
       PSEUDEX_ANALYTICS_KEY: ${PSEUDEX_ANALYTICS_KEY:-}
+      # ЕДИНЫЙ ВХОД СОТРУДНИКОВ (OIDC через Authelia). Без флага не меняется
+      # ничего: ни приложения, ни бэкендов, ни маршрутов. Второй фактор витрина
+      # читает из подписанного id-токена (`amr`), а django-otp остаётся
+      # аварийным входом — на случай, когда портал недоступен.
+      PSEUDEX_OIDC_ENABLED: ${PSEUDEX_OIDC_ENABLED:-}
+      PSEUDEX_OIDC_CLIENT_ID: ${PSEUDEX_OIDC_CLIENT_ID:-storefront}
+      PSEUDEX_OIDC_CLIENT_SECRET: ${AUTHELIA_OIDC_STOREFRONT_SECRET:-}
+      PSEUDEX_OIDC_ISSUER: ${PSEUDEX_AUTH_ISSUER:-}
+      # Ссылка на доску в шапке админки — целиком, вместе с её скрытым путём.
+      # Пусто — ссылки нет: кнопка в никуда хуже её отсутствия.
+      PSEUDEX_BOARD_URL: ${PSEUDEX_BOARD_URL:-}
       # МЕТРИКА — ОТДЕЛЬНАЯ НАСТРОЙКА, А НЕ ТРЕТИЙ РЕЖИМ АНАЛИТИКИ. Rybbit и
       # Метрика включаются порознь, и из ЭТИХ ДВУХ значений выводятся три
       # текста: ответ FAQ на лендинге, текст баннера согласия и раздел 9bis
@@ -395,6 +412,13 @@ services:
     environment:
       SITE_HOST: ${SITE_HOST}
       LICENSE_HOST: ${LICENSE_HOST:?set LICENSE_HOST}
+      # ЧЕРЕЗ `:-`, А НЕ `:?`. Сайты портала и доски в Caddyfile безусловны:
+      # пустая переменная дала бы хост `auth.` и Caddy не поднялся бы вовсе —
+      # вместе с витриной. Поэтому по умолчанию подставляется заведомо
+      # неразрешимое имя, а настоящие адреса приходят из `.env`, когда включают
+      # профиль `board`.
+      AUTH_HOST: ${PSEUDEX_AUTH_HOST:-auth.invalid}
+      BOARD_HOST: ${PSEUDEX_BOARD_HOST:-board.invalid}
       PSEUDEX_CONF_REV: *conf-rev   # Caddyfile is mounted from the checkout
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
@@ -648,6 +672,168 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  # ── ЕДИНЫЙ ВХОД СОТРУДНИКОВ И ДОСКА ЗАДАЧ ────────────────────────────────
+  #
+  # ЗА ПРОФИЛЕМ, И ЭТО НЕ ФОРМАЛЬНОСТЬ. Образ доски собирает и подписывает релиз
+  # (`.github/workflows/release.yml`), но поднимать сервисы раньше, чем на хосте
+  # появились DNS и секреты, нельзя: агент выкатки откатывает весь тег, если
+  # стенд не поднялся здоровым, поэтому «доска не стартовала» утащила бы за
+  # собой релиз витрины. Пока `board` нет в `COMPOSE_PROFILES`, этих четырёх
+  # сервисов не существует, а образ для них уже лежит в реестре.
+  #
+  # ЗДЕСЬ ЖЕ ЖИВЁТ ВХОД СОТРУДНИКОВ В АДМИНКУ ВИТРИНЫ (OIDC): портал один, и
+  # второй провайдер для того же дела был бы второй дверью.
+  authelia-config:
+    # РЕНДЕР КОНФИГА AUTHELIA. Секреты и адреса подставляются здесь, в контейнер
+    # уезжает готовый файл — тот же приём, что у бота поддержки и Alertmanager.
+    # Образ взят ТОТ ЖЕ, что у портала: дайджесты секретов клиентов считает его
+    # собственный `crypto hash generate`, и вторая версия хешера в рендере
+    # разошлась бы с той, которой портал проверяет вход.
+    image: authelia/authelia:4.39
+    profiles: ["board"]
+    restart: "no"
+    logging: *logging
+    volumes:
+      - ./board/authelia/configuration.yml:/in/configuration.yml:ro
+      - ./secrets/authelia-oidc.key:/in/oidc.key:ro
+      - authelia-config:/out
+    environment:
+      # `:-`, НЕ `:?`: профильный сервис не имеет права требовать переменную —
+      # её отсутствие уронило бы `compose config` и вместе с ним выкатку
+      # витрины. Пустоту ловит сам рендер, до старта портала.
+      PSEUDEX_AUTH_HOST: ${PSEUDEX_AUTH_HOST:-}
+      PSEUDEX_BOARD_HOST: ${PSEUDEX_BOARD_HOST:-}
+      PSEUDEX_SITE_HOST: ${SITE_HOST:-}
+      ADMIN_PATH: ${ADMIN_PATH:-}
+      AUTHELIA_SESSION_SECRET: ${AUTHELIA_SESSION_SECRET:-}
+      AUTHELIA_STORAGE_KEY: ${AUTHELIA_STORAGE_KEY:-}
+      AUTHELIA_RESET_JWT_SECRET: ${AUTHELIA_RESET_JWT_SECRET:-}
+      AUTHELIA_OIDC_HMAC_SECRET: ${AUTHELIA_OIDC_HMAC_SECRET:-}
+      AUTHELIA_OIDC_BOARD_SECRET: ${AUTHELIA_OIDC_BOARD_SECRET:-}
+      AUTHELIA_OIDC_STOREFRONT_SECRET: ${AUTHELIA_OIDC_STOREFRONT_SECRET:-}
+      PSEUDEX_CONF_REV: *conf-rev
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        for v in PSEUDEX_AUTH_HOST PSEUDEX_BOARD_HOST PSEUDEX_SITE_HOST ADMIN_PATH \
+                 AUTHELIA_SESSION_SECRET AUTHELIA_STORAGE_KEY AUTHELIA_RESET_JWT_SECRET \
+                 AUTHELIA_OIDC_HMAC_SECRET AUTHELIA_OIDC_BOARD_SECRET AUTHELIA_OIDC_STOREFRONT_SECRET; do
+          eval "val=\$$$$v"; [ -n "$$val" ] || { echo "в deploy/.env пуст $$v — портал не поднимется"; exit 1; }
+        done
+        board_digest="$$(authelia crypto hash generate pbkdf2 --password "$$AUTHELIA_OIDC_BOARD_SECRET" --variant sha512 | sed -n 's/^Digest: //p')"
+        storefront_digest="$$(authelia crypto hash generate pbkdf2 --password "$$AUTHELIA_OIDC_STOREFRONT_SECRET" --variant sha512 | sed -n 's/^Digest: //p')"
+        [ -n "$$board_digest" ] && [ -n "$$storefront_digest" ] || { echo "хеш секрета клиента не посчитался"; exit 1; }
+        # СКРЫТЫЙ ПРЕФИКС ДОСКИ — КОНСТАНТА, А НЕ ПЕРЕМЕННАЯ. Его вшивает сборка
+        # фронтенда (`ARG FRONTEND_PATH` в `deploy/board/Dockerfile.frontend`) и
+        # повторяет `handle` в Caddyfile: настраиваемая переменная разошлась бы
+        # с образом, и ассеты уехали бы в 404.
+        sed -e "s|__AUTH_URL__|https://$$PSEUDEX_AUTH_HOST|g" \
+            -e "s|__COOKIE_DOMAIN__|$$PSEUDEX_SITE_HOST|g" \
+            -e "s|__BOARD_DOMAIN__|$$PSEUDEX_BOARD_HOST|g" \
+            -e "s|__BOARD_URL__|https://$$PSEUDEX_BOARD_HOST/ops-7f3a|g" \
+            -e "s|__STOREFRONT_REDIRECT__|https://$$PSEUDEX_SITE_HOST/$$ADMIN_PATH/oidc/callback/|g" \
+            -e "s|__SESSION_SECRET__|$$AUTHELIA_SESSION_SECRET|" \
+            -e "s|__STORAGE_KEY__|$$AUTHELIA_STORAGE_KEY|" \
+            -e "s|__RESET_JWT_SECRET__|$$AUTHELIA_RESET_JWT_SECRET|" \
+            -e "s|__OIDC_HMAC_SECRET__|$$AUTHELIA_OIDC_HMAC_SECRET|" \
+            -e "s|__OIDC_CLIENT_SECRET_DIGEST__|$$board_digest|" \
+            -e "s|__OIDC_STOREFRONT_SECRET_DIGEST__|$$storefront_digest|" \
+            /in/configuration.yml > /out/configuration.yml.part
+        # КЛЮЧ OIDC — МНОГОСТРОЧНЫЙ, И ЭТО НЕ СТИЛИСТИКА. `jwks.key` без
+        # переводов строк не разберётся, а `sed` их съел бы; `awk` вставляет
+        # блоком, уже с отступом, на котором стоит плейсхолдер.
+        awk -v key="$$(sed 's/^/          /' /in/oidc.key)" \
+            '{ if ($$0 == "__OIDC_RSA_KEY__") print key; else print }' \
+            /out/configuration.yml.part > /out/configuration.yml
+        rm -f /out/configuration.yml.part
+        leftover="$$(grep -n '__[A-Z_]*__' /out/configuration.yml || true)"
+        [ -z "$$leftover" ] || { echo "ОТКАЗ: в рендере остались плейсхолдеры:"; echo "$$leftover" | head -5; exit 1; }
+        chmod 600 /out/configuration.yml
+        echo "конфиг Authelia отрендерен"
+
+  authelia:
+    # ЕДИНСТВЕННАЯ ДВЕРЬ КО ВСЕМ ВНУТРЕННИМ ИНСТРУМЕНТАМ. Люди заводятся файлом
+    # `secrets/authelia-users.yml` (для команды из трёх человек это ровно то, что
+    # нужно — без базы и админки), у каждого свой пароль и TOTP, и отзывается он
+    # по человеку, а не «сменой общего пароля».
+    image: authelia/authelia:4.39
+    profiles: ["board"]
+    restart: unless-stopped
+    logging: *logging
+    volumes:
+      - authelia-config:/config/rendered:ro
+      - ./secrets/authelia-users.yml:/config/users.yml:ro
+      - authelia-data:/config/data
+    # Конфиг читается из тома рендера, и портал не стартует, пока рендер не
+    # удался: наполовину подставленный конфиг до него не доедет.
+    command: ["--config", "/config/rendered/configuration.yml"]
+    expose: ["9091"]
+    depends_on:
+      authelia-config: { condition: service_completed_successfully }
+
+  board:
+    # ДОСКА: ядро Vikunja, апстрим, без изменений. Наш только фронтенд — тема,
+    # шрифты, знак и имя продукта; форк репозитория ради этого означал бы везти
+    # на себе чужие обновления.
+    image: vikunja/vikunja:2.7.0
+    profiles: ["board"]
+    restart: unless-stopped
+    logging: *logging
+    volumes:
+      # Bind-mount, а не том: контейнер работает под uid 1000, а созданный
+      # Docker'ом том принадлежит root — «permission denied» на своей же
+      # директории. Каталог готовит `board-init` ниже.
+      - ./board-data/db:/db
+      - ./board-data/files:/app/vikunja/files
+    environment:
+      # Префикс здесь — та же константа, что в рендере и в Caddyfile.
+      VIKUNJA_SERVICE_PUBLICURL: https://${PSEUDEX_BOARD_HOST:-board.invalid}/ops-7f3a
+      VIKUNJA_SERVICE_INTERFACE: ":3456"
+      # РЕГИСТРАЦИЯ ВЫКЛЮЧЕНА: учётку заводит Authelia, и второе место, где
+      # можно завести себе доступ, — это второе место, где можно ошибиться.
+      VIKUNJA_SERVICE_ENABLEREGISTRATION: "false"
+      VIKUNJA_SERVICE_TIMEZONE: Europe/Moscow
+      VIKUNJA_DATABASE_TYPE: sqlite
+      VIKUNJA_DATABASE_PATH: /db/vikunja.db
+      # ЛОКАЛЬНЫЙ ВХОД ВЫКЛЮЧЕН: внутрь пускает только Authelia, и пароля от
+      # самой доски ни у кого нет — один вход на все инструменты.
+      VIKUNJA_AUTH_LOCAL_ENABLED: "false"
+      VIKUNJA_AUTH_OPENID_ENABLED: "true"
+      VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHELIA_NAME: "pseudex"
+      VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHELIA_AUTHURL: https://${PSEUDEX_AUTH_HOST:-auth.invalid}
+      VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHELIA_CLIENTID: vikunja
+      VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHELIA_CLIENTSECRET: ${AUTHELIA_OIDC_BOARD_SECRET:-}
+      VIKUNJA_AUTH_OPENID_PROVIDERS_AUTHELIA_SCOPE: "openid profile email groups"
+    depends_on:
+      # ЖДЁМ ИМЕННО ЗДОРОВЬЯ ПОРТАЛА. Discovery OIDC тянется один раз на старте
+      # с тремя короткими попытками; если провайдер ещё поднимается, доска
+      # остаётся без SSO до перезапуска — и вход не работает.
+      authelia: { condition: service_healthy }
+      board-init: { condition: service_completed_successfully }
+
+  board-init:
+    # КАТАЛОГИ ДАННЫХ ПОД НУЖНОГО ВЛАДЕЛЬЦА. На хосте их готовить некому: агент
+    # выкатывает тег и уходит, а bind-mount Docker создаёт от root — доска под
+    # uid 1000 получила бы «permission denied» на своей же базе.
+    image: alpine:3.21
+    profiles: ["board"]
+    restart: "no"
+    logging: *logging
+    volumes:
+      - ./board-data:/data
+    command: ["sh", "-c", "mkdir -p /data/db /data/files && chown -R 1000:1000 /data && echo 'каталоги доски готовы'"]
+
+  board-frontend:
+    # НАША СБОРКА VIKUNJA: тема, шрифты, знак, имя продукта и скрытый префикс.
+    # Образ собран и подписан релизом; здесь он только запускается.
+    image: ${REGISTRY:-cr.yandex/pseudex}/pseudex-board:${VERSION:-}
+    profiles: ["board"]
+    restart: unless-stopped
+    logging: *logging
+    expose: ["80"]
 
   alertmanager-config:
     # ОДНОРАЗОВЫЙ РЕНДЕР КОНФИГА ТРЕВОГ. Alertmanager не раскрывает переменные
@@ -1012,6 +1198,8 @@ volumes:
   promtail-positions:
   alertmanager-data:
   supportbot-config:
+  authelia-config:
+  authelia-data:
   supportbot-db:
   alertmanager-config:
   grafana-data:

@@ -109,3 +109,66 @@ analytics.{$SITE_HOST} {
 		}
 	}
 }
+
+# ── ПОРТАЛ ИДЕНТИЧНОСТИ ──────────────────────────────────────────────────────
+#
+# Отдельное имя, а не путь на витрине: сессионная кука Authelia даёт доступ ко
+# всем внутренним инструментам сразу, и жить она должна на своём домене. Кука
+# при этом ставится на общий домен (`session.cookies[].domain`), иначе браузер
+# не пошлёт её на `board.` и вход зациклится.
+{$AUTH_HOST} {
+	encode zstd gzip
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+	reverse_proxy authelia:9091
+}
+
+# ── ДОСКА ЗАДАЧ ──────────────────────────────────────────────────────────────
+#
+# СКРЫТЫЙ ПРЕФИКС `/ops-7f3a` ЗДЕСЬ ТАКАЯ ЖЕ КОНСТАНТА, КАК В СБОРКЕ ФРОНТЕНДА
+# (`ARG FRONTEND_PATH` в `deploy/board/Dockerfile.frontend`) И В РЕНДЕРЕ AUTHELIA.
+# Разойдутся — ассеты уедут в 404, а редирект после входа — на корень доски.
+#
+# ПОЧЕМУ ПРЕФИКС, А НЕ ПРОСТО ДОМЕН: это второй слой, обфускация, а не защита —
+# дверь здесь Authelia. Посторонний не должен даже знать, что на этом домене
+# что-то есть, поэтому всё остальное отвечает 404, а не редиректом.
+{$BOARD_HOST} {
+	encode zstd gzip
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		-Server
+	}
+	# `route` ЗАДАЁТ ПОРЯДОК, КОТОРЫЙ CADDY САМ НЕ СОХРАНЯЕТ: его встроенный
+	# порядок ставит `uri` (перезапись пути) выше `forward_auth`, поэтому
+	# `strip_prefix` срезал бы префикс раньше, чем Authelia увидела адрес, и в
+	# `X-Original-URL` уехал бы корень — после входа человек попал бы на 404.
+	handle /ops-7f3a/api/* {
+		route {
+			forward_auth authelia:9091 {
+				uri /api/authz/forward-auth
+				copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+				header_up X-Original-URL {scheme}://{host}{uri}
+			}
+			uri strip_prefix /ops-7f3a
+			reverse_proxy board:3456
+		}
+	}
+	handle /ops-7f3a/* {
+		route {
+			forward_auth authelia:9091 {
+				uri /api/authz/forward-auth
+				copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+				header_up X-Original-URL {scheme}://{host}{uri}
+			}
+			uri strip_prefix /ops-7f3a
+			reverse_proxy board-frontend:80
+		}
+	}
+	handle {
+		respond 404
+	}
+}

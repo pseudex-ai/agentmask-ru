@@ -48,7 +48,7 @@ authentication_backend:
 access_control:
   default_policy: 'deny'
   rules:
-    - domain: 'board.lvh.me'
+    - domain: '__BOARD_DOMAIN__'
       policy: 'two_factor'
 
 session:
@@ -60,11 +60,11 @@ session:
   # и доска (`board.`) — разные имена, и без общего домена браузер не пошлёт
   # куку на `forward_auth`: получится петля редиректов.
   cookies:
-    - domain: 'lvh.me'
-      authelia_url: 'https://auth.lvh.me:8443'
+    - domain: '__COOKIE_DOMAIN__'
+      authelia_url: '__AUTH_URL__'
       # Страховка на случай, если адрес ресурса не доехал: лучше привести
       # человека на доску, чем на её 404.
-      default_redirection_url: 'https://board.lvh.me:8443/ops-7f3a/'
+      default_redirection_url: '__BOARD_URL__/'
 
 regulation:
   max_retries: 5
@@ -104,7 +104,7 @@ __OIDC_RSA_KEY__
         # (frontend/src/helpers/redirectToProvider.ts). Другой путь Authelia
         # отклонит, и вход отвалится на последнем шаге.
         redirect_uris:
-          - 'https://board.lvh.me:8443/ops-7f3a/auth/openid/authelia'
+          - '__BOARD_URL__/auth/openid/authelia'
         scopes: ['openid', 'profile', 'email', 'groups', 'offline_access']
         grant_types: ['authorization_code', 'refresh_token']
         response_types: ['code']
@@ -122,7 +122,7 @@ __OIDC_RSA_KEY__
         redirect_uris:
           # Путь СКРЫТЫЙ и совпадает с PSEUDEX_ADMIN_PATH витрины: отдельный
           # публичный /oidc/ был бы вторым угадываемым входом.
-          - 'https://pseudex.lvh.me:8443/backstage-7f3a/oidc/callback/'
+          - '__STOREFRONT_REDIRECT__'
         scopes: ['openid', 'profile', 'email']
         grant_types: ['authorization_code']
         response_types: ['code']
