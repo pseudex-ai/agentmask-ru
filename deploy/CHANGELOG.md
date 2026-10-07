@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.33](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.32...platform/v0.3.33) (2026-10-07)
+
+
+### Новое
+
+* **deploy:** доска задач едет в прод — образ в релизе, сервисы за профилем ([cfb1267](https://github.com/Isk4R1oT/Obscura/commit/cfb12678e4c773f7ef1e43f118d9a80a6df4da88))
+* **deploy:** доска задач едет в прод — образ в релизе, сервисы за профилем ([6ad68e1](https://github.com/Isk4R1oT/Obscura/commit/6ad68e195f9eaecf15ae0f085e952cbf477836a3))
+* **deploy:** доска задач едет в прод — образ в релизе, сервисы за профилем ([#66](https://github.com/Isk4R1oT/Obscura/issues/66)) ([cfb1267](https://github.com/Isk4R1oT/Obscura/commit/cfb12678e4c773f7ef1e43f118d9a80a6df4da88))
+
 ## [0.3.32](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.31...platform/v0.3.32) (2026-10-06)
 
 
