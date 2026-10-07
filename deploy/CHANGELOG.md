@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.35](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.34...platform/v0.3.35) (2026-10-07)
+
+
+### Новое
+
+* **deploy:** портал носит наш знак; WebAuthn включён явно ([43aeabf](https://github.com/Isk4R1oT/Obscura/commit/43aeabf8a1e78ce214cc16dac1816309d6a1a2c6))
+* **deploy:** портал носит наш знак; WebAuthn включён явно ([415f77e](https://github.com/Isk4R1oT/Obscura/commit/415f77e84481fb9f2d000973b3496dc4ec366182))
+* **deploy:** портал носит наш знак; WebAuthn включён явно ([#72](https://github.com/Isk4R1oT/Obscura/issues/72)) ([43aeabf](https://github.com/Isk4R1oT/Obscura/commit/43aeabf8a1e78ce214cc16dac1816309d6a1a2c6))
+
+
+### Исправления
+
+* **deploy:** портал должен пересоздаваться при смене конфига, и без устаревших ключей почты ([19ed53c](https://github.com/Isk4R1oT/Obscura/commit/19ed53cafb126b2544ee5af0c680e8710150b35a))
+* **deploy:** портал пересоздаётся при смене конфига; устаревшие ключи почты убраны ([3cf5459](https://github.com/Isk4R1oT/Obscura/commit/3cf54595e3619c11951d7b2f0bcd5687dd819175))
+* **deploy:** портал пересоздаётся при смене конфига; устаревшие ключи почты убраны ([#70](https://github.com/Isk4R1oT/Obscura/issues/70)) ([3cf5459](https://github.com/Isk4R1oT/Obscura/commit/3cf54595e3619c11951d7b2f0bcd5687dd819175))
+* **deploy:** убрать недостижимую ветку в проверке знака (shellcheck SC2221) ([632ddbf](https://github.com/Isk4R1oT/Obscura/commit/632ddbf40af9a76b163af71ae7ef0acc2774a98c))
+
 ## [0.3.34](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.33...platform/v0.3.34) (2026-10-07)
 
 
