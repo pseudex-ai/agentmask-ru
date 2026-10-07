@@ -101,7 +101,17 @@ out = (tpl
        .replace("__COOKIE_DOMAIN__", "lvh.me")
        .replace("__BOARD_DOMAIN__", "board.lvh.me")
        .replace("__BOARD_URL__", "https://board.lvh.me:8443/ops-7f3a")
-       .replace("__STOREFRONT_REDIRECT__", "https://pseudex.lvh.me:8443/backstage-7f3a/oidc/callback/"))
+       .replace("__STOREFRONT_REDIRECT__", "https://pseudex.lvh.me:8443/backstage-7f3a/oidc/callback/")
+       # Почта на стенде не настроена: проверку при старте выключаем, чтобы
+       # Authelia поднялась без живого SMTP, а адреса оставляем нерабочими.
+       .replace("__SMTP_DISABLE_CHECK__", "true")
+       .replace("__SMTP_HOST__", "smtp.invalid")
+       .replace("__SMTP_PORT__", "587")
+       .replace("__SMTP_USER__", "stand")
+       .replace("__SMTP_PASSWORD__", "stand")
+       .replace("__SMTP_SENDER__", "pseudex stand <stand@pseudex.local>")
+       .replace("__SMTP_IDENTIFIER__", "pseudex.local")
+       .replace("__SMTP_CHECK_ADDRESS__", "stand@pseudex.local"))
 if "__" in out.replace("__", "__", 1):
     leftovers = [l for l in out.splitlines() if "__" in l]
     if leftovers:
