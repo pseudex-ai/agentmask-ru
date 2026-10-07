@@ -89,8 +89,9 @@ notifier:
   # при старте: пустой или неверный ящик делает проверку бессмысленной.
   disable_startup_check: __SMTP_DISABLE_CHECK__
   smtp:
-    host: '__SMTP_HOST__'
-    port: __SMTP_PORT__
+    # `submission://` — это STARTTLS (порт 587), тот же канал, которым шлёт
+    # витрина. `host`/`port` в 4.38 объявлены устаревшими и будут убраны в 5.0.
+    address: 'submission://__SMTP_HOST__:__SMTP_PORT__'
     username: '__SMTP_USER__'
     password: '__SMTP_PASSWORD__'
     sender: '__SMTP_SENDER__'

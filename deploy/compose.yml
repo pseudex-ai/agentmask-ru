@@ -791,6 +791,12 @@ services:
     # Конфиг читается из тома рендера, и портал не стартует, пока рендер не
     # удался: наполовину подставленный конфиг до него не доедет.
     command: ["--config", "/config/rendered/configuration.yml"]
+    environment:
+      # Конфиг приезжает из тома, а не из описания сервиса, поэтому `compose up`
+      # сам по себе его не замечает: рендер обновляется, контейнер продолжает
+      # работать на старом файле. Привязка к ревизии заставляет пересоздать
+      # контейнер — тем же способом, что у Caddy, бота и Alertmanager.
+      PSEUDEX_CONF_REV: *conf-rev
     expose: ["9091"]
     depends_on:
       authelia-config: { condition: service_completed_successfully }
