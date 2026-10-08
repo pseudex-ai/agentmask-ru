@@ -1,0 +1,190 @@
+# Матрица отбора: требования корпоративного AI-шлюза + пользовательская админка
+
+**Статус: proposal для продуктового спринта.** В исходной матрице 60 групп требований, сопоставленных с 22 архитектурными паспортами. По отдельному запросу владельца добавлены R61–R66 для AI-разработки (F23/T12), всего 66 групп и 23 паспорта. Выбранный объём, архитектура и критерии — в [основной спецификации](<docs/tz-product-control-plane-sprint.md>); порядок исполнения — в [плане](<docs/plan-product-control-plane-sprint.md>).
+
+## 1. Источники, обозначения и правило отбора
+
+- **S1:** [ТЗ корпоративного AI-шлюза](</Users/igor/.dsh/attachments/v1/files/ed/ed5f70976fbb2c8e23b35f6cfb2ced759b907ba2c5e48dae67c3d587eb4589cd/AI шлюз_ТЗ.docx>). Ссылки на разделы по оглавлению и точным заголовкам: экстракция не сохраняет внутреннюю автоматическую нумерацию Word, поэтому номера вида «7.8.3» не выдумываются. Весь основной текст, приложения и три схемы прочитаны.
+- **S2:** [UI-концепт локального интерфейса](</Users/igor/.dsh/attachments/v1/files/4c/4c38a9c14ed8baf49c283dcb10bda5d97200980d60335156bac847ea9d99932f/Оптимизация_UI_движка_Docker_контейнера.zip>). Прочитан весь HTML, включая описания, данные, модали и handlers. JavaScript не запускался. Названия экранов — source labels, не готовые backend capabilities.
+- **M:** экспертно широко переиспользуемая потребность интеграторов/разработчиков/техлидов. **E:** общекорпоративная потребность, не вкусовщина. **S:** отраслевой/поставщико-/организационно-специфический вариант. M/E/S — не измеренная частота спроса.
+- **P0/P1:** предлагается делать в этом продуктовом объёме; P0 фундамент, P1 законченные возможности после него. **P2:** отдельно после спринта. **X:** указанную форму не делать, с безопасной заменой.
+- Если capability выбрана узко, строка явно оставляет расширенный остаток. `REST adapter` не означает поддержку любого DLP; `rule` не semantic classifier; `model constraint` не firewall клиента.
+- Основная ставка на «90+%»: максимальная повторная применимость механизмов конфигурации, не перенос каждой корпоративной системы внутрь Pseudex. Процент нельзя утверждать из этой матрицы; отдельно нужны спрос и независимая проверка сценариев.
+
+## 2. Полная матрица решений
+
+### A. Подключение, identity и управление
+
+| ID | Возможность / применимость | Откуда | Выбор и архитектурные паспорта | Граница, остаток и причина |
+|---|---|---|---|---|
+| R01 | Две формы API, совместимость text/JSON/tools и SDK — M | S1 §5 «Основные задачи», §7 «Подготовка и нормализация»; S2 «Интеграция», onboarding | **P0** общий envelope, **P1** thin SDK/adapters; F03/F18/F21 | Сохраняем proxy/sidecar. gRPC, отдельные SDK всех языков и IDE plugins — P2. Не обещать endpoint по красивому mock snippet |
+| R02 | Подтверждённая identity сервиса/пользователя — M/E | S1 §7 «Идентификация пользователя и источника», §9 «Идентификация приложений»; S2 «Агенты и org» | **P0** credential-bound project/app и разрешённые host assertions; F01/F02 | Agent labels для аналитики, не полномочия. Подразделение из body не trusted attribute |
+| R03 | Проекты, приложения, агенты, dev/prod, изоляция — M | S1 §5 «Пользователи, приложения и сервисы», §9 ABAC; S2 scope правил, «Агенты и org», окружения политики | **P0** model/bindings; F01/F03/F08 | Простая иерархия назначения и conjunction ограничений. Произвольные device/time/risk ABAC условия — P2 |
+| R04 | Именные роли, отдельное право reveal/capture/export — M/E | S1 §9 «Ролевая модель и разделение полномочий»; S2 список людей с одинаковым доступом | **P0** server RBAC до изменяющей UI; F02/F09/F20 | Отвергаем одинаковый полный доступ. ИТ не получает тексты автоматически; account/email/display name не authority |
+| R05 | Корпоративный SSO и MFA — E | S1 §9 «Корпоративная аутентификация», «AD/LDAP/IdM, OAuth/OIDC/JWT»; S2 формы SSO нет | **P1** OIDC code flow + local session; F02 | OIDC generic. MFA у IdP; native MFA/SAML/LDAP/SCIM/IdM sync и прямые AD adapters — P2. Не импортировать storefront SSO в контейнер как доказательство |
+| R06 | Действия allow/mask/pseudonymize/delete/block/local-only — M | S1 §7 «Решения по результатам проверки», приложение 2; S2 действия своих правил | **P0** общий decision algebra и transforms; F03/F07/F11 | Route constraint отдельно transform; deny dominates. Partial mask — explicit ограниченное раскрытие, не эквивалент полной псевдонимизации |
+| R07 | Черновик, history, publish, no-restart, rollback — M | S1 §6 «Управление…», §7 изменение механизмов без restart; S2 «Политика», модаль restart | **P0** snapshot/CAS/ACK/epochs; F04/F21 | Выбираем activation без restart. Canary/fleet-мультиузловой rollout — P2; изменения memory/key/ports требуют ops |
+| R08 | Import/export/CLI/GitOps и diff — M | S1 §6 управление, §11 обновления; S2 «Политика», команды export | **P0** versioned references, **P1** CLI/API/import/export; F04/F18 | Import только draft, никаких creds/roles в portable policy. Полноценный GitOps server и multi-stage releases — P2 |
+
+### B. Настраиваемая защита данных
+
+| ID | Возможность / применимость | Откуда | Выбор и паспорта | Граница, остаток и причина |
+|---|---|---|---|---|
+| R09 | Custom type по маске/примерам/regex/checksum — M | S1 §7 «Многоуровневое выявление», пользовательские шаблоны; S2 «Свои правила» | **P0** restricted builder + RE2 + safe custom token family; F05 | Только bounded declarative pattern/готовые validators; inferred pattern требуется проверить. Python callbacks/backtracking fallback — X |
+| R10 | Customer dictionaries и списки — M | S1 §7 словари; S2 exact values/hint words | **P0** отдельные versioned dictionaries; F05 | Не редактировать leased ФИО/ГАР. Большие enterprise data fingerprint indexes/fuzzy customer gazetteers — P2 |
+| R11 | Scoped exact exceptions, свои контакты/артикулы — M | S1 §7 исключения; S2 allow-list из quality/trace | **P0** reason/expiry/category/scope и impact tests; F06 | Глобальное «never mask» regex и исключения, снимающие SECRET/КТ obligations, — X. Approval weakening отдельно |
+| R12 | Каталог типов, пресеты и subscription entitlement — M/S | S1 §7 категории, приложение 3; S2 «Типы данных», «Профили» | **P1** truthful runtime registry и versioned presets; F19 | Реально implemented, entitled, configured, active, mandatory — отдельные состояния. Новая тарифная модель не часть спринта |
+| R13 | Confidence thresholds и toggles mechanisms — M/E | S1 §7 пороги, §10 confidence; S2 slider± и secret subgroup disable | **P1** evidence и только поддержанные controls; **X** universal numeric slider; F03/F19 | Calibrated ML thresholds — P2. «Кандидат найден, но не masked» считается изменением защиты и явно проверяется |
+| R14 | Добавление универсальных детерминированных типов — M/S | S1 приложение 3 RU/technical IDs; S2 связь/финансы | **P1** узкий набор IMEI/IBAN/MAC + custom шаблоны; F19 | Каждый type свой holdout/negative/round-trip; все банковские/телеком/юридические форматы не объявляются покрытыми. ORGANIZATION/BIK не всегда ПД |
+| R15 | Secret catalog, passwords/keys/tokens/connection strings — M | S1 §7 запрет reversible secret, §12 secrets, приложение 2; S2 secret subgroups/demo reveal | **P0** block/redact до mint, расширение известных форматов; F07 | SECRET restoration/reveal — X для managed. Каталог curated, entropy-only — X. Unknown formats остаются measurement gap |
+| R16 | КТ/НМД/договор/код как trusted classification и patterns — E/S | S1 §7 категории, приложение 2; S2 «Свои правила» | **P1** trusted labels+customer dictionary→policy; F03/F05/F11/F22 | Не весь код автоматически секрет, не любой договор автоматически КТ. Provenance должна быть verified |
+| R17 | Семантические категории, fingerprints и ML classifiers — E/S | S1 §5 много методов, §7 semantic detection, приложение 3 | **P2** отдельные локальные classifier/fingerprint modules | В этом спринте generic typed REST connector как расширение F17, но он не shipped detector. Нужны собственные корпуса/лицензии/latency/ресурсы |
+| R18 | Проверять весь поддержанный контекст — M | S1 §5 assets, §7 полный контекст; S2 text/JSON и integration | **P0** единый envelope, system/history/tools/results, offsets/provenance; F03/F05/F22 | skip_system из request не authority в managed. Не все форматы OpenAI/Anthropic автоматически поддержаны: explicit supported schema |
+| R19 | Output checks и разрешённый detok — M | S1 §7 «Проверка ответа», «Восстановление»; S2 restored panel/quality | **P1** новые secret/PII/custom findings, destination/field restrictions; F08/F10 | Detok ≠ output DLP. Нулевой residual ≠ правильный человек. Full semantic output moderation — P2 |
+| R20 | Streaming safety, choice/tool fields — M | S1 §11 streaming, приложение 5; S2 «Проверка шлюза» | **P0** field/choice contract, **P1** full safe buffer; F10/F18 | Сначала checks, затем release. Low-latency semantic prefix scanning — P2. Stop-after-leak не исправление утечки |
+| R21 | Явный отказ неподдержанных files/image/audio — M | S1 §5/§7 полный контекст, §12 bypass; S2 batch | **P0** capability manifest+415 в protected managed path; F03/F20 | Text из approved parser поддержан с provenance; нельзя молча pass-through и писать checked |
+| R22 | Защита документов; отдельно OCR/image/audio — M/E | S1 §5/§12 + принято SCOPE-files | **Основной sprint:** document protection. Точные DOCX/PDF output/layout/OCR contracts согласуются; audio/general image не утверждены | CSV/JSONL тестов не file protection. Нужны sandboxed parsing, decompression/page limits, metadata/source maps, provider file-protocol compatibility и no-leak negatives |
+
+### C. LLM, RAG и инструменты
+
+| ID | Возможность / применимость | Откуда | Выбор и паспорта | Граница, остаток и причина |
+|---|---|---|---|---|
+| R23 | Prompt injection/jailbreak detection — M/E | S1 §8 «Безопасность LLM», §12 injection tests; S2 отдельного classifier screen нет | **P1** bounded RU/EN signatures, evidence, monitor/block calibration; F22 | Семантический local detector, устойчивость multi-turn/multilingual/encoding — P2. Signatures не полная защита; `all OWASP neutralized` — X |
+| R24 | Защита RAG fragments и происхождение — M/E | S1 §8 «Защита RAG», §10 provenance | **P1** fragment/source/classification/assertion metadata и общие checks; F22 | ACL утверждения host проверяются. Gateway не изобретает права источника. Ingestion poisoning/anomaly vector store/knowledge graph ACL — P2 |
+| R25 | Approved tool registry, description/schema integrity, actions — M/E | S1 §8 «Безопасность агентов», «MCP/A2A»; S2 agents/integration | **P1** tool IDs/digests/ops/schema/restore permissions + execution wrapper; F08/F18/F22 | Полный MCP protocol proxy, динамический skill supply chain и semantic tool poisoning — P2. Tool name allowlist не sandbox |
+| R26 | A2A, delegated rights, план/цель/память агента — E/S | S1 §8 агентная/межагентная защита | **P2** отдельные protocols/capabilities/agent runtime integrations | Глубина/count/deadline для интегрированного tool loop входят F22. Automatic intent/goal deviation classifier, memory poisoning полнота — не обещаем |
+| R27 | SSRF и запрет неконтролируемого egress — M/E | S1 §8 SSRF, §9 network segmentation | **P1** наших proxy/DLP/SIEM/OIDC endpoints и registered tool destination; F11/F17/F22 | Remote tool должен иметь собственный egress enforcement/sandbox; это P2 adapter/infrastructure. Список имени tool не закрывает произвольный HTTP |
+| R28 | HITL: ручное разрешение остановленной операции — E/M | S1 §7 «Требуется согласование» + прямое дополнение владельца | **Текущий sprint**, scope accepted; payload/reviewable causes/UI/resume semantics согласуются | Требуется durable pending operation, named reviewer/grants, expiry, exact operation digest, single-use resume и live recheck. Не предполагаем разрешение raw secrets или technical safety bypass. Four-eyes policy publish отдельно; reviewer≠initiator пока не выбран владельцем |
+| R29 | Toxicity, языки, темы, phishing/reputation — E/S | S1 §7 output, §8 LLM, приложение 3 | **P2** локальные detector packs/репутационный connector | Exact запрещённые terms/category dictionaries возможны F05/F10, но не называются semantic moderation. Разрешённый язык не надёжный security boundary |
+| R30 | Релевантность, factuality, bias и качество ответа — E/S | S1 §7 optional relevance, приложение 3 | **P2** scenario-specific evaluation, **X** universal truth guarantee | Не отправлять raw к внешнему judge автоматически. Product regression нашего transform отдельно F14; оценка содержания требует источников истины |
+
+### D. Инструменты разработчика и контроля качества
+
+| ID | Возможность / применимость | Откуда | Выбор и паспорта | Граница, остаток и причина |
+|---|---|---|---|---|
+| R31 | Настоящая text/JSON песочница и selfcheck — M | S1 §12 reproducible tests; S2 «Песочница», «Проверить сейчас» | **P1** explain vs real mask→restore, isolated namespace; F13 | Provider по default не зовём. Статическое повторение input в restored panel — X |
+| R32 | Batch CSV/JSONL — M | S2 «Песочница/Пакет»; S1 §12 testsets | **P1** bounded streaming parse, progress/cancel/errors/privacy-safe export; F13/F21 | 20MiB/100k rows proposal до benchmark. 200MiB mock/huge jobs arbitrary formats — P2. Sensitive input opt-in, no plaintext spool |
+| R33 | Explain/trace candidates/context/checksum/overlap — M | S1 §10 объяснение rule/mechanism; S2 «Почему так?» | **P1** реальная instrumentation всех gates; F03/F13 | Raw trace с permission, no production mint. ML explanation и отсутствие candidate как «не ПД» — P2/X соответственно |
+| R34 | Клиентский корпус, negatives и regression перед publish — M | S1 §11/§12 regression; S2 «Регрессия», rule test panel | **P0** минимальный stamp/critical cases, **P1** полноценный UI run/compare; F04/F14 | Stamp engine/bundle/policy/suite/dictionary. Critical test failure не обходить обычной кнопкой publish |
+| R35 | Testset retention/ACL/version/provenance — M | S2 save example/history; S1 §10 allowed content | **P1** отдельный encrypted jobs store, expiry, explicit save/export/delete; F14/F15 | Real cases отдельная sensitive surface. SECRET samples synthetic recipe; no automatic retention source text |
+| R36 | Preview изменений и historical replay — M/E | S2 policy diff/dry-run14d; S1 §6 monitor/§10 provenance | **P1** comparison saved suites/batch и explicit bounded opt-in sample; F14 | Existing masked preview не raw archive. Replay14d по всем сообщениям без capture — X. Huge replay scheduler — P2 |
+| R37 | Shadow новой policy/rule — M | S1 §6 «Параллельный мониторинг»; S2 watch/live | **P1** parallel draft analysis с budget, active enforcement сохраняется; F14 | Timeout→not_evaluated. Mirror произвольного трафика вне нашего protocol — P2. Monitor не protected |
+| R38 | FP/FN/round-trip quality и feedback — M | S1 §7 ≤5%, §12 Precision/Recall/F1; S2 «Качество детекции» | **P1** labeled basis/denominator/provenance/confirmed wrong-value; F14/F16 | Автоматический recall всей production без labels, 100% по 200/residual0 — X. Representative annotation queues — P2 |
+
+### E. Данные, наблюдаемость и эксплуатация
+
+| ID | Возможность / применимость | Откуда | Выбор и паспорта | Граница, остаток и причина |
+|---|---|---|---|---|
+| R39 | Request decision journal, entity events, admin history — M | S1 §7/§10/app4; S2 «Журнал», «История» | **P0** per-request safe ledger, actor/version/action/counts; F09 | Entity dedup отдельно, cache hits не пропуски в decision journal. Full content storage не default |
+| R40 | Reveal, access audit, value search — M/E | S1 §9 role separation, §10 content access; S2 «Раскрытия», «Волт» | **P0** permission и audit-before-value, **P1** reason/timeout/UI wipe; F02/F08/F09/F15 | SECRET reveal/X; operator access не full client content; misses logged, direct API gate |
+| R41 | Vault TTL, session isolation и deletion — M/E | S1 §7 временные соответствия; S2 «Волт/90д» | **P1** separate lifetime domains/live refs/deletion epochs; F08/F15 | Idle TTL не absolute, cleanup links не deletes originals. Legacy permanent mapping сохраняется до explicit migration |
+| R42 | Audit/admin/reveal/analytics retention — M/E | S1 §10 logs и §11 backups; S2 period filters | **P1** separate deadlines/quotas/privacy/aggregate retention; F09/F15 | Billing cumulative counters не очистить. WORM/legal holds и root-proof immutable audit — P2 |
+| R43 | Diagnostic capture и data minimization — M/E | S1 §10 allowed content; S2 dry-run/history/support | **P1** capture off, explicit scope/purpose/permission, encrypted TTL; F14/F15 | Не требуется для defaults/graphs; неизвестные secrets не гарантированно исключены. Поддержка без автоотправки. Universal full traffic recording — X |
+| R44 | Drift/аномалии/уведомления — M | S1 §10 recurring violations/anomalies; S2 «Дрейф»/channels | **P1** deterministic series+shape candidates+review, webhook/SMTP; F16/F17 | New shape ≠ утечка. ML mining/seasonality/automatic rule fix — P2/X |
+| R45 | Лёгкий incident lifecycle — M | S1 §10 расследование; S2 «Инциденты» | **P1** evidence→draft fix→run→verified close/reopen; F09/F16/F20 | Без SOC case management/собственного task tracker/SLA orchestration: P2 |
+| R46 | Агрегированные отчёты и выгрузка — M | S1 §10 reporting; S2 «Отчёты» | **P1** local print/CSV/JSON, единый DTO, gaps/versions; F09/F16 | Доказательство «мы предпринимали меры», не автоматический legal compliance certificate. Scheduled reports — P2 |
+| R47 | Latency/stages/SLO/error budget/readiness — M | S1 §11 perf/monitoring, app6; S2 «Трафик и SLO», дежурный | **P1** shared real histograms, known denominator, health/readiness/coverage отдельно; F16/F21 | Demo values не baseline. Error-budget auto governance/fleet observability — P2 |
+| R48 | Size/rate/queue/concurrency/time/steps — M | S1 §5/§8 resources; S2 traffic/system | **P0** limits до expensive checks, **P1** shared per-app admission; F12/F22 | N workers не N×allowance. Resource limiter не лимит лицензии; advanced global multi-node counters — P2 |
+| R49 | LLM tokens/стоимость/Pseudex billing — M/E | S1 §10 usage/cost; S2 tokens/subscription | **P1** actual/estimated/unknown accounting, preserve billing; F12/F16 | Universal token reservation/reconciliation/price routing — P2; no usage ≠ 0. Core commercial terms не менять |
+| R50 | Jobs, диагностика, support bundle, onboarding/docs/search — M | S1 §11 ops; S2 «Система», docs, CmdK, onboarding | **P0** safe jobs role, **P1** truthful scoped UI/doctor/support composition; F13/F20/F21 | UI не shell/Docker controller. Support без raw data/keys и автоотправки; статусы errors реальные |
+
+### F. Интеграции, маршруты и промышленная поставка
+
+| ID | Возможность / применимость | Откуда | Выбор и паспорта | Граница, остаток и причина |
+|---|---|---|---|---|
+| R51 | Защищённые OpenAI/Anthropic API endpoints и destination constraints — M/E | S1 §6; уточнение владельца ROUTE01/02 | **P1** fixed upstream bindings/UI onboarding/protocol-aware security forwarding; F11 | Не model catalogue/selection: model выбирает клиент, proxy сохраняет её, sidecar не вызывает provider. Trust class задаёт администратор, не caller |
+| R52 | Provider fallback/load balancing/model routing | S1 §5/§11; явное отклонение владельца ROUTE02 | **X для нашей роли:** не берём обязанности LiteLLM | Ошибку upstream возвращаем caller; другой provider выбирает host. Security restrictions не обходятся, подключение к существующему LiteLLM как одному upstream допустимо |
+| R53 | SIEM delivery, CEF/syslog/JSON/REST — E/M | S1 §10 SIEM + app4; S2 notifications, отдельного SIEM screen нет | **P1** durable sanitized bounded outbox, HTTPS/JSON+CEF/syslogTLS; F09/F17 | At-least-once/event_id dedup. Queue mode required vs best-effort. Vendor correlation/WORM anchors — P2 |
+| R54 | DLP sync/async/check failure — E/S | S1 §6/§10 DLP; S2 интеграции без DLP UI | **P1** fixed REST adapter actual verdict/enforcement, timeouts; F17 | Generic REST test fixture и реальный connector contract, не «все DLP». ICAP/собственные DLP detectors/vendor-specific templates — P2 |
+| R55 | KMS/keys/rotation/TLS/mTLS — M/E | S1 §9 crypto/secrets, §11 ops; S2 «Волт/ключ» | **P1** existing customer key resolver, all-store rekey plans, TLS adapters; F02/F11/F15/F21 | No UI-editable KEY_CMD, keys never shown. mTLS на наших fixed outbound adapters допустима configure refs; собственный CA/HSM/TPM service и сертификация — P2 |
+| R56 | Backup/restore без revival deleted data — M/E | S1 §11 backups/RTO/RPO; S2 vault ops | **P1** config/audit разделение, legacy inventory, tombstone-aware restore; F15/F21 | Данные вне контроля клиента нельзя erase promise. Cross-node DR/SLA и scheduled orchestration — P2; offline compaction honest |
+| R57 | Engine/policy/bundle/schema versions, release и SBOM — M/E | S1 §11 update/supply chain; S2 policy versions/system | **P1** отдельные versions, store migration+old-probe fence, SBOM/licenses; F04/F19/F21 | Policy rollback ≠ image rollback. Не добавляем migrations под locked minor; docs не подтверждают shipped gate |
+| R58 | HA, горизонтальный multi-node cluster и fleet management — E | S1 §6/§11; уточнение владельца AR01/AR04 | **P2 вне текущего scope:** выбран один инстанс = одна локальная консоль и максимально быстрый запуск | Multi-node/control center/Kubernetes сейчас отвергнуты как лишняя сложность. Несколько upstream URL/apps в одном инстансе входят F11, это не cluster. Shared SQLite/NFS и N workers как HA — X |
+| R59 | Air-gap/perpetual offline licensing и обновления — E/S | S1 §11 isolated contour; S2 local UI offline claim | **P2**, отдельный уже описанный delivery contract | UI без CDN делаем F20. Это не offline engine. Сохраняется принятый бессрочный design в [offline spec](<docs/tz-offline-license.md>), не переоткрываем условия и не обещаем реализацию в текущем sprint |
+| R60 | Web Chat персональных аккаунтов, full corporate interception и закупочные условия — S | S1 §3/§6 web accounts, §13 исполнители | **X** как core sprint feature; adapters/procedure отдельно | Не строим браузерный credential relay, собственные DLP/SIEM/IAM/inference/agent platform; лицензия/опыт исполнителя не software checkbox. API-controlled channels развиваем R01 |
+
+### G. AI-разработка — добавлена владельцем как последний трек текущего спринта
+
+Источник R61–R66 — прямое расширение задачи владельцем, не приписываем эти детали исходному корпоративному ТЗ или mock UI. [Полный coding-контракт](<docs/tz-ai-coding-track.md>) и §7.10 общего плана задают F23/K10/T12, W28–W35 и AC01–AC12.
+
+| ID | Возможность / применимость | Выбор | Граница и причина |
+|---|---|---|---|
+| R61 | Подключение coding harness/Anthropic model и execution boundaries — M | **P1 завершающий T12**, F23 | Первый pinned harness по SP07; один base_url proxy не контроль всех tools. Дополнительные IDE/OS/gRPC остаются P2 |
+| R62 | Exact mappings и provenance для paths/search/data literals — M | **P1**, F23/K10 | Не NAME morphology и не fuzzy restore; scope session/workspace, ambiguity deny |
+| R63 | Bash subset с typed plan, literal argv, live consume и sandbox — M/E | **P1**, F23/K10 | Arbitrary shell/eval/nested languages restoration — X для первой версии; parser не заменяет OS enforcement |
+| R64 | Protected file read/search и snapshot-bound literal patch — M | **P1**, F23 | Source map/bytes/CAS, no stale/fuzzy patch, executable contexts только с supported adapter; language-wide AST rewriting P2 |
+| R65 | Coding credentials без модели и обратимых secret mappings — M/E | **P1**, F23 + F07/F11/F22 | Narrow registered operation/approved destination; secret в arbitrary command/env процесса с неограниченными правами — X |
+| R66 | Coding profile, trace/retention/coverage и доказанная целостная поставка — M | **P1**, F23/F20/F21 | AC gates + повторная CP-регрессия на новой сборке/C5; no claim «весь трафик» или «все AI-кодеры» |
+
+Это уточняет R01: один специально выбранный coding adapter теперь в текущем scope, остальные SDK/IDE остаются P2. R25/R26 про full MCP/A2A не становятся выполненными от появления локального execution adapter. Jev optional research не добавляет обязательную внешнюю dependency и не позволяет пропускать PII detection.
+
+## 3. Остаток P2: что действительно НЕ закрываем этим спринтом
+
+Эти возможности не называются готовыми и не прячутся в «есть API»:
+
+| Остаток | Предлагаемая архитектура следующего объёма | Почему отделён / критерий входа |
+|---|---|---|
+| Семантическая КТ/НМД/клинические данные | local classifier service или pinned local model behind typed check adapter; корпуса, device/RAM/latency budget, model licence; документ-level verdict | Словарь не смысл. До measured corpus и лицензирования не обещать detector |
+| Enterprise fingerprints | encrypted keyed exact-data index, normalized signatures, provenance+retention, bounded matching; raw reference data остаются у клиента | Hash сам по себе не распознаёт перефразирование/фрагмент. Нужен independent precision/coverage benchmark |
+| Semantic prompt injection/jailbreak | отдельный локальный classifier pack, adversarial RU/EN corpus, monitor calibration, enforcement independent tool boundary | Сигнатуры F22 не покрывают adversarial generalization. Cannot promise «все» |
+| Full moderation/reputation | typed local scanner APIs, categorical policy, reputation dataset freshness и approved egress | Нужны разные модели/источники; toxicity не эквивалент утечке |
+| RAG ingestion/source ACL/poisoning | retrieval/ingestion adapters with verified source ACL and document versions; quarantine/index hooks | На LLM boundary есть только переданные fragments, не весь knowledge store |
+| Полный MCP/A2A/skills | transport-aware proxy, server/tool stable identity+digest, delegated attenuated capabilities, per-operation executor; approved egress sandbox | Модельная schema не фактическое исполнение. A2A delegation самостоятельный protocol |
+| Request/tool approval | durable paused operation job, approver identity, operation digest/expiry, one-use permit, current-policy recheck | Не checkbox/синхронная блокировка соединения. Нужен новый lifecycle и UX |
+| OCR/Office/PDF/multimodal | sandbox parser process, bounded decompression/pages/pixels/tokenization, offset provenance/metadata; scan-before-provider | Parser attack surface и качество detection отдельны от CSV/JSONL eval |
+| HA/DR/fleet | Store interfaces для control/vault/audit/jobs, внешнее transactional encrypted-at-rest storage, domain uniqueness, leadership/fencing, restore/probe evidence | SQLite single-host не кластер. Redis кеш один не делает mapping durable или consistent |
+| Offline engine | реализация текущего [бессрочного design contract](<docs/tz-offline-license.md>), activation payload/узловые ключи/O gates/offline updates | Не лечится grace/кешем lease и не делается отключением checks |
+| KMS/HSM/native MFA/LDAP/SCIM | fixed provider adapters, least privilege, rotations/recovery, IdP lifecycle; algorithm/scope tests | Existing key resolver и generic OIDC дают общую интеграцию, не заменяют corporate IAM/HSM |
+| Cost routing/token budgets/balancing | provider usage reconciliation, reservations, prices versioning, uncertain outcomes, budget ledger | Отдельно от Pseudex billing и security policy, нет реальной статистики у sidecar без host |
+| Immutable external audit/legal holds | append-only external sink with signed checkpoint anchor, retention legal-hold workflow | Root клиента может изменять свои local stores; SQL append-only API не WORM |
+| Полный SOC/case management | экспорт evidence/correlation в существующий SOC; extensible incident refs | F20 lightweight issues достаточно для tuning, не нужен второй SIEM |
+| Дополнительные языки SDK/IDE/gRPC | wrappers generated from contract + protocol parity suites; no local recognizers | После доказанного Python/HTTP contract, не сначала пять непроверенных клиентов |
+
+## 4. Разрешение противоречий источников
+
+| Конфликт | Нормативный выбор этого проекта |
+|---|---|
+| S1 изменение правил без restart, S2 restart+8с503 | Policy hot activation F04, infrastructure operations отдельный maintenance/CLI. Не promises «всегда 8с» |
+| S1 secrets block/delete, S2 substitute+SECRET reveal | F07 запрет persistent reversible secrets managed; legacy cleanup explicit |
+| S2 no weakened protection, sliders below-threshold no-mask | Evidence-based controls и explicit weakening review, no pretend safety through candidate counting |
+| S2 exact allow wording против pattern allow | F06 exact scoped exceptions; patterns add protection, не global exemptions |
+| S2 quality100%/FP/FN из counters | F16 labeled basis; technical metrics отдельно; no fake zeros или confidence |
+| S2 historical14d replay против минимального entity log | F14 suites/batch/explicit capture; no fabricated raw reconstruction |
+| S2 «26/18 типов» против перечисленных16 | F19 один authoritative registry и фактический count |
+| S2 одинаковый доступ всем против S1 role separation | F02 scoped identities и reveal grant отдельно от admin/policy |
+| S2 idle90d против S1 temporary session и agent memory | F08/F15 lifetime domains, idle+absolute, explicit long-term, legacy protected |
+| Offline UI claim против external demo runtime | F20 vendored runtime; engine air-gap R59 отдельно |
+| Policy versions против current engine versions | F04 и F21 оба остаются; schema/bundle/revision различны |
+| Fail-closed против optional integration monitor/fallback | Required check ошибки блокируют; optional/monitor state не выдаём за enforced; fallback соблюдает obligations |
+| S1 полное покрытие угроз против наблюдения только LLM-boundary | F22 controls с named boundaries, P2 modules и coverage registry вместо absolute promises |
+
+## 5. Доказательство полного согласования с UI
+
+Все функциональные разделы прототипа имеют место в выбранной системе:
+
+- Обзор/selfcheck/дежурный → F13/F16/F20/F21.
+- Журнал/раскрытия/история → F02/F08/F09/F15/F20.
+- Песочница text/batch/trace → F03/F13/F21.
+- Качество/трафик/SLO/дрейф → F14/F16/F17.
+- Отчёты → F09/F16.
+- Политика/версии/import-export/environments → F03/F04.
+- Типы/secret subgroups/профили → F07/F19 с перечисленными correction.
+- Свои правила/точные значения/подсказки/templates → F05/F06.
+- Агенты/org/доступ → F01/F02/F03/F08.
+- Регрессия → F14.
+- Волт/search/delete/key/TTL → F08/F15/F21, UI не выполняет shell.
+- Интеграция/snippets/probe/fail-closed → F11/F17/F18.
+- Подписка/диагностика/support → F12/F20/F21, данные счётчиков не ошибка стоимости LLM.
+- Инциденты → F09/F16/F20, evidence-backed close.
+- Docs/search/shortcuts/onboarding → F20, generated registry+contracts.
+
+Ничто из listed UI не считается уже реализованным на основании mock. Отложенная функция не получает активную кнопку с toast успеха; UI показывает `unsupported/not_available` и причину.
+
+## 6. Приоритеты без смешения с календарём
+
+1. **Сначала P0:** trust boundaries, snapshot/cache, schema/stores, ledger/secret safety, scoped rules/receipts и минимальные tests.
+2. **Затем вертикальный цикл:** rule→trace→regression→publish→decision→rollback. Это первая пригодная к использованию контрольная точка.
+3. **Затем P1 ширина:** output/routes/limits/SDK, retention, diagnostics/analytics/UI, generic DLP/SIEM/OIDC и basic agentguard.
+4. **P2 после этого:** semantic/industrial/protocol expansion; каждый со своим измеримым контрактом.
+
+Границы срезов не меняют выбранный конечный P0+P1 объём автоматически. При нехватке capacity owner явно переносит целое capability с изменением этой матрицы и основного документа. Безопасность нельзя оставить «на следующий спринт» для уже выпущенной изменяющей кнопки.
