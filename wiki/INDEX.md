@@ -107,6 +107,7 @@ Not in root `docs/`: `storefront/docs/tz-site.md` and `storefront/docs/tz-site-s
 
 | file | answers | STATE |
 |---|---|---|
+| `research/security-platform-current-main-baseline.md` | corrects planning's stale 380e3e72/0.3.19 baseline against current main 4cc929bc/engine 0.3.21: native v6 types, checksums, CVC/OTP, JSON evidence, provenance/cache/notation/UI telemetry; preserves real control-plane gaps; canonical docs in main and fresh-base worktrees | evidence (read-only source comparison, no product tests) |
 | `research/harness-hitl-lifecycle.md` | actual HITL lifecycle evidence: Claude Code settings hooks versus SDK canUseTool/defer, Codex app-server warm replay versus cold resume at pinned commit, installed DSH pending/reconnect/restart/input-output seams; no live tests, HITL08 remains owner decision | evidence (read-only docs/source research) |
 | `research/jev-typesafe-product-fit.md` | primary-source Jev review: hosted typed API, MIT SDK versus unconfirmed public weights/self-hosting, price/context/version, documented adversarial-state weaknesses and confidence semantics; optional evaluator was investigated, then cancelled by owner; never PII prefilter or Bash authorization; no API execution | evidence (archived candidate, owner cancelled integration) |
 | `research/2026-08-15-llm-traffic-interception.md` | how to stand in the LLM traffic path; the three integration levels | D-029 |

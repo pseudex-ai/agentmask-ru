@@ -426,6 +426,14 @@
 
 **Affected:** F23/K10/T12, W28–W35, SP07, AC01–AC12; main coding doc/plan scope обновлены. Первоначальная Linux-only baseline как единственный целевой substrate superseded.
 
+## 4tricies-unum. Документы в main, треки от свежего main — принято
+
+**WORKTREE01 — accepted:** владелец: «документы должны быть в main и от него будут идти worktree с параллельными треками». Для каждого implementation track свой worktree/ветка от fetched актуального `origin/main`; не от старой локальной ветки, резервной docs-ветки или незавершённой ветки соседа. Base SHA/contract revision фиксируются в задаче; prerequisites потребляются после merge либо как явно обозначенные test fixtures, не как скрытая смена основы.
+
+**Исправление ошибки подготовки:** первоначальная техническая сверка документов была на старой рабочей копии `380e3e72` (engine version file 0.3.19), не на текущем remote main. Product choices владельца от этого не отменяются. Подготовительный worktree создан от `4cc929bcc09e4a27eb5226771060c74643c46f43`; docs commit `84f9ef32` перенесён cherry-pick без посторонних dirty changes. Актуальная [сверка baseline](<research/security-platform-current-main-baseline.md>) исправляет конкретные code claims; оставшиеся proposal sections не превращаются в approved implementation от одного переноса.
+
+**Рабочий порядок:** документы публикуются в main документными коммитами; каждый трек читает ту же main revision и не заводит альтернативный canonical plan. Исходная dirty копия остаётся нетронутой. Временная ветка переноса не замена main. Перед фактическим implementation требуется консолидация pending document/HITL/work-package детализации и current-code baseline tests, а не применение старых строк плана наугад.
+
 ## 5. Шаблон записи после ответа
 
 ```text

@@ -1,6 +1,8 @@
 # План реализации спринта: управляемая защита Pseudex
 
-**Статус: план-предложение, код не реализуется этим документом.** Основа — [спецификация 22 возможностей](<docs/tz-product-control-plane-sprint.md>) и [матрица 60 требований](<docs/tz-product-control-plane-matrix.md>). План не зависит от переговоров/КП и не обещает календарную длительность без команды и spikes.
+**Статус: план-предложение, код не реализуется этим документом.** Основа — [спецификация](<docs/tz-product-control-plane-sprint.md>), [матрица требований](<docs/tz-product-control-plane-matrix.md>) и [явные решения владельца](<docs/decisions-product-control-plane.md>). Исходные 23 паспорта и 66 групп требований дополнены согласованным document/HITL scope; номера дополнительных work/gates требуют консолидации до реализации. План не зависит от переговоров/КП и не обещает календарную длительность без команды и spikes.
+
+**Рабочая база и размещение документов:** канонические документы хранятся в `main`. Перенос/повторная техническая сверка выполнены от `origin/main` commit `4cc929bcc09e4a27eb5226771060c74643c46f43`; [поправки baseline](<research/security-platform-current-main-baseline.md>) обязательны при чтении раннего плана. Изначальная проверка на `380e3e72` была устаревшей, а резервная ветка `docs/security-platform-sprint-decisions` не является базой разработки. **Все feature worktrees создаются от актуального `origin/main`, не от исходной dirty копии и не от чужого незавершённого трека.**
 
 **Расширение по запросу владельца:** в тот же спринт добавлен завершающий **T12 «AI-разработка»** — K10, F23, W28–W35 и AC01–AC12. Базовые 27 пакетов и 47 CP-гейтов сохранены; итог расширенного спринта — **C5**, а C4 теперь приёмка базовой платформы. Подробный контракт и пакеты: [AI coding track](<docs/tz-ai-coding-track.md>). Новая методологическая проработка пока не начинается.
 
@@ -214,7 +216,7 @@ W28–W35: завершающий T12 AI-разработка; W35 повтор�
 
 **Выход:** реальные output checks до issuance, authorized JSON restore, bounded full-context mode.
 
-**Работа:** output module/stream_sessions; integrate [proxy streaming](<prototype/pseudex/proxy.py#L488-L557>) и v2 sidecar finish. No unsafe tail flush error; per-choice/field/sequence; receipts and restored spans provenance. Finalize возвращает post-check protected_model_response отдельно от authorized delivery_response, включая новые output mappings/refs; schema-basis explicit (CP46/CP47). Legacy detok-only streaming limitation visible.
+**Работа:** output module/stream_sessions; integrate [proxy streaming](<prototype/pseudex/proxy.py>) и v2 sidecar finish. No unsafe tail flush error; per-choice/field/sequence; receipts and restored spans provenance. Finalize возвращает post-check protected_model_response отдельно от authorized delivery_response, включая новые output mappings/refs; schema-basis explicit (CP46/CP47). Legacy detok-only streaming limitation visible.
 
 **Зависимость:** W08/W09/W10/W14/W15. **Приёмка:** CP26/CP27. Every split of seed secret, parallel choices/tool quotes, timeout/error/cancel no unchecked emission. Output allow policy doesn't exempt whole answer.
 
@@ -266,11 +268,11 @@ W28–W35: завершающий T12 AI-разработка; W35 повтор�
 
 **Зависимость:** W03/W10/SP05. **Приёмка:** CP06/CP37. Login-CSRF/code replay/wrong key/kid-fetch storm/forged email/groups/revoke crossproject denied; no UI bearer cookies.
 
-### W23. Каталог типов, профили и небольшой type expansion — P1 / L
+### W23. Каталог существующих native типов, профили и customer extensions — P1 / L
 
 **Выход:** один capability registry и реальные available presets; measured selected new identifiers.
 
-**Работа:** register human/internal IDs/score/generator/reversibility/availability/entitlement; IMEI/IBAN/MAC + custom industry templates with grounded validators. No hardcoded26/18; preset compile validates capabilities and lease. Authoring assets через vendor lease, customer templates separately local.
+**Работа:** inventorize актуальные native v6 detector/mint families и registry→engine label mapping; IMEI/IBAN/MAC, поддержанные account/policy/court IDs уже существуют, не реализовывать их заново. Expose human/internal IDs/score/generator/reversibility/availability/entitlement, добавить profiles и только недостающие customer formats через new rule contract. No hardcoded26/18; preserve validity-inheriting mint semantics и typed context. Preset compile validates capabilities/lease. Authoring assets через vendor lease, customer templates отдельно локально. Точный gap список подтверждает current-main W01, не исторический spec.
 
 **Зависимость:** W07/W08/W11/W19. **Приёмка:** CP38 и полный external/holdout/round-trip battery. Type count from registry, no broad digit matcher, no silent profile fallback.
 
@@ -538,7 +540,7 @@ S0 контракт и область → S1 тест/гейт + доказан�
 | Трек | Ядра / старт | Последовательные задачи | Интеграция / доказательство |
 |---|---|---|---|
 | T01 — Политики и управление | K02/K04 `contract_ready` | T01.1 API schemas/client contract tests → T01.2 draft CRUD/CAS/diff/import/export → T01.3 publish/rollback/CLI/Git-managed adapter → T01.4 editor UI и реальный путь create→test→activate→rollback | K04-B/K07/K08-A готовы; W12/W13 и policy часть W26; CP21–CP23/CP42 |
-| T02 — Правила, словари и профили | K04-A/K05 contracts | T02.1 matcher/template fixtures → T02.2 rule/dictionary/exception adapters и builder → T02.3 measured IMEI/IBAN/MAC/custom packs и profile catalog → T02.4 edit→trace→regress→publish с реальным ядром | K05/K08, затем W19 для complete W23; W07/W08/W23; CP12–CP15/CP38/CP46 |
+| T02 — Правила, словари и профили | K04-A/K05 contracts | T02.1 matcher/template fixtures → T02.2 rule/dictionary/exception adapters и builder → T02.3 inventory/экспозиция существующих native types, measured customer packs и profile catalog → T02.4 edit→trace→regress→publish с реальным ядром | K05/K08, затем W19 для complete W23; W07/W08/W23; CP12–CP15/CP38/CP46 |
 | T03 — Доступ и SSO | K02/K07 contracts | T03.1 role/permission consumer matrix → T03.2 named-access/credentials UI → T03.3 OIDC adapter с SP05 → T03.4 session revoke/bridge/direct API/browser tests | K02/K07 и management contract; W22/access часть W26; CP04–CP06/CP37/CP42 |
 | T04 — Песочница, batch и регрессия | K05/K08-A contracts | T04.1 explain/full-run UI и cases oracle → T04.2 CSV/JSONL parser/export + jobs progress → T04.3 suites/compare/shadow/capture permissions → T04.4 verified stamp перед production publish | K08-B/K04-B/K09-A; W11/W18/W19; CP20/CP29–CP30/CP46 |
 | T05 — Маршруты и выходные проверки | K09 contracts | T05.1 route registry client/negative fixtures → T05.2 route/local-only/fallback adapters → T05.3 output/stream consumer и две проекции ответа → T05.4 wire-level deny/timeout/sequence/recipient проверка | Реальные K03/K05/K06/K07/K09; W14–W16; CP24–CP27/CP46–CP47 |
@@ -571,6 +573,19 @@ UI feature-экраны живут в треках соответствующи�
 Планировщик берёт ready задачи с наибольшим числом заблокированных потребителей. Ограничение WIP выбирается по CPU/RAM тестов, числу независимых write scopes и способности интегратора принимать результаты; запуск ещё одного агента на занятый shared file не считается ускорением. Дорогие compiled builds собираются централизованно на конкретной merge-candidate revision, чтобы не повторять одну сборку в каждом треке.
 
 ### 7.6 Владение кодом и границы делегирования
+
+**Принято владельцем: main — источник документов, отдельный worktree — для каждого параллельного трека.** Перед созданием worktree обязательно обновить remote refs и записать base SHA:
+
+```bash
+git fetch origin
+git rev-parse origin/main
+# <track> — уникальное имя; <path> — новый разрешённый путь вне другого рабочего дерева.
+git worktree add -b feat/security-<track> <path> origin/main
+```
+
+Путь и branch выбираются для конкретной задачи; это пример, команды с placeholders не запускать буквально. Не использовать local `main` без проверки совпадения с fetched `origin/main`. Не переключать, не reset/rebase и не stash исходный dirty-worktree ради нового трека. В задаче фиксировать base SHA, contract revision из main, allowed write scopes и prerequisites.
+
+Если dependency ещё не в main, основной consumer ждёт merge; нельзя неявно начать его от незавершённой ветки producer и назвать базой main. Работа по versioned fixtures допустима по §7.1, интеграционная готовность всё равно требует реальной зависимости. После merge dependency актуализировать **свою** ветку относительно main, разрешить конфликты и повторить affected tests. Документы решений обновляются в main отдельно от несвязанных production изменений; conflicting правки общего контракта проходят одного интегратора. Worktree-проекты не создают собственную расходящуюся «истину» спецификации.
 
 Это роли будущего исполнения, не автоматически созданная Agent Team. При использовании teammates требуется явное разрешение владельца; в этой работе изменяется только план.
 
