@@ -13,7 +13,7 @@
 - SECRET default блокирует конкретный model request; redact можно настроить адресно. Credential reference передаёт настоящий ключ только approved сервису/purpose через поддержанный adapter. Ручной список всех tools пользователю не нужен; автоматической доверенности по префиксу ключа тоже нет.
 - Отдельная настройка может открыть уполномоченному reviewer **разовую передачу исходного ключа модели**. Это осознанное исключение из защиты, не псевдонимизация и не технический fail-open.
 - Pending HITL payload хранится encrypted внутри Pseudex. Pending карточка по default не исчезает по времени; auto-expiry opt-in. Reminder/SLA не удаляет карточку. Tool/HTTP/hook timeout и срок approval — отдельные события.
-- Документы: native защищённый **DOCX и PDF с текстовым слоем**, сохранение структуры/оформления максимально, локальные отличия видимы; повреждение не success. **OCR исключён.** Непроверенные images/embedded parts default блокируют выдачу fully protected файла; explicit removal/partial policy отдельны.
+- **Документы (DOC-ARCH):** документ — источник контента на границе контекста модели. Защищаем текст/структуру, попадающие в контекст через tool_result (read_doc и т.п.); сырой файл модели не нужен. Единственная особая точка — file-attachment к провайдеру: default block/извлечение текста/локальный маршрут, raw не пропускать молча. Native-перезапись файла не делается. **OCR исключён.** Обязателен документный бенчмарк (таблицы, судебные практики, отрасли, заявления).
 - Ни model routing, ни provider fallback. «Только локальное назначение» — ограничение, которое должен соблюсти caller, а не автоматическая смена модели.
 
 ## 2. F24 / K11 — очередь согласований
@@ -67,59 +67,40 @@ Proposed management endpoints: list/read/decide/cancel/reveal pending request; p
 
 Нажатие approve не создаёт дополнительного billable masking автоматически. Повтор HTTP decision idempotent; существующие successful-mask billing semantics сохраняются. Новая оплата ожидания/операции/страницы — не утверждена. До production нужен документированный metering mapping для двух стадий protect/resume и тест отсутствия двойного списания за повторное delivery одного решения.
 
-## 3. F25 / K12 — native document protection
+## 3. F25 / K12 — документы на границе контекста модели
 
-### 3.1 Поток документа
+**Принято DOC-ARCH (владелец):** «мы платформа безопасности для AI трафика, не для нахождения ПД в документах… моделька видит только то, что попадает ей в контекст». Документ — источник контента, а не отдельный форматный пайплайн перезаписи файлов.
 
-```text
-upload/ref с подтверждённым доступом
-→ тип/размер/ресурсы/структурная валидность
-→ inventory всех parts/channels + supported coverage
-→ text extraction с точной связью с original runs/objects
-→ тот же Detector + effective policy + data transformations
-→ native DOCX/PDF rewrite/rebuild
-→ independent artifact validation + no-original canaries
-→ encrypted result + coverage/fidelity report
-→ authorised download либо protected upstream-file binding
-```
+### 3.1 Ядро: защита контента в контексте
 
-Результат — **файл**, не plain text вместо документа. Один document artifact привязан к input digest, service, policy revision, mapping refs и parser/writer versions; cached protected file с другим policy/scope не переиспользуется.
+Любой текст/структура, попадающие в контекст через `tool_result` (read_doc, поиск по документам, табличные выгрузки и т.п.), проходят тот же Detector + effective policy + transformations, что и прочий контекст. Сырой файл модели не отправляется. Переиспользуется существующий envelope/tool_result masking; документ не заводит параллельный слабый correlator.
 
-### 3.2 Безопасный разбор и пределы
+Закрываемые пробелы контекстного пути: очень длинные документы и чанки/токен-бюджет; таблицы и структурированный текст с сохранением связей; смешанные/нетекстовые блоки; границы чанков, не рвущие span одного значения; nested content blocks.
 
-- Format sniffing по содержимому, а не filename/MIME; bounded ZIP expansion, object count, recursion/pages/stream size, time/memory/temporary disk. Parser запускается с минимальными правами и без внешнего network fetch. Никаких макросов, внешних relations, автоматического открытия ссылок или embedded executables.
-- DOCX: inventory document/header/footer/footnote/endnote/comment/revision/custom properties/hidden text и relationships. Нельзя заменить видимый run, оставив оригинал в tracked deletion, comment или metadata. Text fragments могут пересекать runs; mapping должен сохранять структуру.
-- PDF: поддержанный text layer/encoding/glyph positions и object/content streams. Black rectangle или incremental append поверх старого текста не считается удалением. Result должен быть переписан так, чтобы supported original text не извлекался из старых объектов/revisions/search/copy/metadata.
-- Images, scanned/mixed pages, unsupported embedded structures, encryption/signatures и неподдержанные encodings должны получить явный capability verdict. Signed/password-protected/нестандартный документ не считается автоматически поддержанным; список форматов/режимов будет результатом SP08. Это не скрытое разрешение убрать юридическую подпись либо открыть protected файл.
-- **Без OCR.** Непроверенные части default дают `unsupported_content` и не выдаются как fully protected. User может запросить supported removal либо explicit partial mode, если это разрешено политикой. Partial artifact имеет неизменяемый coverage report; скачивание не даёт автоматически разрешение отправить его внешней модели. Unsafe parser failure не reviewable business denial.
+### 3.2 Единственная особая точка: file-attachment к провайдеру
 
-### 3.3 Подстановка, восстановление и формат
+Есть путь, где байты уходят провайдеру в обход text-конвера — OpenAI file input / Anthropic document content block (source document). Там провайдер получает файл напрямую, и tool_result masking не применяется.
 
-Форматные readers/writers не копируют правила PII: они преобразуют supported text parts через общий K05/K06. Hidden metadata с невозможным safe rewrite означает refuse/explicit supported removal, не skip. Исходный sensitive payload не добавляется в ordinary logs/test results.
+Default: **block** либо извлечь текст в контекст (если поддержан протокол и текст можно замаскировать) либо разрешённый локальный маршрут. **Никогда не пропускать raw молча.** Native-перезапись файла не нужна и не делается. Поддержку конкретных file-endpoints/протоколов доказывает SP08; до подтверждения такие блоки = unsupported/blocked, не «completed F25».
 
-Best-effort layout сохраняет paragraphs/styles/tables/page intent; локальные отличия переносов показываются. Коррупция, потеря структуры или невозможность проверить removal — failure. Критерии fidelity и поддержанный набор embedded elements закрепляются на golden files, не рекламируются как pixel-perfect для любых документов.
+### 3.3 Не делаем
 
-Owner запросил protected file; **автоматическое обратное восстановление скачанного PDF/DOCX целиком не утверждено**. Text/tool detok и evidence refs используют общий установленный контракт. Whole-document detok, редактирование уже masked files и сохранение цифровых подписей не добавляются без отдельного решения.
+Native-перезапись DOCX/PDF/XLSX, выдача redacted файла для скачивания, OCR/сканы. Форматная «поддержка» нужна лишь настолько, насколько надо извлечь текст в контекст либо решить block/route — не как «произвести защищённый файл».
 
-### 3.4 Протоколы и хранение
+### 3.4 Документный бенчмарк (новый, обязательный)
 
-- Manual UI и API используют одинаковый protected artifact contract. В UI обязательно original/protected preview только с разрешениями, found categories, unsupported parts, fidelity differences, policy version и job state.
-- Provider file upload/input-file/content blocks — отдельные protocol adapters **на уровне формата**, не model routing. Связка caller source-file ref → approved protected artifact → upstream file ID обязана быть service-scoped. Нельзя случайно отправить original file ID вместо protected.
-- Поддержку конкретных upload/download endpoints OpenAI/Anthropic доказывает SP08; schema compatibility и API rights нельзя угадывать. До подтверждения manual/local artifact может быть готов, а auto provider path остаётся unsupported, не completed whole F25.
-- Fixed approved upstream only; никакого произвольного URL-fetch документа, SSRF redirects либо credentials в ссылке. Filename не filesystem path; temporary/parser paths контролирует backend.
-- Input/results/source maps живут encrypted в jobs/storage domain с отдельными read/download grants, quotas и lifecycle. Export-safe audit только IDs/counts/coverage. Original input и protected output — разные sensitivity classes: masked документ может содержать иные конфиденциальные данные, не автоматически public.
-- Конкретная artifact TTL и способ краткоживущего plaintext для parser, которому нужен file handle, должны быть заданы до реализации и включены в canary tests; они не равны default pending HITL lifetime. Перенос библиотек/native dependencies в Nuitka образ требует licence/SBOM/сборочного spike.
+Новый корпус документ-производных текстов в агентных сценариях: таблицы, судебные практики, отраслевые документы, заявления/обращения, смешанные структуры. Метрики по тому, что модель реально видит в контексте: recall/coverage/round-trip/over-mask; независимая разметка; can-fail прибор (инструмент, способный провалиться). Измеряем качество маскирования текста, попавшего в контекст, а не «прочитали файл».
 
 ## 4. Треки, последовательность и blockers
 
 | Трек | Ядро и реализационный порядок | Входные зависимости | Готовность |
 |---|---|---|---|
 | T13 — HITL | K11: W36 contract/tests → W37 encrypted queue/decision → W38 exact consume/SDK/UI → W39 integration/retention gates | W02/W03/W05/W09/W10/W11/W12/W13/W14/W18; consume связывается с готовыми protect/output surfaces | H01–H10 + relevant CP; native harness часть проходит SP07/AC отдельно |
-| T14 — Документы | K12: W40 SP08/format fixtures → W41 safe inventory/parser → W42 native rewrite/artifact checks → W43 UI/API/provider bindings → W44 full document acceptance | W02/W03/W05–W11/W13/W14/W15/W18; writer использует K05/K06 | DOCG01–DOCG10 + relevant CP; no OCR и truthful partial coverage |
+| T14 — Документы (context) | K12: W40 doc benchmark/fixtures → W41 контекстный охват (длинные доки/таблицы/блоки) → W42 file-attachment block/extract/route → W43 UI/API coverage + benchmark integration → W44 doc acceptance | W02/W03/W05–W11/W13/W14/W15/W18; переиспользует K05/K06 | DOCG01–DOCG10 + relevant CP; context-boundary, no native rewrite, no OCR |
 
 T13 не зависит от готового T14 и наоборот. Если document verdict требует HITL, composition test включается **после обеих готовых interfaces**, а не образует cycle в фундаменте. Доставка внешних уведомлений через T07 optional extension; минимальная queue/UI/poll API не ждёт SMTP/SIEM. Enterprise интеграции идут после основных сценариев по приоритету владельца; их contract preparation может идти заранее.
 
-W27/C4 базовой платформы теперь требует W39/W44 вместе с original W01–W26. T12 production начинается после C4. W35 принимает первый Claude coding slice как техническую контрольную точку; **W45** реализует/проверяет последующий Codex adapter на том же ядре. Привязка Codex к первому публичному coding-выпуску/C5 остаётся **OPEN-C01**: владелец выбрал порядок Claude→Codex, но не утвердил одновременную выпускную обязательность. Нельзя ни объявить Codex готовым после W35, ни задерживать выпуск новым условием без этого решения. Номер W36 больше W27, но зависимость определяется DAG, не числом; никаких циклов с W26 UI: shared shell/API-client готов раньше, полная UI-приёмка собирает готовые feature modules в W27.
+W27/C4 базовой платформы теперь требует W39/W44 вместе с original W01–W26. T12 production начинается после C4. W35 принимает первый Claude coding slice как техническую контрольную точку; **W45** реализует/проверяет последующий Codex adapter на том же ядре. **OPEN-C01 решён:** Codex обязателен в первом публичном C5 — оба adapter проходят свои AC-гейты на declared OS до первого публичного coding-выпуска. Номер W36 больше W27, но зависимость определяется DAG, не числом; никаких циклов с W26 UI: shared shell/API-client готов раньше, полная UI-приёмка собирает готовые feature modules в W27.
 
 ## 5. Предварительные гейты — до business implementation
 
@@ -142,27 +123,26 @@ W27/C4 базовой платформы теперь требует W39/W44 в�
 
 | Gate | Негативный сценарий / наблюдение |
 |---|---|
-| DOCG01 | MIME/extension mismatch, ZIP bomb, oversized PDF object graph, malformed package — bounded reject без parser network/host side effects |
-| DOCG02 | Original canary в DOCX runs/headers/footnotes/comments/revisions/metadata — после supported rewrite не остаётся в распакованном artifact или в скрытых channels |
-| DOCG03 | PDF visible/invisible text, old incremental revision/object/metadata canary — независимое извлечение не находит original; нарисованная плашка над исходником делает тест RED |
-| DOCG04 | Image/scan/embedded unsupported part — default refusal; allowed removal/partial показывает exact coverage, partial download не authorizes provider send |
-| DOCG05 | Golden structures/tables/styles/Unicode/длинные substitutes — формат открывается независимым reader, существенная corruption fail, допустимые differences задокументированы |
-| DOCG06 | Cross-service artifact ID/cache policy change/revoked key — чужой download/forward запрещён, namespace/receipt refs проверяются |
-| DOCG07 | Upload/cancel/parser crash/restart/cleanup — нет plaintext persist в непредусмотренных temp/log/WAL/export, resource budget bounded, stale claimant не публикует artifact |
-| DOCG08 | Input file ref и provider file ID подменены/перепутаны — original никогда не forwards вместо approved protected artifact; неизвестный transport сообщает unsupported |
-| DOCG09 | SECRET in document: default block/redact without regular reversible mapping; explicit HITL path соответствует H02/H08, не обход checks; synthetic negatives не ломаются |
-| DOCG10 | Встроенный библиотечный writer «успешен», но artifact ещё содержит canary/сломаны структуры — independent oracle красный; source/compiled/native dependency licences и execution parity проверены |
+| DOCG01 | Длинный документ/чанки: защита не пропадает на границе чанка, span одного значения не рвётся, bounded memory |
+| DOCG02 | Таблицы/структурированный текст: связи колонок сохраняются, round-trip не портится |
+| DOCG03 | Нетекстовый/смешанный блок в tool_result: text часть маскирована, неподдержанная часть явная, не тихий skip |
+| DOCG04 | file-attachment к провайдеру: default block/extract/route, raw никогда не уходит молча |
+| DOCG05 | Документный корпус (таблицы/суд/отрасли/заявления): recall/coverage/round-trip/over-mask измерены, negatives не перемаскированы |
+| DOCG06 | Cross-service/namespace: чужой document tool_result/файл не читается и не пересылается |
+| DOCG07 | Огромный документ/токен-бюджет: защита не снимается ради бюджета, частичный вывод явно incomplete |
+| DOCG08 | SECRET в тексте документа: default block/redact, explicit HITL по H02/H08 |
+| DOCG09 | Caller-provided file id/ref: подмена не отдаёт другой документ, unknown transport unsupported |
+| DOCG10 | Бенчмарк-прибор can-fail: мутация (пропустить/перемаскировать/чужое значение) делает отчёт RED |
 
-Гейты — definition и planned fixtures, **не уже пройденные тесты**. Оракул удаления seeded originals/структуры независим от writer и не требует объявлять detector omniscient. Качество распознавания отдельно от надёжности удаления уже найденного значения. Whole-market90% из pass этого корпуса не следует.
+Гейты — definition и planned fixtures, не уже пройденные тесты. Оракул — независимая разметка документ-производного текста и can-fail прибор; он не требует объявлять detector omniscient. Качество распознавания отдельно от полноты контекстного охвата. Whole-market90% из pass корпуса не следует.
 
-## 6. Что остаётся открытым, а не решено молча
+## 6. Статус открытых вопросов
 
-| ID | Вопрос | Где блокирует |
-|---|---|---|
-| OPEN-C01 | Обязан ли Codex быть готов к первому публичному coding-выпуску/C5 либо следует отдельным выпуском после Claude; порядок работ уже принят | Release criterion C5, не contract design W45 |
-| OPEN-H01 | Конкретный native/live/deferred resume mode для Claude/Codex после lifecycle research, recovery после process restart | SP07/W28/W31/W45; basic queue/API не ждут универсального ответа для всех harness |
-| OPEN-H02 | Полный набор permission checkbox/default admin reveal, короткий срок execution permit и exact payload policy для long pending | W36 contract; scope two roles/grants и no-auto-expiry pending уже приняты |
-| OPEN-D01 | Проверенные writer/parser libs и лицензии, exact supported DOCX/PDF parts/signatures/fonts, resource limits | SP08/W40; не выбираем случайную библиотеку без evidence |
-| OPEN-D02 | Provider file endpoints/auth/schema и billing новой document operation, artifact retention defaults | W40/W43; нельзя обещать native API compatibility/цену без проверки |
+| ID | Статус и решение |
+|---|---|
+| OPEN-C01 | **Решено:** Codex обязателен в первом публичном C5 (оба adapter до первого coding-выпуска). Последовательность разработки Claude→Codex не меняется |
+| OPEN-H01 | **Решено:** первый релиз — только live-ожидание; cold restart/resume не обещаем, неподдержанное явно `caller_detached`/`resume_unavailable`. Defer/persisted resume — следующий этап |
+| OPEN-H02 | **Решено:** reveal выключен по default, админ включает себе отдельной операцией (и выдаёт другим адресно), с аудитом |
+| DOC-ARCH | **Решено:** документы только на границе контекста; native-перезапись файла и redacted-скачивание исключены; file-attachment → block/extract/route; добавлен документный бенчмарк. Точный протокол file-endpoints доказывает SP08 |
 
 Это ограниченные решения/проверки, а не возврат отменённых model routing, OCR, semantic R&D или cluster scope. Источник truth — утверждённые owner principles; implementation detail ниже них не может тайно расширить полномочия или выпускные обещания.

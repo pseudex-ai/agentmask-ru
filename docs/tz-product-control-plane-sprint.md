@@ -19,12 +19,12 @@
 | Доступ | Только admin/user; admin выдаёт дополнительные права на настройки/HITL. Safe preview default, original reveal отдельно. Не пять ролей и не обязательный four-eyes |
 | Секреты | Default block запроса; redact адресно. Scoped credential reference для approved service/purpose; opt-in разовый raw-key egress через HITL — осознанное исключение, не гарантия сокрытия |
 | HITL | Наша очередь + API, encrypted pending payload, default без auto-expiry карточки. Technical timeout не её deletion; supported resume/cold recovery зависит от actual harness и остаётся отдельным контрактом |
-| Документы | Native protected DOCX и text-layer PDF, без OCR, best-effort structure/layout. Unsupported images/parts default не выдаются как fully protected; partial/removal — explicit policy |
+| Документы | Документ = контент на границе контекста модели. Маскируем текст/структуру из tool_result (read_doc и т.п.); file-attachment к провайдеру → block/извлечение текста/локальный маршрут, raw не пропускать. Без OCR и без native-перезаписи файла. Обязателен документный бенчмарк |
 | Наблюдение/хранение | Optional shadow новых правил; raw traffic archive off, capture opt-in. Mapping автоочистка учитывает active refs/recovery window; exact TTL ещё proposal |
 | Streaming/restore | Full-response check буферизует до проверки; иначе доказанный streaming. Любой unresolved tool call блокируется; обычный текст может остаться частично нераскрытым с явным статусом |
 | Приоритеты | Self-service core → документы и HITL параллельно → enterprise interfaces → coding Claude Code, затем Codex; Linux/macOS/WSL. Jev и semantic R&D отменены |
 
-Подробные принятые ответы и исторические пересмотры находятся в [реестре](<docs/decisions-product-control-plane.md>). Новые полные паспорта **F24 HITL и F25 документы** раскрыты в [контракте HITL/документов](<docs/tz-hitl-and-documents.md>); это устранение пропуска задач уже выбранных возможностей, не новая функция от архитектора. Непринятые native resume, библиотеки/форматные детали и Codex release boundary перечислены там как OPEN, не решаются молча. Исследование [Jev](<research/jev-typesafe-product-fit.md>) — архив отменённого кандидата.
+Подробные принятые ответы и исторические пересмотры находятся в [реестре](<docs/decisions-product-control-plane.md>). Новые полные паспорта **F24 HITL и F25 документы** раскрыты в [контракте HITL/документов](<docs/tz-hitl-and-documents.md>); это устранение пропуска задач уже выбранных возможностей, не новая функция от архитектора. Закрытые решения: live-only HITL resume в первом релизе, reveal off по default (админ включает себе), Codex обязателен в первом C5, документы только на границе контекста. Протокольные детали file-endpoints доказывает SP08. Исследование [Jev](<research/jev-typesafe-product-fit.md>) — архив отменённого кандидата.
 
 ## 0. Как читать и что считается решением
 
@@ -569,7 +569,7 @@ Recognizer priority выбирает **границы сущности**, не �
 
 **UI/API:** приложение типа coding, approved workspaces/ops/egress/resource/retention settings, protected trace, integration probe и честная карта coverage в существующей админке. Не универсальная remote-shell кнопка в management API. Proposed coding DTO/adapter paths и полный lifecycle в [специализированной спецификации](<docs/tz-ai-coding-track.md>).
 
-**Порядок/приёмка:** W28–W35 после W27/C4 (который включает F24/F25); Claude slice проходит AC01–AC12 на Linux/macOS/WSL и shared regression. Затем W45/AC13 проверяет Codex отдельно. Default no-secret-to-model и explicit authorised exception имеют разные оракулы. Привязка Codex к первому публичному C5 остаётся OPEN-C01; один Claude/Linux результат не закрывает второй adapter или остальные OS. Arbitrary shell/eval/embedded languages restoration, all IDE support и automatic semantics preservation не входят в узкую первую поставку.
+**Порядок/приёмка:** W28–W35 после W27/C4 (который включает F24/F25); Claude slice проходит AC01–AC12 на Linux/macOS/WSL и shared regression. Затем W45/AC13 проверяет Codex отдельно. Default no-secret-to-model и explicit authorised exception имеют разные оракулы. Принято: Codex обязателен в первом публичном C5; один Claude/Linux результат не закрывает второй adapter или остальные OS. Arbitrary shell/eval/embedded languages restoration, all IDE support и automatic semantics preservation не входят в узкую первую поставку.
 
 ### F24. Runtime HITL и контролируемые исключения — P1
 
@@ -581,15 +581,15 @@ Recognizer priority выбирает **границы сущности**, не �
 
 **Приёмка:** H01–H10 плюс CP15/CP19/CP31/CP42; не путать approved с executed. Повторная отправка решения не новая платная операция автоматически. Technical faults не превращаются в reviewable allow. Реализация W36–W39/T13 после self-service core, параллельно документам.
 
-### F25. Native защита текстовых PDF/DOCX — P1
+### F25. Документы на границе контекста модели — P1
 
-**Основание:** принято DOC01–DOC04; source S1 §7/§12 attachments. Полный proposed contract — [HITL и документы §3](<docs/tz-hitl-and-documents.md>).
+**Основание:** принято DOC-ARCH (владелец); source S1 §7 attachments. Полный contract — [HITL и документы §3](<docs/tz-hitl-and-documents.md>).
 
-**Архитектура:** sandboxed format inventory → source maps → общий detector/policy → native rewrite/rebuild → независимая artifact verification. PDF text-layer и DOCX, без OCR. Original text нельзя просто прикрыть; hidden parts/revisions/metadata должны быть обработаны или дать unsupported/refusal. Изображения/embedded objects default блокируют fully protected claim; partial/removal отдельно explicit.
+**Архитектура:** документ — источник контента, попадающего в контекст через `tool_result` (read_doc, поиск по документам и т.п.); тот же Detector + policy + transformations, что и прочий контекст. Сырой файл модели не отправляется. Закрываем пробелы: длинные документы/чанки/токен-бюджет, таблицы/структурированный текст, нетекстовые блоки, границы чанков. Единственная особая точка — file-attachment к провайдеру: block/извлечение текста в контекст/локальный маршрут, raw не пропускать молча. Native-перезапись файла не делается; OCR нет.
 
-**UX/API:** защищённый файл с best-effort оформлением, coverage/fidelity report, project/service-scoped download, одинаковый backend UI/API. Provider file-ID mapping и auth проверяются SP08, не предполагаются по текстовому endpoint. Billing/TTL/поддержанные библиотеки и signed/encrypted subformats до реализации фиксируются как OPEN-D01/D02.
+**UX/API:** coverage-отчёт по тому, что реально вошло в контекст и что осталось непроверенным; интеграция документного бенчмарка; одинаковый backend UI/API. Provider file-протокол доказывает SP08, до подтверждения — unsupported/blocked.
 
-**Приёмка:** DOCG01–DOCG10 + relevant CP; parser failure/ZIPbomb/old PDF objects/hidden DOCX revisions/cross-service IDs/partial coverage. W40–W44/T14 идёт параллельно HITL после общего ядра. Extraction-only output и CSV/JSONL batch не выполнение F25.
+**Приёмка:** DOCG01–DOCG10 + relevant CP; длинные документы, таблицы, нетекстовые блоки, file-attachment block, cross-service, документный бенчмарк can-fail. W40–W44/T14 параллельно HITL после общего ядра. Производство redacted файла и native rewrite не выполнение F25.
 
 ## 5. API-контракт и интеграционные границы
 
@@ -673,7 +673,7 @@ Framework tracing/checkpointing может записать raw input **до** �
 | feedback / incidents / alert-rules | annotate/triage/fix-link/verify/close | grants feedback.manage/policy.edit по операции, no silent repair |
 | capabilities / coverage / engine-versions / status | read actual installed state | scoped operational metadata |
 | approvals / pending-payload / decisions | list/read/decide/cancel/status/authorised reveal | HITL grant и отдельный sensitive grant; F24/H01–H10 |
-| document-jobs / artifacts | upload/protect/status/cancel/authorised download | service binding + artifact ACL/coverage; F25/DOCG01–DOCG10 |
+| document-coverage / file-blocks | status/coverage/benchmark + file-attachment block/extract/route | service binding + context coverage; F25/DOCG01–DOCG10 |
 
 Для variable route `{id}` разрешён только ожидаемый UUID/opaque ID, method-specific allowlist и backend authority; `path`/host/port/query-url клиент не задаёт. Просмотр статистики не наследует права на полный текст. Все write endpoints имеют explicit auth, concurrency token и audit; UI не обходной путь.
 
@@ -771,7 +771,7 @@ Raw vendor asset material не попадает в control revisions/exports/tes
 
 ### 10.1 Предлагаемые решения, требующие утверждения владельцем
 
-**D1:** базовый scope F01–F22 дополнен F24/HITL и F25/documents (параллельно после core), затем F23/T12 coding Claude→Codex. Выпускная привязка Codex к C5 остаётся OPEN-C01; ни один adapter не считается готовым по другому. P2 не считается готовым интерфейсом.
+**D1:** базовый scope F01–F22 дополнен F24/HITL и F25/documents (параллельно после core), затем F23/T12 coding Claude→Codex. Codex обязателен в первом публичном C5; ни один adapter не считается готовым по другому. P2 не считается готовым интерфейсом.
 **D2:** control plane local SQLCipher, single-node shipping first; cluster HA отдельный объём.
 **D3:** managed API v2 + explicit compatibility migration; без silent trust upgrade legacy.
 **D4:** policy hot activation и roles до mutating UI; restart для инфраструктуры только через ops.

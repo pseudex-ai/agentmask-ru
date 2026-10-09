@@ -43,7 +43,7 @@
 | R19 | Output checks и разрешённый detok — M | S1 §7 «Проверка ответа», «Восстановление»; S2 restored panel/quality | **P1** новые secret/PII/custom findings, destination/field restrictions; F08/F10 | Detok ≠ output DLP. Нулевой residual ≠ правильный человек. Full semantic output moderation — P2 |
 | R20 | Streaming safety, choice/tool fields — M | S1 §11 streaming, приложение 5; S2 «Проверка шлюза» | **P0** field/choice contract, **P1** full safe buffer; F10/F18 | Сначала checks, затем release. Low-latency semantic prefix scanning — P2. Stop-after-leak не исправление утечки |
 | R21 | Явный отказ неподдержанных files/image/audio — M | S1 §5/§7 полный контекст, §12 bypass; S2 batch | **P0** capability manifest+415 в protected managed path; F03/F20 | Text из approved parser поддержан с provenance; нельзя молча pass-through и писать checked |
-| R22 | Native защита DOCX и text-layer PDF — M/E | S1 §5/§7/§12 + DOC01–DOC04 | **P1 основной sprint**, F25/K12/T14/W40–W44, DOCG01–DOCG10 | Реальный protected file с best-effort layout, не text extraction-only. OCR исключён; unsupported images/embedded parts default refusal, explicit removal/partial coverage отдельно. Writer/parser/protocol proof SP08 |
+| R22 | Документы на границе контекста модели — M/E | S1 §5/§7/§12 + DOC-ARCH | **P1 основной sprint**, F25/K12/T14/W40–W44, DOCG01–DOCG10 | Текст/структура из tool_result (read_doc и т.п.) маскируются как прочий контекст; сырой файл модели не нужен. file-attachment к провайдеру → block/extract/route, raw не пропускать. Без OCR и без native-перезаписи файла. Документный бенчмарк обязателен |
 
 ### C. LLM, RAG и инструменты
 
@@ -130,7 +130,7 @@
 | Full moderation/reputation | typed local scanner APIs, categorical policy, reputation dataset freshness и approved egress | Нужны разные модели/источники; toxicity не эквивалент утечке |
 | RAG ingestion/source ACL/poisoning | retrieval/ingestion adapters with verified source ACL and document versions; quarantine/index hooks | На LLM boundary есть только переданные fragments, не весь knowledge store |
 | Полный MCP/A2A/skills | transport-aware proxy, server/tool stable identity+digest, delegated attenuated capabilities, per-operation executor; approved egress sandbox | Модельная schema не фактическое исполнение. A2A delegation самостоятельный protocol |
-| OCR/images/audio/general multimodal | Отдельные parsers/OCR/models, resource and coverage evidence | Исключены сейчас. **Текстовые PDF/DOCX уже в F25**, не P2; unknown embedded content не автоматически защищён |
+| OCR/images/audio/general multimodal | Отдельные parsers/OCR/models, resource and coverage evidence | Исключены сейчас. **Документы на границе контекста уже в F25**, не P2; file-attachment и unknown embedded content не пропускаются raw молча |
 | HA/DR/fleet | Store interfaces для control/vault/audit/jobs, внешнее transactional encrypted-at-rest storage, domain uniqueness, leadership/fencing, restore/probe evidence | SQLite single-host не кластер. Redis кеш один не делает mapping durable или consistent |
 | Offline engine | реализация текущего [бессрочного design contract](<docs/tz-offline-license.md>), activation payload/узловые ключи/O gates/offline updates | Не лечится grace/кешем lease и не делается отключением checks |
 | KMS/HSM/native MFA/LDAP/SCIM | fixed provider adapters, least privilege, rotations/recovery, IdP lifecycle; algorithm/scope tests | Existing key resolver и generic OIDC дают общую интеграцию, не заменяют corporate IAM/HSM |
@@ -176,7 +176,7 @@
 - Подписка/диагностика/support → F12/F20/F21, данные счётчиков не ошибка стоимости LLM.
 - Инциденты → F09/F16/F20, evidence-backed close.
 - Docs/search/shortcuts/onboarding → F20, generated registry+contracts.
-- Дополнения владельца: runtime queue/HITL → F24; native DOCX/PDF → F25; это не уже присутствующие mock screens.
+- Дополнения владельца: runtime queue/HITL → F24; документы на границе контекста → F25; это не уже присутствующие mock screens.
 
 Ничто из listed UI не считается уже реализованным на основании mock. Отложенная функция не получает активную кнопку с toast успеха; UI показывает `unsupported/not_available` и причину.
 

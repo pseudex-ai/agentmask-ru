@@ -13,7 +13,7 @@
 
 Один инстанс/одна консоль, плоские «Агенты и сервисы», две роли + выдаваемые права, fixed API forwarding с provider key у Pseudex, без model selection/balancing/fallback. Политики применяются к выбранным/всем; при preflight failures есть явный выбор eligible subset либо никому, deep-link к разбору. Streaming сохраняется только если required checks поддерживают его. Диагностический raw archive выключен; pending HITL encrypted, default без auto-expiry карточки.
 
-**Не включаем:** fleet/HA/Kubernetes, OCR, полный offline engine, Jev и собственный semantic-classifier R&D. Документы — native text-layer PDF/DOCX, не extracted-text-only; unsupported parts не выдаются как fully protected. Исторические частные предложения не добавляют эти направления обратно.
+**Не включаем:** fleet/HA/Kubernetes, OCR, полный offline engine, Jev и собственный semantic-classifier R&D. Документы — контент на границе контекста (tool_result маскируется, file-attachment block/extract/route), без native-перезаписи файла и без выдачи redacted файла. Исторические частные предложения не добавляют эти направления обратно.
 
 **Объём планирования:** W01–W45; исходные CP01–CP47 сохранены, добавлены H01–H10 и DOCG01–DOCG10, coding AC01–AC13. Номера не хронология: W36–W44 prerequisites W27, W45 после W35. Проверки пока proposed, не green. Численность команды/календарный бюджет не выдумываются; S/M/L/XL относительные оценки.
 
@@ -319,29 +319,29 @@ C5 release closure: согласовать OPEN-C01, не выдавать од�
 
 **Выход:** H01–H10 + affected CP, restart/retention/billing/permissions evidence на реальном backend. **Зависимость:** W38. Для supported caller проверен полный cycle; unknown native resume не скрывается generic green. C4 не обещает готовый coding connector.
 
-### W40. Документы: SP08, форматный contract и RED corpus — P1 / L
+### W40. Документный бенчмарк и file-протокол SP08 — P1 / L
 
-**Выход:** выбор/licence/package feasibility parser/writer, approved text-DOCX/PDF inventory, resource bounds, fixture files, independent extraction/render oracle. **Зависимость:** W02/W03/W05–W11/W13/W14/W15/W18. Подготовительное исследование libraries/fixtures может начаться раньше contract readiness, как другие spikes. **Приёмка:** DOCG01–DOCG10 заранее описаны; no OCR; OPEN-D01/D02 отмечены, не угаданы.
+**Выход:** корпус документ-производных текстов в агентных сценариях (таблицы, судебные практики, отрасли, заявления, смешанные структуры) с независимой разметкой; can-fail метрики recall/coverage/round-trip/over-mask; SP08 по file-attachment протоколам (block/extract/route). **Зависимость:** W02/W03/W05–W11/W13/W14/W15/W18. **Приёмка:** DOCG05/DOCG10 заранее описаны; no OCR/native-rewrite; протоколы не угадываются.
 
-### W41. Изолированный разбор и coverage inventory — P1 / L
+### W41. Контекстный охват документов — P1 / L
 
-**Выход:** bounded parser, parts/source maps, hidden text/metadata обнаружение, unsupported images/embedded structures refusal. **Зависимость:** W40. **Приёмка:** DOCG01/DOCG04/DOCG07; не отправлять original file из-за сбоя parser.
+**Выход:** длинные документы/чанки без потери защиты и без разрыва span одного значения; таблицы/структурированный текст с сохранением связей; нетекстовые/смешанные блоки с явным verdict. **Зависимость:** W40. **Приёмка:** DOCG01–DOCG03/DOCG07; граница чанка не пропускает raw.
 
-### W42. Native rewrite и независимая проверка artifact — P1 / XL
+### W42. File-attachment policy: block/extract/route — P1 / M
 
-**Выход:** общий detector/policy выдаёт native protected file, preserved supported structure, fidelity report, no recoverable seeded originals. **Зависимость:** W41. **Приёмка:** DOCG02–DOCG05/DOCG09/DOCG10; rectangle-only PDF и забытые DOCX revisions делают gate RED.
+**Выход:** для file-attachment к провайдеру default block либо извлечение текста в контекст (замаскированного) либо разрешённый локальный маршрут; raw никогда не уходит молча. **Зависимость:** W41. **Приёмка:** DOCG04/DOCG09; неизвестный transport unsupported/blocked.
 
-### W43. Document UI/API, storage и provider-file bindings — P1 / L
+### W43. Document UI/API, coverage и benchmark-интеграция — P1 / L
 
-**Выход:** service-scoped upload/status/cancel/download, encrypted artifacts/lifecycle, explicit coverage и fixed-upstream file refs. **Зависимость:** W42; integration surfaces W13/W15/W18, retention contract W20. **Приёмка:** DOCG06–DOCG09, реальные protocol fixtures; unsupported provider path не success. Billing нового file operation должен быть согласован до paid use.
+**Выход:** coverage-отчёт «что реально вошло в контекст и что непроверено», status/cancel, интеграция документного бенчмарка в общую quality UI. **Зависимость:** W42; surfaces W13/W15/W18. **Приёмка:** DOCG06/DOCG08; нет fake success.
 
 ### W44. Документная приёмка и составная проверка — P1 / L
 
-**Выход:** DOCG01–DOCG10 + resource/packaging/format opening tests. **Зависимость:** W43. Independent oracle и source/compiled выполняются на том же artifact. Composition «document verdict требует HITL» проверяется в W27 после W39+W44, не создаёт циклическую зависимость T13/T14.
+**Выход:** DOCG01–DOCG10 + benchmark can-fail на source/compiled. **Зависимость:** W43. Composition «document verdict требует HITL» проверяется в W27 после W39+W44, не создаёт цикл.
 
 ### W45. Последующий Codex adapter — P1 coding / L
 
-**Выход:** отдельный pinned Codex integration profile на общем K10 после первого Claude slice; correct approval/reconnect/cold-restart and input/output privacy по actual API. **Зависимость:** W35, SP07 Codex evidence; не считать app-server approval reply generic rewrite. **Приёмка:** AC13 + AC01–AC12 применимые case sets и общая affected regression на Linux/macOS/WSL. Публичная release/C5 обязательность — OPEN-C01, не решение автора плана.
+**Выход:** отдельный pinned Codex integration profile на общем K10 после первого Claude slice; correct approval/reconnect/cold-restart and input/output privacy по actual API. **Зависимость:** W35, SP07 Codex evidence; не считать app-server approval reply generic rewrite. **Приёмка:** AC13 + AC01–AC12 применимые case sets и общая affected regression на Linux/macOS/WSL. Codex обязателен в первом публичном C5 (решено): после W35 оба adapter должны пройти свои AC-гейты на declared OS до первого coding-выпуска.
 
 ## 5. Предлагаемые приёмочные gates (CP01–CP47 + H01–H10 + DOCG01–DOCG10)
 
@@ -468,7 +468,7 @@ API остаются едиными. Ускорение ожидаемое, а �
 | K08 | Независимый test runtime и очередь работ | W11, ядро W18; F13–F14/F21 | Isolated test context, expected result schema, comparability, run stamp, job claim/cancel/checkpoint | CP20/CP29–CP30; isolation CP04, encryption CP01 |
 | K09 | Граница передачи, лимиты и выходные проверки | W14–W16, security primitive W24; F10–F12/F22 | Admission, approved destination, buffered output, protected-state/delivery split, one-use execution attempt | CP24–CP27/CP36/CP39–CP40/CP46–CP47; SDK CP28 |
 
-Дополнительные ядра: **K11** approval/attempt lifecycle с H01–H10 (не новый policy engine), **K12** native document inventory/rewrite/artifact proof с DOCG01–DOCG10 (не новый detector). K10 остаётся coding-specific executor boundary. Их данные используют K01/K02/K06/K07/K08, не независимые authority/secret stores вне общего registry.
+Дополнительные ядра: **K11** approval/attempt lifecycle с H01–H10 (не новый policy engine), **K12** document context-boundary coverage и file-attachment policy с DOCG01–DOCG10 (не новый detector и не перезапись файлов). K10 остаётся coding-specific executor boundary. Их данные используют K01/K02/K06/K07/K08, не независимые authority/secret stores вне общего registry.
 
 Колонка CP — **набор обязательств**, не разрешение отметить полный gate зелёным после unit-теста одного ядра. Гейт с несколькими участниками получает предварительные именованные assertions; весь CP зелёный только после сквозной проверки реальных участников. Минимальные role/capability/catalog/job interfaces появляются в ядрах, а их UI, пакеты и расширенные реализации — в треках.
 
@@ -590,7 +590,7 @@ S0 контракт и область → S1 тест/гейт + доказан�
 | T10 — UI shell, документация и coverage | K02/management DTO contracts | T10.1 shell/navigation/error/accessibility fixtures → T10.2 общие auth-aware API client/forms/tables/guards → T10.3 подключение экранных модулей T01–T09 и T13/T14 + onboarding/docs/coverage → T10.4 full browser run по ролям и failure states | W26 завершается на реальных API; CP42–CP43, no mock success/no CDN |
 | T11 — Упаковка и эксплуатационная поставка | K01 contracts, W01 baseline | T11.1 source/compiled test runners/native-deps spikes → T11.2 incremental packaging/store/doctor adapters → T11.3 SBOM/compatibility/upgrade-restore procedures → T11.4 полный release-candidate gate run | Работа начинается рано; complete W27 ждёт W01–W26/W39/W44 и CP/H/DOCG; ранний shell не полная W26 приёмка |
 | T13 — HITL | K02/K04/K06/K07/K08 contracts | T13.1 W36 contract/tests → T13.2 W37 queue/decision → T13.3 W38 API/UI/consume → T13.4 W39 real acceptance | H01–H10, после core и параллельно T14; не ждёт coding connector |
-| T14 — Документы | K01/K02/K05/K06/K08 contracts | T14.1 W40 SP08/fixtures → T14.2 W41 parser → T14.3 W42 native artifact → T14.4 W43 API/UI → T14.5 W44 acceptance | DOCG01–DOCG10, no OCR, параллельно T13 до C4 |
+| T14 — Документы (context) | K01/K02/K05/K06/K08 contracts | T14.1 W40 benchmark/fixtures → T14.2 W41 контекстный охват (длинные доки/таблицы/блоки) → T14.3 W42 file-attachment block/extract/route → T14.4 W43 API/UI → T14.5 W44 acceptance | DOCG01–DOCG10, context-boundary, no OCR/native-rewrite, параллельно T13 до C4 |
 
 **Здесь нет дублирования ownership:** в K реализуются invariant/state transition/permission/transaction semantics; в T — потребитель, UX, формат, каталог или adapter. Например, T08 не создаёт вторую deletion fence, T07 не создаёт второй outbox writer, T02 не переписывает policy precedence. При необходимости изменения ядра feature-трек подаёт change request владельцу K, а не правит его самостоятельно.
 
@@ -738,7 +738,7 @@ handoff:
 
 **Общее владение:** T12 пишет coding adapter/fixtures/UI feature в выделенном scope; общие vault/envelope/roles/schema меняет владелец соответствующего K. Spike [anthropic_shim.py](</Users/igor/Projects/Obscura-vibecode/prototype/anthropic_shim.py>) — reference only: dev bundle, broad header forwarding, fail-open input fallback и logs restored values не переносятся в production.
 
-**Release gate:** T11/W27 проверяет базу включая F24/F25; W35 повторяет packaging/регрессию после Claude additions, W45 отдельно после Codex. Выпускная граница OPEN-C01 не решается номером W35. C4 не завершает расширенный sprint. Изменение общего ядра в T12 инвалидирует affected acceptance evidence прошлых треков и требует повторной проверки. Методологические правила сверх уже принятого test-first цикла будут обсуждены следующим отдельным этапом, не придумываются здесь.
+**Release gate:** T11/W27 проверяет базу включая F24/F25; W35 повторяет packaging/регрессию после Claude additions, W45 отдельно после Codex. Оба adapter обязательны до первого coding-выпуска; W35 (Claude) сам по себе не закрывает C5. C4 не завершает расширенный sprint. Изменение общего ядра в T12 инвалидирует affected acceptance evidence прошлых треков и требует повторной проверки. Методологические правила сверх уже принятого test-first цикла будут обсуждены следующим отдельным этапом, не придумываются здесь.
 
 ## 8. Definition of Done всего объёма
 

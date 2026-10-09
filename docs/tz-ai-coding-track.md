@@ -4,7 +4,7 @@
 
 Связь: [общая спецификация](<docs/tz-product-control-plane-sprint.md>), [основной план](<docs/plan-product-control-plane-sprint.md>), [матрица возможностей](<docs/tz-product-control-plane-matrix.md>). Новый паспорт **F23**, новый завершающий трек **T12**, специализированное ядро **K10**, пакеты **W28–W35** (Claude slice), затем **W45** (Codex), проверки **AC01–AC13**. Runtime HITL/credentials используют общий F24, документы — F25, см. [контракт](<docs/tz-hitl-and-documents.md>). Старые W/CP не перенумеровываются. Jev отменён владельцем для текущего спринта; [проверка пригодности](<research/jev-typesafe-product-fit.md>) остаётся архивом. Высокоуровневые coding defaults проходят [методологическое согласование](<docs/decisions-product-control-plane.md>), а не считаются утверждёнными автоматически.
 
-**Последнее решение владельца:** coding/harness integration снова планируем полностью в завершающем T12, реализуем после более приоритетной базы. Промежуточная отмена коннекторов superseded (§4duodecies [реестра](<docs/decisions-product-control-plane.md>)). HITL08 имеет docs/source evidence, но actual resume mode остаётся открытым до pinned runtime SP07 и выбора применимого контракта. SP07/W31/C5 возвращены в план, но не считаются реализованными/проверенными.
+**Последнее решение владельца:** coding/harness integration снова планируем полностью в завершающем T12, реализуем после более приоритетной базы. Промежуточная отмена коннекторов superseded (§4duodecies [реестра](<docs/decisions-product-control-plane.md>)). HITL в первом coding-релизе — только live-ожидание (HITL08 решён: cold resume не обещаем, неподдержанное явно `resume_unavailable`); exact native mode ещё проверяет SP07. SP07/W31/C5 возвращены в план, но не считаются реализованными/проверенными.
 
 **Принято CODING01-platforms:** целевые execution environments — Linux и macOS; Windows через отдельно проверенный WSL. Нативный PowerShell/Windows executor не входит. Прежние Linux-only defaults ниже superseded как единственная целевая среда; Linux containers не доказательство macOS/WSL compatibility. Поставка самого Pseudex остаётся компактной.
 
@@ -135,7 +135,7 @@ Ref secret не является правом: live app/workspace/operation/dest
 
 ## 4. Место в общем спринте и порядок реализации
 
-**T12 идёт после базовых T01–T11 плюс T13 HITL/T14 документы и W27/C4.** C4 теперь означает «базовая платформа принята», а не финальную приёмку расширенного спринта. Claude integration и последующий Codex имеют отдельную приёмку; включение Codex в первый публичный **C5** остаётся OPEN-C01. Общая регрессия на новом артефакте обязательна после каждого принятого adapter. Исходные W27 gates не отменяются: W35 повторно проверяет платформу после добавления executor/adapters.
+**T12 идёт после базовых T01–T11 плюс T13 HITL/T14 документы и W27/C4.** C4 теперь означает «базовая платформа принята», а не финальную приёмку расширенного спринта. Claude integration и последующий Codex имеют отдельную приёмку; **Codex обязателен в первом публичном C5** (решено). Общая регрессия на новом артефакте обязательна после каждого принятого adapter. Исходные W27 gates не отменяются: W35 повторно проверяет платформу после добавления executor/adapters.
 
 До C4 разрешены только contract/spike/test design coding-направления для раннего обнаружения критической несовместимости; реализацию production coding flow запускаем последней. Результат SP07 может потребовать версионированного изменения общего API: это согласуется с K-владельцем, не протаскивается через отдельный private API.
 
@@ -143,12 +143,12 @@ Ref secret не является правом: live app/workspace/operation/dest
 T01–T11 + T13/T14 (W36–W44) → W27/C4 (базовая платформа)
   → T12.1/W28 → T12.2/W29 → T12.3/W30 → T12.4/W31
   → T12.5/W32 → T12.6/W33 → T12.7/W34 → T12.8/W35 (Claude accepted)
-  → T12.9/W45 (Codex accepted); публичная граница C5 — OPEN-C01
+  → T12.9/W45 (Codex accepted); оба adapter обязательны до публичного C5
 ```
 
 ### 4.1 SP07 — совместимость harness и executor substrate
 
-**Первичная база подготовлена:** [сравнение HITL lifecycle](<research/harness-hitl-lifecycle.md>) отдельно описывает Claude CLI/settings hooks, Claude Agent SDK callback/defer, Codex app-server/hooks/SDK и установленный DSH. Это docs/source evidence, не выполненный SP07 и не обещание поддержать все три harness в первой версии. Выбор HITL08 пока открыт.
+**Первичная база подготовлена:** [сравнение HITL lifecycle](<research/harness-hitl-lifecycle.md>) отдельно описывает Claude CLI/settings hooks, Claude Agent SDK callback/defer, Codex app-server/hooks/SDK и установленный DSH. Это docs/source evidence, не выполненный SP07 и не обещание поддержать все три harness в первой версии. HITL08 решён: первый релиз live-only, cold resume позже.
 
 **Обязательные различия в spike:** долгий permission wait ≠ hook timeout ≠ command timeout; закрытие UI ≠ Stop ≠ process restart; обычный session resume ≠ durable deferred call. Claude callback может ждать indefinitely, а defer требует отдельного resume recheck; Codex warm reconnect replay не cold restart; DSH native pre-gate input rewriting запрещён. Hook failure/output-mask timeout не должны пропускать raw данные. Подробные experiment cases приведены в исследовании §7.
 
@@ -168,7 +168,7 @@ T01–T11 + T13/T14 (W36–W44) → W27/C4 (базовая платформа)
 | T12.6 / W33 | Registered narrow secret-broker operation, approved network destination, transient credentials, no arbitrary Bash injection | W32, F07/F11/F22 | AC06/AC10; default no model/log/PII mapping, opt-in F24 по H02 отдельно; forbidden destination blocked |
 | T12.7 / W34 | Единый UI профиль Coding: workspace/ops/capabilities, audit views, snippets/probe, limits/retention, no remote arbitrary shell UI | W33, F20 | AC11, CP04–CP06/CP42–CP43 |
 | T12.8 / W35 | Claude coding acceptance, source/compiled/platform regressions, supported-host docs и packaging | W34 и все relevant core/H/DOCG | AC01–AC12 по Linux/macOS/WSL; не автоматическая приёмка Codex/C5 |
-| T12.9 / W45 | Последующий Codex adapter, собственный capability profile и повторная общая регрессия | W35, Codex SP07 | AC13 + applicable AC01–AC12; release placement OPEN-C01 |
+| T12.9 / W45 | Последующий Codex adapter, собственный capability profile и повторная общая регрессия | W35, Codex SP07 | AC13 + applicable AC01–AC12; обязателен до публичного C5 |
 
 K10-A/B проектируются test-first до business implementation. Специализированная ownership не даёт права исправлять общий vault/envelope/authorization из coding-трека без владельца соответствующего K. Proposed write scopes: `prototype/pseudex/coding/`, отдельный thin harness adapter/executor distribution, coding fixtures/tests и UI feature module. Registry/Docker/entrypoint/schema changes интегрируются централизованно. Данные/лицензия ядра не копируются в SDK/executor; generic local executor не превращается в поставку proprietary recognizers.
 
@@ -208,6 +208,6 @@ K10-A/B проектируются test-first до business implementation. Сп
 
 Выбраны: coding последним, Claude→Codex, Linux/macOS/WSL, без native PowerShell; credentials через service/purpose и общий HITL, не ручной список всех tool names. Bash subset и exact file/context safety проектируются как K10 и проходят tests, а не объявляются свойствами одного proxy.
 
-Не выбраны/не доказаны: exact native/SDK/hook mode каждого harness, cold resume contract после исследования, публикация Codex вместе с первым C5 или позже (OPEN-C01), low-level supported command grammar и resource budgets. Эти gaps перечислены в [общем контракте](<docs/tz-hitl-and-documents.md>), SP07 не заменён чтением документации.
+Не выбраны/не доказаны: exact native/SDK/hook mode каждого harness, low-level supported command grammar и resource budgets. Cold resume в первом релизе не обещаем (live-only). Codex обязателен в первом C5 — решено. Эти gaps перечислены в [общем контракте](<docs/tz-hitl-and-documents.md>), SP07 не заменён чтением документации.
 
 Jev и самостоятельный semantic classifier R&D отменены. DSH изучен как пример lifecycle, но не добавлен обязательным третьим connector. В этой редакции не запускались code/model/paid integration tests.
