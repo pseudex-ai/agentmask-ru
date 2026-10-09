@@ -2,9 +2,9 @@
 
 **Статус:** включение направления в текущий спринт запрошено владельцем; конкретная архитектура ниже — проект для последующей методологической проработки. Код, команды, paid evals и релизы сейчас не запускаются.
 
-Связь: [общая спецификация](<docs/tz-product-control-plane-sprint.md>), [основной план](<docs/plan-product-control-plane-sprint.md>), [матрица возможностей](<docs/tz-product-control-plane-matrix.md>). Новый паспорт **F23**, новый завершающий трек **T12**, специализированное ядро **K10**, пакеты **W28–W35**, проверки **AC01–AC12**. Старые W/CP не перенумеровываются. Jev отменён владельцем для текущего спринта; [проверка пригодности](<research/jev-typesafe-product-fit.md>) остаётся архивом. Высокоуровневые coding defaults проходят [методологическое согласование](<docs/decisions-product-control-plane.md>), а не считаются утверждёнными автоматически.
+Связь: [общая спецификация](<docs/tz-product-control-plane-sprint.md>), [основной план](<docs/plan-product-control-plane-sprint.md>), [матрица возможностей](<docs/tz-product-control-plane-matrix.md>). Новый паспорт **F23**, новый завершающий трек **T12**, специализированное ядро **K10**, пакеты **W28–W35** (Claude slice), затем **W45** (Codex), проверки **AC01–AC13**. Runtime HITL/credentials используют общий F24, документы — F25, см. [контракт](<docs/tz-hitl-and-documents.md>). Старые W/CP не перенумеровываются. Jev отменён владельцем для текущего спринта; [проверка пригодности](<research/jev-typesafe-product-fit.md>) остаётся архивом. Высокоуровневые coding defaults проходят [методологическое согласование](<docs/decisions-product-control-plane.md>), а не считаются утверждёнными автоматически.
 
-**Последнее решение владельца:** coding/harness integration снова планируем полностью в завершающем T12, реализуем после более приоритетной базы. Промежуточная отмена коннекторов superseded (§4duodecies [реестра](<docs/decisions-product-control-plane.md>)). HITL08 pause/resume/retry semantics — `research_required`: сначала фактические возможности harness, затем выбор владельца. SP07/W31/C5 возвращены в план, но не считаются реализованными/проверенными.
+**Последнее решение владельца:** coding/harness integration снова планируем полностью в завершающем T12, реализуем после более приоритетной базы. Промежуточная отмена коннекторов superseded (§4duodecies [реестра](<docs/decisions-product-control-plane.md>)). HITL08 имеет docs/source evidence, но actual resume mode остаётся открытым до pinned runtime SP07 и выбора применимого контракта. SP07/W31/C5 возвращены в план, но не считаются реализованными/проверенными.
 
 **Принято CODING01-platforms:** целевые execution environments — Linux и macOS; Windows через отдельно проверенный WSL. Нативный PowerShell/Windows executor не входит. Прежние Linux-only defaults ниже superseded как единственная целевая среда; Linux containers не доказательство macOS/WSL compatibility. Поставка самого Pseudex остаётся компактной.
 
@@ -36,7 +36,7 @@ Pseudex Coding: разрешённый аргумент восстанавлив
 
 | В текущем треке | За пределами первой поддержанной версии |
 |---|---|
-| Один фактически проверенный coding harness; первый кандидат Claude Code по имеющемуся spike | Автоматическое обещание поддержки Claude Code/Codex/Cursor/всех IDE одновременно |
+| Claude Code первым, затем Codex отдельным adapter этапом; Linux/macOS/WSL отдельно проверяются | Поддержка всех IDE и native Windows/PowerShell; утверждение Codex-ready по одному Claude run |
 | Поддержанные Anthropic message/tool envelopes и точный capability manifest | Все private APIs, произвольные multimodal/reasoning-блоки и автоматический replay непрозрачных подписанных блоков |
 | Текстовые read/search, поддержанный subset Bash-вызовов, контролируемый literal patch | Произвольная программа shell/Python/JS/SQL с восстановлением токенов внутри неё |
 | Exact byte-preserving mappings для approved data slots | Морфологическая канонизация пути/исходника, fuzzy correction команд или имён файлов |
@@ -73,7 +73,7 @@ K10 — adapter/kernel поверх K02/K03/K05/K06/K07/K09. Он не заме�
 - **Обычная PII детекция остаётся:** она помогает найти чувствительное содержимое. Но вид подстановки и обратная форма задаются coding renderer. Semantic placeholders в конфиге не обязаны притворяться checksum-valid реальным credential.
 - Один и тот же fake из другой session/project/workspace не считается ссылкой на текущее значение. Частичные, изменённые или неоднозначные placeholders не угадывать.
 
-Детектор не гарантирует понимание произвольного исходного кода как секретной бизнес-логики. Если сам алгоритм нельзя выносить наружу, policy выбирает локальную модель/deny, а не обещает сохранить смысл после полного сокрытия кода.
+Детектор не гарантирует понимание произвольного исходного кода как секретной бизнес-логики. Если сам алгоритм нельзя выносить наружу, policy ограничивает передачу разрешённым локальным binding либо отказывает; модель выбирает caller, а не обещает сохранить смысл после полного сокрытия кода.
 
 ### 3.2 План исполнения, не строковый replace
 
@@ -90,7 +90,7 @@ CodingExecutionPlan {
 }
 ```
 
-1. Adapter разбирает поддержанный input локально. Классификатор/LLM может предложить категорию риска, но не является parser или authority.
+1. Adapter разбирает поддержанный input локально. Semantic classifier/Jev не добавляются в этот sprint и не заменяют parser/authority; поведение определяется проверенным syntax/context contract.
 2. Для Bash первой версии допускаются **простые команды из явного списка executable+option grammars**, с literal data slots. Не достаточно «разрешён grep»: проверяются флаги, operand positions, input files, subprocess/config side effects, encoding и resource caps. Стартовый кандидат: literal read/search (`grep -F`, `rg -F` в ограниченной конфигурации) и controlled file read, а не все флаги этих утилит.
 3. Поддержанный Bash subset превращается в typed executable+argv и исполняется **без повторной интерпретации восстановленной строки shell**. Parser не вызывает expansions. `$()`, backticks, `eval`, `bash -c`, shell functions, pipelines, redirections, process substitution, heredoc, dynamic glob/variables и вложенные языки с token restoration — пока отказ. Это ограниченная совместимость, показываем её явно.
 4. Кавычки в original value остаются данными argv, не новыми shell instructions. Дополнительно валидируется **смысл аргумента утилиты**: option injection/regex/path/URL не исправляются одним shell escaping.
@@ -115,7 +115,7 @@ CodingExecutionPlan {
 
 **HITL дополнение:** default raw-key egress запрещён, но администратор может включить отдельный разовый вариант отправки оригинала модели для уполномоченного reviewer с exact binding/предупреждением/audit. Pending payload разрешено временно хранить encrypted внутри Pseudex, не в logs/долговременных backups. Это явные принятые исключения к прежним абсолютным default-формулировкам ниже; arbitrary shell substitution или неисправные mandatory checks ими не разрешаются.
 
-Known SECRET блокируется/удаляется до model boundary. Tool credentials не выдаются в command string или reversible mapping. Optional secret broker предоставляет secret **только заранее зарегистрированной узкой операции** (например, конкретный API-host/метод/credential purpose) через подходящий защищённый канал. Env injection сам по себе не защита: программа может прочитать env и отправить его наружу. Поэтому запрещены произвольные команды с credential, наследование всем детям и неограниченная сеть. Нет обещания безопасно дать production credential любой agent-generated программе.
+Known SECRET по default блокируется/удаляется до model boundary. Исключение — принятое F24 opt-in exact one-use разрешение конкретному получателю; оно явно маркирует intentional disclosure, не privacy-safe substitution. Tool credentials не выдаются в command string или reversible mapping. Optional secret broker предоставляет secret **только заранее зарегистрированной узкой операции** (например, конкретный API-host/метод/credential purpose) через подходящий защищённый канал. Env injection сам по себе не защита: программа может прочитать env и отправить его наружу. Поэтому запрещены произвольные команды с credential, наследование всем детям и неограниченная сеть. Нет обещания безопасно дать production credential любой agent-generated программе.
 
 Ref secret не является правом: live app/workspace/operation/destination grant, short lifetime, audited access, no raw logs. Для процесса, которому разрешён доступ к secret, локальные права/root и unmanaged traces остаются границей доверия. Output scanning не заменяет network sandbox.
 
@@ -135,14 +135,15 @@ Ref secret не является правом: live app/workspace/operation/dest
 
 ## 4. Место в общем спринте и порядок реализации
 
-**T12 идёт после готовности базовых треков T01–T11 и W27/C4.** C4 теперь означает «базовая платформа принята», а не финальную приёмку расширенного спринта. Итог **C5** требует coding integration и повторную общую регрессию на новом артефакте. Исходные W27 gates не отменяются: W35 повторно проверяет платформу после добавления executor/adapters.
+**T12 идёт после базовых T01–T11 плюс T13 HITL/T14 документы и W27/C4.** C4 теперь означает «базовая платформа принята», а не финальную приёмку расширенного спринта. Claude integration и последующий Codex имеют отдельную приёмку; включение Codex в первый публичный **C5** остаётся OPEN-C01. Общая регрессия на новом артефакте обязательна после каждого принятого adapter. Исходные W27 gates не отменяются: W35 повторно проверяет платформу после добавления executor/adapters.
 
 До C4 разрешены только contract/spike/test design coding-направления для раннего обнаружения критической несовместимости; реализацию production coding flow запускаем последней. Результат SP07 может потребовать версионированного изменения общего API: это согласуется с K-владельцем, не протаскивается через отдельный private API.
 
 ```text
-T01–T11 / W01–W27 → C4 (базовая платформа)
+T01–T11 + T13/T14 (W36–W44) → W27/C4 (базовая платформа)
   → T12.1/W28 → T12.2/W29 → T12.3/W30 → T12.4/W31
-  → T12.5/W32 → T12.6/W33 → T12.7/W34 → T12.8/W35 → C5
+  → T12.5/W32 → T12.6/W33 → T12.7/W34 → T12.8/W35 (Claude accepted)
+  → T12.9/W45 (Codex accepted); публичная граница C5 — OPEN-C01
 ```
 
 ### 4.1 SP07 — совместимость harness и executor substrate
@@ -164,13 +165,14 @@ T01–T11 / W01–W27 → C4 (базовая платформа)
 | T12.3 / W30 | K10-B: controlled local executor, workspace/file/process/network boundary, live consume, cleanup/cancel/output capture | W29, K02/K06/K09 | AC05/AC06/AC07; actual process side effects, race/revoke tests |
 | T12.4 / W31 | Pinned Anthropic/coding-harness adapter, protected read/search, unsupported-tool refusal, two state views | W30, W17/W24 contracts | AC01/AC07/AC09, CP28/CP46/CP47 |
 | T12.5 / W32 | Literal patch workflow со snapshot CAS/offset mapping, protected diff, explicit sandboxed test task profile | W31 | AC08; exact bytes/result tree oracle, stale preimage denial |
-| T12.6 / W33 | Registered narrow secret-broker operation, approved network destination, transient credentials, no arbitrary Bash injection | W32, F07/F11/F22 | AC06/AC10; секрет не model/log/mapping, forbidden destination blocked |
+| T12.6 / W33 | Registered narrow secret-broker operation, approved network destination, transient credentials, no arbitrary Bash injection | W32, F07/F11/F22 | AC06/AC10; default no model/log/PII mapping, opt-in F24 по H02 отдельно; forbidden destination blocked |
 | T12.7 / W34 | Единый UI профиль Coding: workspace/ops/capabilities, audit views, snippets/probe, limits/retention, no remote arbitrary shell UI | W33, F20 | AC11, CP04–CP06/CP42–CP43 |
-| T12.8 / W35 | Финальная приёмка целостной системы: coding pairs, source/compiled/platform regressions, supported-host docs, packaging и rollback | W34 и все core acceptance по затронутым boundaries | AC01–AC12 + affected/full required CP suites, C5 |
+| T12.8 / W35 | Claude coding acceptance, source/compiled/platform regressions, supported-host docs и packaging | W34 и все relevant core/H/DOCG | AC01–AC12 по Linux/macOS/WSL; не автоматическая приёмка Codex/C5 |
+| T12.9 / W45 | Последующий Codex adapter, собственный capability profile и повторная общая регрессия | W35, Codex SP07 | AC13 + applicable AC01–AC12; release placement OPEN-C01 |
 
 K10-A/B проектируются test-first до business implementation. Специализированная ownership не даёт права исправлять общий vault/envelope/authorization из coding-трека без владельца соответствующего K. Proposed write scopes: `prototype/pseudex/coding/`, отдельный thin harness adapter/executor distribution, coding fixtures/tests и UI feature module. Registry/Docker/entrypoint/schema changes интегрируются централизованно. Данные/лицензия ядра не копируются в SDK/executor; generic local executor не превращается в поставку proprietary recognizers.
 
-## 5. AC01–AC12: обязательная самостоятельная приёмка
+## 5. AC01–AC13: обязательная самостоятельная приёмка
 
 Все IDs — **новые proposed gates**, не уже запущенные тесты. Входы synthetic, без настоящих credentials/рабочих репозиториев. До implementation — fixtures, ожидаемый process/file outcome, controlled failure и RED. Реальный harness/OS/container gate нельзя заменить mock transport.
 
@@ -185,9 +187,10 @@ K10-A/B проектируются test-first до business implementation. Сп
 | AC07 | Stdout/stderr split secret/PII, huge output, timeout и orphan child | Модель/trace не получают unchecked tail, process tree остановлено, buffer cap соблюдён |
 | AC08 | Stale file preimage/offset drift/token в executable syntax/partial patch | Неверный snapshot не меняет файл; разрешённый literal patch даёт ожидаемое полное содержимое, originals вне edits сохранены |
 | AC09 | Cross-project/session/workspace restored data и state pollution | Чужие mappings denied, checkpoint содержит только protected view, real execution copy не попадает в следующий model request |
-| AC10 | Credential broker с чужой operation/ref, print/env/network attempt | Нет secret в model/maps/logs/results; произвольный процесс не получает credential; разрешённая narrow операция работает |
+| AC10 | Credential broker / default protection / explicit exception | Default no model/PII-map/log/result secret; intentional raw-key disclosure допускается только точным F24 opt-in (H02), replay/wrong destination не проходят; произвольный процесс credential не получает |
 | AC11 | UI claim protection при absent executor/unsupported tool, смена policy/lease/expiry | Coverage честен; revoke/expiry fail-closed; snapshots/retention/privacy events совместимы с платформой |
 | AC12 | Complete paired coding task + mutation + packaging | Успешный поиск/patch по одинаковому fixture с/без защиты, измеренная полезность/latency; injected wrong-value/leak/side-effect mutation делает отчёт RED |
+| AC13 | Второй harness Codex, отдельно от Claude | Pinned actual mode/versions, approval/reconnect/cold restart/input-output/checkpoint tests на declared OS; невозможность input rewrite через approval reply не замалчивается. Общие safety/utility cases перепроверены |
 
 Две независимые оси: **защита** (wire/trace/egress leaks и forbidden side effects) и **полезность** (найден правильный файл/строка, корректный patch, фактические test outcomes). Zero leakage через отказ всем задачам не полноценный успех. Корпус содержит безопасные команды, которые должны выполниться, и опасные/неподдержанные, которые должны быть отвергнуты.
 
@@ -199,10 +202,12 @@ K10-A/B проектируются test-first до business implementation. Сп
 - Общая policy revision описывает data categories, exact transform mode, approved operations, allowed roots, network profile, limits, retention, required checks. Raw secret/cwd path claims из модели не authority.
 - Граф UI показывает model ingress, file read, command execution, patch, tool results/checkpoints, сеть; каждый этап enforced/configured_unverified/unsupported. Наличие proxy не красит всю строку зелёным.
 - Test corpus и exact originals используют общие sensitive storage/lifecycle contracts. Environment credentials/restore permits не входят в reports. Model token usage и billed protect не пересчитываются в число shell instructions.
-- Совместимость C5 с основной платформой проверяется заново: coding features не ослабляют F01–F22 и не делают секреты обратимыми.
+- Совместимость coding с основной платформой F01–F22/F24/F25 проверяется заново. Нет обычных reversible SECRET PII mappings; scoped credential refs/authorised pending и opt-in one-use disclosure соответствуют F24, а не blanket no-storage assertion.
 
-## 7. Решения до последующей методологической проработки
+## 7. Открытые условия перед реализацией
 
-Для включения трека в план новых вопросов владельцу не требуется. Приняты рабочие defaults: последняя очередь, общее ядро, один доказанный harness, Linux isolation первым, narrow Bash subset/read/search/literal patch, no arbitrary credential restore. Следующая дискуссия может уточнить первую целевую OS/harness и допустимую степень ограничений; **это не выполненные compatibility spikes и не релизные обещания**.
+Выбраны: coding последним, Claude→Codex, Linux/macOS/WSL, без native PowerShell; credentials через service/purpose и общий HITL, не ручной список всех tool names. Bash subset и exact file/context safety проектируются как K10 и проходят tests, а не объявляются свойствами одного proxy.
 
-Методологический разбор начат по объяснению владельца: все неоднозначные архитектурные/UX/coding решения согласуются отдельно и фиксируются в реестре. Jev исключён из текущего спринта; общий вопрос иных classifiers рассматривается отдельно, без автоматического разрешения на внешние API/evals.
+Не выбраны/не доказаны: exact native/SDK/hook mode каждого harness, cold resume contract после исследования, публикация Codex вместе с первым C5 или позже (OPEN-C01), low-level supported command grammar и resource budgets. Эти gaps перечислены в [общем контракте](<docs/tz-hitl-and-documents.md>), SP07 не заменён чтением документации.
+
+Jev и самостоятельный semantic classifier R&D отменены. DSH изучен как пример lifecycle, но не добавлен обязательным третьим connector. В этой редакции не запускались code/model/paid integration tests.

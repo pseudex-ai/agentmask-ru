@@ -1,8 +1,8 @@
 # Методологический разбор спринта: решения владельца
 
-**Статус:** активное обсуждение, не разрешение на реализацию. Записываем высокоуровневые решения последовательно вместе с владельцем. Общая положительная оценка плана не считается автоматическим утверждением всех предложенных defaults.
+**Статус:** основные продуктовые решения согласованы и консолидированы в [спецификации](<docs/tz-product-control-plane-sprint.md>), [плане](<docs/plan-product-control-plane-sprint.md>) и [контракте HITL/документов](<docs/tz-hitl-and-documents.md>). Реализация не разрешена; пять вопросов остаются открытыми для владельца (OPEN-H01/H02/D01/D02/C01 в [отчёте сверки](<research/security-platform-reconciliation.md>)). Хронологические записи ниже сохраняются как история; последующие записи помечают, какое прежнее предложение заменено, и не отменяют принятые принципы молча.
 
-Связанные документы: [спецификация](<docs/tz-product-control-plane-sprint.md>), [план](<docs/plan-product-control-plane-sprint.md>), [матрица](<docs/tz-product-control-plane-matrix.md>), [AI-разработка](<docs/tz-ai-coding-track.md>).
+Связанные документы: [спецификация](<docs/tz-product-control-plane-sprint.md>), [план](<docs/plan-product-control-plane-sprint.md>), [матрица](<docs/tz-product-control-plane-matrix.md>), [AI-разработка](<docs/tz-ai-coding-track.md>), [HITL и документы](<docs/tz-hitl-and-documents.md>).
 
 ## 1. Порядок согласования
 

@@ -1,38 +1,25 @@
 # План реализации спринта: управляемая защита Pseudex
 
-**Статус: план-предложение, код не реализуется этим документом.** Основа — [спецификация](<docs/tz-product-control-plane-sprint.md>), [матрица требований](<docs/tz-product-control-plane-matrix.md>) и [явные решения владельца](<docs/decisions-product-control-plane.md>). Исходные 23 паспорта и 66 групп требований дополнены согласованным document/HITL scope; номера дополнительных work/gates требуют консолидации до реализации. План не зависит от переговоров/КП и не обещает календарную длительность без команды и spikes.
+**Статус:** консолидированный проект реализации по принятым решениям, не разрешение выполнять неутверждённые контракты. Источники: [спецификация F01–F25](<docs/tz-product-control-plane-sprint.md>), [матрица R01–R66](<docs/tz-product-control-plane-matrix.md>), [реестр владельца](<docs/decisions-product-control-plane.md>), [HITL/документы](<docs/tz-hitl-and-documents.md>) и [coding](<docs/tz-ai-coding-track.md>).
 
-**Рабочая база и размещение документов:** канонические документы хранятся в `main`. Перенос/повторная техническая сверка выполнены от `origin/main` commit `4cc929bcc09e4a27eb5226771060c74643c46f43`; [поправки baseline](<research/security-platform-current-main-baseline.md>) обязательны при чтении раннего плана. Изначальная проверка на `380e3e72` была устаревшей, а резервная ветка `docs/security-platform-sprint-decisions` не является базой разработки. **Все feature worktrees создаются от актуального `origin/main`, не от исходной dirty копии и не от чужого незавершённого трека.**
+**База:** повторная сверка на актуальном `origin/main` 633fb481; runtime соответствует проверенному 4cc929bc, engine version file 0.3.21. [Baseline corrections](<research/security-platform-current-main-baseline.md>) и [повторная сверка S1/UI/code](<research/security-platform-reconciliation.md>) обязательны. Канонические документы — main; каждый feature worktree создаётся от fetched origin/main с записанным SHA, не от старой dirty-копии/резервной docs-ветки.
 
-**Расширение по запросу владельца:** в тот же спринт добавлен завершающий **T12 «AI-разработка»** — K10, F23, W28–W35 и AC01–AC12. Базовые 27 пакетов и 47 CP-гейтов сохранены; итог расширенного спринта — **C5**, а C4 теперь приёмка базовой платформы. Подробный контракт и пакеты: [AI coding track](<docs/tz-ai-coding-track.md>). Новая методологическая проработка пока не начинается.
+### Утверждённый порядок и границы
 
-**Текущий этап — методологическое согласование:** ключевые архитектурные и пользовательские развилки проходят владельца в [реестре решений](<docs/decisions-product-control-plane.md>). Порядок K/T/W и технические defaults ниже остаются проектными там, где ещё нет явного ответа. Jev исключён; реализация этим обсуждением не запускается.
+1. Test-first ядра → законченный цикл собственное правило/profile → sandbox → tests → apply/rollback.
+2. **T13 HITL и T14 документы параллельно**, равный приоритет, по готовности общих interfaces.
+3. Стандартные enterprise OIDC/REST DLP/event exports после основных сценариев; contract preparation не блокируется.
+4. **T12 coding последним:** Claude Code сначала, затем отдельный Codex W45. Linux/macOS/WSL, без native PowerShell. Release boundary Codex/C5 — OPEN-C01, не новый молча назначенный release blocker.
 
-**Действующее уточнение AR01/AR04:** один инстанс = одна локальная консоль, прежний быстрый запуск, готовая UI+API. Несколько приложений и upstream-направлений внутри одного инстанса — настраиваемость, не распределённая topology. Centers/nodes/fleet/Kubernetes/HA исключены из текущего sprint; ранее внесённая multi-node трактовка отменена. W02/W04/W12 снова standalone-план; отдельные внутренние storage/process decisions остаются proposed.
+Один инстанс/одна консоль, плоские «Агенты и сервисы», две роли + выдаваемые права, fixed API forwarding с provider key у Pseudex, без model selection/balancing/fallback. Политики применяются к выбранным/всем; при preflight failures есть явный выбор eligible subset либо никому, deep-link к разбору. Streaming сохраняется только если required checks поддерживают его. Диагностический raw archive выключен; pending HITL encrypted, default без auto-expiry карточки.
 
-**Принято AR10/AR11/AR20:** base policy + application profiles с видимыми адресными overrides; ослабление требует предупреждения и audit author/reason. Обычный путь draft→automatic validation/контрольные примеры→explicit apply; default four-eyes нет. W05/W07/W11–W13/W19/W26 должны реализовать именно этот UX/authority contract, а не один global toggle или отдельную независимую policy каждого приложения.
+**Не включаем:** fleet/HA/Kubernetes, OCR, полный offline engine, Jev и собственный semantic-classifier R&D. Документы — native text-layer PDF/DOCX, не extracted-text-only; unsupported parts не выдаются как fully protected. Исторические частные предложения не добавляют эти направления обратно.
 
-**Scope update — HITL:** runtime approval входит в sprint, отдельно от four-eyes policy publication. Приняты очередь в нашей UI+API, сохранение pending operation и продолжение exact approved operation, safe defaults. По отдельно включённой настройке доступно разовое осознанное raw-key разрешение модели; requested credential substitution для tool получает отдельный scoped contract. Принято HITL04: временный encrypted pending payload хранит Pseudex, с очисткой/отдельными правами и без содержимого в logs/долговременных backups; точные TTL/reviewer grants ещё уточняются. Detailed work/gates добавляются после ответов. Прежние P2 и blanket raw-secret запреты не отменяют explicit HITL исключение, но technical-check failures не превращаются в allow. Unresolved семантику не реализовывать.
-
-**Принято AR09/HITL05:** две базовые роли admin/user, администратор выдаёт дополнительные разрешения на настройки/HITL; originals — отдельное право. Прежний обязательный каталог пяти ролей отменён. **HITL ожидание:** default карточка не исчезает/не удаляется по таймеру; auto-expiry опционален. Не путать retention/SLA с живым tool/hook timeout; SP07 должен доказать pause/resume либо явный fail-closed handoff/retry, а не ждать в hook до таймаута. Поздний approve/caller gone/no background side effect — обязательные будущие gates; подробный UX ещё согласуется.
-
-**Последнее scope-решение:** владелец вернул coding/harness integration в план как самый поздний T12; промежуточная отмена коннекторов superseded. T12/W28–W35/C5 снова планируются, но HITL08 имеет статус `research_required`: сначала официальные/source lifecycle факты Claude Code/Codex/DSH, затем выбор pause/resume/retry. Не выдаём прошлые гипотезы за принятое поведение. Реализация остаётся после базы; никаких hooks/моделей этой проектной работой не запускаем.
-
-**HITL08 evidence ready:** [исследование harness lifecycle](<research/harness-hitl-lifecycle.md>) выполнено по official docs/pinned Codex source/installed DSH source. Оно не утверждает выбранный adapter и не заменяет SP07. W28 должен отдельно проверить live wait, viewer disconnect, cancel, process restart/defer, same-ID replay, input/output transform и fail-open hook failure. Документированные механизмы разных harness не унифицировать предположением об одном timeout.
-
-**Принятые приоритеты PRIORITY01/02:** первый законченный сценарий — самостоятельная настройка защиты (profiles/rules/exceptions/real sandbox/tests/apply/rollback), после необходимых ядер и гейтов. SSO/DLP/SIEM реализуются после рабочего ядра и основных сценариев; их contracts можно подготовить заранее. Локальные users/rights/internal audit не откладываются, basic HITL не зависит от корпоративных adapters. Coding T12 остаётся последним. Это приоритет готовности и распределения усилий, а не отмена dependency graph или решение выпускать неполный продукт.
-
-**Новый scope:** document protection — основной sprint; принято DOC01: native защищённый PDF/DOCX с сохранением структуры/оформления, не только extracted text. Принято DOC02/03: DOCX и текстовые PDF, OCR исключён; best-effort layout и видимые допустимые отличия, повреждение — отказ. Принято DOC04: непроверенные image/embedded parts по default блокируют выдачу fully protected файла; removal/partial processing только явно, coverage честен. Нужны отдельные parser/rewrite/protocol/storage/artifact no-leak gates и work packages. **SEM01:** ранее предложенный parallel semantic classifier R&D отменён владельцем, сейчас не реализуем и не исследуем. Coding сохраняет последнее место среди production треков.
-
-**Принято PRIORITY-documents-hitl/CODING-first-harness:** после законченного self-service сценария документы и HITL — равноприоритетные параллельные треки с общими prerequisites, не sequential gates друг для друга. Coding остаётся последним: первый supported harness Claude Code, затем Codex; DSH не добавлен в обязательную поставку только фактом исследования. Конкретные adapter modes/версии проходят SP07; при консолидации нужен явный Codex follow-on work/gate этап, а не implicit simultaneous promise.
-
-**Принято ENTERPRISE01/OFFLINE01:** enterprise scope = проверенные стандартные OIDC/event export/REST DLP interfaces без обещания всех вендоров; их реализация после основных сценариев. Full offline licensing/air-gap в этом спринте не реализуется; отдельный прежний design и коммерческие условия не меняются. Local UI/no-CDN не означает offline engine. Утверждённая цепочка приоритетов: self-service core → документы/HITL параллельно → enterprise → coding Claude Code затем Codex, с сохранением technical prerequisites.
-
-**Принято CODING01-platforms:** завершающий coding-трек целится в Linux/macOS и Windows через WSL; native PowerShell/Windows executor не добавляем. Прежние Linux-only предложения superseded. SP07/AC должны отдельно подтвердить OS/filesystem/network/process behavior; Linux container GREEN не переносится автоматически на macOS/WSL. Порядок Claude Code→Codex сохранён.
+**Объём планирования:** W01–W45; исходные CP01–CP47 сохранены, добавлены H01–H10 и DOCG01–DOCG10, coding AC01–AC13. Номера не хронология: W36–W44 prerequisites W27, W45 после W35. Проверки пока proposed, не green. Численность команды/календарный бюджет не выдумываются; S/M/L/XL относительные оценки.
 
 ## 1. Definition of Ready и порядок работы
 
-Перед реализацией owner утверждает D1–D10 основной спецификации. Остальные начальные действия технические, не повторное обсуждение позиционирования:
+Перед реализацией сверить accepted решения владельца и закрыть относящиеся к пакету OPEN в [контракте HITL/документов](<docs/tz-hitl-and-documents.md>). Не требовать заново утверждать уже выбранные принципы и не считать новым GO исходные D1–D10 proposals:
 
 1. Снять baseline кода/версии/dirty changes, existing HTTP contract, quality/perf и compiled gates на разрешённом стенде. Не stash/reset чужое дерево.
 2. Разделить документацию действующего продукта и proposed scope. Не менять marketing claims до подтверждённой поставки.
@@ -82,10 +69,18 @@ W03 + W10 → W22 named access/OIDC
 W07 + W08 + W11 + W19 → W23 catalog/profiles/types
 W05 + W09 + W15 + W16 + W17 → W24 agent/RAG/tool basics
 W10 + W14 + W18 + W19 + W21 → W25 analytics/reports/incidents
-backend contracts + grants → W26 integrated UI
-базовые capabilities W01–W26 → W27 packaging/regression/platform evidence → C4
-C4 → W28 → W29 → W30 → W31 → W32 → W33 → W34 → W35 → C5
-W28–W35: завершающий T12 AI-разработка; W35 повторяет платформенную приёмку
+W03 + W05 + W10 + W12 → W26-shell [ранний contract/UI срез]
+W13–W25 + W38 + W43 → W26 [полная UI приёмка; не prerequisite своего shell]
+W02 + W03 + W05 + W09 + W10 + W11 + W12 + W13 + W14 + W18 → W36
+W36 → W37
+W37 + W09 + W16 → W38 → W39   [T13 HITL]
+W02 + W03 + W05 + W06 + W07 + W08 + W09 + W10 + W11 + W13 + W14 + W15 + W18 → W40
+W40 → W41 → W42
+W42 + W13 + W15 + W18 + W20 → W43 → W44   [T14 документы, параллельно T13]
+W01–W26 + W39 + W44 → W27 packaging/regression/platform evidence → C4
+C4 → W28 → W29 → W30 → W31 → W32 → W33 → W34 → W35 → W45
+W35 = техническая приёмка Claude; W45 = последующий Codex + AC13.
+C5 release closure: согласовать OPEN-C01, не выдавать один adapter за оба.
 ```
 
 Нет циклической зависимости «публикация ждёт полной UI-регрессии, UI-регрессия ждёт публикации»: W11 сначала создаёт minimal test core/stamp для W12, W19 добавляет полный клиентский corpus/run UX. W02 содержит минимальный supervised housekeeping/coordinator skeleton; deployment orchestration реализуется W12, bulk jobs — W18. UI можно проектировать и читать раньше, но кнопка mutation включается лишь после готового permission-gated backend.
@@ -112,7 +107,7 @@ W28–W35: завершающий T12 AI-разработка; W35 повтор�
 
 **Выход:** server-derived AuthContext, named admin sessions, issue/revoke/rotate app credentials, scoped grants.
 
-**Работа:** new identity/control connectors, compatibility adapters к [tenants](<prototype/pseudex/tenants.py>) и обеим HTTP surfaces. Bootstrap owner, sensitive grants separate, no self-declared role/actor/org. Session revoke security epoch. Raw provider pass-through остаётся explicit legacy, не route в managed project.
+**Работа:** две роли admin/user с выдаваемыми feature/HITL/sensitive permissions, плоские «Агенты и сервисы»; не обязательная org/project UI-иерархия. New identity/control connectors, compatibility adapters к [tenants](<prototype/pseudex/tenants.py>) и обеим HTTP surfaces. Bootstrap admin, sensitive grants separate, no self-declared role/actor/org. Session revoke security epoch. Raw provider pass-through остаётся explicit legacy, не route в managed project.
 
 **Зависимость:** W02. **Приёмка:** CP04/CP05/CP06; direct API tests и negative namespace searches; secrets one-time display no logs. New mutating backend не запускается с одной shared authority.
 
@@ -208,7 +203,7 @@ W28–W35: завершающий T12 AI-разработка; W35 повтор�
 
 **Выход:** несколько fixed upstream API bindings одного инстанса, понятное создание через UI/API и готовые клиентские параметры подключения; model selection/balancing/provider fallback не реализуем (принято ROUTE01/02).
 
-**Работа:** protocol-aware forwarding OpenAI/Anthropic поддержанного envelope, preserve caller model, fixed upstream URL/trust class/credentials mode; no arbitrary URL relay, DNS/redirect/TLS checks. Sidecar выдаёт security verdict/constraints, host по-прежнему вызывает и выбирает provider. Secret/identity onboarding отдельно утверждается владельцем. Старые T05/K09 references на fallback не являются задачей текущего scope.
+**Работа:** protocol-aware forwarding OpenAI/Anthropic поддержанного envelope, preserve caller model, fixed upstream URL/trust class/credentials mode; no arbitrary URL relay, DNS/redirect/TLS checks. Sidecar выдаёт security verdict/constraints, host по-прежнему вызывает и выбирает provider. Onboarding CONNECT01/02 принят: UI/API мастер, provider key локально у Pseudex, вызывающему выдаётся Pseudex key; URL+key baseline и advanced capabilities явно различаются. Model routing/fallback не входят в задачи T05/K09.
 
 **Зависимость:** W05/W10/W12/W14. **Приёмка:** CP25. Два bindings forwards к своим endpoints; provider error не переключает модель/URL; unknown destination/metadata SSRF запрещены, disabled binding не используется.
 
@@ -248,7 +243,7 @@ W28–W35: завершающий T12 AI-разработка; W35 повтор�
 
 **Выход:** четыре отдельные lifetime domains, reference-aware cleanup, logical deletion/reclaim/backup status.
 
-**Работа:** refs/tombstones/namespace epoch, delete exact manifest CAS/live ref fences, job source/result/case TTL, decision/admin retention keeps billing totals. Maintenance plans integration с existing backup/rekey roles; restore replays deletion ledger before readiness. Physical maintenance supervised/drains, no UI shell.
+**Работа:** refs/tombstones/namespace epoch, delete exact manifest CAS/live ref fences, job source/result/case TTL, decision/admin retention keeps billing totals. Maintenance plans integration с existing backup/rekey roles; restore replays deletion ledger before readiness. Physical maintenance supervised/drains, no UI shell. Кнопка «Проверить целостность» вызывает только фиксированную bounded read-only store check с permission/audit/corrupt fixture; structural pass не доказывает semantic detok correctness.
 
 **Зависимость:** W09/W10/W12/W18/W19. **Приёмка:** CP31/CP32/CP33. Concurrent delete/reveal/stream/cache cannot resurrect values; backups liability honest; known modern ledger unavailable →quarantine, no auto-ready.
 
@@ -288,7 +283,7 @@ W28–W35: завершающий T12 AI-разработка; W35 повтор�
 
 **Выход:** реальные aggregate counters/histograms/labels/SLO and lightweight evidence-backed issue lifecycle.
 
-**Работа:** bounded SQL aggregations, role/project query scoping, provider time separately gateway, quality from suite/feedback only, unknown/sample size/retention gaps. Drift shape counts no raw index; alerts/suppression, issue links+verified close. Print/CSV/JSON shared DTO and spreadsheet-safety.
+**Работа:** bounded SQL aggregations, role/project query scoping, provider time separately gateway, quality from suite/feedback only, unknown/sample size/retention gaps. Drift shape counts no raw index; alerts/suppression, issue links+verified close. Print/CSV/JSON shared DTO and spreadsheet-safety. Trusted optional subject/department/model/provider/source lineage отражаются в scoped reports, не unbounded Prometheus labels; отсутствующие атрибуты остаются unknown.
 
 **Зависимость:** W10/W14/W18/W19/W21. **Приёмка:** CP41. N workers aggregate exact, small sample insufficient_data, noPII/cache hits decisions count; no fake recall/wrong-value success rate; no PII labels.
 
@@ -298,7 +293,7 @@ W28–W35: завершающий T12 AI-разработка; W35 повтор�
 
 **Работа:** migrate [frontend](<prototype/pseudex/localui/static/app.js>) на реальные scoped API DTO, разбить экраны; [server](<prototype/pseudex/localui/server.py>) typed method/path forwarding no wildcard relay. Background polling только active tab, no raw value persistence, backend failure real states, accessibility/keyboard, empty/new user scenario, snippets from registry. No mock CDN/runtime/code imports.
 
-**Зависимость:** готовые backend contracts W03/W05/W10/W12 и затем соответствующие W13–W25. **Приёмка:** CP42/CP43. Real browser all roles/project states, XSS traffic/CSV/rules, reveal wipe, failed publication не success toast, no external UI network.
+**Зависимость:** ранний shell/API client — W03/W05/W10/W12 contracts; полная W26 приёмка ждёт готовые modules W13–W25 и HITL/doc UI W38/W43. Сами W38/W43 не ждут полной W26, поэтому цикла нет. **Приёмка:** CP42/CP43 плюс relevant H/DOCG UI cases. Real browser all roles/project states, XSS traffic/CSV/rules, reveal wipe, failed publication не success toast, no external UI network.
 
 ### W27. Packaging, final regressions и доказанная поставка — P1 / XL
 
@@ -306,9 +301,49 @@ W28–W35: завершающий T12 AI-разработка; W35 повтор�
 
 **Работа:** source/compiled parity/new surface gates, schema/rekey/restore/preflight/doctor, SDK package release separately versioned contract, SBOM licences/native deps, no customer data shipped. Existing engine/platform release streams. Обновить wiki после добавления real modules/tests/gates; старые документы only superseded sections, не fake claims.
 
-**Зависимость:** все выбранные W01–W26. **Приёмка:** CP44/CP45 плюс действующие suite/gates. Каждому R01–R60 состояние implemented/verified/deferred/rejected, никакого «почти готово» вместо absent check.
+**Зависимость:** W01–W26 плюс W39 (HITL) и W44 (документы). **Приёмка:** CP01–CP47, H01–H10, DOCG01–DOCG10 и действующие affected suites; native coding отдельно после C4. Каждому R01–R60 состояние implemented/verified/deferred/rejected, никакого «почти готово» вместо absent check.
 
-## 5. Предлагаемые приёмочные gates (CP01–CP47)
+### W36. HITL contract и can-fail fixtures — P1 / L
+
+**Выход:** F24/K11 state machine, safe preview/roles/grants, approval identity/digest, explicit exception truth table, separate lifetimes. **Зависимость:** W02/W03/W05/W09/W10/W11/W12/W13/W14/W18. **Приёмка:** заранее H01–H10 RED/fixtures и documented OPEN-H01/H02; no implicit hour timeout/native resume promise.
+
+### W37. Encrypted pending queue и решения — P1 / L
+
+**Выход:** metadata+audit transaction, encrypted payload domain, approve/reject/cancel/optional expiry, quotas/backpressure/recovery. **Зависимость:** W36. **Приёмка:** H01–H06/H08; no silent pending purge/обычный jobs24h TTL, no raw logs/backups.
+
+### W38. Controlled continuation, generic API и UI — P1 / L
+
+**Выход:** live recheck/one-use attempt permit, separate approval/execution statuses, UI queue + API, delegated user rights/reveal, safe credential-purpose actions и raw-secret opt-in. **Зависимость:** W37 и соответствующий ready protect/output API W09/W16. **Приёмка:** H02–H04/H07–H10; client capability explicit, no automatic execution on a stale approval. Native harness-specific implementation остаётся W28/W31/W45.
+
+### W39. Полная приёмка generic HITL — P1 / L
+
+**Выход:** H01–H10 + affected CP, restart/retention/billing/permissions evidence на реальном backend. **Зависимость:** W38. Для supported caller проверен полный cycle; unknown native resume не скрывается generic green. C4 не обещает готовый coding connector.
+
+### W40. Документы: SP08, форматный contract и RED corpus — P1 / L
+
+**Выход:** выбор/licence/package feasibility parser/writer, approved text-DOCX/PDF inventory, resource bounds, fixture files, independent extraction/render oracle. **Зависимость:** W02/W03/W05–W11/W13/W14/W15/W18. Подготовительное исследование libraries/fixtures может начаться раньше contract readiness, как другие spikes. **Приёмка:** DOCG01–DOCG10 заранее описаны; no OCR; OPEN-D01/D02 отмечены, не угаданы.
+
+### W41. Изолированный разбор и coverage inventory — P1 / L
+
+**Выход:** bounded parser, parts/source maps, hidden text/metadata обнаружение, unsupported images/embedded structures refusal. **Зависимость:** W40. **Приёмка:** DOCG01/DOCG04/DOCG07; не отправлять original file из-за сбоя parser.
+
+### W42. Native rewrite и независимая проверка artifact — P1 / XL
+
+**Выход:** общий detector/policy выдаёт native protected file, preserved supported structure, fidelity report, no recoverable seeded originals. **Зависимость:** W41. **Приёмка:** DOCG02–DOCG05/DOCG09/DOCG10; rectangle-only PDF и забытые DOCX revisions делают gate RED.
+
+### W43. Document UI/API, storage и provider-file bindings — P1 / L
+
+**Выход:** service-scoped upload/status/cancel/download, encrypted artifacts/lifecycle, explicit coverage и fixed-upstream file refs. **Зависимость:** W42; integration surfaces W13/W15/W18, retention contract W20. **Приёмка:** DOCG06–DOCG09, реальные protocol fixtures; unsupported provider path не success. Billing нового file operation должен быть согласован до paid use.
+
+### W44. Документная приёмка и составная проверка — P1 / L
+
+**Выход:** DOCG01–DOCG10 + resource/packaging/format opening tests. **Зависимость:** W43. Independent oracle и source/compiled выполняются на том же artifact. Composition «document verdict требует HITL» проверяется в W27 после W39+W44, не создаёт циклическую зависимость T13/T14.
+
+### W45. Последующий Codex adapter — P1 coding / L
+
+**Выход:** отдельный pinned Codex integration profile на общем K10 после первого Claude slice; correct approval/reconnect/cold-restart and input/output privacy по actual API. **Зависимость:** W35, SP07 Codex evidence; не считать app-server approval reply generic rewrite. **Приёмка:** AC13 + AC01–AC12 применимые case sets и общая affected regression на Linux/macOS/WSL. Публичная release/C5 обязательность — OPEN-C01, не решение автора плана.
+
+## 5. Предлагаемые приёмочные gates (CP01–CP47 + H01–H10 + DOCG01–DOCG10)
 
 Эти gate IDs **новые, пока не существуют**. Реализация может объединять scripts, но не исчезающие негативные атомы. Для gateway/ops gate нужен real compiled image, не ASGI mock как единственное доказательство.
 
@@ -328,7 +363,7 @@ W28–W35: завершающий T12 AI-разработка; W35 повтор�
 | CP12 | ReDoS/huge dictionary/Unicode/empty regex | Bounded rejection/work/memory, no Python-re fallback |
 | CP13 | Custom fake collides with builtin/original/pool exhaustion | No wrong mapping or original fallback, typed failure |
 | CP14 | Exception hides overlapped SECRET or broad pattern | SECRET still blocks; exact scope can't broaden |
-| CP15 | Seed secret flows through all candidate stages | No mapping/value/preview/log/result/backups created for known secret |
+| CP15 | Default block/redact versus explicit HITL/credential storage | Default seed не попадает в PII mappings/logs/previews/results; authorised encrypted pending/credential domain проверяется отдельно H02/H08, не запрещается blanket assertion |
 | CP16 | Foreign/stolen/expired receipt, wrong recipient/field | Restore deny without disclosing token existence or value |
 | CP17 | Policy/custom recipe removed, authorised old receipt | Correct compatible restore or explicit incompatibility, never fake200 |
 | CP18 | Cache hit/noPII/deny/error request audit | Decision event each time; entity/billing counts remain distinct |
@@ -336,11 +371,11 @@ W28–W35: завершающий T12 AI-разработка; W35 повтор�
 | CP20 | Empty suite/incorrect restorer/wrong-person mutation | Non-comparable not pass, oracle reports failure, production unchanged |
 | CP21 | Missing worker ACK/conflicting publish/boot churn | Active pointer unchanged until ready; status shows failure |
 | CP22 | Keepalive to old worker after activation commit | New revision or503; no old silent success |
-| CP23 | Concurrent edit/import/weakening publish | CAS conflict/no secret import, changed draft invalidates stamp |
+| CP23 | Concurrent edit/import/weakening, selected consumers и preflight failures | CAS/stamp; unselected на старой revision; explicit eligible-subset-or-none/deep links; overrides сохраняются, target set revalidated |
 | CP24 | Burst N workers/oversized body/killed concurrency lease | Global allowance bound, no invalid request billed, health responsive |
-| CP25 | Model alias/local claim/metadata redirect/fallback | Unapproved egress absent in wire spy, constraints respected |
-| CP26 | SECRET split every offset in output/n>1 | No unchecked bytes emitted; choices independent |
-| CP27 | Tool JSON quotes/cancel/error unsafe tail | Valid approved arguments only; no public tail flush on failure |
+| CP25 | Fixed bindings/model preservation/provider outage/SSRF | Только настроенный upstream, caller model не заменена; outage не вызывает другой URL/model; arbitrary destination/redirect запрещён |
+| CP26 | Default secret-deny output split every offset/n>1; explicit exception отдельно | Без approved exact exception секрет не выходит; H02 разрешает только заданное содержимое/получателя, replay/изменения запрещены; choices independent |
+| CP27 | Tool JSON quotes/residual ambiguity/cancel/error tail | Любой affected unresolved tool call не исполняется, даже low-risk; ordinary prose имеет явный incomplete status; no unchecked tail |
 | CP28 | SDK host503+restore state mutation+framework trace | No provider call after failure; masked checkpoint/no trace original |
 | CP29 | Batch kill/stale claimant/cancel/huge CSV line | Single committed output chunks, bounded memory/no plaintext spool |
 | CP30 | Shadow timeout/sample capture/export | Active protection same, not_evaluated visible, capture off unless authorised |
@@ -362,6 +397,8 @@ W28–W35: завершающий T12 AI-разработка; W35 повтор�
 | CP46 | Unicode/JSON escaped canary in history/tool args/output/schema enums | Decoded leaf checks эквивалентны plain form; malformed/duplicate keys deny; contract-bound sensitive values не silently skipped |
 | CP47 | New PII/SECRET in assistant result, protected state versus restored delivery | Checkpoints/model/traces получают лишь post-check protected representation; authorized tool/user получает separate ephemeral delivery; forbidden recipient ничего не получает |
 
+**H01–H10 и DOCG01–DOCG10** полностью заданы в [F24/F25 acceptance](<docs/tz-hitl-and-documents.md>). Это часть C4, не необязательное приложение. **AC13** — отдельная Codex приёмка в [coding spec](<docs/tz-ai-coding-track.md>).
+
 ### 5.1 Proposed scripts и каталог тестов
 
 Предлагаемые test script группы: `test_control_schema.py`, `test_managed_identity.py`, `test_policy_contract.py`, `test_policy_rollout.py`, `test_custom_rules.py`, `test_receipts.py`, `test_output_policy.py`, `test_test_surface.py`, `test_jobs.py`, `test_retention_policy.py`, `test_integrations_security.py`, `test_agentguard.py`, `test_control_ui_renders.py`. Они не существуют на момент составления. Gate orchestrator либо отдельный `e2e/control_gates.py`, либо явно выделенные CP cases в существующем runner, **не переопределять старые L/P IDs**.
@@ -374,10 +411,10 @@ W28–W35: завершающий T12 AI-разработка; W35 повтор�
 |---|---|---|
 | C0 — безопасный фундамент | W01–W10 + baseline/spikes | Managed identity/policy primitives, no unsafe mutating UI; все trust/schema contracts проходят |
 | C1 — первый полный цикл | W11–W13 + минимальная scoped UI | Создать custom rule, trace, проверить, опубликовать, увидеть decision, откатить |
-| C2 — законченный ingress/egress integration | W14–W17 + W24 и соответствующая UI | Выбрать permitted model, проверить output, сохранить tool loop, проверить host fail-closed |
-| C3 — самостоятельная эксплуатация | W18–W23/W25/W26 | Batch, regression, lifetime, SSO/DLP/SIEM, reports/SLO/issues без нашей ручной настройки |
-| C4 — базовая платформа принята | W27 и CP01–CP47 | Базовые F01–F22 подтверждены, начинается production-реализация T12; это уже не финал расширенного спринта |
-| C5 — целостная платформа с AI-разработкой | W28–W35, AC01–AC12 и повторная общая CP-регрессия | Поддержанный coding harness, read/search/Bash subset/literal patch/узкие credential operations работают под общей policy; unsupported capabilities видимы |
+| C2 — законченный ingress/egress integration | W14–W17 + W24 и соответствующая UI | Создать fixed API binding, сохранить caller model, проверить output/tool loop и host fail-closed; не model routing |
+| C3 — основные сценарии и эксплуатация | W18–W23/W25/W26 плюс параллельные W36–W39 и W40–W44 | Документы/HITL реально приняты, batch/regression/lifetime/reports, затем стандартные enterprise adapters; partial milestone не full release |
+| C4 — базовая платформа принята | W27 после W01–W26/W39/W44; CP/H/DOCG | F01–F22 + F24/F25 приняты, начинается production T12; без HITL/doc bodies и gates C4 недостижим |
+| C5 — coding release boundary, требует OPEN-C01 | W28–W35 дают Claude acceptance; W45/AC13 — следующий Codex | Не выдавать один adapter/OS за все. Последовательность принята, обязательность Codex именно для первого публичного C5 ещё выбирает владелец |
 
 Это разрешённые промежуточные состояния разработки. Продавать весь sprint готовым по C1 нельзя. Выпуск промежуточного release требует отдельного decision и truthful capabilities.
 
@@ -385,7 +422,7 @@ W28–W35: завершающий T12 AI-разработка; W35 повтор�
 
 **Цель дополнения:** сосредоточить архитектурное внимание на несущей логике, а переиспользующие её фичи безопасно делегировать параллельно. Не увеличивать число одновременно пишущих агентов любой ценой, а сокращать критический путь и стоимость повторной интеграции.
 
-K01–K09 и T01–T11 — декомпозиция исходного объёма, **не замена W01–W27 или CP01–CP47**. Позднее добавленное владельцем расширение K10/T12 описано отдельно в §7.10 и добавляет W28–W35/AC01–AC12. `K` — ядро компонента, `T` — трек расширений. Ядро не обязательно отдельный процесс, package или сервис: это единая ответственность, набор инвариантов и публичный контракт. Один W-пакет может включать ядро и расширения; его исходная приёмка остаётся обязательной целиком.
+K01–K09 и T01–T11 — декомпозиция исходного объёма, **не замена W01–W27 или CP01–CP47**. Дополнения: K10/T12 coding (§7.10, W28–W35/W45/AC01–AC13), K11/T13 HITL и K12/T14 документы ([контракт](<docs/tz-hitl-and-documents.md>), W36–W44/H/DOCG). T13/T14 раньше T12 по dependencies; номера не время. `K` — ядро компонента, `T` — трек расширений. Ядро не обязательно отдельный процесс, package или сервис: это единая ответственность, набор инвариантов и публичный контракт. Один W-пакет может включать ядро и расширения; его исходная приёмка остаётся обязательной целиком.
 
 ```text
 BEFORE
@@ -430,6 +467,8 @@ API остаются едиными. Ускорение ожидаемое, а �
 | K07 | Журнал решений и обязательные побочные записи | W10; F09/F12/F17 | Decision/admin event schema, atomic local outbox, release choreography, billing boundary | CP18–CP19; consumer delivery CP34 и accounting CP24 |
 | K08 | Независимый test runtime и очередь работ | W11, ядро W18; F13–F14/F21 | Isolated test context, expected result schema, comparability, run stamp, job claim/cancel/checkpoint | CP20/CP29–CP30; isolation CP04, encryption CP01 |
 | K09 | Граница передачи, лимиты и выходные проверки | W14–W16, security primitive W24; F10–F12/F22 | Admission, approved destination, buffered output, protected-state/delivery split, one-use execution attempt | CP24–CP27/CP36/CP39–CP40/CP46–CP47; SDK CP28 |
+
+Дополнительные ядра: **K11** approval/attempt lifecycle с H01–H10 (не новый policy engine), **K12** native document inventory/rewrite/artifact proof с DOCG01–DOCG10 (не новый detector). K10 остаётся coding-specific executor boundary. Их данные используют K01/K02/K06/K07/K08, не независимые authority/secret stores вне общего registry.
 
 Колонка CP — **набор обязательств**, не разрешение отметить полный gate зелёным после unit-теста одного ядра. Гейт с несколькими участниками получает предварительные именованные assertions; весь CP зелёный только после сквозной проверки реальных участников. Минимальные role/capability/catalog/job interfaces появляются в ядрах, а их UI, пакеты и расширенные реализации — в треках.
 
@@ -543,13 +582,15 @@ S0 контракт и область → S1 тест/гейт + доказан�
 | T02 — Правила, словари и профили | K04-A/K05 contracts | T02.1 matcher/template fixtures → T02.2 rule/dictionary/exception adapters и builder → T02.3 inventory/экспозиция существующих native types, measured customer packs и profile catalog → T02.4 edit→trace→regress→publish с реальным ядром | K05/K08, затем W19 для complete W23; W07/W08/W23; CP12–CP15/CP38/CP46 |
 | T03 — Доступ и SSO | K02/K07 contracts | T03.1 role/permission consumer matrix → T03.2 named-access/credentials UI → T03.3 OIDC adapter с SP05 → T03.4 session revoke/bridge/direct API/browser tests | K02/K07 и management contract; W22/access часть W26; CP04–CP06/CP37/CP42 |
 | T04 — Песочница, batch и регрессия | K05/K08-A contracts | T04.1 explain/full-run UI и cases oracle → T04.2 CSV/JSONL parser/export + jobs progress → T04.3 suites/compare/shadow/capture permissions → T04.4 verified stamp перед production publish | K08-B/K04-B/K09-A; W11/W18/W19; CP20/CP29–CP30/CP46 |
-| T05 — Маршруты и выходные проверки | K09 contracts | T05.1 route registry client/negative fixtures → T05.2 route/local-only/fallback adapters → T05.3 output/stream consumer и две проекции ответа → T05.4 wire-level deny/timeout/sequence/recipient проверка | Реальные K03/K05/K06/K07/K09; W14–W16; CP24–CP27/CP46–CP47 |
+| T05 — Маршруты и выходные проверки | K09 contracts | T05.1 route registry client/negative fixtures → T05.2 fixed API binding/protocol/allowed-destination adapters без model fallback → T05.3 output/stream consumer и две проекции ответа → T05.4 wire-level deny/timeout/sequence/recipient проверка | Реальные K03/K05/K06/K07/K09; W14–W16; CP24–CP27/CP46–CP47 |
 | T06 — SDK и agent/RAG adapters | K06/K09 versioned wire contracts | T06.1 Python sync/async client + contract tests → T06.2 LiteLLM/LangChain/LangGraph wrappers и probe → T06.3 registered tools/source metadata/signature packs + online consume wrapper → T06.4 checkpoint/trace/tool-side-effect verification | W17 после W09/W15/W16, complete W24 после W17; CP28/CP39–CP40/CP47 |
 | T07 — DLP, SIEM и уведомления | K07/K09 contracts | T07.1 adapters/transport fixtures с faults → T07.2 JSON/CEF/syslogTLS outbox consumers → T07.3 DLP REST + webhook/SMTP и health UI → T07.4 outages/queue saturation/SSRF/required-check verification | K08-B jobs и реальные route/admission gates; W21; CP34–CP36 |
 | T08 — Retention, vault и восстановление | K01/K06/K07 contracts | T08.1 delete-plan/ref/expiry model tests → T08.2 TTL/purge/maintenance adapters → T08.3 independently retained deletion-ledger/backup-restore tooling → T08.4 vault UI и race/restore verification | Primitive fences уже в K06; complete W20 ждёт W18/W19 sensitive stores; CP31–CP33/CP03 |
 | T09 — Аналитика, отчёты и incidents | K07/K08 event/result contracts | T09.1 aggregate DTO + fixture oracle → T09.2 histograms/SLO/usage/quality/report readers → T09.3 drift/feedback/incident links и alert adapter → T09.4 сравнение всех UI/export цифр с реальными persisted events | Complete W25 ждёт W14/W18/W19/W21; CP18/CP24/CP41 |
-| T10 — UI shell, документация и coverage | K02/management DTO contracts | T10.1 shell/navigation/error/accessibility fixtures → T10.2 общие auth-aware API client/forms/tables/guards → T10.3 подключение экранных модулей T01–T09 + onboarding/docs/coverage → T10.4 full browser run по ролям и failure states | W26 завершается на реальных API; CP42–CP43, no mock success/no CDN |
-| T11 — Упаковка и эксплуатационная поставка | K01 contracts, W01 baseline | T11.1 source/compiled test runners/native-deps spikes → T11.2 incremental packaging/store/doctor adapters → T11.3 SBOM/compatibility/upgrade-restore procedures → T11.4 полный release-candidate gate run | Работа начинается рано; complete W27 ждёт W01–W26; CP01–CP03/CP44–CP45 |
+| T10 — UI shell, документация и coverage | K02/management DTO contracts | T10.1 shell/navigation/error/accessibility fixtures → T10.2 общие auth-aware API client/forms/tables/guards → T10.3 подключение экранных модулей T01–T09 и T13/T14 + onboarding/docs/coverage → T10.4 full browser run по ролям и failure states | W26 завершается на реальных API; CP42–CP43, no mock success/no CDN |
+| T11 — Упаковка и эксплуатационная поставка | K01 contracts, W01 baseline | T11.1 source/compiled test runners/native-deps spikes → T11.2 incremental packaging/store/doctor adapters → T11.3 SBOM/compatibility/upgrade-restore procedures → T11.4 полный release-candidate gate run | Работа начинается рано; complete W27 ждёт W01–W26/W39/W44 и CP/H/DOCG; ранний shell не полная W26 приёмка |
+| T13 — HITL | K02/K04/K06/K07/K08 contracts | T13.1 W36 contract/tests → T13.2 W37 queue/decision → T13.3 W38 API/UI/consume → T13.4 W39 real acceptance | H01–H10, после core и параллельно T14; не ждёт coding connector |
+| T14 — Документы | K01/K02/K05/K06/K08 contracts | T14.1 W40 SP08/fixtures → T14.2 W41 parser → T14.3 W42 native artifact → T14.4 W43 API/UI → T14.5 W44 acceptance | DOCG01–DOCG10, no OCR, параллельно T13 до C4 |
 
 **Здесь нет дублирования ownership:** в K реализуются invariant/state transition/permission/transaction semantics; в T — потребитель, UX, формат, каталог или adapter. Например, T08 не создаёт вторую deletion fence, T07 не создаёт второй outbox writer, T02 не переписывает policy precedence. При необходимости изменения ядра feature-трек подаёт change request владельцу K, а не правит его самостоятельно.
 
@@ -564,11 +605,11 @@ UI feature-экраны живут в треках соответствующи�
 1. **Фронт A — baseline и contracts.** W01; contract/test design K01–K09. SP01/SP02/SP05/SP06 можно исследовать независимо на контролируемых стендах. SP03/SP04 используют согласованные storage/context contracts. T11 готовит runners; T10 может готовить navigation/accessibility fixtures без объявления live API.
 2. **Фронт B — state/trust/runtime.** Реальный K01; затем реализации K02 и K03 могут идти независимо при непересекающихся файлах. K07 event schema и acceptance tests готовятся заранее; его production release choreography завершится позже с K06.
 3. **Фронт C — decision и transform.** На K02/K03 строим K04-A, на K03 — K05 evidence, затем custom/actions. По stable contracts начинают T01/T02/T03; T09 проектирует projections на event fixtures, не считает mock metrics настоящими.
-4. **Фронт D — первый сквозной срез.** K06 → K07 production → K08-A → K04-B. Это основной критический путь C1. Одновременно K09-A admission после K07, T03 OIDC и T11 packaging; K08-B jobs после test runtime/admission. Feature consumers ранее готовы к интеграции, но не сокращают этот safety path.
-5. **Фронт E — широкая реализация.** После нужных contracts/ядра T04 batch/regression, T05 output/routes, T07 external adapters, T08 lifecycle tooling, T09 analytics идут параллельно. T06 client/fixtures уже могут существовать; live SDK закрывается после output/receipt integration. T10 постепенно подключает принятые экраны, не ждёт общего финала для каждого.
+4. **Фронт D — первый сквозной срез.** K06 → K07 production → K08-A → K04-B. Это основной критический путь C1. Одновременно K09-A admission после K07, T03 OIDC contract/SP05/fixtures (не production реализация) и T11 packaging; K08-B jobs после test runtime/admission. Feature consumers ранее готовы к интеграции, но не сокращают этот safety path.
+5. **Фронт E — основные сценарии.** Первыми по равному приоритету открываются T13 HITL и T14 native documents. Enterprise T07/T03-SSO реализуются после основных сценариев; ранние contracts/fixtures разрешены. После нужных contracts/ядра T04 batch/regression, T05 output/routes, T07 external adapters, T08 lifecycle tooling, T09 analytics идут параллельно. T06 client/fixtures уже могут существовать; live SDK закрывается после output/receipt integration. T10 постепенно подключает принятые экраны, не ждёт общего финала для каждого.
 6. **Фронт F — сборка продукта.** Новые kernels/consumers проверяются попарно и в общем вертикальном сценарии. T11 final release candidate после complete W27 dependencies. Закрываем все CP и оставшиеся cross-track failures, не только individual green reports.
 
-**Полезная параллельность:** T03 OIDC не ждёт batch; T02 templates не ждёт SMTP; T09 report rendering не ждёт production delivery SIEM; T10 shell не ждёт готовности всех detectors. **Неполезная параллельность:** два агента одновременно меняют transaction semantics vault, общий envelope или authority policy, а затем «разберём конфликты».
+**Полезная параллельность:** T03 OIDC contract/fixtures не ждут batch (production приоритет после основных сценариев); T02 templates не ждёт SMTP; T09 report rendering не ждёт production delivery SIEM; T10 shell не ждёт готовности всех detectors. **Неполезная параллельность:** два агента одновременно меняют transaction semantics vault, общий envelope или authority policy, а затем «разберём конфликты».
 
 Планировщик берёт ready задачи с наибольшим числом заблокированных потребителей. Ограничение WIP выбирается по CPU/RAM тестов, числу независимых write scopes и способности интегратора принимать результаты; запуск ещё одного агента на занятый shared file не считается ускорением. Дорогие compiled builds собираются централизованно на конкретной merge-candidate revision, чтобы не повторять одну сборку в каждом треке.
 
@@ -686,29 +727,31 @@ handoff:
 | T12.5 / W32 | Narrow literal patch по защищённому snapshot, safe local diff, sandboxed test profile | Correct bytes/offsets, stale preimage отказ, no fuzzy apply; AC08 |
 | T12.6 / W33 | Credentials отдельной registered операции, а не unmask секретов в Bash | Scope/destination/child env ограничены, secret не попадает в LLM/log/vault; AC06/AC10 |
 | T12.7 / W34 | Профиль Coding в общей UI/API, workspace/ops/coverage/trace/probe/retention | UI не remote shell, unsupported не enforced, RBAC действует; AC11 |
-| T12.8 / W35 | Целостная paired coding приёмка, packaging и повторная платформенная регрессия | AC01–AC12, affected и обязательные общие CP, source/compiled parity; только затем C5 |
+| T12.8 / W35 | Claude coding paired acceptance, packaging и повторная platform regression | AC01–AC12 на declared OS; не Codex-ready и не final C5 без решения OPEN-C01 |
+| T12.9 / W45 | Следующий Codex adapter и повторная shared regression | AC13 + applicable AC01–AC12; own pinned API/mode/OS proof |
 
-**Зависимости:** production start W28 после W27/C4; далее W28→W29→W30→W31→W32→W33→W34→W35. Общие контракты W09/W15–W17/W20/W24/W26 обязательны и уже входят в C4. SP07/contract tests можно подготовить до C4, чтобы ранняя несовместимость harness не обнаружилась только перед релизом. Это подготовка, не скрытый ранний rollout coding executor.
+**Зависимости:** production start W28 после W27/C4 (включая W39/W44); далее W28→W29→W30→W31→W32→W33→W34→W35, затем W45 Codex. Наличие W45 не означает одновременную разработку обоих. Общие контракты W09/W15–W17/W20/W24/W26 обязательны и уже входят в C4. SP07/contract tests можно подготовить до C4, чтобы ранняя несовместимость harness не обнаружилась только перед релизом. Это подготовка, не скрытый ранний rollout coding executor.
 
-**SP07:** зафиксировать одну версию harness и одну проверенную OS/executor topology. Первый кандидат Claude Code из имеющегося spike; первый изолированный substrate — Linux. Подписочные/auth пути, pre-tool hooks, возможность блокировать незавёрнутые built-in tools, signed/opaque protocol blocks и checkpoint/traces должны быть проверены, а не предположены. Если transparent mode не позволяет enforcement, выбрать documented registered executor integration, не объявлять «смена base_url защищает всё».
+**SP07:** зафиксировать actual harness versions и проверяемую OS matrix. Первым Claude Code, затем Codex; Linux/macOS/WSL проходят независимые cases. Нативный PowerShell не входит. Один Linux gate не закрывает всю платформенную совместимость. Подписочные/auth пути, pre-tool hooks, возможность блокировать незавёрнутые built-in tools, signed/opaque protocol blocks и checkpoint/traces должны быть проверены, а не предположены. Если transparent mode не позволяет enforcement, выбрать documented registered executor integration, не объявлять «смена base_url защищает всё».
 
 **MVP границы:** supported text read/search и простые Bash-команды из validated executable/option grammar, exact data slots; narrow literal patch и отдельно registered credential operation. Arbitrary shell pipelines/expansions/eval, embedded Python/SQL, неизвестные scripts с восстановлением, все IDE и автономный контроль всей машины — не обещание первой версии. Repo tests являются выполнением кода и требуют sandbox profile. Секреты не превращаются обратно в обычный тип reversible PII.
 
 **Общее владение:** T12 пишет coding adapter/fixtures/UI feature в выделенном scope; общие vault/envelope/roles/schema меняет владелец соответствующего K. Spike [anthropic_shim.py](</Users/igor/Projects/Obscura-vibecode/prototype/anthropic_shim.py>) — reference only: dev bundle, broad header forwarding, fail-open input fallback и logs restored values не переносятся в production.
 
-**Release gate:** прежний T11/W27 проверяет базовую платформу; W35 повторяет packaging/регрессию на новой единой сборке после coding additions. C4 не завершает расширенный sprint. Изменение общего ядра в T12 инвалидирует affected acceptance evidence прошлых треков и требует повторной проверки. Методологические правила сверх уже принятого test-first цикла будут обсуждены следующим отдельным этапом, не придумываются здесь.
+**Release gate:** T11/W27 проверяет базу включая F24/F25; W35 повторяет packaging/регрессию после Claude additions, W45 отдельно после Codex. Выпускная граница OPEN-C01 не решается номером W35. C4 не завершает расширенный sprint. Изменение общего ядра в T12 инвалидирует affected acceptance evidence прошлых треков и требует повторной проверки. Методологические правила сверх уже принятого test-first цикла будут обсуждены следующим отдельным этапом, не придумываются здесь.
 
 ## 8. Definition of Done всего объёма
 
-- [ ] Завершающий T12/W28–W35 принят на общем ядре: F23/K10 и AC01–AC12, supported harness/OS задокументированы; C5 подтверждён повторной платформенной регрессией.
+- [ ] T13/W36–W39 и T14/W40–W44 приняты до C4: H01–H10/DOCG01–DOCG10, actual UI/API/storage/artifact proof.
+- [ ] T12/W28–W35 и subsequent W45 имеют раздельную Claude/Codex acceptance с AC01–AC13 на declared OS; C5 определяется OPEN-C01, не автоматически одноплатформенным green.
 - [ ] Arbitrary shell restoration и необёрнутый tool не выдаются за защищённую операцию; exact bytes/patch preimage/credential separation проверены.
-- [ ] Для K01–K09 записаны контракты, инварианты и test-first evidence; состояние contract_ready не выдано за kernel_ready.
-- [ ] Для T01–T11 соблюдены последовательные шаги и внешние prerequisites; fixtures не заменили real integration.
+- [ ] Для K01–K12 записаны контракты, инварианты и test-first evidence; состояние contract_ready не выдано за kernel_ready.
+- [ ] Для T01–T14 соблюдены последовательные шаги и внешние prerequisites; fixtures не заменили real integration.
 - [ ] Acceptance tests созданы до business implementation соответствующего среза; meaningful RED и can-fail mutation подтверждены.
 - [ ] У каждой делегированной задачи есть write scope, contract revision и evidence manifest; shared hotspots имели одного writer.
 - [ ] Все принятые изменения повторно проверены на общей merge-candidate revision; cross-track gates не заменены отчётами отдельных веток.
 - [ ] Для каждого выбранного R требования есть F паспорт, work package и can-fail acceptance evidence.
-- [ ] Все F01–F22 реально работают в заявленных narrow границах, нет mock successful actions.
+- [ ] Все выбранные F01–F25 реально работают в заявленных narrow границах, нет mock successful actions.
 - [ ] Обе формы API и соответствующие v2 contracts имеют одинаковую protection semantics.
 - [ ] Customer mutations проходят verified permissions/audit/CAS; no UI-only policy semantics.
 - [ ] No PII/secret pass-through on required failure; no unsafe output prefix.
@@ -725,6 +768,6 @@ handoff:
 
 ## 9. Результат текущей проектной работы (не implementation)
 
-Подготовлены три документа: specification, feature matrix и этот work plan. Прочитаны исходники и два внешних материала, проведена независимая проверка feature crosswalk и architecture constraints. Product code, runtime, настройки, тестовые datasets и релизы этой работой не менялись; paid модели/benchmark не запускались.
+Подготовлены specification, feature matrix, work plan, отдельные coding/HITL-document contracts и реестр решений. Повторная сверка и оставшиеся OPEN записаны в [отчёте](<research/security-platform-reconciliation.md>). Прочитаны исходники и два внешних материала, проведена независимая проверка feature crosswalk и architecture constraints. Product code, runtime, настройки, тестовые datasets и релизы этой работой не менялись; paid модели/benchmark не запускались.
 
 Проверка документации выполняется отдельно от product DoD: ссылки/IDs/dependencies/coverage, wiki baseline и diff. Существующие ошибки wiki отмечаются как pre-existing, не исправляются скрытой правкой unrelated research. После утверждения владелец может начать W01, но это не автономное разрешение на код/выкатку.

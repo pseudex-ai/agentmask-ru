@@ -8,13 +8,23 @@
 
 Связанные документы: [матрица отбора возможностей](<docs/tz-product-control-plane-matrix.md>), [план реализации и приёмки](<docs/plan-product-control-plane-sprint.md>), [AI-разработка — завершающий трек](<docs/tz-ai-coding-track.md>).
 
-**Дополнение владельца:** AI-разработка включена в тот же спринт как F23/T12 после базовых F01–F22. Единство означает общие policy/identity/audit и поддержанные integration boundaries, а не обещание защиты любого сетевого трафика или произвольной shell-программы. Финальная приёмка расширенного объёма — C5; конкретные coding contracts остаются проектными до проверок. Jev отменён владельцем для этого спринта; [исследование](<research/jev-typesafe-product-fit.md>) сохранено как архив, не integration backlog.
+## Согласованная рамка (консолидировано после повторной сверки)
 
-**Принято владельцем — HITL:** ручное подтверждение policy-остановленных операций входит в sprint (прежнее P2 отменено). Default SECRET = block; irreversible redact адресно настраивается. Очередь в нашей UI + единый API; pending operation сохраняется и продолжается по точному согласованному содержимому, не долгим HTTP. Принято HITL04: pending payload кратковременно хранится зашифрованным внутри Pseudex с отдельными правами/очисткой и без raw content в audit/долговременных backups; точный TTL ещё уточняется. Это разрешённая transient sensitive copy, а не обычный reversible SECRET mapping. Default разрешения — безопасное преобразование; отдельная настройка может открыть уполномоченному reviewer **разовую отправку исходного ключа модели** с предупреждением/основанием/audit без raw key. Это явное исключение из защиты, не raw fail-open и не technical-check bypass. Пользователь также запросил credential substitution «модель видит подстановку, инструмент получает ключ»; proposed реализация — отдельная scoped credential reference, не обычный PII vault/unmask arbitrary Bash. Прежние абсолютные запреты raw-secret передачи ниже читаются как default; полный exception/credential contract разрабатывается по [реестру решений](<docs/decisions-product-control-plane.md>).
+| Принцип | Действующее решение |
+|---|---|
+| Поставка | Один инстанс/одна локальная консоль, быстрый запуск, плоские «Агенты и сервисы», готовые UI и API. Fleet/HA/Kubernetes/offline engine — не этот sprint |
+| Роль продукта | Security proxy/sidecar OpenAI/Anthropic-supported traffic к заданному API. Provider/model selection, balancing и fallback не делаем |
+| Подключение | Мастер: исходный API URL/protocol/policy/provider credential → base_url + Pseudex key. Baseline без mandatory SDK; strict scope/resume требуют фактических advanced capabilities |
+| Настройка | Общая versioned policy + profile overrides. Применение к выбранным/всем после проверки; при частичных preflight ошибках — явно к прошедшим либо никому, с переходом к разбору |
+| Доступ | Только admin/user; admin выдаёт дополнительные права на настройки/HITL. Safe preview default, original reveal отдельно. Не пять ролей и не обязательный four-eyes |
+| Секреты | Default block запроса; redact адресно. Scoped credential reference для approved service/purpose; opt-in разовый raw-key egress через HITL — осознанное исключение, не гарантия сокрытия |
+| HITL | Наша очередь + API, encrypted pending payload, default без auto-expiry карточки. Technical timeout не её deletion; supported resume/cold recovery зависит от actual harness и остаётся отдельным контрактом |
+| Документы | Native protected DOCX и text-layer PDF, без OCR, best-effort structure/layout. Unsupported images/parts default не выдаются как fully protected; partial/removal — explicit policy |
+| Наблюдение/хранение | Optional shadow новых правил; raw traffic archive off, capture opt-in. Mapping автоочистка учитывает active refs/recovery window; exact TTL ещё proposal |
+| Streaming/restore | Full-response check буферизует до проверки; иначе доказанный streaming. Любой unresolved tool call блокируется; обычный текст может остаться частично нераскрытым с явным статусом |
+| Приоритеты | Self-service core → документы и HITL параллельно → enterprise interfaces → coding Claude Code, затем Codex; Linux/macOS/WSL. Jev и semantic R&D отменены |
 
-**HITL lifecycle уточняется:** владелец выбрал сохранять карточку ожидания без автоматического исчезновения по умолчанию; auto-expiry настраиваемая опция, 1h/24h не утверждены. Review SLA/reminder, retention и таймаут активного HTTP/tool вызова разделены. Возможность продолжить exact operation после approvals зависит от реальной pause/resume интеграции caller; не обещаем воскресить timed-out tool call или скрытно исполнить его после закрытия harness. Предлагаемый fallback explicit reattach/retry с live recheck сейчас на согласовании. Нельзя использовать timeout command/http hook Claude Code как fail-closed gate; это отдельный обязательный negative acceptance case SP07/AC.
-
-**Принято SCOPE-files/DOC01:** document protection входит в основной sprint, результат — native защищённый PDF/DOCX с сохранением структуры/оформления, не extraction-only text. Принято DOC02/03: только DOCX/PDF с text layer, без OCR; best-effort сохранение структуры/оформления с явным показом допустимых изменений, существенное повреждение — failure. Принято DOC04: при непроверенных изображениях/embedded parts по default не выдавать файл как защищённый; показать причину, разрешить убрать части либо отдельно явно согласовать partial processing с честным coverage. Partial download не означает разрешение автоматического external egress. Нельзя считать весь mixed document защищённым автоматически. Нужны форматные rewrite/rebuild, удаление hidden originals/metadata и независимый artifact no-leak gate; визуальная плашка сама по себе не защита. **SEM01 отменяет semantic R&D:** отдельный поиск/дообучение малого смыслового classifier убраны из текущего спринта, остаются возможным будущим backlog; текущие NER/rules/DLP contracts этим не отменены. Новые document work/gates добавляются при консолидации до реализации, CSV/JSONL eval не их замена.
+Подробные принятые ответы и исторические пересмотры находятся в [реестре](<docs/decisions-product-control-plane.md>). Новые полные паспорта **F24 HITL и F25 документы** раскрыты в [контракте HITL/документов](<docs/tz-hitl-and-documents.md>); это устранение пропуска задач уже выбранных возможностей, не новая функция от архитектора. Непринятые native resume, библиотеки/форматные детали и Codex release boundary перечислены там как OPEN, не решаются молча. Исследование [Jev](<research/jev-typesafe-product-fit.md>) — архив отменённого кандидата.
 
 ## 0. Как читать и что считается решением
 
@@ -45,6 +55,8 @@ Effect: поддерживаемая конфигурацией адаптаци
 ```
 
 ## 1. Реальная точка старта
+
+Повторная сверка inputs/code/owner decisions выполнена на `origin/main` 633fb481; runtime файлы совпадают с проверенным 4cc929bc. [Отчёт сверки](<research/security-platform-reconciliation.md>) перечисляет исправленные несогласованности и осознанные отличия от полного S1. Это не выполненные runtime gates.
 
 | Область | Что есть в коде | Разрыв для этого спринта |
 |---|---|---|
@@ -90,7 +102,8 @@ Effect: поддерживаемая конфигурацией адаптаци
 **Принято CONNECT03:** базовый защищённый proxy onboarding — base_url+Pseudex key, без обязательного SDK. Расширенные гарантии включаются при наличии нужной identity/receipt/integration capability. Если native API не передаёт trusted conversation_id, строгую изоляцию не имитируем эвристикой: UI обозначает weaker basis, требующая строгого scope policy не применяется silently. Advanced adapter — по необходимости, не условие любой базовой защиты. Ни один режим не raw fail-open.
 
 - `legacy`: существующие API и credentials, прежний контракт и предупреждение об ограниченном trust. Не выдавать shared org label за multi-tenant RBAC. Никаких автоматических миграций raw provider keys в административные identities.
-- `managed`: приложение с зарегистрированным service key, server-resolved project и assignment, явные conversation_id/destination; новый контракт v2 и receipts. Это режим выбранных возможностей.
+- `managed-baseline`: service key + fixed upstream + effective policy на совместимом native API; достаточно base_url/api_key. Derived conversation basis явно отмечен как weaker, не strict isolation.
+- `managed-strict`: verified conversation identity/recipient и receipts через v2 или доказанный native adapter. Это режим для policy, требующей строгой изоляции/продолжения/исполнения. Отсутствие нужной capability отклоняет такую policy/request, не любую базовую защиту.
 - Проект в managed не обслуживается через legacy-ключ «в обход»: миграция включает установку запрета legacy для соответствующего проекта и проверку обеих legs. Это распространяется также на legacy `/unmask*`, `/reveal`, `/events`/экспорт и общий ADMIN_TOKEN: без named/scoped authority они не читают managed namespaces или receipts. Legacy org alias разрешается через bounded compatibility binding, не используется как произвольный внутренний namespace UUID.
 - Защита обязательных данных не продаётся по цене количества включённых recognizers. Entitlement новых отраслевых типов отличается от режима действия политики. Ценообразование и право перепродажи этим документом не меняются.
 
@@ -162,9 +175,9 @@ prototype/pseudex/localui/static/      сохраняемый frontend, разб
 - `installation`: одна поставка, не юридический tenant.
 - `project`: граница конечного клиента/системы с изолированными настройками и данными. Название/пользовательский org_id — alias, UUID назначает сервер.
 - `application`: зарегистрированный вызывающий сервис внутри project. `agent_id` информационная метка либо зарегистрированный sub-scope, но не право доступа из самого текста.
-- `environment`: dev/test/prod; назначения версии независимы. Production vault не используется для test.
-- `principal`: admin либо service; роли и project bindings разрешаются сервером.
-- `conversation`: явный ID внутри project/app; в managed не выводится по первым двум сообщениям.
+- `environment`: внутренний scope dev/test/prod при необходимости; не обязательный дополнительный уровень UI. Production vault не используется для test.
+- `principal`: human account (роль admin/user и выданные permissions) либо service identity; роли/grants/bindings разрешаются сервером. Пользователь — отдельная named identity, не display name от caller.
+- `conversation`: explicit verified ID обязателен для managed-strict. Managed-baseline допускает имеющийся derived scope с честным capability label; не называет его гарантированной изоляцией. Legacy namespace не меняется silently.
 - `namespace`: серверный UUID для vault_domain; strict session по умолчанию для новых managed projects, project scope — явный режим долговременной памяти. Legacy namespace не переименовывать автоматически.
 - `destination`: заранее зарегистрированная модель/инструмент/получатель. `local=true` из body не делает endpoint доверенным.
 
@@ -174,8 +187,8 @@ prototype/pseudex/localui/static/      сохраняемый frontend, разб
 
 | Store | Предлагаемые таблицы | Принцип |
 |---|---|---|
-| control.db | projects, applications, principals, credentials, role_bindings, admin_sessions, policies, policy_revisions, custom_type_revisions, dictionary_revisions, exception_revisions, tool_revisions, tool_permits, run_budgets, source_bindings, profile_revisions, assignments, deployments, worker_acks, destinations, integrations, admin_events, admin_outbox, test_suite_refs, feedback, incidents, maintenance_plans | HKDF label `pseudex/store/v1/control`, SQLCipher. Policy revision immutable, draft editable CAS. Роли/сессии не UI-only |
-| jobs.db | jobs, job_chunks, test_suites, test_cases, test_runs, run_results, diagnostic_samples | HKDF label `pseudex/store/v1/jobs`, SQLCipher. Bulk uploads/test material отдельно от коротких control admission tx; это не снимает общую дисковую конкуренцию |
+| control.db | projects, applications, principals, credentials, role_bindings, admin_sessions, policies, policy_revisions, custom_type_revisions, dictionary_revisions, exception_revisions, tool_revisions, tool_permits, run_budgets, source_bindings, profile_revisions, assignments, deployments, worker_acks, destinations, integrations, admin_events, admin_outbox, test_suite_refs, feedback, incidents, maintenance_plans, approval_requests, approval_decisions, approval_permits, document_manifest_refs | HKDF label `pseudex/store/v1/control`, SQLCipher. Policy revision immutable, draft editable CAS. Роли/сессии не UI-only |
+| jobs.db | jobs, job_chunks, test_suites, test_cases, test_runs, run_results, diagnostic_samples, approval_payloads, document_inputs, document_artifacts, document_source_maps | HKDF label `pseudex/store/v1/jobs`, SQLCipher. Bulk uploads/test material отдельно от коротких control admission tx; это не снимает общую дисковую конкуренцию |
 | vault.db | существующие tokens и индексы; namespaces, sessions, mapping_refs, custom_tokens, receipts, receipt_tokens, restore_permits, stream_sessions, deletion_tombstones | Mapping refs и receipt фиксируются в одной транзакции. Никаких SECRET original mappings для новых managed requests |
 | audit.db | существующие events/requests/meta; request_decisions, stage_metrics, delivery_events, decision_outbox, provider_usage, admission_counters | Решение и его SIEM outbox одной tx. Кумулятивный billing ledger переживает retention событий |
 | tenants.db | существующие compatibility credentials | Не смешивать административную identity с tenant/upstream secret |
@@ -202,7 +215,7 @@ prototype/pseudex/localui/static/      сохраняемый frontend, разб
 
 ### 3.6 Policy schema и семантика
 
-**Принято AR10/AR11/AR20:** общая безопасная политика плюс профили приложений с явными адресными overrides. Effective policy и источник настройки видны пользователю. Уполномоченное ослабление допускается для заданного приложения/категории/направления с предупреждением, автором и основанием. Overrides компилируются при публикации, не являются runtime caller bypass; deny-dominates ниже относится к уже собранной effective policy. Обычная публикация: draft → обязательная автоматическая проверка schema/conflicts/контрольных примеров → показ diff → apply; второй человек не обязателен по умолчанию. Детали распространения base policy и состав контрольных suites ещё согласуются.
+**Принято AR10/AR11/AR20:** общая безопасная политика плюс профили приложений с явными адресными overrides. Effective policy и источник настройки видны пользователю. Уполномоченное ослабление допускается для заданного приложения/категории/направления с предупреждением, автором и основанием. Overrides компилируются при публикации, не являются runtime caller bypass; deny-dominates ниже относится к уже собранной effective policy. Обычная публикация: draft → обязательная автоматическая проверка schema/conflicts/контрольных примеров → показ diff → apply; второй человек не обязателен по умолчанию. Распространение принято как явный selected/all target apply с eligible-subset-or-none при preflight failures (F04); точный состав контрольных suites ещё фиксируется.
 
 Декларативный schema_version=1, закрытые enum и unknown-field rejection. Пример, не текущий API:
 
@@ -245,31 +258,26 @@ Recognizer priority выбирает **границы сущности**, не �
 
 **Приёмка:** key проекта A не читает/не меняет/не раскрывает B; подмена body project и label agent не расширяет доступ; revoke действует на обоих legs и существующем restore handle; общий gateway token не admin key. Empty/foreign ID возвращает одинаковую privacy-safe ошибку.
 
-### F02. Именные администраторы, RBAC и OIDC — P0 роли, P1 SSO
+### F02. Две роли, дополнительные права и OIDC — P0 доступ, P1 SSO
 
-**Принято AR09/HITL05:** ровно две базовые роли admin/user. Admin управляет инстансом и может выдавать user дополнительные права на любые нужные настройки и HITL; user по default safe logs/errors/stats/sandbox. Просмотр originals отдельно, с аудитом (HITL06). Не вводим обязательный role constructor/иерархию/пять ролей; прежние списки owner/policy_editor/operator/auditor/developer ниже — superseded design и не implementation requirement. Fine-grained checks сохраняются на backend за простыми группами прав UI; управление чужими полномочиями — административная операция, не неявный эффект выданного feature grant. Полное S1 разделение IT/IB/auditor не заявляется автоматически.
+**Принято AR09/HITL05/HITL06:** две роли `admin` и `user`, без role designer/обязательной иерархии. Администратор может выдавать дополнительные права на любые нужные настройки и HITL; отдельное право раскрытия не следует автоматически из возможности согласовать операцию.
 
-**Результат:** разработчик тестирует, ИТ эксплуатирует, ИБ меняет политику, аудитор читает; раскрытие отдельное право.
-
-**Архитектура:** backend permissions в management/data disclosure, не скрытые кнопки. Роли `owner`, `policy_editor`, `operator`, `auditor`, `developer`; `reveal` и `capture_read` отдельные grants по project. Owner не получает reveal автоматически. Startup token только bootstrap первого owner; production после bootstrap shared-password режим запрещён или явно legacy-only. Локальные именованные accounts: scrypt через существующую cryptography, random salt, rate limits, password change/revoke; encrypted admin_sessions, opaque bearer в Authorization. Токены не в URL/логах/localStorage.
-
-**OIDC:** готовая поддерживаемая OIDC/JWT библиотека (Authlib + проверенный JOSE слой, pin/SBOM/gates), не самописный decoder. Authorization Code + PKCE S256, state/nonce, issuer/audience/alg allowlist/exp/nbf, fixed JWKS endpoints, exact redirects; no arbitrary jku/x5u. Browser login одноразовый handoff, привязанный к pre-login transaction, затем local header session; OIDC tokens не дают data-plane доступа сами по себе. MFA делегирована IdP; native MFA/SAML/LDAP sync — P2.
-
-**UI/API:** «Доступ» показывает реальные principals, grants, sessions, отозвать; `whoami` effective project scope. State login/logout также в access audit. Поисковые endpoint требуют той же фильтрации.
-
-**Приёмка:** policy_editor не раскрывает, operator не публикует; прямой curl соблюдает роли; revoked session/JWT wrong audience/forged groups/malicious issuer отклоняются. OIDC flow работает без cookies на mutating API; login-CSRF/replay тесты обязательны.
-
-**Default роли → grants (проектируемый контракт):**
-
-| Роль | Grants по назначенным project | Чего нет по default |
+| Роль | Базовые возможности | Дополнительные права |
 |---|---|---|
-| owner | project/application/access administration, policy_edit/policy_publish, integration_admin, retention_admin, audit/analytics read | reveal, capture_read, value_search и sensitive-case/config export без отдельного grant |
-| policy_editor | policy_edit, rule/dictionary draft management, test_execute, scoped audit/analytics read | policy_publish/approve, access administration, reveal/capture |
-| operator | operational status/health/integration health, approved maintenance execution | policy edit/publish, raw content/reveal, выдача ролей |
-| auditor | audit/analytics/history/config metadata read, safe aggregate export | mutation, raw content/reveal, secrets/config values |
-| developer | test_execute, собственные case management, application integration docs/probes | prod policy publish, чужие raw test cases/capture/reveal |
+| admin | Управление инстансом, пользователями/правами, рабочими политиками/подключениями и HITL | Raw originals/capture/value search/export требуют явно включённого sensitive permission; выдача такого права журналируется |
+| user | Safe logs/errors/stats, песочница и проверка своих настроек без влияния на production | Admin может разрешить policy edit/publish, настройки интеграций/retention, HITL approve и отдельные sensitive reads по поддержанному scope |
 
-`policy_approve`, `policy_publish`, `access_admin`, `integration_admin`, `retention_admin`, `analyst`, `reveal`, `capture_read`, `value_search`, `sensitive_config_read/export`, `real_case_read/export` — именованные scoped grants, а не новые неописанные роли. При four-eyes approver не author/initiator; publisher проверяет approval текущей revision. Owner может управлять grants только через журналируемую explicit операцию с установленными правилами согласования; bootstrap не даёт скрытого раскрытия. Редактору для чтения сохранённых PII exact lists нужна explicit sensitive_config grant, audit показывает change counts/digests без исходных значений.
+**Архитектура:** backend permissions на API/disclosure, а не только скрытые кнопки. Credential/actor и service scope разрешаются сервером. Пользователь не повышает себе права через разрешение редактировать обычную policy. Startup token bootstrap первого admin; именованные локальные accounts, password hashing с scrypt/salt, rate limits и revocable encrypted sessions. Общий пароль остаётся только явно отмеченной legacy совместимостью. Токены не в URL/логах/localStorage.
+
+**Публикация:** draft/check/diff/apply по имеющимся правам. Второй человек не обязателен по default; four-eyes workflow не включаем как незаметную дополнительную обязанность. Runtime HITL — отдельная функция F24, а не такой approval публикации.
+
+**OIDC после основных сценариев:** поддерживаемая библиотека (кандидат Authlib/JOSE, pin/SBOM/SP05), Authorization Code + PKCE, state/nonce/issuer/audience/alg/time validation, fixed endpoints/redirects, no arbitrary jku. Named session/grants проверяются локальным backend; внешний ID token сам по себе не data-plane credential. MFA делегирована IdP, native MFA/SAML/LDAP/SCIM — отдельно. Никакой привязки личности по самовведённому display name.
+
+**UI/API:** понятные checkbox-группы прав, effective permissions, safe preview и audited reveal. Тот же запрет действует при прямом curl/SDK. Дефолтные право admin на raw reveal и детальная группировка permissions фиксируются в identity contract до реализации, не требуют создания дополнительных ролей.
+
+**Приёмка:** обычный user не публикует/не согласует без grant; выданный grant открывает только соответствующую операцию; revoke действует после обновления страницы и на direct API; один HITL grant не раскрывает originals. JWT wrong audience/issuer, session replay, self-role claim и login-CSRF отклоняются.
+
+**Граница с S1:** это выбранный простой продуктовый режим, а не утверждение полного соответствия обязательному разделению ИТ/ИБ/аудитор заказчика.
 
 ### F03. Общий policy engine и объяснимое решение — P0
 
@@ -285,7 +293,7 @@ Recognizer priority выбирает **границы сущности**, не �
 
 **Принято POLICY-batch-apply:** если preflight не проходит для части выбранных consumers, UI показывает причины/deep links и два действия: явно применить к остальным прошедшим либо не применять никому. Silent partial update запрещён. После выбора target subset/diff/revisions фиксируются; concurrent changes требуют повторного preview. Runtime failure после commit — отдельное truthful deployment state, не скрытый preflight success.
 
-**Принято AR10-propagation:** новая revision применяется явно к выбранным consumers либо «ко всем» после impact preview/validation/подтверждения. Сохранить общую policy не означает автоматически обновить всех. Assignments не выбранных consumers остаются на старой revision; overrides видны в effective diff. Термин consumer/application — logical агент/сервис одного инстанса, не новый deployment; пользовательское название ещё выбирается.
+**Принято AR10-propagation:** новая revision применяется явно к выбранным consumers либо «ко всем» после impact preview/validation/подтверждения. Сохранить общую policy не означает автоматически обновить всех. Assignments не выбранных consumers остаются на старой revision; overrides видны в effective diff. Термин consumer/application — logical агент/сервис одного инстанса, не новый deployment; пользовательское название принято: «Агенты и сервисы».
 
 **Результат:** смена защиты без рестарта и незаметного ослабления.
 
@@ -293,7 +301,7 @@ Recognizer priority выбирает **границы сущности**, не �
 
 **Availability gate:** минимальный runtime capability/entitlement registry входит уже в P0 F03/F04 и W05/W12; полный human catalog/profiles F19/W23 приходит позже. Если ещё действующая обновлённая lease перестала предоставлять обязательный mechanism/generator, affected managed assignment не ready и admission отказывает; нельзя молча исполнить policy на подмножестве recognizers. Старые receipts проверяют отдельно наличие нужного recorded decoder/output-check contract и live entitlement requirements; неизвестная совместимость означает typed refusal, не silent restore fallback.
 
-**API/UI:** draft/edit/validate/diff/prepare/activate/rollback/status/export/import. Production weakening (exception, allowed destination, TTL увеличение, capture) требует reason + отдельного permission и второго подтверждения; при настройке four-eyes — другого principal, не второй клик того же. CLI export JSON, validate, import draft, publish; секреты только env-file/secret refs.
+**API/UI:** draft/edit/validate/diff/prepare/activate/rollback/status/export/import. Production weakening (exception, allowed destination, TTL увеличение, capture) требует reason + нужного permission и явного подтверждения impact. Обязательный второй человек не выбран; не добавлять four-eyes как скрытую зависимость обычной публикации. CLI export JSON, validate, import draft, publish; секреты только env-file/secret refs.
 
 **Приёмка:** два редактора не теряют правки; invalid revision не меняет active; worker missing ACK не рисует applied; kill coordinator mid-prepare сохраняет старую active; запрос после commit не обслуживается старым rule; rollback не оживляет revoked key.
 
@@ -327,21 +335,21 @@ Recognizer priority выбирает **границы сущности**, не �
 
 **Принятые уточнения:** SECRET default блокирует конкретный model request, redact включается адресно. Режим «модель видит подстановку, инструмент получает credential» реализуется отдельным scoped credential reference: настраивается сервис/purpose, поддержанные adapters работают без перечисления всех tools; новое использование через HITL (CRED-UX01). Не применять credential-specific onboarding к обычной ПДн-псевдонимизации. Default запреты ниже допускают только явно включённое владельцем разовое HITL исключение raw-key egress и temporary encrypted approval payload, не общий fail-open или plaintext logs.
 
-**Результат:** PII остаётся пригодной агенту; credentials не сохраняются для восстановления.
+**Результат:** PII остаётся пригодной агенту. Credentials не становятся обычными reversible PII rows: default block/redact, отдельные scoped credential refs и encrypted HITL payload регулируются F24.
 
 **Архитектура:** policy решение до mint. `pseudonymize` использует vault/redact; `redact` удаляет/ставит фиксированное безопасное обозначение; `partial_mask` только явная политика (показ остатка — раскрытие части данных, не обещание защиты идентичности); `block` не создаёт mapping. JSON изменения выполняются по parsed leaf/typed path, не строковой замене quotes. После удаления семантически обязательного tool field вызов запрещён, а не отправлен с invalid schema.
 
 **Current-main inventory:** API-key `SECRET` не единственная чувствительная категория: CVC/OTP уже имеют отдельные typed mechanisms и scoped restoration. Новая managed policy должна явно определить их действия и миграцию, а не слить labels или случайно изменить текущий flow. Existing CVC/OTP support не означает, что новый credential broker/HITL уже готов.
 
-**SECRET:** расширить библиотеку опубликованных форматов — ключи LLM/Git/cloud/payment, PEM/OpenSSH private keys, credentials в connection strings, passwords в явном KV-контексте. Curated subset внешнего каталога с license notices и негативами; не импортировать entropy heuristics wholesale. Классифицировать password context, а не любую высокую энтропию; sample placeholders/public keys остаются отрицательными примерами. New managed secrets никогда не попадают в tokens/original preview/test-result persistence. Исторические legacy mappings не удаляются silently; migration report и отдельная purge operation.
+**SECRET:** расширить библиотеку опубликованных форматов — ключи LLM/Git/cloud/payment, PEM/OpenSSH private keys, credentials в connection strings, passwords в явном KV-контексте. Curated subset внешнего каталога с license notices и негативами; не импортировать entropy heuristics wholesale. Классифицировать password context, а не любую высокую энтропию; sample placeholders/public keys остаются отрицательными примерами. Known managed secrets не попадают в обычные PII tokens, safe previews, test-result projections или logs. Явные исключения хранения: approved connection credential/credential broker и encrypted pending payload F24; они не дают права на произвольное восстановление или долгие raw-content backups. Исторические legacy mappings не удаляются silently; migration report и отдельная purge operation.
 
-**UI/API:** category→action, список поддержанных secret mechanisms, masked reason. Reveal для SECRET отсутствует в managed. API ошибки не цитируют секрет/вход.
+**UI/API:** category→action, список поддержанных secret mechanisms, masked reason. Обычного SECRET reveal через PII token search нет; sensitive pending/credential access регулируется отдельными permissions F24, с audit-before-value. API ошибки не цитируют секрет/вход.
 
-**Приёмка:** seed секрет отсутствует в vault/audit/control/jobs/logs/exceptions/results/backups нового managed flow. При action=block вход с PII+SECRET блокируется до upstream. При явно разрешённом redact upstream получает только очищенный envelope, без исходного секрета и возможности его восстановить; required tool field нельзя удалить — тогда block. JSON валиден после redact; обычные commit hashes/UUID/public tokens не блокируются.
+**Приёмка:** для обычного block/redact prompt seed не создаётся в PII vault, audit/logs/previews/results/backups. В explicit HITL сценарии он допускается только внутри approved encrypted payload/secret domain, недоступного обычному reader, с проверенной очисткой; presence в прочих stores/projections — failure. Opt-in exact raw-key разрешение проверяется отдельно от default no-egress gate (H02/H08). При action=block вход с PII+SECRET блокируется до upstream. При явно разрешённом redact upstream получает только очищенный envelope, без исходного секрета и возможности его восстановить; required tool field нельзя удалить — тогда block. JSON валиден после redact; обычные commit hashes/UUID/public tokens не блокируются.
 
 ### F08. Сессии, receipts и разрешённое восстановление — P0
 
-**Принято RESTORE01:** ambiguous/unresolved substitute не угадываем; проблемный tool call не выполняем. Обычный текст может быть выдан с явно нераскрытой подстановкой и machine-readable/UI признаком incomplete restoration. Это не успех exact round-trip; residual-free также не доказательство правильной личности. Zero-code proxy onboarding versus explicit conversation identity/receipt requirements — CONNECT03 ещё обсуждается, не обещать оба без основания.
+**Принято RESTORE01:** ambiguous/unresolved substitute не угадываем; проблемный tool call не выполняем. Обычный текст может быть выдан с явно нераскрытой подстановкой и machine-readable/UI признаком incomplete restoration. Это не успех exact round-trip; residual-free также не доказательство правильной личности. CONNECT03 принят: baseline base_url/key не требует mandatory SDK, strict conversation/receipt гарантии включаются только при наличии проверяемых capabilities. Эти два режима не выдаются за одинаковую гарантию.
 
 **Принято AR14:** по умолчанию подстановки scoped внутри диалога; долговременная память включается отдельной настройкой, межприложенческая стабильность не подразумевается.
 
@@ -349,13 +357,15 @@ Recognizer priority выбирает **границы сущности**, не �
 
 **Архитектура:** namespaces/refs/receipts в vault.db; handler проверяет app, project, conversation, live auth epoch, allowed destination и token membership. Strict restore не вводит видимость из одной session в другую. `receipt` связан с successful protect pass; subsequent tool-result protect добавляет разрешённые mapping refs текущей conversation через новый receipt, не переписывает immutable historical receipt. Restoration использует recorded decoder/generator metadata, current permission проверяется отдельно. Политика новых requests не уничтожает возможность корректно обработать outstanding разрешённый response.
 
-**UI/API:** scope conversation/project, bounded receipt TTL, errors `receipt_expired`, `restore_forbidden`, `mapping_deleted`, `unresolved_token` без value. Высокорисковые tools с residuals не исполняются по default. Reveal — отдельный management grant/reason/audit, не использование restore endpoint для поиска vault.
+**UI/API:** scope conversation/project, bounded receipt TTL, errors `receipt_expired`, `restore_forbidden`, `mapping_deleted`, `unresolved_token` без value. Любой проблемный tool call с unresolved/ambiguous substitute не исполняется (RESTORE01), независимо от условного risk label. Обычный текст допускает явный incomplete status. Reveal — отдельный management grant/reason/audit, не использование restore endpoint для поиска vault.
 
 **Приёмка:** stolen receipt без app credential бесполезен; чужая conversation/key/destination запрещена; смена обычной policy не портит approved response, revoke запрещает; deletion не выдаёт cache value; checksum/name/address/JSON round-trip регрессии сохраняются. Expired lease поведение не меняем этим sprint; bundle-free recovery P2.
 
 ### F09. Журнал каждого решения, административный аудит, история — P0
 
 **Результат:** ответить «кто, по какой политике, что решил и что выполнил», в том числе при cache hit и запросе без PII.
+
+**Время и корреляция (S1 §10/app4):** event-time хранится с однозначной UTC basis, UI может отображать TZ клиента; duration измеряется monotonic, не разностью произвольных wall clocks. Синхронизацию часов обеспечивает host/оператор, наш контейнер не становится NTP-сервисом. Документируем skew и проверяем ordering/correlation request→DLP→decision→HITL→delivery→SIEM по stable IDs; retry доставки сохраняет event_id, новая попытка имеет отдельный attempt_id.
 
 **Архитектура:** новая request_decisions, а не переиспользование events как full request archive. Фазы ingress/output/tool имеют decision_id и общий request_id/root_request_id. Admin events внутри mutation tx, reveal record до раскрытия, actor из verified auth. Значения keys/content не входят в mutation diff: secret field → `changed=true`. Неуспешный вход, отказ, промах раскрытия, удаление, активация, экспорт и чтение диагностического содержимого также создают события.
 
@@ -375,7 +385,7 @@ Recognizer priority выбирает **границы сущности**, не �
 
 **UI/API:** mode/latency warning, preflight capability matrix, distinct `stream_blocked`/`provider_failed` SSE outcomes. `finish_reason` и error event не имитируют успешный [DONE]. Sidecar v2 накопленные output/arguments через finish; SDK удерживает пока нет delivery allow. Общую токсичность/phishing reputation/general factuality P2.
 
-**Приёмка:** секрет split на каждом offset не выходит в wire; n>1 не смешивается; midstream outage не выдаёт held unsafe tail; detok ФИО разрешённому CRM проходит, external HTTP recipient запрещён; новые ПДн не смешиваются с уже выданной подстановкой.
+**Приёмка:** при default secret-deny секрет split на каждом offset не выходит в wire; explicit opt-in raw-key исключение проверяется отдельно H02 по точному payload/destination/permission и не отменяет остальные проверки; n>1 не смешивается; midstream outage не выдаёт held unsafe tail; detok ФИО разрешённому CRM проходит, external HTTP recipient запрещён; новые ПДн не смешиваются с уже выданной подстановкой.
 
 ### F11. Подключение защищаемых API без маршрутизатора моделей — P1
 
@@ -441,9 +451,11 @@ Recognizer priority выбирает **границы сущности**, не �
 
 **Архитектура:** refs/sessions/receipts определяют lifetime mapping; session close и idle/absolute deadlines. Housekeeping удаляет только rows без живых required refs, блокирует новое использование истекшего namespace. Renewal не продлевает абсолютный срок; project-scope долговременной памяти explicit без TTL default при миграции legacy. CAS retention epoch fencing: перед раскрытием/cache release проверяется актуальный deletion epoch. В delete tx tombstone+refs+namespace epoch, после этого никакого восстановления; gc batches удаляют indices/original_form/custom aliases/carries и связанные cached outputs. Удаление last ref не удаляет mapping другого живого session.
 
-**Настройки:** для новых managed session idle 24h, absolute 7d (proposal); decision events 30d; administrative/reveal audit 180d; jobs/results 24h; diagnostic capture off/24h; real test cases 30d/explicit expires_at, synthetic cases до явного удаления; оба с отдельным quota. Cumulative billing/install identity не очистить retention job. Admin/reveal retention нельзя снизить молча без reason/permission. Точная long-term legality/customer policy — вне нашего автоматического решения.
+**Настройки:** численные defaults ниже — proposal до согласования/измерения, не утверждённые owner значения. HITL pending имеет отдельный класс: default без auto-expiry карточки, не наследует jobs24h/session7d. Document artifact TTL тоже отдельно. Для новых managed session idle 24h, absolute 7d (proposal); decision events 30d; administrative/reveal audit 180d; jobs/results 24h; diagnostic capture off/24h; real test cases 30d/explicit expires_at, synthetic cases до явного удаления; оба с отдельным quota. Cumulative billing/install identity не очистить retention job. Admin/reveal retention нельзя снизить молча без reason/permission. Точная long-term legality/customer policy — вне нашего автоматического решения.
 
 **Удаление:** preview plan показывает counts/live refs/affected apps/receipts, confirm другой nonce bound plan/version, execution progress, audit. Bulk purge queued requests cancels/fences; no browser raw SQL. Ротация/physical compaction через supervised maintenance plan + existing CLI/roles, не выдавать UI shell. Срок логического запрета и физического удаления отдельные статусы; SSD/RAM/backup secure erasure не обещается.
+
+**UI «Проверить целостность» (из S2 «Волт»):** фиксированная approved read-only maintenance operation/CLI, scoped permission, audit, cancellation и bounded work. Проверяет структурную читаемость конкретных stores на определённом snapshot, сообщает store/result/time/непроверенные части; не выполняет произвольный SQL или shell из браузера. Corrupt fixture обязан дать failure. Structural DB integrity не равно правильной личности при detok и не root-proof audit.
 
 **Backups:** default configuration-only и audit snapshots отдельно; session mappings исключены из долговременного backup. Existing full-volume backups не становятся безопасными автоматически: показать inventory/procedure/legacy limitation. Deletion ledger проверяется при восстановлении и replay tombstones выполняется до readiness. **Источник актуальности должен сохраняться независимо от восстанавливаемого snapshot:** authoritative deletion generation/digest и полный журнал либо independently retained customer checkpoint/journal (отдельный approved mount, не та же архивная копия тома). Поддерживаемый ops adapter фиксирует новый checkpoint до статуса deletion completed; конфигурация места хранения только host/CLI, не arbitrary browser path/URL. Ledger внутри backup, даже корректный и подписанный, сам по себе не доказывает, что после backup не было новых удалений. Отсутствующая или непроверяемая freshness, в том числе stale-but-valid ledger, означает quarantined not-ready restore, не silent revival. Независимый journal тоже входит в key rotation/backup inventory/restore procedure; без такого источника не заявляем автоматический tombstone-safe restore. Не гарантировать удаление копий вне контроля клиента.
 
@@ -458,6 +470,8 @@ Recognizer priority выбирает **границы сущности**, не �
 **Результат:** технический лидер видит нагрузку, подтверждённые дефекты и изменения после policy update без выдуманных процентов.
 
 **Архитектура:** shared stage_metrics/decisions/time buckets, bounded histograms и aggregate series; profiling current process нельзя назвать всем cluster. Dimensions только registered app/category/destination/env/revision; нет token/name/raw text labels Prometheus. FP/FN только annotated testset/sample/feedback, metrics имеют denominator, sample size, period и provenance. Production residual_count = технический сигнал, не exact restore success. Task success — парный agent benchmark, не счетчик green 200.
+
+**Source analytics scope:** если trusted integration действительно передаёт subject/department/model/provider/document/source metadata, safe ledger и отчёты могут фильтровать по этим разрешённым полям и группировать повторные нарушения/lineage. Не придумываем отсутствующие атрибуты и не строим обязательную org hierarchy. Эти scoped report dimensions не превращаются в unbounded/PII Prometheus labels; raw texts и credentials не нужны для агрегатов. Неизвестный subject/department показывается неизвестным.
 
 **Drift:** сравнивать category/action/miss/reveal distributions и known custom-shape unmatched counts; low sample → insufficient_data. Повторяющиеся candidate shapes с HMAC bucket и без raw значений; новый dictionary candidate только предложение. «Числовая строка не совпала» не значит PII miss. Настройка baseline window/min count/threshold и suppressed alerts versioned; ML auto-discovery/automatic repair — P2.
 
@@ -527,6 +541,8 @@ Recognizer priority выбирает **границы сущности**, не �
 
 **Packaging:** новые CONTROL_STORE и JOBS_STORE labels в vault_key/sqlite_setup/schema.registry; probe/migrate/rekey/decrypt/volume_state/backup/restore/doctor в обоих images. Повысить schema audit и vault под новым minor: старый probe иначе проигнорирует новый control.db и ошибочно разрешит downgrade. Не править lock 0.3 max9/1/1. Release-As выбирается owner по release contract; version source прежний. Source+compiled parity, RE2/OIDC зависимость и SBOM/licenses pinned; no customer docs/inputs in release image; capability surface gates on compiled image.
 
+**Standalone restore drill (S1 §11):** до поставки повторить восстановление supported single-instance backup на чистом томе; зафиксировать фактическую длительность, возраст backup и recoverability отдельно для configs/audit/vault и намеренно не резервируемых pending/capture/artifacts. RTO/RPO цели не выдумываем, показываем измерения и ограничения. Это local restore, не возвращение HA/cluster в scope.
+
 **Приёмка:** source/compiled rollout/jobs/reveal одинаковы; crash halfway rekey reports per store; no space migration ничего не изменяет; старый образ refuses untouched; restore quarantines stale tombstone snapshots; no root/docker socket/secret in argv; health stale lease не заставляет restart storm. UI не запускает docker upgrade/rekey сама.
 
 ### F22. Базовая безопасность LLM, RAG-контекста и инструментов — P1
@@ -537,9 +553,9 @@ Recognizer priority выбирает **границы сущности**, не �
 
 **Injection signatures:** ограниченный versioned набор известных direct/indirect instruction override/exfiltration signatures RU/EN как механизм `injection_signature`, отдельно от PII. По default monitor на этапе калибровки, не отключающий PII/secret enforcement; explicit block допускается после согласованного positive/benign corpus. Evidence это совпавшая сигнатура, не вероятность злого умысла. Zero hits не означает безопасный prompt. Не добавлять instructions в customer system prompt автоматически и не менять нормализацию offsets. Local classifier REST connector может выдавать typed finding при явно настроенном сервисе и его test stamp; **наличие connector не считается shipped semantic detector**. Собственная semantic модель, multilingual jailbreak protection, intent/goal analyser — P2.
 
-**Tool guard:** registered tool/destination/operation + schema and field allowlists + per-run steps/deadline. Proxy блокирует forbidden proposed call, SDK wrapper также проверяет непосредственно перед исполнением; restoration capabilities только на разрешённые paths, никогда credentials. Отсутствие wrapper = `execution_not_integrated` в coverage, не enforced. SSRF наших собственных integrations/proxy закрывает F11/F17; сетевые обращения произвольного remote tool требуют его собственный egress/sandbox, не решаются фильтром имени функции.
+**Tool guard:** registered tool/destination/operation + schema and field allowlists + per-run steps/deadline. Proxy блокирует forbidden proposed call, SDK wrapper также проверяет непосредственно перед исполнением; обычные PII restoration capabilities только на разрешённые paths; credentials получают отдельные scoped service/purpose permits F07/F24, не общий unmask. Отсутствие wrapper = `execution_not_integrated` в coverage, не enforced. SSRF наших собственных integrations/proxy закрывает F11/F17; сетевые обращения произвольного remote tool требуют его собственный egress/sandbox, не решаются фильтром имени функции.
 
-**UI/API:** «Инструменты и источники» как подраздел «Приложений», approved digests/изменения/полномочия/coverage, signature evidence/monitor/block, attach run limits. `/v2/tools/authorize` возвращает opaque pending permit bound to normalized args digest, receipt, operation, destination, tool registry generation, app/auth/deletion epochs и short deadline. Binding хранит отдельно digest protected arguments и digest **recipient-ready arguments после проверенного restore**; SDK не сравнивает fake JSON с real JSON как будто это один payload. Consume принимает exact argument payload/его проверяемую canonical representation, а не считает произвольный caller checksum доказательством; engine проверяет recipe/token membership/field constraints и ожидаемый recipient-ready digest без persistence исходных real args. Непосредственно перед execution wrapper обязан online вызвать `/v2/tools/consume`: engine повторно проверяет live app/tool/destination grants и receipt/mapping lifecycle; один control.db transaction переводит permit issued→consumed и списывает shared run step budget. Replay/expiry/revoke/digest mismatch/exhausted budget → отказ, handler не вызывается. `tool_permits` и `run_budgets` живут вместе в control.db; failure после consume может потратить step без side effect, это безопаснее повторного исполнения. Consume — нормативная точка допуска execution attempt, не distributed transaction с внешним инструментом; уже начатый внешний side effect нельзя отозвать и exactly-once не обещается. Wrapper не держит разрешение в очереди между consume и вызовом и использует bounded attempt deadline. Request approval workflow, MCP transport/A2A delegation — P2.
+**UI/API:** «Инструменты и источники» как подраздел «Приложений», approved digests/изменения/полномочия/coverage, signature evidence/monitor/block, attach run limits. `/v2/tools/authorize` возвращает opaque pending permit bound to normalized args digest, receipt, operation, destination, tool registry generation, app/auth/deletion epochs и short deadline. Binding хранит отдельно digest protected arguments и digest **recipient-ready arguments после проверенного restore**; SDK не сравнивает fake JSON с real JSON как будто это один payload. Consume принимает exact argument payload/его проверяемую canonical representation, а не считает произвольный caller checksum доказательством; engine проверяет recipe/token membership/field constraints и ожидаемый recipient-ready digest без persistence исходных real args. Непосредственно перед execution wrapper обязан online вызвать `/v2/tools/consume`: engine повторно проверяет live app/tool/destination grants и receipt/mapping lifecycle; один control.db transaction переводит permit issued→consumed и списывает shared run step budget. Replay/expiry/revoke/digest mismatch/exhausted budget → отказ, handler не вызывается. `tool_permits` и `run_budgets` живут вместе в control.db; failure после consume может потратить step без side effect, это безопаснее повторного исполнения. Consume — нормативная точка допуска execution attempt, не distributed transaction с внешним инструментом; уже начатый внешний side effect нельзя отозвать и exactly-once не обещается. Wrapper не держит разрешение в очереди между consume и вызовом и использует bounded attempt deadline. Request/tool approval реализуется F24; полный MCP transport/A2A delegation остаётся P2.
 
 **Приёмка:** разрешённый tool ID с подменённой description/schema требует review; namesake server не shadow approved tool; malformed/forbidden args и превышение steps не исполняют side effect; RAG no access proof не reaches model; quotes о prompt injection в benign документации не получают безусловный block; deliberately bypassed signature обнаруживает limits/enforcement tests, а не зелёный «all attacks neutralized».
 
@@ -553,7 +569,27 @@ Recognizer priority выбирает **границы сущности**, не �
 
 **UI/API:** приложение типа coding, approved workspaces/ops/egress/resource/retention settings, protected trace, integration probe и честная карта coverage в существующей админке. Не универсальная remote-shell кнопка в management API. Proposed coding DTO/adapter paths и полный lifecycle в [специализированной спецификации](<docs/tz-ai-coding-track.md>).
 
-**Порядок/приёмка:** W28–W35 после W27/C4; AC01–AC12 проверяют exact argv/files, no secret/model leak, sandbox/races/permit replay, safe patch и полезность paired задачи. W35 повторяет общие CP на новой сборке; весь спринт заканчивается C5. Arbitrary shell/eval/embedded languages restoration, all IDE support и automatic semantics preservation не входят в узкую первую поставку.
+**Порядок/приёмка:** W28–W35 после W27/C4 (который включает F24/F25); Claude slice проходит AC01–AC12 на Linux/macOS/WSL и shared regression. Затем W45/AC13 проверяет Codex отдельно. Default no-secret-to-model и explicit authorised exception имеют разные оракулы. Привязка Codex к первому публичному C5 остаётся OPEN-C01; один Claude/Linux результат не закрывает второй adapter или остальные OS. Arbitrary shell/eval/embedded languages restoration, all IDE support и automatic semantics preservation не входят в узкую первую поставку.
+
+### F24. Runtime HITL и контролируемые исключения — P1
+
+**Основание:** принято HITL01–HITL07/CRED-UX01; source S1 §7 «Требуется согласование». Полный proposed contract — [HITL и документы §2](<docs/tz-hitl-and-documents.md>).
+
+**Архитектура:** approval metadata/decision/one-use permit в control.db; sensitive pending payload encrypted в jobs.db с отдельным lifecycle. Approval state отделён от execution state. Live grants/payload/destination/policy recheck перед consume; никакого технического fail-open. Default queue не автоистекает, quotas ограничивают новые admission, напоминание не удаление.
+
+**UX/API:** safe queue preview, отдельный reveal grant, две роли + назначаемые права, approve/reject/cancel в UI и API, exact request binding. Raw-key-to-model вариант только по explicit enabled policy и специальному праву. «Запомнить» создаёт policy draft, не расширяет права одним кликом. Native resume/потерянный waiter остаются capability-dependent OPEN-H01 после исследования harness.
+
+**Приёмка:** H01–H10 плюс CP15/CP19/CP31/CP42; не путать approved с executed. Повторная отправка решения не новая платная операция автоматически. Technical faults не превращаются в reviewable allow. Реализация W36–W39/T13 после self-service core, параллельно документам.
+
+### F25. Native защита текстовых PDF/DOCX — P1
+
+**Основание:** принято DOC01–DOC04; source S1 §7/§12 attachments. Полный proposed contract — [HITL и документы §3](<docs/tz-hitl-and-documents.md>).
+
+**Архитектура:** sandboxed format inventory → source maps → общий detector/policy → native rewrite/rebuild → независимая artifact verification. PDF text-layer и DOCX, без OCR. Original text нельзя просто прикрыть; hidden parts/revisions/metadata должны быть обработаны или дать unsupported/refusal. Изображения/embedded objects default блокируют fully protected claim; partial/removal отдельно explicit.
+
+**UX/API:** защищённый файл с best-effort оформлением, coverage/fidelity report, project/service-scoped download, одинаковый backend UI/API. Provider file-ID mapping и auth проверяются SP08, не предполагаются по текстовому endpoint. Billing/TTL/поддержанные библиотеки и signed/encrypted subformats до реализации фиксируются как OPEN-D01/D02.
+
+**Приёмка:** DOCG01–DOCG10 + relevant CP; parser failure/ZIPbomb/old PDF objects/hidden DOCX revisions/cross-service IDs/partial coverage. W40–W44/T14 идёт параллельно HITL после общего ядра. Extraction-only output и CSV/JSONL batch не выполнение F25.
 
 ## 5. API-контракт и интеграционные границы
 
@@ -622,18 +658,22 @@ Framework tracing/checkpointing может записать raw input **до** �
 
 ### 5.3 Management API (proposed, prefix /management/v1)
 
+В колонке прав перечислены **feature-grants/операции, не дополнительные роли**. Роль остаётся admin/user; UI показывает разрешения по функциям. Получение одного grant не выдаёт остальные и не меняет роль. Точные permission IDs закрепляются identity contract, без создания role designer.
+
 | Семейство | Операции | Права |
 |---|---|---|
-| projects / applications / credentials | list/create/update/bind/revoke/rotate | scoped owner/admin, secret одноразово |
-| principals / roles / sessions / oidc | list/invite/update/grant/revoke/auth/logout | explicit access_admin, grant subset boundaries |
-| policies / revisions / deployments | draft/edit/validate/compare/export/import/prepare/activate/rollback/status | editor vs publisher, CAS/reason/four-eyes |
-| custom-types / rules / dictionaries / exceptions | draft CRUD/import/validate/templates | editor scoped, edits feed policy revision |
-| destinations / integrations | configure/test/disable/health | integration_admin, trusted egress refs |
-| explain / sandbox-runs / suites / runs / batch-jobs | execute/read/cancel/download | developer, isolated test domain and quota |
+| agents-services / applications / credentials | list/create/update/bind/revoke/rotate | admin либо user с выданным feature permission; secret одноразово, без обязательной project UI-иерархии |
+| principals / permissions / sessions / oidc | list/invite/update/grant/revoke/auth/logout | admin/user + явные grants, не конструктор новых ролей |
+| policies / revisions / deployments | draft/edit/validate/compare/export/import/prepare/activate/rollback/status | admin/user grants на edit/publish, CAS/reason/explicit apply; без mandatory four-eyes |
+| custom-types / rules / dictionaries / exceptions | draft CRUD/import/validate/templates | grant policy.edit по scope, edits feed policy revision |
+| destinations / integrations | configure/test/disable/health | grant integration.configure, trusted fixed egress refs |
+| explain / sandbox-runs / suites / runs / batch-jobs | execute/read/cancel/download | grant test.execute, isolated test domain and quota |
 | decisions / history / reveals / metrics / reports | read/filter/export | scoped reader, distinct content/reveal grants |
-| retention / vault / maintenance-plans | estimate/create/confirm/status | retention_admin, reveal independent |
-| feedback / incidents / alert-rules | annotate/triage/fix-link/verify/close | analyst/editor, no silent repair |
+| retention / vault / maintenance-plans | estimate/create/confirm/status | grant retention.manage, reveal independent |
+| feedback / incidents / alert-rules | annotate/triage/fix-link/verify/close | grants feedback.manage/policy.edit по операции, no silent repair |
 | capabilities / coverage / engine-versions / status | read actual installed state | scoped operational metadata |
+| approvals / pending-payload / decisions | list/read/decide/cancel/status/authorised reveal | HITL grant и отдельный sensitive grant; F24/H01–H10 |
+| document-jobs / artifacts | upload/protect/status/cancel/authorised download | service binding + artifact ACL/coverage; F25/DOCG01–DOCG10 |
 
 Для variable route `{id}` разрешён только ожидаемый UUID/opaque ID, method-specific allowlist и backend authority; `path`/host/port/query-url клиент не задаёт. Просмотр статистики не наследует права на полный текст. Все write endpoints имеют explicit auth, concurrency token и audit; UI не обходной путь.
 
@@ -697,7 +737,7 @@ Raw vendor asset material не попадает в control revisions/exports/tes
 
 ### 8.2 Проверяемая готовность
 
-Все F01–F23 из выбранного объёма требуют позитивного и отрицательного сценария на своей фактической границе (HTTP, coding harness или executor); изменяющие data plane — реального container gate. Для F23 дополнительно обязательны AC01–AC12 на проверенной OS/harness, не только HTTP mock. Proposed suite имена и dependency graph в [плане](<docs/plan-product-control-plane-sprint.md>). Existing detection/round-trip battery запускается на regenerated datasets; holdout нельзя подстраивать под новые recognizers. Новые client rules проходят mutation tests (искусственно пропустить/перемаскировать/вернуть чужое значение — отчёт обязан покраснеть).
+Все F01–F25 из выбранного объёма требуют позитивного и отрицательного сценария на своей фактической границе (HTTP, coding harness или executor); изменяющие data plane — реального container gate. Для F23 дополнительно обязательны AC01–AC12 на проверенной OS/harness, не только HTTP mock. Proposed suite имена и dependency graph в [плане](<docs/plan-product-control-plane-sprint.md>). Existing detection/round-trip battery запускается на regenerated datasets; holdout нельзя подстраивать под новые recognizers. Новые client rules проходят mutation tests (искусственно пропустить/перемаскировать/вернуть чужое значение — отчёт обязан покраснеть).
 
 Не объявлять «95%» на неизвестном корпусе. До реализации freeze clean baseline по типам/регистрам/направлениям; для нового типа ground truth и hard negatives. Quality регрессия отдельно от feature coverage. Нельзя принять собственный экран самопроверки как доказательство, что data действительно не ушли upstream: wire spy и конечный tool store проверяются независимо.
 
@@ -731,7 +771,7 @@ Raw vendor asset material не попадает в control revisions/exports/tes
 
 ### 10.1 Предлагаемые решения, требующие утверждения владельцем
 
-**D1:** базовый scope F01–F22 дополнен владельцем завершающим F23/T12 AI-разработки в том же sprint; narrow contracts обоих слоёв обязательны, итоговая приёмка C5. P2 не считается готовым интерфейсом.
+**D1:** базовый scope F01–F22 дополнен F24/HITL и F25/documents (параллельно после core), затем F23/T12 coding Claude→Codex. Выпускная привязка Codex к C5 остаётся OPEN-C01; ни один adapter не считается готовым по другому. P2 не считается готовым интерфейсом.
 **D2:** control plane local SQLCipher, single-node shipping first; cluster HA отдельный объём.
 **D3:** managed API v2 + explicit compatibility migration; без silent trust upgrade legacy.
 **D4:** policy hot activation и roles до mutating UI; restart для инфраструктуры только через ops.
