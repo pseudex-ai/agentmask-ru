@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.38](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.37...platform/v0.3.38) (2026-10-10)
+
+
+### Новое
+
+* **storefront:** сквозная аналитика до оплаты и безопасный Вебвизор ([#78](https://github.com/Isk4R1oT/Obscura/issues/78)) ([0651886](https://github.com/Isk4R1oT/Obscura/commit/065188666159f03421e0c74bc726570e1d3e5cba))
+
 ## [0.3.37](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.36...platform/v0.3.37) (2026-10-10)
 
 
