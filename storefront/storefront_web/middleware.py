@@ -71,8 +71,12 @@ def _policy_for(request) -> str:
 
     allowed = " ".join(origins)
     metrika_img = " https://mc.yandex.ru" if settings.METRIKA_ID else ""
+    # Replay uses separate secure WebSocket and Webvisor destinations, not
+    # additional script permissions. Keep these allowances connect-only.
+    metrika_connect = f" {_METRIKA_CONNECT}" if settings.METRIKA_ID else ""
     policy = "; ".join(
-        part + (f" {allowed}" if part.startswith(("script-src ", "connect-src "))
+        part + (f" {allowed}" if part.startswith("script-src ")
+                else f" {allowed}{metrika_connect}" if part.startswith("connect-src ")
                 else metrika_img if part.startswith("img-src ") else "")
         for part in _POLICY.split("; ")
     )
@@ -87,15 +91,35 @@ def _policy_for(request) -> str:
     # отдаётся оттуда. Разрешение узкое — `blob:` и один хост, — и только на
     # публичных страницах со счётчиком.
     #
-    # `frame-ancestors 'none'` ОСТАВЛЕН, хотя справка называет и его. Он
-    # запрещает встраивать НАШУ страницу в чужой фрейм, и это защита от
-    # кликджекинга формы регистрации. Справка перечисляет директивы общим
-    # списком «для правильной работы»; если запись окажется неполной, начинать
-    # надо отсюда — но ослаблять защиту до того, как она помешала, не за что.
+    # Only the documented HTTPS Metrika UI origins may frame public pages.
+    # This fixes playback/element selection, not evidence of missing goals:
+    # successful goal delivery and blocked replay connections can coexist.
     if settings.METRIKA_ID:
+        policy = policy.replace("frame-ancestors 'none'",
+                                f"frame-ancestors {_METRIKA_FRAME_ANCESTORS}")
         policy += ("; child-src blob: https://mc.yandex.ru"
                    "; frame-src blob: https://mc.yandex.ru")
     return policy
+
+
+# Exact host list from the official CSP guide, checked 2026-10-10:
+# https://yandex.ru/support/metrica/ru/code/install-counter-csp
+# HTTPS only; neither arbitrary Yandex subdomains nor our own origin may frame.
+_METRIKA_FRAME_ANCESTORS = " ".join(f"https://{host}" for host in (
+    "metrika.yandex.ru", "analytics.yandex.by", "analytics.yandex.com",
+    "analytics.yandex.com.tr", "analytics.yandex.kz", "analytics.yandex.ru",
+    "metr.yandex.by", "metr.yandex.com", "metr.yandex.com.tr",
+    "metr.yandex.kz", "metr.yandex.ru", "metrica.ya.ru", "metrica.yandex",
+    "metrica.yandex.by", "metrica.yandex.com", "metrica.yandex.com.tr",
+    "metrica.yandex.kz", "metrica.yandex.ru", "metrika.ya.ru", "metrika.yandex",
+    "metrika.yandex.by", "metrika.yandex.com", "metrika.yandex.com.tr",
+    "metrika.yandex.kz", "metrika.yandex.uz",
+))
+
+# The observed RU collector plus documented Webvisor transports. Other regional
+# collectors are not needed by this integration; do not wildcard the vendor.
+_METRIKA_CONNECT = ("wss://mc.yandex.ru https://mc.webvisor.com "
+                    "https://mc.webvisor.org wss://mc.webvisor.com wss://mc.webvisor.org")
 
 
 _POLICY = "; ".join([
@@ -132,7 +156,30 @@ _log = logging.getLogger("storefront.analytics")
 
 class SecurityHeadersMiddleware(MiddlewareMixin):
     def process_response(self, request, response):
-        response.setdefault("Content-Security-Policy", _policy_for(request))
+        policy = _policy_for(request)
+        response.setdefault("Content-Security-Policy", policy)
+        # Only our complete, eligible policy grants the exemption. A substring
+        # match in a view's custom CSP can mistake a different directive or a
+        # second policy for permission. Preserve custom CSP but fail closed on
+        # framing. Closed pages always retain the self-only resource policy.
+        if not counters_allowed(request.path):
+            response["Content-Security-Policy"] = policy
+        metrika_frame = (bool(settings.METRIKA_ID)
+                         and counters_allowed(request.path)
+                         and response["Content-Security-Policy"] == policy)
+        response.xframe_options_exempt = metrika_frame
+        if metrika_frame:
+            # XFO cannot express an origin allowlist. Remove a pre-existing
+            # header too; the outer Django XFO middleware observes this flag.
+            if "X-Frame-Options" in response:
+                del response["X-Frame-Options"]
+        else:
+            response["X-Frame-Options"] = "DENY"
+            if response["Content-Security-Policy"] != policy:
+                # CSP frame-ancestors overrides XFO in modern browsers. A
+                # separate policy intersects a custom policy instead of trying
+                # to override its first frame-ancestors directive with a second.
+                response["Content-Security-Policy"] += ", frame-ancestors 'none'"
         # Pages behind the login show a key prefix and billing detail. A shared
         # proxy holding a rendered copy is a copy nobody accounted for.
         #

@@ -253,6 +253,8 @@ services:
       # умолчанию: конверсия уходит с сервера и не спрашивает согласия
       # баннером, поэтому включается отдельным решением, а не наличием токена.
       PSEUDEX_YANDEX_CONVERSIONS: ${PSEUDEX_YANDEX_CONVERSIONS:-}
+      PSEUDEX_ACQUISITION_LINK_ENABLED: ${PSEUDEX_ACQUISITION_LINK_ENABLED:-0}
+      PSEUDEX_ACQUISITION_EXPORT_ENABLED: ${PSEUDEX_ACQUISITION_EXPORT_ENABLED:-0}
       # Машинный доступ к читающим `/ops/yandex/*`. Отдельный токен, потому что
       # у бота нет второго фактора, а staff-аккаунт выдал бы ему весь биллинг.
       PSEUDEX_OPS_API_TOKEN: ${PSEUDEX_OPS_API_TOKEN:-}
@@ -398,6 +400,51 @@ services:
           fi
           sleep 3600
         done
+
+  acquisition:
+    # Independent of billing: analytics failures must never delay a payment or
+    # license. Same signed storefront image, no acquiring or licensing secrets.
+    # Raw-ID retention runs even with export disabled. Unknown uploads are not
+    # retried; they remain visible for reconciliation instead of double-counting.
+    image: ${REGISTRY:-cr.yandex/pseudex}/pseudex-storefront:${VERSION:?set VERSION}
+    restart: unless-stopped
+    init: true
+    logging: *logging
+    environment:
+      PSEUDEX_SECRET_KEY: ${PSEUDEX_SECRET_KEY:?set PSEUDEX_SECRET_KEY}
+      PSEUDEX_DEBUG: "0"
+      PSEUDEX_ALLOWED_HOSTS: ${SITE_HOST:?set SITE_HOST}
+      PSEUDEX_DB_HOST: postgres
+      PSEUDEX_DB_NAME: ${POSTGRES_DB:-pseudex}
+      PSEUDEX_DB_USER: ${POSTGRES_USER:-pseudex}
+      PSEUDEX_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      PSEUDEX_METRIKA_ID: ${PSEUDEX_METRIKA_ID:-}
+      PSEUDEX_YANDEX_CONVERSIONS: ${PSEUDEX_YANDEX_CONVERSIONS:-0}
+      PSEUDEX_ACQUISITION_LINK_ENABLED: ${PSEUDEX_ACQUISITION_LINK_ENABLED:-0}
+      PSEUDEX_ACQUISITION_EXPORT_ENABLED: ${PSEUDEX_ACQUISITION_EXPORT_ENABLED:-0}
+      YANDEX_OAUTH_CLIENT_ID: ${YANDEX_OAUTH_CLIENT_ID:-}
+      YANDEX_OAUTH_CLIENT_SECRET: ${YANDEX_OAUTH_CLIENT_SECRET:-}
+      YANDEX_OAUTH_REFRESH_TOKEN: ${YANDEX_OAUTH_REFRESH_TOKEN:-}
+    depends_on:
+      storefront-migrate: { condition: service_completed_successfully }
+      postgres: { condition: service_healthy }
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while :; do
+          if python manage.py acquisition_sync --limit 20; then
+            date +%s > /data/acquisition-last-ok
+          else
+            echo "acquisition sync failed; no automatic uncertain-upload replay"
+          fi
+          sleep 300
+        done
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import pathlib,time; p=pathlib.Path('/data/acquisition-last-ok'); raise SystemExit(0 if p.exists() and time.time()-int(p.read_text()) < 1800 else 1)\""]
+      interval: 120s
+      timeout: 10s
+      retries: 2
+      start_period: 180s
 
   caddy:
     # TLS with automatic certificates and renewal. Chosen over nginx+certbot

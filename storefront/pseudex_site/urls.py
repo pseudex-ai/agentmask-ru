@@ -14,6 +14,7 @@ from django.urls import include, path, re_path
 from django_otp.admin import OTPAdminSite
 
 from storefront_web import views
+from ops import acquisition_views
 
 # Второй фактор на входе в админку. Меняем КЛАСС уже собранного admin.site, а не
 # заводим новый сайт: все модели зарегистрированы на дефолтном сайте, и новый
@@ -31,6 +32,10 @@ admin.site.index_title = "Операции"
 urlpatterns = [
     path("", views.landing, name="landing"),
     path("signup", views.signup, name="signup"),
+    path("analytics/prepare", acquisition_views.prepare, name="analytics_prepare"),
+    path("analytics/grant", acquisition_views.grant, name="analytics_grant"),
+    path("analytics/revoke", acquisition_views.revoke, name="analytics_revoke"),
+    path("analytics/preferences", acquisition_views.preferences, name="analytics_preferences"),
     path("activate", views.activate, name="activate"),
     path("welcome", views.welcome, name="welcome"),
     path("healthz", views.healthz, name="healthz"),

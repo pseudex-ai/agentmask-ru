@@ -75,6 +75,12 @@ class Command(BaseCommand):
         # `--dry-run` НЕ ТРЕБУЕТ НИ ТОКЕНА, НИ ФЛАГА: он ничего не отправляет,
         # и посмотреть, что ушло бы, нужно ровно до того, как это включено.
         if not options["dry_run"]:
+            if (getattr(settings, "ACQUISITION_LINK_ENABLED", False)
+                    or getattr(settings, "ACQUISITION_EXPORT_ENABLED", False)):
+                raise CommandError(
+                    "Старый yclid-only экспорт несовместим с новой моделью согласий. "
+                    "Используйте acquisition_sync; PSEUDEX_YANDEX_CONVERSIONS оставьте выключенным."
+                )
             # ОТПРАВКА — ЯВНОЕ РЕШЕНИЕ, А НЕ СЛЕДСТВИЕ ТОКЕНА. Счётчик
             # спрашивает согласие баннером, а конверсия уходит с сервера и на
             # него не смотрит: без этого флага отказавшийся «Не считать» всё

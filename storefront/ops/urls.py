@@ -10,7 +10,7 @@
 
 from django.urls import path
 
-from ops import views, yandex_views
+from ops import views, yandex_views, acquisition_dashboard
 
 urlpatterns = [
     path("", views.fleet, name="ops_fleet"),
@@ -23,6 +23,7 @@ urlpatterns = [
     path("tariffs/", views.constructor, name="ops_constructor"),
     path("demand/", views.demand, name="ops_demand"),
     path("analytics/", views.analytics, name="ops_analytics"),
+    path("acquisition/", acquisition_dashboard.dashboard, name="ops_acquisition"),
     path("plans/<str:code>/", views.edit_plan, name="ops_edit_plan"),
     # МАШИННЫЙ ДОСТУП, А НЕ ЭКРАНЫ. Эти четыре маршрута закрыты Bearer-токеном
     # (`yandex_views._ops_api_gate`), а не сессией staff+TOTP, и живут выше

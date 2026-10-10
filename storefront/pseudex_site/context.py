@@ -5,9 +5,12 @@ from django.conf import settings
 
 def private_page(path: str) -> bool:
     """Закрытая страница: кабинет, админка, вход. Ни индексации, ни счётчиков."""
-    return (path.startswith("/app/")
+    # Redirect responses at the slashless roots are private too. They must
+    # never acquire a public framing exception or provider permissions.
+    return (path == "/app" or path.startswith("/app/")
             or path.startswith(f"/{settings.ADMIN_PATH}")
-            or path.startswith("/accounts/"))
+            or path == "/accounts" or path.startswith("/accounts/")
+            or path == "/analytics" or path.startswith("/analytics/"))
 
 
 def counters_allowed(path: str) -> bool:
@@ -61,6 +64,8 @@ def analytics(request) -> dict[str, object]:
     return {"analytics": settings.ANALYTICS,
             "analytics_here": settings.ANALYTICS["mode"] != "off" and counters,
             "metrika_id": settings.METRIKA_ID if metrika_here else "",
+            "acquisition_link_enabled": bool(metrika_here and getattr(
+                settings, "ACQUISITION_LINK_ENABLED", False)),
             "support_bot": settings.SUPPORT_BOT,
             "support_email": settings.SUPPORT_EMAIL,
             # ТА ЖЕ ГРАНИЦА РЕШАЕТ И ИНДЕКСАЦИЮ — но по `private_page`, а не по

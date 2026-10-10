@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Сквозная аналитика — Pseudex{% endblock %}
+{% block nav %}<nav><a href="{% url 'ops_analytics' %}">АНАЛИТИКА</a><a href="{% url 'ops_acquisition' %}">ПРИВЛЕЧЕНИЕ</a><a href="{% url 'ops_yandex' %}">ЯНДЕКС</a></nav>{% endblock %}
+{% block content %}
+<section>
+  <h2>От рекламы до результата</h2>
+  <p>Период когорты: {{ days }} дней. Показатели Директа — целевые визиты, не число компаний.
+     Отказ от согласия, пропущенная связь и истёкшее окно атрибуции не означают отсутствие продаж.</p>
+  <p><a href="?days=7">7 дней</a> · <a href="?days=14">14 дней</a> · <a href="?days=31">31 день</a></p>
+  <h3>Готовность измерения</h3>
+  <p>Отдельное согласие: <b>{{ link_enabled|yesno:"включено,выключено" }}</b>.
+     Серверная передача: <b>{{ export_enabled|yesno:"включена,выключена" }}</b>.</p>
+  <p>Подтверждённых действующих разрешений: {{ grant_stats.verified }};
+     ожидают подтверждения: {{ grant_stats.provisional }}; отозвано: {{ grant_stats.revoked }}.</p>
+  <p>Связь действительна до 21 дня; отправка ограничена 20 днями с запасом на обработку.
+     Подтверждение аккаунта в другом браузере без исходного разрешения не связывается автоматически.</p>
+  <table style="width:100%;margin-bottom:24px"><thead><tr><th>Состояние доставки</th><th>Событий</th></tr></thead><tbody>
+  {% for item in deliveries %}<tr><td>{{ item.state }}</td><td>{{ item.n }}</td></tr>{% empty %}<tr><td colspan="2">Загрузок ещё нет — это не ноль оплат.</td></tr>{% endfor %}
+  </tbody></table>
+  <p><b>accepted</b> — принят файл; <b>processed</b> — обработан файл, не доказано сопоставление каждой строки.
+     <b>unknown</b> — ответ неоднозначен, повторная отправка запрещена до сверки.
+     <b>linkage_failure</b> — Яндекс не связал идентификатор с визитом.</p>
+
+  <h3>Новые аккаунты и результаты</h3>
+  <p>Одна когорта: {{ cohort.size }} организаций. Исключено QA: {{ cohort.excluded_qa }}.
+     Оплата может предшествовать выдаче ключа; строки не являются жёсткой последовательностью.</p>
+  <table style="width:100%;margin-bottom:24px"><thead><tr><th>Наблюдение</th><th>Организаций</th><th>Доля той же когорты</th></tr></thead><tbody>
+  {% for item in cohort.outcomes %}<tr><td>{{ item.title }}</td><td>{{ item.count }}</td><td>{% if item.rate is not None %}{{ item.rate }}%{% else %}неизвестно{% endif %}</td></tr>{% endfor %}
+  </tbody></table>
+  <p>Первый маскированный запрос не доказывает успешное действие инструмента.
+     Корпоративная квалификация и приёмка сценария требуют отдельных подтверждённых фактов.</p>
+
+  <h3>Деньги и затруднения за период</h3>
+  <p>Положительных оплаченных счетов: {{ cash.invoice_count }}; организаций: {{ cash.organisations }};
+     сумма по подтверждённым счетам: {{ cash.received|default_if_none:"нет оплаченных счетов в выборке" }}.
+     Это поступления всех не-QA аккаунтов за период, не только новых клиентов и не доказанная выручка от рекламы.
+     Возвраты не вычитаются автоматически: ниже видны отдельно подтверждённые записи.</p>
+  <table style="width:100%;margin-bottom:24px"><thead><tr><th>Событие</th><th>Код причины</th><th>Наблюдений</th></tr></thead><tbody>
+  {% for f in friction %}<tr><td>{{ f.step }}</td><td>{{ f.detail|default:"—" }}</td><td>{{ f.observations }}</td></tr>{% empty %}<tr><td colspan="3">Таких наблюдений за период нет.</td></tr>{% endfor %}
+  </tbody></table>
+  <p>Повторные запросы письма, ссылки оплаты и проверки отказа — отдельные наблюдения, не уникальные клиенты или платежи.
+     Ошибка подготовки оплаты не равна банковскому отказу.</p>
+  <h3>Удержание использования</h3>
+  <p>Только созревшие когорты на завершённых сутках. Рост накопленного счётчика — наблюдение использования;
+     пропуски, сбросы и неполные ряды остаются неизвестными, а не превращаются в отток.</p>
+  <table style="width:100%;margin-bottom:24px"><thead><tr><th>День</th><th>Созрели</th><th>Наблюдаемы</th><th>Используют</th><th>Неизвестно</th><th>Удержание / покрытие</th></tr></thead><tbody>
+  {% for w in retention.windows %}<tr><td>{{ w.age_days }}</td><td>{{ w.mature }}</td><td>{{ w.evaluable }}</td><td>{{ w.active }}</td><td>{{ w.unknown }}</td><td>{{ w.rate|default_if_none:"неизвестно" }} / {{ w.coverage|default_if_none:"неизвестно" }}</td></tr>{% endfor %}
+  </tbody></table>
+  <h3>Подтверждённые бизнес-исходы</h3>
+  <p>Квалификация, приёмка агентного сценария, классификация продления и возвраты здесь подтверждаются сотрудником.
+     Это <b>не автоматическая сверка с провайдером</b>. Отсутствие записи не означает ноль возвратов.
+     Эти записи не отправляются в Метрику в рамках согласия acquisition-v1.</p>
+  <table style="width:100%;margin-bottom:24px"><thead><tr><th>Исход</th><th>Источник</th><th>Записей</th><th>Сумма подтверждённых записей</th></tr></thead><tbody>
+  {% for row in lifecycle %}<tr><td>{{ row.kind }}</td><td>{{ row.source }}</td><td>{{ row.n }}</td><td>{{ row.amount|default_if_none:"не применимо" }}</td></tr>{% empty %}<tr><td colspan="4">Подтверждённых записей за период нет; показатель не измерен.</td></tr>{% endfor %}
+  </tbody></table>
+  <details><summary>Записать уже подтверждённый факт</summary>
+    <p>Не создаёт оплату, не выполняет возврат и не отменяет подписку. Нужны проверенные документы.
+       Повтор с той же ссылкой не создаёт вторую запись; ошибочную запись нельзя тихо переписать.</p>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="attest_outcome">
+      <p><label>Организация: внутренний ID <input name="organization" required maxlength="32"></label></p>
+      <p><label>Исход <select name="kind">{% for kind in outcome_kinds %}<option value="{{ kind.id }}">{{ kind.title }}</option>{% endfor %}</select></label></p>
+      <p><label>Время факта ISO с часовым поясом <input name="event_at" placeholder="2026-10-10T12:00:00+03:00" required></label></p>
+      <p><label>ID оплаченного счёта для финансового факта <input name="invoice" inputmode="numeric"></label></p>
+      <p><label>Подтверждённая сумма в рублях <input name="amount" inputmode="decimal"></label></p>
+      <p><label>Неперсональный код документа <input name="reference" placeholder="doc:opaque-id или provider:opaque-id" maxlength="121"></label></p>
+      <p>Не вводите контакты, текст документов или диалоги. Хранится только HMAC кода источника.</p>
+      <p><label><input type="checkbox" name="evidence_confirmed" value="1" required>Я проверил источник и подтверждаю факт, а не предполагаю его по клику.</label></p>
+      <button type="submit">Записать подтверждение</button>
+    </form>
+  </details>
+
+  <h3>Директ: объявления и цели</h3>
+  <p>Только чтение: эта форма не запускает кампании, не меняет стратегию, бюджет или ценность целей.
+     Атрибуция: последний переход (LC). Расход с НДС в валюте рекламного аккаунта.
+     Данные текущего дня предварительные; поздние конверсии могут изменить результат.</p>
+  {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+  <form method="post">{% csrf_token %}
+    <input type="hidden" name="action" value="report_start">
+    <label>ID кампании <input name="campaign" inputmode="numeric" pattern="[0-9]+" required></label>
+    <label>Разрез <select name="level"><option value="ad">Объявления</option><option value="adgroup">Группы</option><option value="campaign">Кампания</option></select></label>
+    <button type="submit">Получить отчёт</button>
+  </form>
+  {% if report %}
+    <p>Статус: <b>{{ report.status }}</b>; причина: {{ report.reason|default:"нет" }}.
+       Завершено частей: {{ report.fullness.batches_complete }} / {{ report.fullness.batches_total }}.</p>
+    {% if report_resume %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="report_continue"><button type="submit">Продолжить получение после ожидания</button></form>{% endif %}
+    {% if report.status == "complete" %}
+      <table style="width:100%;margin-top:20px"><thead><tr><th>Дата / кампания / группа / объявление</th><th>Клики</th><th>Расход с НДС</th><th>Целевые визиты</th></tr></thead><tbody>
+      {% for row in report_rows %}<tr><td>{{ row.date }} / {{ row.campaign }} / {{ row.group|default:"—" }} / {{ row.ad|default:"—" }}</td><td>{{ row.clicks|default_if_none:"неизвестно" }}</td><td>{{ row.cost|default_if_none:"неизвестно" }}</td><td>{% for goal in row.goals %}{{ goal.name }}: {{ goal.value|default_if_none:"неизвестно" }}<br>{% endfor %}</td></tr>
+      {% empty %}<tr><td colspan="4">API вернул полный отчёт без строк. Это не доказательство отсутствия клиентов.</td></tr>{% endfor %}
+      </tbody></table>
+    {% else %}<p>Неполные части не показаны как готовый результат; расходы между частями не складываются.</p>{% endif %}
+  {% else %}<p>Отчёт ещё не запрошен. Неизвестный расход не равен нулю.</p>{% endif %}
+
+  <h3>Что означает каждое событие</h3>
+  <table style="width:100%;margin-top:20px"><thead><tr><th>Событие</th><th>Источник и готовность</th><th>Граница вывода</th></tr></thead><tbody>
+  {% for row in events %}<tr><td>{{ row.event.title }}<br><code>{{ row.event.identifier }}</code></td><td>{{ row.event.source }}<br>{{ row.implementation }}</td><td>{{ row.event.interpretation }}</td></tr>{% endfor %}
+  </tbody></table>
+</section>
+{% endblock %}

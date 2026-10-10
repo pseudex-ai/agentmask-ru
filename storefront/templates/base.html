@@ -146,6 +146,7 @@
     <div style="display:flex;gap:24px;flex-wrap:wrap">
       <a href="{% url 'offer' %}">ОФЕРТА</a>
       <a href="{% url 'policy' %}">ПОЛИТИКА ОБРАБОТКИ</a>
+      <a href="{% url 'analytics_preferences' %}">ОТЗЫВ СВЯЗИ С АНАЛИТИКОЙ</a>
       <a href="{% url 'consent' %}">СОГЛАСИЕ НА ОБРАБОТКУ</a>
       <a href="{% url 'requisites' %}">РЕКВИЗИТЫ</a>
       <a href="/types">ТИПЫ ДАННЫХ</a>
@@ -180,7 +181,10 @@
         data-key="{{ analytics.key }}"
         data-mode="{{ analytics.mode }}"
         data-metrika-id="{{ metrika_id }}"
-        data-goal="{{ metrika_goal }}"></script>
+        data-goal="{{ metrika_goal }}"
+        data-acquisition-enabled="{{ acquisition_link_enabled|yesno:'true,false' }}"
+        data-csrf="{{ csrf_token }}"></script>
+{% if metrika_id %}<script src="{% static 'acquisition-actions.js' %}" defer></script>{% endif %}
 {% endif %}
 {% comment %}
      КНОПКА ПОДДЕРЖКИ — ДВЕ ДВЕРИ, А НЕ ОДНА, И ОНА ВИДНА ОТОВСЮДУ.

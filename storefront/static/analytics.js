@@ -18,6 +18,86 @@
     // must not turn one natural click into two goals or duplicate the dialog.
     window.__pseudexAnalytics = true;
     var CONSENT = "pseudex.analytics.consent";
+    var acquisition = tag.getAttribute("data-acquisition-enabled") === "true";
+    var REVISION = "acquisition-v1";
+    var PENDING = "pseudex.analytics.revoke-pending";
+    var csrf = tag.getAttribute("data-csrf") || "";
+    function pending(value) {
+        try {
+            if (value !== undefined) { window.localStorage.setItem(PENDING, value ? "1" : "0"); }
+            return window.localStorage.getItem(PENDING) === "1";
+        } catch (e) { return false; }
+    }
+    function postPermission(path, data) {
+        return fetch(path, { method: "POST", credentials: "same-origin",
+            headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
+            body: JSON.stringify(data) }).then(function (response) {
+                if (!response.ok) { throw new Error("Permission not confirmed"); }
+                return response.json();
+            });
+    }
+    function permissionStatus(message) {
+        var node = document.querySelector('[data-acquisition-status]');
+        if (!node) {
+            node = document.createElement("p");
+            node.setAttribute("data-acquisition-status", "");
+            node.setAttribute("role", "status");
+            document.body.appendChild(node);
+        }
+        node.textContent = message;
+    }
+    var purposeGeneration = 0;
+    function revokePermission() {
+        purposeGeneration += 1;
+        pending(true);
+        permissionStatus("Серверный отзыв ещё не подтверждён. Ожидаем ответ; повторный отзыв доступен через «Отзыв связи с аналитикой».");
+        return postPermission("/analytics/revoke", {}).then(function () {
+            pending(false);
+            permissionStatus("Серверный отзыв подтверждён. Ранее переданные данные автоматически не удалены.");
+        }).catch(function () {
+            permissionStatus("Серверный отзыв ещё не подтверждён. Повторите отзыв через «Отзыв связи с аналитикой». Локальный выбор счётчиков сохранён отдельно.");
+        });
+    }
+    function grantPermission() {
+        if (!acquisition || !enabled()) { return; }
+        var generation = purposeGeneration;
+        var finished = false;
+        function current() { return generation === purposeGeneration && stored() === "yes"; }
+        var timer = window.setTimeout(function () {
+            finished = true;
+            if (current()) {
+                permissionStatus("Сервер не подтвердил связь. Регистрация доступна без неё; отзыв доступен в настройках аналитики.");
+            }
+        }, 2500);
+        // A prepared receipt carries no ClientID and is inactive. Its HttpOnly
+        // cookie must be acknowledged before either SDK lookup or grant POST:
+        // revoke can then lock that exact row, even while grant is in flight.
+        postPermission("/analytics/prepare", { purpose_revision: REVISION,
+            affirmative: "1", browser_consent: "yes" }).then(function () {
+            if (finished || !current()) { return; }
+            // Official getClientID returns a STRING. Never round through Number.
+            window.ym(metrikaId, "getClientID", function (clientID) {
+                if (finished || !current()) { return; }
+                finished = true;
+                if (typeof clientID !== "string" || !/^[0-9]{1,32}$/.test(clientID)) {
+                    window.clearTimeout(timer);
+                    permissionStatus("Связь не включена: идентификатор недоступен. Регистрация доступна.");
+                    return;
+                }
+                if (!current()) { return; }
+                postPermission("/analytics/grant", { purpose_revision: REVISION,
+                    affirmative: "1", browser_consent: "yes", client_id: clientID }).then(function () {
+                    window.clearTimeout(timer);
+                    if (current()) { permissionStatus("Разрешение связи сохранено; оно предварительное до подтверждения почты."); }
+                }).catch(failed);
+            });
+        }).catch(failed);
+        function failed() {
+            finished = true;
+            window.clearTimeout(timer);
+            if (current()) { permissionStatus("Сервер не подтвердил разрешение связи. Регистрация доступна без него."); }
+        }
+    }
     var booted = false;
     var signupSent = false;
     var pricingSent = false;
@@ -31,6 +111,7 @@
     function remember(value) {
         try {
             window.localStorage.setItem(CONSENT, value);
+            document.dispatchEvent(new CustomEvent("pseudex:analytics-consent"));
             return stored() === value;
         } catch (e) { return false; }
     }
@@ -50,10 +131,15 @@
         integration_copy: { placement: ["onboarding"], source: ["agent_prompt"] },
         enterprise_contact_click: { placement: ["pricing"], channel: ["email", "telegram", "requisites"] },
         support_contact_click: { placement: ["floating", "faq", "footer"], channel: ["email", "telegram", "feedback"] },
-        docs_open: { doc: ["docs", "how", "architecture", "litellm", "knowledge_base", "knowledge_article"] }
+        docs_open: { doc: ["docs", "how", "architecture", "litellm", "knowledge_base", "knowledge_article"] },
+        content_engaged: { section: ["home", "how", "architecture", "detection", "types", "litellm", "knowledge_base", "knowledge_article", "faq", "team", "offer", "privacy", "requisites"], threshold: ["20s_visible"] },
+        setup_video_started: { placement: ["setup"] },
+        setup_video_completed: { placement: ["setup"] },
+        faq_open: { section: ["faq", "home"] },
+        configurator_used: { placement: ["configurator"] }
     };
     function reach(name, params) {
-        if (!enabled() || !Object.prototype.hasOwnProperty.call(SCHEMAS, name)) { return false; }
+        if (!enabled() || !params || typeof params !== "object" || !Object.prototype.hasOwnProperty.call(SCHEMAS, name)) { return false; }
         var schema = SCHEMAS[name];
         var clean = {};
         var fields = Object.keys(schema);
@@ -65,6 +151,12 @@
         window.ym(metrikaId, "reachGoal", name, clean);
         return true;
     }
+
+    document.addEventListener("pseudex:public-action", function (event) {
+        var detail = event.detail;
+        if (!detail || ["content_engaged", "setup_video_started", "setup_video_completed", "faq_open", "configurator_used", "docs_open"].indexOf(detail.name) === -1) { return; }
+        reach(detail.name, detail.params);
+    });
 
     function bootRybbit() {
         if (!rybbit || document.getElementById("rybbit-script")) { return; }
@@ -184,6 +276,7 @@
         dialog.setAttribute("aria-label", "Аналитика");
         dialog.innerHTML =
             '<div class="consent-text">' + text + '<a href="/policy">Политика</a>.</div>' +
+            (acquisition ? '<label><input type="checkbox" data-acquisition-purpose> Отдельно согласен (acquisition-v1) связать публичный визит с новым аккаунтом, подтверждением почты, первым ключом, первым наблюдением аренды и маскирования и первой подтверждённой оплатой с суммой. До 21 дня; без продлений и дальнейшего использования. <a href="/policy#acquisition">Условия</a></label>' : '') +
             '<div class="consent-buttons">' +
             '<button type="button" class="btn" data-consent="no">Не считать</button>' +
             '<button type="button" class="btn" data-consent="yes">Согласен</button>' +
@@ -195,14 +288,28 @@
             if (button.hasAttribute("data-consent-close")) { closeDialog(); return; }
             var answer = button.getAttribute("data-consent");
             if (answer !== "yes" && answer !== "no") { return; }
+            // Every purpose choice invalidates earlier asynchronous work, even
+            // browser-yes with purpose unchecked (browser consent is separate).
+            purposeGeneration += 1;
             if (!remember(answer)) {
                 dialog.querySelector(".consent-text").textContent =
                     "Не удалось сохранить выбор в браузере. Текущий выбор не изменён. Проверьте настройки хранилища браузера и повторите.";
                 return;
             }
+            var purpose = dialog.querySelector('[data-acquisition-purpose]');
+            var affirmative = purpose && purpose.checked;
             closeDialog();
-            if (answer === "yes") { boot(); }
-            else if (booted) { withdraw(); }
+            if (answer === "yes") {
+                boot();
+                if (acquisition && affirmative) { grantPermission(); }
+                else if (acquisition) { revokePermission(); }
+            } else if (acquisition) {
+                pending(true);
+                // Leave provider-loaded DOM immediately. The clean GET resumes
+                // the CSRF POST and truthfully reports a pending server failure.
+                if (booted) { withdraw(); }
+                else { revokePermission(); }
+            } else if (booted) { withdraw(); }
         });
         dialog.querySelector('[data-consent="no"]').focus({ preventScroll: true });
     }
@@ -213,6 +320,7 @@
             preferenceButton.addEventListener("click", showDialog);
         }
         observePricing();
+        if (pending()) { revokePermission(); }
         if (stored() !== "yes" && stored() !== "no") { showDialog(); }
     }
     window.addEventListener("storage", function (event) {

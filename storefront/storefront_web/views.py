@@ -1126,6 +1126,7 @@ def resend_activation(request):
             recipient_list=[email],
             fail_silently=False,
         )
+        _funnel("activation_email_resent", "", request, organization)
     return render(request, "check_email.html", {"email": email, "resent": True})
 
 
@@ -1138,6 +1139,7 @@ def signup(request):
     name = (request.POST.get("company") or "").strip()
     plan_code = request.POST.get("plan") or ""
     if not email or "@" not in email:
+        _funnel(Funnel.SIGNUP_REFUSED, "validation", request)
         messages.error(request, "Нужен рабочий email.")
         return redirect("landing")
 
@@ -1200,6 +1202,7 @@ def signup(request):
         return redirect("account_login")
 
     if plan_code not in {plan.code for plan in services.signup_plans()}:
+        _funnel(Funnel.SIGNUP_REFUSED, "plan_unavailable", request)
         messages.error(request, "Такого тарифа нет.")
         return redirect("landing")
 
@@ -1211,8 +1214,15 @@ def signup(request):
     #
     # The link below is the proof of the mailbox, and it carries NO key — only a
     # signed reference to the account. Nothing secret is ever put in an email.
+    existing_user = User.objects.filter(email=email).exists()
     organization = services.create_account(email, name, plan_code,
                                            _client_ip(request))
+    if not existing_user:
+        try:
+            from ops.acquisition_consent import bind_signup
+            bind_signup(request, organization)
+        except Exception:  # Analytics must never prevent account creation.
+            _log.warning("acquisition signup binding unavailable")
     # Факт, а не галочка: момент и РЕДАКЦИЯ текста, на которую согласились.
     _funnel(Funnel.SIGNUP_SUBMITTED, plan_code, request, organization)
     organization.consent_at = timezone.now()
@@ -1310,9 +1320,17 @@ def activate(request):
     pending = (subscription is not None
                and subscription.state == Subscription.PENDING)
     if request.method != "POST":
+        analytics_confirmation = False
+        try:
+            from ops.acquisition_consent import confirmation_available
+            analytics_confirmation = confirmation_available(
+                request, organization, User.objects.filter(email=payload["email"]).first())
+        except Exception:
+            _log.warning("optional acquisition confirmation unavailable")
         return render(request, "activate.html",
                       {"token": request.GET.get("t", ""),
                        "email": payload["email"],
+                       "analytics_confirmation": analytics_confirmation,
                        "pending": pending})
     # И личность не подменяется молча: если в браузере уже кто-то другой, мы
     # об этом говорим, а не переключаем под ним стул.
@@ -1322,6 +1340,13 @@ def activate(request):
         messages.error(request, "В этом браузере уже открыт другой аккаунт. "
                                 "Выйдите из него и откройте ссылку снова.")
         return redirect("cabinet")
+    # Only this mailbox-proof POST can make a provisional grant exportable.
+    try:
+        from ops.acquisition_consent import confirm_grant
+        verified_user = User.objects.filter(email=payload["email"]).first()
+        confirm_grant(organization, verified_user, request=request)
+    except Exception:  # Confirmation still works when optional analytics fails.
+        _log.warning("acquisition mailbox confirmation unavailable")
     # Following the link twice must not mint a second key: the first one was
     # shown once and the customer may already be running it.
     if organization.keys.filter(revoked_at__isnull=True).exists():
@@ -1738,6 +1763,9 @@ def invoice_detail(request, number: str):
     if invoice.payment_ref and (invoice.state != Invoice.PAID
                                 or invoice.service_resumed_at is None):
         settlement = services.settle_payment(invoice=invoice)
+        if settlement.verdict == services.DECLINED:
+            # A verified provider observation, not a unique attempt count.
+            _funnel("payment_failed", "provider_declined", request, organization)
         if settlement.paid:
             invoice.refresh_from_db()
             _log.info("invoice %s settled on the return trip from the provider",
@@ -1788,12 +1816,16 @@ def pay_invoice(request, number: str):
             request.user.email,
         )
     except payments.PaymentError as error:
+        _funnel("checkout_unavailable", "provider_unavailable", request, organization)
         _log.error("payment for %s failed: %s", number, error)
         messages.error(request, "Не удалось начать оплату картой. Счёт можно "
                                 "оплатить по реквизитам — форма ниже.")
         return redirect("invoice_detail", number=number)
     invoice.payment_ref = payment_id
     invoice.save(update_fields=["payment_ref"])
+    # Counts successful checkout-link requests, not unique charges or money.
+    # Never store the payment URL, provider reference or customer email here.
+    _funnel("checkout_started", "link_ready", request, organization)
     return redirect(confirmation)
 
 
@@ -1841,6 +1873,7 @@ def subscribe(request):
             request.user.email,
         )
     except payments.PaymentError as error:
+        _funnel("checkout_unavailable", "provider_unavailable", request, organization)
         _log.error("subscribe payment for %s failed: %s", organization.id, error)
         messages.error(request, f"Не удалось начать оплату картой. Счёт "
                                 f"{invoice.number} выставлен — его можно "
@@ -1848,6 +1881,9 @@ def subscribe(request):
         return redirect("invoice_detail", number=invoice.number)
     invoice.payment_ref = payment_id
     invoice.save(update_fields=["payment_ref"])
+    # Counts successful checkout-link requests, not unique charges or money.
+    # Never store the payment URL, provider reference or customer email here.
+    _funnel("checkout_started", "link_ready", request, organization)
     return redirect(confirmation)
 
 
@@ -1878,12 +1914,16 @@ def pay_annual(request):
             request.user.email,
         )
     except payments.PaymentError as error:
+        _funnel("checkout_unavailable", "provider_unavailable", request, organization)
         _log.error("annual payment for %s failed: %s", organization.id, error)
         messages.error(request, "Не удалось начать оплату картой. Годовой счёт "
                                 f"{invoice.number} можно оплатить по реквизитам.")
         return redirect("invoice_detail", number=invoice.number)
     invoice.payment_ref = payment_id
     invoice.save(update_fields=["payment_ref"])
+    # Counts successful checkout-link requests, not unique charges or money.
+    # Never store the payment URL, provider reference or customer email here.
+    _funnel("checkout_started", "link_ready", request, organization)
     return redirect(confirmation)
 
 

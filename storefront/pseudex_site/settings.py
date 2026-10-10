@@ -561,6 +561,12 @@ if YANDEX_OAUTH_REFRESH_TOKEN and not (
 # не уходит, и «мы не знали» перестаёт быть возможным.
 YANDEX_CONVERSIONS = _flag("PSEUDEX_YANDEX_CONVERSIONS", False)
 
+# Public purpose consent and external dispatch are independently enabled.
+# The legacy yclid-only exporter must remain disabled; old browser consent or
+# the account's contractual consent is never a server-side analytics grant.
+ACQUISITION_LINK_ENABLED = _flag("PSEUDEX_ACQUISITION_LINK_ENABLED", False)
+ACQUISITION_EXPORT_ENABLED = _flag("PSEUDEX_ACQUISITION_EXPORT_ENABLED", False)
+
 # КЛЮЧ SEARCH API — ДРУГОЙ СЕКРЕТ И ДРУГОЙ ИСТОЧНИК, ЧЕМ OAuth ВЛАДЕЛЬЦА.
 # Вебмастер отвечает на «что знает Яндекс и что он показывал», Search API — на
 # «где мы в живой выдаче по нашему списку». Пока показов нет, движение видно

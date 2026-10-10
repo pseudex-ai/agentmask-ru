@@ -90,3 +90,8 @@ class SeoDay(models.Model):
 
     def __str__(self) -> str:
         return f"{self.day}: индекс {self.pages_in_index}, позиции {len(self.positions)}"
+
+
+from ops.acquisition_consent import AnalyticsGrant  # noqa: E402,F401
+from ops.acquisition_delivery import AcquisitionDelivery  # noqa: E402,F401
+from ops.acquisition_lifecycle import AcquisitionOutcome  # noqa: E402,F401

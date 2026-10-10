@@ -74,6 +74,9 @@ Status: `spec` (describes shipped behaviour) · `ТЗ` (a specification;
 
 Not in root `docs/`: `storefront/docs/tz-site.md` and `storefront/docs/tz-site-stack.md`
 — the storefront's own spec, moved there (its README links them relative to `storefront/`).
+`storefront/docs/analytics-full-funnel.md` — acquisition consent, event semantics,
+delivery uncertainty, Direct reporting, retention and rollout verification; implementation runbook,
+not proof of production-paid attribution or legal certification.
 
 ---
 

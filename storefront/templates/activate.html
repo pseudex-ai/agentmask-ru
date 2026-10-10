@@ -17,6 +17,17 @@
   <form method="post" action="{% url 'activate' %}" style="margin-top:28px">
     {% csrf_token %}
     <input type="hidden" name="t" value="{{ token }}">
+    {% if analytics_confirmation %}
+    <label style="display:block;margin:16px 0;max-width:64ch">
+      <input type="checkbox" name="acquisition_confirmation" value="acquisition-v1">
+      Необязательно: подтверждаю отдельное согласие связать этот аккаунт с моим исходным
+      визитом для оценки рекламы. Разрешаю передавать в Яндекс.Метрику факты подтверждения
+      почты, выдачи ключа, начала использования и первой оплаты с суммой — без контактов
+      и содержимого запросов. Идентификатор связи хранится до 21 дня.
+      <a href="/policy#acquisition">Условия и отзыв</a>.
+      Отказ не влияет на доступ или оплату.
+    </label>
+    {% endif %}
     <button type="submit" style="font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;text-transform:uppercase;padding:16px 24px;border:1px solid var(--accent);color:var(--accent-2);cursor:pointer" class="hv-btn">{% if pending %}Войти и оплатить{% else %}Войти и получить ключ{% endif %}</button>
   </form>
 </section>
