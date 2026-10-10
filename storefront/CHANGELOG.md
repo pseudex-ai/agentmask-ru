@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.37](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.36...platform/v0.3.37) (2026-10-10)
+
+
+### Новое
+
+* **storefront:** безопасные события привлечения и честные signup-когорты ([#75](https://github.com/Isk4R1oT/Obscura/issues/75)) ([1a84176](https://github.com/Isk4R1oT/Obscura/commit/1a84176b7e517dc013ff463b1a2b1493cba7defa))
+
+
+### Исправления
+
+* **storefront:** measure legacy public industrial tariff ([#77](https://github.com/Isk4R1oT/Obscura/issues/77)) ([6312891](https://github.com/Isk4R1oT/Obscura/commit/6312891ccf8337776c51980449d6cac2b8d429aa))
+
 ## [0.3.36](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.35...platform/v0.3.36) (2026-10-07)
 
 
