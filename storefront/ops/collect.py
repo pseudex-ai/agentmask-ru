@@ -271,19 +271,58 @@ def first_touch(visitor: str, since_hours: int) -> dict[str, str]:
 
 
 def flag_unwired(steps: list[dict]) -> list[dict]:
-    """Отметить шаги воронки, которые не записываются, а не отваливаются.
+    """Keep the presentation shape without diagnosing wiring from totals.
 
-    ШАГ С НУЛЁМ, ЗА КОТОРЫМ СТОИТ НЕНУЛЕВОЙ, НЕВОЗМОЖЕН ПО СМЫСЛУ. Воронка
-    упорядочена физически, а не оформительски: заплатить, не замаскировав ни
-    одного запроса, нельзя, как нельзя замаскировать, не подняв контейнера.
-    Поэтому такой ноль — не отвал клиентов, а отсутствующая запись.
-
-    ЭТО ЕДИНСТВЕННЫЙ СПОСОБ УВИДЕТЬ ДЫРУ С ЭКРАНА, и она уже была: `first_mask`
-    объявлен в модели и не записывался ничем, а выглядел провалом конверсии —
-    то есть посылал чинить продукт вместо аналитики. Функция чистая и вынесена
-    из вью именно затем, чтобы её можно было сломать в тесте.
+    A paid signup pays BEFORE it can get a key or mask anything. Window totals
+    also mix different organisations and maturities. A zero followed by a
+    nonzero is not evidence of a missing emitter: checking actual emitters and
+    per-organisation paths is required. Preserve the field for older callers,
+    but never label a legitimate paid-first branch as broken instrumentation.
     """
-    return [dict(step, unwired=(step["count"] == 0
-                                and any(later["count"] > 0
-                                        for later in steps[i + 1:])))
-            for i, step in enumerate(steps)]
+    return [dict(step, unwired=False) for step in steps]
+
+
+def acquisition_cohort(since, *, until=None) -> dict:
+    """Observed outcomes of the SAME signup cohort, not adjacent step ratios.
+
+    Paid-first and free-first paths are both valid. Outcomes are independently
+    measured against signup organisations; no strict lease/mask/payment ordering
+    is assumed. A click or signup isn't a qualified lead, first_mask isn't a
+    successful tool loop, and a recent cohort is not mature retention evidence.
+    """
+    from django.utils import timezone
+    from accounts.models import Organization
+    from ops.analytics_models import Funnel
+
+    until = until or timezone.now()
+    starts = {}
+    entries = (Funnel.objects.filter(step=Funnel.SIGNUP_SUBMITTED,
+                                    at__gte=since, at__lte=until)
+               .exclude(organization_id="").order_by("at")
+               .values_list("organization_id", "at"))
+    for organisation, at in entries:
+        starts.setdefault(organisation, at)
+    # Our explicit QA source is excluded, never guess that organic/direct
+    # visitors are employees or that every low-volume source is a test.
+    organisations = Organization.objects.filter(id__in=starts)
+    qa_ids = set(organisations.filter(source_utm_source="qa_r01")
+                 .values_list("id", flat=True))
+    real_ids = set(organisations.exclude(id__in=qa_ids).values_list("id", flat=True))
+    outcomes = [(code, title) for code, title in Funnel.STEPS
+                if code not in {Funnel.LANDING, Funnel.SIGNUP_SUBMITTED,
+                                Funnel.SIGNUP_REFUSED}]
+    seen = {code: set() for code, _ in outcomes}
+    rows = (Funnel.objects.filter(organization_id__in=real_ids, at__lte=until)
+            .values_list("organization_id", "step", "at"))
+    for organisation, code, at in rows:
+        if code in seen and at >= starts[organisation]:
+            seen[code].add(organisation)
+    size = len(real_ids)
+    return {
+        "size": size, "excluded_qa": len(qa_ids),
+        "orphan_signup_events": len(set(starts) - real_ids - qa_ids),
+        "since": since, "until": until,
+        "outcomes": [{"code": code, "title": title, "count": len(seen[code]),
+                      "rate": round(len(seen[code]) / size * 100, 1) if size else None}
+                     for code, title in outcomes],
+    }

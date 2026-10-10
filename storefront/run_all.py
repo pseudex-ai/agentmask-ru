@@ -72,6 +72,7 @@ STEPS = [
     # обход (сайта нет в выдаче), мягкий отдаёт сканеру лазейку мимо бана.
     ("01b-crawler-allowlist", "test_crawler_allowlist.py", lambda: True, ""),
     ("02-analytics", "test_analytics.py", lambda: True, ""),
+    ("02b-acquisition-browser", "test_acquisition_browser.py", lambda: True, ""),
     ("03-configurator", "test_configurator_renders.py", lambda: True, ""),
     ("04-ops-console", "test_ops_renders.py", lambda: True, ""),
     # ПРИБЛИЗИТЕЛЬНЫЙ ПОКАЗ ИНСТАНСОВ. Слот-машина (слоты/поколения/фенсинг)

@@ -167,22 +167,54 @@ def main() -> int:
           VisitDay.objects.filter(day=day).exists(),
           "свёртка живёт вечно, сырьё — нет")
 
-    # --- воронка: шаг, который не записывается ----------------------------
-    #
-    # ИМЕННО ЭТОТ ПРИБОР НАШЁЛ БЫ `first_mask` САМ. Шаг был объявлен в модели и
-    # не записан ничем, воронка обрывалась на «поднял контейнер», а следующий
-    # её шаг стоял ненулевым — то есть на экране это читалось как провал
-    # конверсии и посылало чинить продукт вместо аналитики.
+    # Paid-first is legitimate: aggregate window totals cannot prove an
+    # emitter is missing, even when an optional preceding step has zero.
     ladder = [{"count": 10}, {"count": 6}, {"count": 0}, {"count": 3}]
     flagged = collect.flag_unwired(ladder)
-    check("ноль, за которым стоит ненулевой шаг, назван не отвалом",
-          flagged[2]["unwired"] is True,
-          "заплатить, не замаскировав ни одного запроса, нельзя")
-    check("а честный отвал в хвосте не оболган",
-          [f["unwired"] for f in flagged] == [False, False, True, False],
-          "последний ноль — это просто никто не дошёл")
+    check("оплата до first_mask не названа поломкой аналитики",
+          [f["unwired"] for f in flagged] == [False, False, False, False])
     check("функция чистая — исходный список не тронут",
           "unwired" not in ladder[2], str(ladder[2]))
+
+    # Same-organisations cohort: renewals/old signups, repeated payments and
+    # explicit QA records must not inflate acquisition rates. Future fixtures
+    # avoid incidental events seeded elsewhere in this process.
+    from accounts.models import Organization
+    start = timezone.now() + datetime.timedelta(days=365)
+    end = start + datetime.timedelta(days=3)
+    fixture_ids = ["cohort-paid", "cohort-free", "cohort-idle", "cohort-qa", "cohort-old"]
+    for org_id in fixture_ids:
+        Organization.objects.create(id=org_id, display_name="synthetic cohort",
+                                    source_utm_source="qa_r01" if org_id == "cohort-qa" else "yandex")
+        Funnel.objects.create(step=Funnel.SIGNUP_SUBMITTED, organization_id=org_id,
+                              at=start - datetime.timedelta(days=1) if org_id == "cohort-old" else start)
+    for org_id in ["cohort-paid", "cohort-qa", "cohort-old"]:
+        Funnel.objects.create(step=Funnel.PAID, organization_id=org_id,
+                              at=start + datetime.timedelta(hours=1))
+    Funnel.objects.create(step=Funnel.PAID, organization_id="cohort-paid",
+                          at=start + datetime.timedelta(hours=2))
+    Funnel.objects.create(step=Funnel.PAID, organization_id="cohort-free",
+                          at=start - datetime.timedelta(hours=1))
+    Funnel.objects.create(step=Funnel.KEY_ISSUED, organization_id="cohort-paid",
+                          at=start + datetime.timedelta(hours=3))
+    Funnel.objects.create(step=Funnel.FIRST_MASK, organization_id="cohort-free",
+                          at=start + datetime.timedelta(hours=4))
+    Funnel.objects.create(step=Funnel.PAID, organization_id="cohort-idle",
+                          at=end + datetime.timedelta(hours=1))
+    cohort = collect.acquisition_cohort(start, until=end)
+    outcomes = {row["code"]: row for row in cohort["outcomes"]}
+    check("когорта: три одинаковых организации, QA исключён",
+          cohort["size"] == 3 and cohort["excluded_qa"] == 1, str(cohort))
+    check("первая оплата: повтор и старый signup не увеличили когорту",
+          outcomes[Funnel.PAID]["count"] == 1 and outcomes[Funnel.PAID]["rate"] == 33.3)
+    check("paid-first и free-first показаны независимо",
+          outcomes[Funnel.KEY_ISSUED]["count"] == 1 and outcomes[Funnel.FIRST_MASK]["count"] == 1)
+    empty = collect.acquisition_cohort(end + datetime.timedelta(days=2),
+                                       until=end + datetime.timedelta(days=3))
+    check("пустая когорта не выдаёт оценённую конверсию ноль",
+          empty["size"] == 0 and all(row["rate"] is None for row in empty["outcomes"]))
+    Funnel.objects.filter(organization_id__in=fixture_ids).delete()
+    Organization.objects.filter(id__in=fixture_ids).delete()
 
     # --- первое касание: атрибуция без куки -------------------------------
     #

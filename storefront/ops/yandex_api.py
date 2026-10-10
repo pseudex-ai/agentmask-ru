@@ -307,11 +307,15 @@ def metrika_summary(days: int = 30) -> dict:
     цифры в одном отчёте перестанут сходиться между собой.
     """
     import datetime
+    from django.utils import timezone
 
     if not settings.METRIKA_ID:
         raise YandexError("PSEUDEX_METRIKA_ID не задан — статистики не будет.")
     days = max(1, min(365, days))
-    today = datetime.date.today()
+    # Production and its counter use Europe/Moscow, not the container's UTC.
+    # Report the application timezone explicitly rather than silently shifting
+    # the period around midnight. Reconcile if the counter timezone changes.
+    today = timezone.localdate()
     counter = settings.METRIKA_ID
     date1 = (today - datetime.timedelta(days=days - 1)).isoformat()
     date2 = today.isoformat()
@@ -319,16 +323,28 @@ def metrika_summary(days: int = 30) -> dict:
     totals = metrika_get("/stat/v1/data", {
         "ids": counter, "date1": date1, "date2": date2,
         "metrics": "ym:s:visits,ym:s:users,ym:s:pageviews", "accuracy": "full",
+        "attribution": "last",
     })
     sources = metrika_get("/stat/v1/data", {
         "ids": counter, "date1": date1, "date2": date2,
-        "dimensions": "ym:s:lastSignTrafficSource",
+        "dimensions": "ym:s:trafficSource",
         "metrics": "ym:s:visits", "sort": "-ym:s:visits", "limit": 10,
-        "accuracy": "full",
+        "accuracy": "full", "attribution": "last",
     })
+    def quality(reply):
+        returned = len(reply.get("data") or [])
+        total_rows = reply.get("total_rows")
+        return {"sampled": reply.get("sampled"),
+                "sample_share": reply.get("sample_share"),
+                "data_lag": reply.get("data_lag"),
+                "total_rows": total_rows, "returned_rows": returned,
+                "truncated": total_rows > returned if isinstance(total_rows, int) else None}
     return {
         "counter": counter,
-        "period": {"days": days, "date1": date1, "date2": date2},
+        "period": {"days": days, "date1": date1, "date2": date2,
+                   "timezone": settings.TIME_ZONE},
+        "attribution": "last",
+        "quality": {"totals": quality(totals), "sources": quality(sources)},
         "totals": list(totals.get("totals") or []),
         "sources": [
             {"source": (row.get("dimensions") or [{}])[0].get("name", ""),

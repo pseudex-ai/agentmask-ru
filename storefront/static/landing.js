@@ -529,16 +529,30 @@ if (document.getElementById("demo-orig")) showDemo(0);
  * КОПИРОВАНИЕ
  * ──────────────────────────────────────────────────────────────────────────── */
 document.querySelectorAll("[data-copy-btn]").forEach((button) => {
-  button.addEventListener("click", () => {
-    /* Источник обычно сосед кнопки, но блок может объявить область шире —
-       у промпта для агента кнопка стоит в шапке блока, а не рядом с текстом. */
+  button.addEventListener("click", async () => {
+    // Preserve the existing nearest-scope source lookup, including private
+    // cabinet/welcome copies; only the explicitly public prompt can emit a goal.
     const scope = button.closest("[data-copy-scope]") || button.parentElement;
     const source = scope.querySelector("[data-copy]");
-    if (!source) return;
-    navigator.clipboard?.writeText(source.dataset.copy);
+    if (!source || button.disabled) return;
+    let consentAtClick = false;
+    try { consentAtClick = localStorage.getItem("pseudex.analytics.consent") === "yes"; } catch {}
     const was = button.textContent;
-    button.textContent = "СКОПИРОВАНО";
-    setTimeout(() => { button.textContent = was; }, 1500);
+    button.disabled = true;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(source.dataset.copy);
+      button.textContent = "СКОПИРОВАНО";
+      // Never emit the copied text or buffer a pre-consent action, even if the
+      // clipboard promise resolves after the visitor subsequently accepts.
+      if (consentAtClick && source.matches('#start [data-integration-copy="agent_prompt"]')) {
+        source.dispatchEvent(new Event("pseudex:integration-copy", { bubbles: true }));
+      }
+    } catch {
+      button.textContent = "НЕ СКОПИРОВАЛОСЬ";
+    } finally {
+      setTimeout(() => { button.textContent = was; button.disabled = false; }, 1500);
+    }
   });
 });
 

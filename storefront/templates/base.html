@@ -102,9 +102,9 @@
     {% block nav %}
     <nav>
       <a href="/#how">КАК РАБОТАЕТ</a>
-      <a href="/how">ПОЧЕМУ ЭТО СЛОЖНЕЕ</a>
+      <a href="/how" data-acquisition-goal="docs_open" data-acquisition-doc="how">ПОЧЕМУ ЭТО СЛОЖНЕЕ</a>
       <a href="/detection">ЧТО НАХОДИМ</a>
-      <a href="/architecture" class="nav-secondary">152-ФЗ</a>
+      <a href="/architecture" data-acquisition-goal="docs_open" data-acquisition-doc="architecture" class="nav-secondary">152-ФЗ</a>
       <a href="/#pricing">ЦЕНЫ</a>
       <a href="/faq" class="nav-secondary">FAQ</a>
     </nav>
@@ -124,7 +124,7 @@
         </form>
       {% else %}
         <a class="btn" href="{% url 'account_request_login_code' %}">ВОЙТИ</a>
-        <a class="btn cta" href="/#start">НАЧАТЬ</a>
+        <a class="btn cta" href="/#start" data-acquisition-goal="start_cta_click" data-acquisition-placement="header">НАЧАТЬ</a>
       {% endif %}
     </div>
     {% endblock %}
@@ -149,10 +149,11 @@
       <a href="{% url 'consent' %}">СОГЛАСИЕ НА ОБРАБОТКУ</a>
       <a href="{% url 'requisites' %}">РЕКВИЗИТЫ</a>
       <a href="/types">ТИПЫ ДАННЫХ</a>
-      <a href="/litellm">LITELLM</a>
-      <a href="/baza-znaniy">БАЗА ЗНАНИЙ</a>
-      <a href="{% url 'architecture' %}">АРХИТЕКТУРА ДЛЯ БЕЗОПАСНИКА</a>
+      <a href="/litellm" data-acquisition-goal="docs_open" data-acquisition-doc="litellm">LITELLM</a>
+      <a href="/baza-znaniy" data-acquisition-goal="docs_open" data-acquisition-doc="knowledge_base">БАЗА ЗНАНИЙ</a>
+      <a href="{% url 'architecture' %}" data-acquisition-goal="docs_open" data-acquisition-doc="architecture">АРХИТЕКТУРА ДЛЯ БЕЗОПАСНИКА</a>
       <span>ХОСТИНГ В РФ</span>
+      {% if analytics_here or metrika_id %}<button type="button" class="btn" data-analytics-preferences hidden>Настройки аналитики</button>{% endif %}
     </div>
   </footer>
   {% endblock %}
@@ -201,17 +202,17 @@
   <div class="support-menu">
     <div class="support-lead">Отвечаем сами, в рабочие часы по Москве. Настоящие значения клиентов присылать не нужно — они нам не видны, хватит токена из журнала и времени.</div>
     {% if support_bot %}
-      <a href="https://t.me/{{ support_bot }}" rel="noopener" target="_blank">
+      <a href="https://t.me/{{ support_bot }}" data-acquisition-goal="support_contact_click" data-acquisition-placement="floating" data-acquisition-channel="telegram" rel="noopener" target="_blank">
         <span class="support-where">Telegram</span>
         <span class="support-how">@{{ support_bot }} · быстрее всего</span>
       </a>
     {% endif %}
     {% if support_email %}
-      <a href="mailto:{{ support_email }}">
+      <a href="mailto:{{ support_email }}" data-acquisition-goal="support_contact_click" data-acquisition-placement="floating" data-acquisition-channel="email">
         <span class="support-where">Почта</span>
         <span class="support-how">{{ support_email }} · счета и предложения</span>
       </a>
-      <a href="mailto:{{ support_email }}?subject=%D0%9F%D1%80%D0%B5%D0%B4%D0%BB%D0%BE%D0%B6%D0%B5%D0%BD%D0%B8%D0%B5%20%D0%BF%D0%BE%20pseudex">
+      <a data-acquisition-goal="support_contact_click" data-acquisition-placement="floating" data-acquisition-channel="feedback" href="mailto:{{ support_email }}?subject=%D0%9F%D1%80%D0%B5%D0%B4%D0%BB%D0%BE%D0%B6%D0%B5%D0%BD%D0%B8%D0%B5%20%D0%BF%D0%BE%20pseudex">
         <span class="support-where">Предложение по продукту</span>
         <span class="support-how">чего не хватает или что неудобно</span>
       </a>

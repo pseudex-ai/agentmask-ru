@@ -92,7 +92,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
 {% block nav %}
 <nav style="align-items:center;gap:28px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em">
   <a href="#how" style="color:var(--dim)" class="hv-text">КАК РАБОТАЕТ</a>
-  <a href="/how" style="color:var(--dim)" class="hv-text">ПОЧЕМУ ЭТО СЛОЖНЕЕ</a>
+  <a href="/how" data-acquisition-goal="docs_open" data-acquisition-doc="how" style="color:var(--dim)" class="hv-text">ПОЧЕМУ ЭТО СЛОЖНЕЕ</a>
   <a href="/detection" style="color:var(--dim)" class="hv-text">ЧТО НАХОДИМ</a>
   <a href="#pricing" style="color:var(--dim)" class="hv-text">ЦЕНЫ</a>
   <a href="/i/" style="color:var(--dim)" class="hv-text">КОМАНДА</a>
@@ -112,7 +112,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
     </form>
   {% else %}
     <a href="{% url 'account_request_login_code' %}" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:10px 15px;border:1px solid var(--line);color:var(--dim)" class="hv-btn-ghost">ВОЙТИ</a>
-    <a href="#start" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:10px 15px;border:1px solid var(--accent);color:var(--accent-2);transition:background .25s,box-shadow .25s" class="hv-btn-glow">НАЧАТЬ</a>
+    <a href="#start" data-acquisition-goal="start_cta_click" data-acquisition-placement="header" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:10px 15px;border:1px solid var(--accent);color:var(--accent-2);transition:background .25s,box-shadow .25s" class="hv-btn-glow">НАЧАТЬ</a>
   {% endif %}
 </div>
 {% endblock %}
@@ -131,7 +131,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
         <h1 style="margin:0;font-size:clamp(28px,4.6vw,60px);line-height:1;font-weight:900;letter-spacing:-.04em;max-width:15ch;text-wrap:balance;position:relative"><span style="display:block;font-weight:300;animation:lineIn 1.1s cubic-bezier(.16,.84,.26,1) both">Модель не видит данных.</span><span style="display:block;font-weight:900;color:var(--accent);animation:lineIn 1.1s cubic-bezier(.16,.84,.26,1) .22s both">Инструменты видят.</span></h1>
         <p style="margin:26px 0 0;max-width:46ch;font-size:18px;line-height:1.55;color:var(--text-2);text-wrap:pretty">Агент записывает клиента на настоящий номер и оформляет заказ на настоящий адрес. Модель видит только подмену.</p>
         <div style="display:flex;gap:12px;margin-top:28px;flex-wrap:wrap">
-          <a href="#start" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:14px 24px;border:1px solid var(--accent);color:var(--accent-2)" class="hv-btn">НАЧАТЬ ЗА 15 МИНУТ</a>
+          <a href="#start" data-acquisition-goal="start_cta_click" data-acquisition-placement="hero" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:14px 24px;border:1px solid var(--accent);color:var(--accent-2)" class="hv-btn">НАЧАТЬ ЗА 15 МИНУТ</a>
           <a href="#video" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:14px 24px;border:1px solid var(--line);color:var(--dim)" class="hv-btn-ghost">ПОСМОТРЕТЬ КАК РАБОТАЕТ</a>
         </div>
         <div style="margin-top:22px;font-family:'JetBrains Mono',monospace;font-size:12.5px;color:var(--dim-2);letter-spacing:.06em">{{ trial_days }} дней бесплатно · карта не нужна</div>
@@ -196,7 +196,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
         подписи; на месте, где человек читает про формат-сохраняющую подмену, она
         читается как неуместность. Вместо неё — ссылка туда, где эта половина
         задачи разобрана целиком.{% endcomment %}
-        <a href="/how" class="hv-text" style="display:block;padding:12px 16px;border-top:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.12em;color:var(--dim-2);text-decoration:none">ПОЧЕМУ ЭТО СЛОЖНЕЕ →</a>
+        <a href="/how" data-acquisition-goal="docs_open" data-acquisition-doc="how" class="hv-text" style="display:block;padding:12px 16px;border-top:1px solid var(--line-3);font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.12em;color:var(--dim-2);text-decoration:none">ПОЧЕМУ ЭТО СЛОЖНЕЕ →</a>
       </div>
     </div>
     <div class="cards cards--n6" style="border:1px solid var(--line-3);margin-top:32px" data-reveal-stagger data-counters>
@@ -387,7 +387,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
 
   <section id="pricing" style="padding:120px 36px 0">
     <div style="display:flex;align-items:baseline;justify-content:space-between;gap:32px;flex-wrap:wrap;margin-bottom:14px" data-reveal>
-      <h2 style="margin:0;font-size:clamp(28px,3.4vw,42px);font-weight:900;letter-spacing:-.035em">Цены</h2>
+      <h2 data-acquisition-pricing style="margin:0;font-size:clamp(28px,3.4vw,42px);font-weight:900;letter-spacing:-.035em">Цены</h2>
       <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">ЦЕНЫ НА САЙТЕ · ENTERPRISE — ПО ДОГОВОРУ</div>
     </div>
     {% comment %}ЗДЕСЬ БЫЛ АБЗАЦ ПРО «ЧИСЛО КОНТЕЙНЕРОВ». Читатель пришёл
@@ -424,7 +424,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
             <div>карта не спрашивается</div>
             {% if free_plan.audience %}<div>Подходит: {{ free_plan.audience }}</div>{% endif %}
           </div>
-          <a href="#start" style="margin-top:auto;display:block;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;padding:14px;border:1px solid var(--line);color:var(--dim)" data-plan="{{ free_plan.code }}" class="hv-btn">НАЧАТЬ БЕСПЛАТНО</a>
+          <a href="#start" style="margin-top:auto;display:block;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;padding:14px;border:1px solid var(--line);color:var(--dim)" data-plan="{{ free_plan.code }}" data-acquisition-goal="start_cta_click" data-acquisition-placement="pricing" class="hv-btn">НАЧАТЬ БЕСПЛАТНО</a>
         </div>
       {% endif %}
       {% for plan in plans %}
@@ -442,7 +442,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
             {% if plan.audience %}<div>Подходит: {{ plan.audience }}</div>{% endif %}
             {% if plan.first_payment_bonus_days %}<div style="color:var(--accent-2)">+{{ plan.first_payment_bonus_days }} {{ plan.first_payment_bonus_days|plural:"день,дня,дней" }} в подарок{% if plan.bonus_note %} — {{ plan.bonus_note }}{% endif %}</div>{% endif %}
           </div>
-          <a href="#start" style="margin-top:auto;display:block;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;padding:14px;border:1px solid {% if plan.code == "work" %}var(--accent){% else %}var(--line){% endif %};color:{% if plan.code == "work" %}var(--accent-2);transition:background .25s,box-shadow .25s{% else %}var(--dim){% endif %}" data-plan="{{ plan.code }}" class="{% if plan.code == "work" %}hv-btn-glow{% else %}hv-btn{% endif %}">КУПИТЬ</a>
+          <a href="#start" style="margin-top:auto;display:block;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;padding:14px;border:1px solid {% if plan.code == "work" %}var(--accent){% else %}var(--line){% endif %};color:{% if plan.code == "work" %}var(--accent-2);transition:background .25s,box-shadow .25s{% else %}var(--dim){% endif %}" data-plan="{{ plan.code }}" data-acquisition-goal="start_cta_click" data-acquisition-placement="pricing" class="{% if plan.code == "work" %}hv-btn-glow{% else %}hv-btn{% endif %}">КУПИТЬ</a>
         </div>
       {% endfor %}
       {% if enterprise %}
@@ -457,7 +457,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
             <div>{{ enterprise.max_keys }} {{ enterprise.max_keys|plural:"ключ,ключа,ключей" }} доступа</div>
             {% if enterprise.audience %}<div>Подходит: {{ enterprise.audience }}</div>{% endif %}
           </div>
-          <a href="{% if support_email %}mailto:{{ support_email }}?subject=Enterprise{% elif support_bot %}https://t.me/{{ support_bot }}{% else %}/requisites{% endif %}" style="margin-top:auto;display:block;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;padding:14px;border:1px solid var(--line);color:var(--dim)" class="hv-btn">СВЯЗАТЬСЯ</a>
+          <a data-acquisition-goal="enterprise_contact_click" data-acquisition-placement="pricing" data-acquisition-channel="{% if support_email %}email{% elif support_bot %}telegram{% else %}requisites{% endif %}" href="{% if support_email %}mailto:{{ support_email }}?subject=Enterprise{% elif support_bot %}https://t.me/{{ support_bot }}{% else %}/requisites{% endif %}" style="margin-top:auto;display:block;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.12em;padding:14px;border:1px solid var(--line);color:var(--dim)" class="hv-btn">СВЯЗАТЬСЯ</a>
         </div>
       {% endif %}
     </div>
@@ -510,7 +510,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
     волосяные разделители — язык таблицы, тот же, что у остальных строк сайта.
     {% endcomment %}
     <div class="trust-row">
-      <a href="/architecture">Архитектура «мы не обработчик» — документом для безопасника →</a>
+      <a href="/architecture" data-acquisition-goal="docs_open" data-acquisition-doc="architecture">Архитектура «мы не обработчик» — документом для безопасника →</a>
       <span>образ проверяется: <b>cosign verify</b></span>
       <span>волт — в вашем периметре</span>
     </div>
@@ -578,7 +578,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
               <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--dim-2);margin-bottom:8px">CLAUDE CODE · CODEX · CURSOR · ЛЮБОЙ</div>
               <h3 style="margin:0;font-size:22px;letter-spacing:-.025em;font-weight:700">Пусть агент подключит всё сам</h3>
             </div>
-            <span class="claude-prompt" hidden data-copy="{{ claude_prompt }}"></span>
+            <span class="claude-prompt" hidden data-integration-copy="agent_prompt" data-copy="{{ claude_prompt }}"></span>
             <button type="button" data-copy-btn style="font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:11px 16px;border:1px solid var(--accent);color:var(--accent-2);cursor:pointer" class="hv-btn">СКОПИРОВАТЬ ПРОМПТ</button>
           </div>
           <p style="margin:16px 0 0;font-size:14.5px;line-height:1.6;color:var(--dim)">Сам найдёт, куда проект ходит за моделью, поднимет контейнер и проверит, что маскирование сработало.</p>
@@ -600,7 +600,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
         <h2 style="margin:0;font-size:clamp(22px,2.6vw,32px);font-weight:800;letter-spacing:-.03em;max-width:30ch">Разборы закона: что требуется и что из этого закрывает контейнер</h2>
         <p style="margin:16px 0 0;font-size:16px;line-height:1.7;color:var(--dim);max-width:62ch">Пишем о том, что спрашивают перед внедрением, со ссылками на первоисточники.</p>
       </div>
-      <a href="/baza-znaniy/kak-obezlichit-personalnye-dannye" style="display:block;border:1px solid var(--line-2);background:var(--panel);padding:22px 24px;text-decoration:none" class="hv-row">
+      <a href="/baza-znaniy/kak-obezlichit-personalnye-dannye" data-acquisition-goal="docs_open" data-acquisition-doc="knowledge_article" style="display:block;border:1px solid var(--line-2);background:var(--panel);padding:22px 24px;text-decoration:none" class="hv-row">
         <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--accent)">СТАТЬЯ · 9 МИНУТ</div>
         <div style="margin-top:12px;font-size:19px;font-weight:700;letter-spacing:-.02em;color:var(--text)">Как обезличить персональные данные</div>
         <div style="margin-top:10px;font-size:14px;line-height:1.6;color:var(--dim)">Методы по приказу Роскомнадзора № 140 и требования, которые он выставляет оператору.</div>
@@ -624,8 +624,8 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
         <div style="margin-top:30px;border:1px solid var(--line);padding:20px 22px">
           <div style="font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:.18em;color:var(--dim-2)">НАПИСАТЬ НАМ</div>
           <div style="margin-top:16px;display:flex;flex-direction:column;gap:10px;align-items:flex-start">
-            {% if support_bot %}<a href="https://t.me/{{ support_bot }}" rel="noopener" class="hv-btn-ghost" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:10px 15px;border:1px solid var(--line);color:var(--dim)">TELEGRAM-БОТ</a>{% endif %}
-            {% if support_email %}<a href="mailto:{{ support_email }}" class="hv-btn-ghost" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:10px 15px;border:1px solid var(--line);color:var(--dim)">ПОЧТА</a>{% endif %}
+            {% if support_bot %}<a href="https://t.me/{{ support_bot }}" data-acquisition-goal="support_contact_click" data-acquisition-placement="faq" data-acquisition-channel="telegram" rel="noopener" class="hv-btn-ghost" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:10px 15px;border:1px solid var(--line);color:var(--dim)">TELEGRAM-БОТ</a>{% endif %}
+            {% if support_email %}<a href="mailto:{{ support_email }}" data-acquisition-goal="support_contact_click" data-acquisition-placement="faq" data-acquisition-channel="email" class="hv-btn-ghost" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em;padding:10px 15px;border:1px solid var(--line);color:var(--dim)">ПОЧТА</a>{% endif %}
           </div>
           <div style="margin-top:16px;font-size:13px;line-height:1.55;color:var(--dim-2)">Отвечает человек, который собирал движок.</div>
         </div>
@@ -648,7 +648,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
       <h2 style="margin:0;font-size:clamp(32px,5.2vw,64px);max-width:18ch;font-weight:900;letter-spacing:-.04em;line-height:.95;text-wrap:balance">Пятнадцать минут до первого замаскированного запроса</h2>
       <div style="margin-top:22px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.18em;color:var(--dim-2)">{{ trial_days }} ДНЕЙ ПРОБЫ · КАРТА НЕ СПРАШИВАЕТСЯ · ХОСТИНГ В РФ</div>
     </div>
-    <a href="#start" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:18px 28px;border:1px solid var(--accent);color:var(--accent-2)" class="hv-btn">СОЗДАТЬ АККАУНТ</a>
+    <a href="#start" data-acquisition-goal="start_cta_click" data-acquisition-placement="bottom" style="display:inline-block;font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.1em;padding:18px 28px;border:1px solid var(--accent);color:var(--accent-2)" class="hv-btn">СОЗДАТЬ АККАУНТ</a>
   </section>
 {% endblock %}
 
@@ -660,14 +660,15 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
     <a href="{% url 'policy' %}" style="color:var(--dim-3)" class="hv-muted">ПОЛИТИКА</a>
     <a href="{% url 'consent' %}" style="color:var(--dim-3)" class="hv-muted">СОГЛАСИЕ</a>
     <a href="{% url 'requisites' %}" style="color:var(--dim-3)" class="hv-muted">РЕКВИЗИТЫ</a>
-    <a href="/baza-znaniy" style="color:var(--dim-3)" class="hv-muted">БАЗА ЗНАНИЙ</a>
-    <a href="{% url 'architecture' %}" style="color:var(--dim-3)" class="hv-muted">АРХИТЕКТУРА</a>
+    <a href="/baza-znaniy" data-acquisition-goal="docs_open" data-acquisition-doc="knowledge_base" style="color:var(--dim-3)" class="hv-muted">БАЗА ЗНАНИЙ</a>
+    <a href="{% url 'architecture' %}" data-acquisition-goal="docs_open" data-acquisition-doc="architecture" style="color:var(--dim-3)" class="hv-muted">АРХИТЕКТУРА</a>
     <a href="{% url 'team' %}" style="color:var(--dim-3)" class="hv-muted">КОМАНДА</a>
-    {% if support_bot %}<a href="https://t.me/{{ support_bot }}" rel="noopener" target="_blank"
+    {% if support_bot %}<a href="https://t.me/{{ support_bot }}" data-acquisition-goal="support_contact_click" data-acquisition-placement="footer" data-acquisition-channel="telegram" rel="noopener" target="_blank"
        style="color:var(--accent-2)" class="hv-muted">TELEGRAM</a>{% endif %}
-    {% if support_email %}<a href="mailto:{{ support_email }}"
+    {% if support_email %}<a href="mailto:{{ support_email }}" data-acquisition-goal="support_contact_click" data-acquisition-placement="footer" data-acquisition-channel="email"
        style="color:var(--accent-2)" class="hv-muted">ПОЧТА</a>{% endif %}
     <span>ХОСТИНГ В РФ</span>
+    {% if analytics_here or metrika_id %}<button type="button" class="btn" data-analytics-preferences hidden>Настройки аналитики</button>{% endif %}
   </div>
 </footer>
 {% endblock %}

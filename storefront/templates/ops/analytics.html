@@ -74,38 +74,39 @@
     </div>
   </div>
 
-  <!-- ВОРОНКА ВТОРОЙ. Просмотры не отвечают ни на один вопрос, который стоит
-       денег; воронка называет место, где чинить. -->
-  <h3 style="margin:8px 0 6px;font-size:20px">Воронка</h3>
+  <h3 style="margin:8px 0 6px;font-size:20px">События за период</h3>
   <div style="font-size:13px;color:var(--dim-2);margin-bottom:16px;max-width:760px">
-    Проходит через три системы: лендинг, витрину и лицензионный сервер. Шаг
-    «поднял контейнер» не виден из браузера вообще — он случается на железе
-    клиента и доезжает к нам арендой. Именно между ключом и контейнером
-    отваливаются чаще всего.
+    Это отдельные счётчики, а не последовательная конверсия одних людей.
+    Платный путь может начинаться с оплаты — до ключа и контейнера.
+    Суточный отпечаток посетителя не равен человеку за весь период.
   </div>
-  <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:12px">
-    <thead><tr>
-      <th style="text-align:left;padding:0 12px 8px 0;font-size:11px;letter-spacing:.13em;color:var(--dim-2);border-bottom:1px solid var(--line-2)">ШАГ</th>
-      <th style="text-align:right;padding:0 12px 8px 0;font-size:11px;letter-spacing:.13em;color:var(--dim-2);border-bottom:1px solid var(--line-2)">ЧЕЛОВЕК</th>
-      <th style="text-align:right;padding:0 12px 8px 0;font-size:11px;letter-spacing:.13em;color:var(--dim-2);border-bottom:1px solid var(--line-2)">ИЗ ПРЕДЫДУЩЕГО</th>
-      <th style="text-align:right;padding:0 12px 8px 0;font-size:11px;letter-spacing:.13em;color:var(--dim-2);border-bottom:1px solid var(--line-2)">ПОТЕРЯНО</th>
-      <th style="padding:0 0 8px;border-bottom:1px solid var(--line-2)"></th>
-    </tr></thead>
-    <tbody>
-      {% for s in steps %}
-      <tr>
-        <td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2)">{{ s.title }}{% if s.unwired %}
-          <span title="За этим шагом стоит ненулевой — значит его не записывают, а не по нему отваливаются."
-                style="margin-left:8px;font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;color:var(--amber);border:1px solid #3b3427;padding:2px 6px">НЕ ЗАПИСЫВАЕТСЯ</span>{% endif %}</td>
-        <td class="mono" style="text-align:right;padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2);font-weight:700">{{ s.count }}</td>
-        <td class="mono" style="text-align:right;padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2);color:{% if s.from_previous and s.from_previous < 40 %}var(--amber){% else %}var(--dim-2){% endif %}">{% if s.from_previous is not None %}{{ s.from_previous }}%{% else %}—{% endif %}</td>
-        <td class="mono" style="text-align:right;padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2);color:var(--dim-2)">{% if s.lost %}−{{ s.lost }}{% else %}—{% endif %}</td>
-        <td style="padding:9px 0;border-bottom:1px solid var(--line-2);width:36%">
-          <div style="height:8px;background:var(--line-2)"><i style="display:block;height:8px;background:var(--accent);width:{{ s.share }}%"></i></div>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
+  <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px">
+    <thead><tr><th style="text-align:left">СОБЫТИЕ</th><th style="text-align:right">КОЛИЧЕСТВО</th><th style="text-align:right">ЕДИНИЦА</th></tr></thead>
+    <tbody>{% for s in steps %}<tr>
+      <td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2)">{{ s.title }}</td>
+      <td class="mono" style="text-align:right;font-weight:700">{{ s.count }}</td>
+      <td style="text-align:right;color:var(--dim-2)">{{ s.unit }}</td>
+    </tr>{% endfor %}</tbody>
+  </table>
+
+  <h3 style="margin:8px 0 6px;font-size:20px">Когорта новых регистраций</h3>
+  <div style="font-size:13px;color:var(--dim-2);margin-bottom:16px;max-width:760px">
+    {{ cohort.size }} организаций с регистрацией за выбранный период.
+    Исключено QA-аккаунтов: {{ cohort.excluded_qa }}.
+    Наблюдение до {{ cohort.until|date:"d.m.Y H:i" }}; это ещё не зрелая когорта удержания.
+    Доля считается от тех же организаций, независимо от порядка оплаты и ключа.
+    Подтверждение почты не равно запуску движка; первый маскированный запрос
+    не доказывает успешного действия инструмента. Квалифицированные лиды
+    и корпоративные сделки учитываются отдельно.
+    {% if cohort.orphan_signup_events %}Регистрации без найденного аккаунта: {{ cohort.orphan_signup_events }}.{% endif %}
+  </div>
+  <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px">
+    <thead><tr><th style="text-align:left">РЕЗУЛЬТАТ</th><th style="text-align:right">ОРГАНИЗАЦИЙ</th><th style="text-align:right">ОТ КОГОРТЫ</th></tr></thead>
+    <tbody>{% for s in cohort.outcomes %}<tr>
+      <td style="padding:9px 12px 9px 0;border-bottom:1px solid var(--line-2)">{{ s.title }}</td>
+      <td class="mono" style="text-align:right;font-weight:700">{{ s.count }}</td>
+      <td class="mono" style="text-align:right;color:var(--dim-2)">{% if s.rate is not None %}{{ s.rate }}%{% else %}—{% endif %}</td>
+    </tr>{% endfor %}</tbody>
   </table>
 
   {% if refusals %}

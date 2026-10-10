@@ -124,6 +124,8 @@ Funnel.objects.create(step=Funnel.SIGNUP_SUBMITTED, visitor="v0000000000000",
                       organization_id=org.id, detail="industrial")
 Funnel.objects.create(step=Funnel.SIGNUP_REFUSED, detail="уже зарегистрирован")
 Funnel.objects.create(step=Funnel.ACTIVATED, organization_id=org.id)
+# Paid-first is a legitimate SaaS path, not missing first_mask wiring.
+Funnel.objects.create(step=Funnel.PAID, organization_id=org.id, detail="16650")
 Funnel.objects.create(step=Funnel.KEY_ISSUED, organization_id=org.id)
 
 print(org.id)
@@ -247,7 +249,7 @@ def main() -> int:
                  ["Промышленный", "прежних условиях", "Новый тариф"]),
                 ("спрос", f"{ops}/demand/", []),
                 ("аналитика", f"{ops}/analytics/",
-                 ["Воронка", "зашёл на лендинг", "поднял контейнер", "Трафик"]),
+                 ["События за период", "Когорта новых регистраций", "зашёл на лендинг", "поднял контейнер", "Трафик"]),
                 # ЭКРАН ЯНДЕКСА ПРОВЕРЯЕТСЯ ПРИ ВЫКЛЮЧЕННОЙ ИНТЕГРАЦИИ, и это
                 # главный случай: он обязан открываться, когда чужой сервис не
                 # настроен или лежит, — иначе диагностика отказывает ровно в ту
@@ -310,9 +312,23 @@ def main() -> int:
                   counted is not None and int(counted.group(1)) >= 1,
                   f"{counted.group(1) if counted else 'строки нет'} — "
                   f"выброшенное нельзя пересчитать, помеченное можно")
-            check("воронка называет потерю между шагами",
-                  "ПОТЕРЯНО" in body and "из предыдущего" in body.lower(),
-                  "доля от вершины описывает итог, а конверсия из предыдущего — место")
+            check("агрегаты не названы последовательными потерями людей",
+                  "ПОТЕРЯНО" not in body and "из предыдущего" not in body.lower()
+                   and "не последовательная конверсия" in body,
+                  "paid-first не обязан сначала маскировать запрос")
+            cohort_table = page.locator("table").filter(
+                has=page.get_by_text("ОТ КОГОРТЫ", exact=True))
+            paid = cohort_table.locator("tr").filter(
+                has=page.get_by_text("заплатил", exact=True)).locator("td").all_text_contents()
+            masked = cohort_table.locator("tr").filter(
+                has=page.get_by_text("первый замаскированный запрос", exact=True)).locator("td").all_text_contents()
+            check("когорта paid-first: одна оплата из одного аккаунта",
+                  len(paid) == 3 and paid[1].strip() == "1"
+                  and _re.fullmatch(r"100(?:[.,]0)?%", paid[2].strip()) is not None,
+                  str(paid))
+            check("paid-first без first_mask не назван сломанной воронкой",
+                  len(masked) == 3 and masked[1].strip() == "0"
+                  and "НЕ ЗАПИСЫВАЕТСЯ" not in body, str(masked))
 
             # --- конструктор правит цену и говорит, кого это коснётся ----
             page.goto(f"{ops}/tariffs/", wait_until="networkidle")

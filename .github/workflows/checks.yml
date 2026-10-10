@@ -284,6 +284,8 @@ jobs:
         run: .venv/bin/python test_team_renders.py
       - name: браузер исполняет consent, signup и маскирование email
         run: .venv/bin/python test_analytics_browser.py
+      - name: acquisition events respect consent, enums and real visible actions
+        run: .venv/bin/python test_acquisition_browser.py
       - name: конфигуратор исполняется, а не просто отдаёт 200
         run: .venv/bin/python test_configurator_renders.py
       # Консоль операций закрыта вторым фактором, и проверка ходит туда тем же

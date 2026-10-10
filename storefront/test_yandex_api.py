@@ -173,6 +173,33 @@ def main() -> int:  # noqa: C901 — линейный сценарий из пр
     check(calls[-1][1] == "https://api.direct.yandex.com/json/v501/campaigns",
           "v501 сохраняет настоящий тип Единой перфоманс-кампании")
 
+    # Current attribution aliases and quality metadata are part of the
+    # operator's evidence, not optional formatting discarded by a summary.
+    reset_token_cache()
+    calls.clear()
+    scripted.extend([
+        _Fake(200, token_payload()),
+        _Fake(200, {"totals": [12, 9, 40], "data": [], "sampled": True,
+                    "sample_share": 0.25, "data_lag": 3600, "total_rows": 0}),
+        _Fake(200, {"data": [{"dimensions": [{"name": "Поисковые системы"}],
+                              "metrics": [5]}], "sampled": False,
+                    "sample_share": 1, "data_lag": 0, "total_rows": 3}),
+    ])
+    with override_settings(METRIKA_ID="112743085", **creds):
+        summary = yandex_api.metrika_summary(7)
+    report_calls = [row for row in calls if "/stat/v1/data" in row[1]]
+    check(len(report_calls) == 2 and all(row[2]["params"]["attribution"] == "last" for row in report_calls),
+          "обе части сводки имеют одну явную актуальную атрибуцию")
+    check(report_calls[-1][2]["params"]["dimensions"] == "ym:s:trafficSource",
+          "источник использует текущий alias без lastSign")
+    check(summary["quality"]["totals"]["sampled"] is True and
+          summary["quality"]["totals"]["sample_share"] == 0.25 and
+          summary["quality"]["totals"]["data_lag"] == 3600,
+          "сводка не скрывает сэмплирование и задержку")
+    check(summary["quality"]["sources"]["truncated"] is True and
+          summary["period"]["timezone"] == settings.TIME_ZONE,
+          "top-источники не названы полным списком, таймзона явная")
+
     # ── 3. отказ внутри HTTP 200 ───────────────────────────────────────────
     reset_token_cache()
     scripted.append(_Fake(200, token_payload()))

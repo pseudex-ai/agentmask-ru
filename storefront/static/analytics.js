@@ -1,62 +1,71 @@
-// Счётчики на сайте: свой Rybbit и/или Яндекс.Метрика, на ПУБЛИЧНЫХ страницах.
-//
-// ОТДЕЛЬНЫЙ ФАЙЛ, А НЕ ВСТРОЕННЫЙ СКРИПТ, И ЭТО НЕ СТИЛЬ. CSP сайта — это
-// `script-src 'self' <разрешённое>` без `unsafe-inline`: встроенный тег из чужой
-// документации просто не выполнился бы, а браузер сообщил бы об этом только в
-// консоли. Настройки приходят data-атрибутами собственного тега.
-//
-// ПОЧЕМУ МЕТРИКА ЗДЕСЬ, А НЕ В ОТДЕЛЬНОМ ФАЙЛЕ. Согласие — одно на сайт, и
-// баннер — один. Два загрузчика означали бы два баннера (или, что хуже, один
-// баннер и один счётчик, который про согласие не знает). Шлюз согласия живёт в
-// одном месте, и счётчики проходят через него все.
-//
-// СКРИПТ НЕ ГРУЗИТСЯ ДО СОГЛАСИЯ — вообще, а не «грузится и молчит». У Rybbit
-// скрипт при загрузке сразу кладёт идентификатор посетителя в localStorage и
-// шлёт pageview; у Метрики то же самое с её кукой. Единственный честный способ
-// «не считать» — не создавать тег. Поэтому теги создаются в двух случаях:
-// согласие уже сохранено, или человек только что нажал «Согласен».
-//
-// ЧЕГО ЗДЕСЬ НЕТ И НЕ БУДЕТ. Этот файл не подключается на страницах кабинета и
-// админки — там на экране префиксы ключей и суммы счетов, и запись сессии
-// сделала бы их копию, которую никто не заказывал. Что делают КЛИЕНТЫ, мы
-// знаем из собственных серверных событий: каждое действие в кабинете это POST.
-// Граница продублирована в CSP (`middleware._policy_for`), поэтому даже ошибка
-// в этом файле не пустила бы `mc.yandex.ru` на закрытую страницу.
+// One public-page loader gates both providers; private-page exclusions and CSP
+// remain server-owned. Provider scripts are not even requested without consent.
 (function () {
     "use strict";
 
     var tag = document.currentScript;
-    if (!tag) { return; }
+    if (!tag || window.__pseudexAnalytics) { return; }
     var host = tag.getAttribute("data-host");
     var key = tag.getAttribute("data-key");
     var mode = tag.getAttribute("data-mode");
     var metrikaId = tag.getAttribute("data-metrika-id") || "";
-    // ЦЕЛЬ, КОТОРУЮ НАДО ЗАСЧИТАТЬ НА ЭТОЙ СТРАНИЦЕ. Пусто у всех, кроме
-    // страницы, где конверсия действительно случилась. Метрика обрабатывает
-    // очередь `ym(...)` по порядку, поэтому вызов можно ставить сразу за
-    // `init` — тег ещё не загружен, а вызов уже принят.
     var goal = tag.getAttribute("data-goal") || "";
-
     var rybbit = Boolean(host && key && mode === "full");
     var metrika = Boolean(metrikaId);
     if (!rybbit && !metrika) { return; }
 
-    // СОГЛАСИЕ ХРАНИТСЯ У ПОСЕТИТЕЛЯ, А НЕ У НАС. Запись «кто согласился» на
-    // сервере была бы ещё одним профилем посетителя — ровно тем, чего баннер
-    // призван не создавать. localStorage сайта, «нет» помнится так же, как «да».
+    // A document-level guard owns listeners as well as scripts. A second loader
+    // must not turn one natural click into two goals or duplicate the dialog.
+    window.__pseudexAnalytics = true;
     var CONSENT = "pseudex.analytics.consent";
+    var booted = false;
+    var signupSent = false;
+    var pricingSent = false;
+    var pricingObserver = null;
+    var dialog = null;
+    var preferenceButton = null;
+
     function stored() {
         try { return window.localStorage.getItem(CONSENT); } catch (e) { return null; }
     }
     function remember(value) {
-        try { window.localStorage.setItem(CONSENT, value); } catch (e) { /* приватное окно */ }
+        try {
+            window.localStorage.setItem(CONSENT, value);
+            return stored() === value;
+        } catch (e) { return false; }
+    }
+    function enabled() {
+        return metrika && booted && stored() === "yes" && typeof window.ym === "function";
     }
 
-    // Загрузчик Rybbit — их же файл, с НАШЕГО хоста аналитики. Все настройки
-    // записи — атрибутами: поля ввода маскируются ЦЕЛИКОМ (не «пароли», а всё,
-    // что печатают), включая форму регистрации. Сэмплирование не включаем:
-    // трафик витрины — сотни визитов в день, и «каждый десятый» здесь значил
-    // бы «почти никто».
+    // Closed schemas, not arbitrary DOM goal names or spread event.detail.
+    // Every transmitted value is a fixed enum; URLs, contact fields, input text,
+    // copied commands and query contents never enter a custom goal payload.
+    var PLANS = ["free", "start", "work", "scale", "enterprise"];
+    var SCHEMAS = {
+        start_cta_click: { placement: ["header", "hero", "pricing", "bottom"] },
+        pricing_view: { placement: ["pricing"] },
+        signup_attempt: { placement: ["signup"], plan: PLANS },
+        plan_selected: { placement: ["signup"], plan: PLANS },
+        integration_copy: { placement: ["onboarding"], source: ["agent_prompt"] },
+        enterprise_contact_click: { placement: ["pricing"], channel: ["email", "telegram", "requisites"] },
+        support_contact_click: { placement: ["floating", "faq", "footer"], channel: ["email", "telegram", "feedback"] },
+        docs_open: { doc: ["docs", "how", "architecture", "litellm", "knowledge_base", "knowledge_article"] }
+    };
+    function reach(name, params) {
+        if (!enabled() || !Object.prototype.hasOwnProperty.call(SCHEMAS, name)) { return false; }
+        var schema = SCHEMAS[name];
+        var clean = {};
+        var fields = Object.keys(schema);
+        for (var i = 0; i < fields.length; i++) {
+            var field = fields[i];
+            if (schema[field].indexOf(params[field]) === -1) { return false; }
+            clean[field] = params[field];
+        }
+        window.ym(metrikaId, "reachGoal", name, clean);
+        return true;
+    }
+
     function bootRybbit() {
         if (!rybbit || document.getElementById("rybbit-script")) { return; }
         var script = document.createElement("script");
@@ -69,33 +78,6 @@
         script.setAttribute("data-replay-mask-text-selectors", JSON.stringify(["[data-private]"]));
         document.head.appendChild(script);
     }
-
-    // МЕТРИКА. ВЕБВИЗОР ВКЛЮЧЁН — РЕШЕНИЕМ ВЛАДЕЛЬЦА, И ОНО ОСОЗНАННОЕ.
-    //
-    // Здесь стояло `webvisor: false` и довод «продукт продаёт минимизацию
-    // данных». Довод остаётся верным, но цена записи уже заплачена дважды:
-    // во-первых, своя аналитика (Rybbit) в режиме full пишет сессии и на
-    // публичных страницах — то есть запись экрана у нас УЖЕ есть, и Вебвизор
-    // не создаёт её заново, а добавляет к ней вторую копию у третьей стороны;
-    // во-вторых, смотреть, где люди спотыкаются, нужно было, а смотрели вслепую.
-    // Владелец выбрал смотреть. Довод назван здесь, чтобы следующий читатель не
-    // решил, что это забытая строка.
-    //
-    // ЧТО ЗАЩИЩЕНО И ЧЕМ. Три вещи, и все три — механизмом, а не обещанием:
-    //
-    //   * СТРАНИЦЫ С СЕКРЕТОМ НЕ ЗАПИСЫВАЮТСЯ ВООБЩЕ. `/activate` и `/welcome`
-    //     исключены из счётчиков целиком (`context.counters_allowed`), и CSP их
-    //     же не пускает. Токен активации и лицензионный ключ в запись не
-    //     попадут — не потому, что Вебвизор их замаскирует, а потому, что тега
-    //     на этих страницах нет.
-    //   * ПОЛЯ ВВОДА МАСКИРУЮТСЯ НА САЙТЕ. Класс `ym-disable-keys` на полях
-    //     формы регистрации гасит запись независимо от галочки «Записывать все
-    //     поля» в панели Метрики. Полагаться на галочку нельзя: её может
-    //     переключить любой, у кого есть доступ к счётчику, и узнать об этом
-    //     будет неоткуда.
-    //   * КАБИНЕТ И АДМИНКА ПО-ПРЕЖНЕМУ ЗАКРЫТЫ. Это не про Вебвизор, но
-    //     проверить стоит: запись клиента в кабинете — то, чего продукт не
-    //     делает ни при какой настройке.
     function bootMetrika() {
         if (!metrika || window.__pseudexMetrika) { return; }
         window.__pseudexMetrika = true;
@@ -114,58 +96,134 @@
             accurateTrackBounce: true,
             webvisor: true
         });
-        // ЦЕЛЬ ШЛЁТСЯ ЗДЕСЬ, А НЕ НА СЕРВЕРЕ, И ЭТО ЕДИНСТВЕННЫЙ СПОСОБ, КОТОРЫЙ
-        // НЕ РАСХОДИТСЯ С ПОЛИТИКОЙ. Раздел 9bis обещает, что без ответа
-        // баннера не загружается ни один счётчик; серверная отправка конверсии
-        // этого не спрашивает вовсе. Здесь же вызов физически некуда деть без
-        // согласия: тег создаётся этой же функцией.
-        //
-        // ЦЕНА НАЗВАНА: отказавшийся «Не считать» в цели не попадёт. Это и есть
-        // его выбор, а не потеря данных.
-        if (goal) { window.ym(metrikaId, "reachGoal", goal); }
+    }
+    function observePricing() {
+        if (!enabled() || pricingSent || pricingObserver || !("IntersectionObserver" in window)) { return; }
+        var pricing = document.querySelector("#pricing [data-acquisition-pricing]");
+        if (!pricing) { return; }
+        // Observe the visible heading, not the entire tall section or a 200
+        // render. No fallback invents a view when observation is unavailable.
+        pricingObserver = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                if (!entry.isIntersecting || entry.intersectionRatio < 0.5) { return; }
+                if (reach("pricing_view", { placement: "pricing" })) {
+                    pricingSent = true;
+                    pricingObserver.disconnect();
+                }
+            });
+        }, { threshold: 0.5 });
+        pricingObserver.observe(pricing);
+    }
+    function boot() {
+        if (booted || stored() !== "yes") { return; }
+        booted = true;
+        bootRybbit();
+        bootMetrika();
+        // Only the server-rendered successful signup may convert; resend and
+        // form attempts do not. This legacy goal remains once per document.
+        if (enabled() && goal === "signup" && !signupSent) {
+            signupSent = true;
+            window.ym(metrikaId, "reachGoal", "signup");
+        }
+        if (document.readyState !== "loading") { observePricing(); }
     }
 
-    function boot() { bootRybbit(); bootMetrika(); }
-
-    if (stored() === "yes") { boot(); return; }
-    if (stored() === "no") { return; }
-
-    // ТЕКСТ БАННЕРА СОБИРАЕТСЯ ИЗ ТОГО, ЧТО ВКЛЮЧЕНО. Он называет счётчики по
-    // именам, и копия, написанная рядом с настройкой, разошлась бы с ней молча:
-    // страница обещала бы «никакой Метрики» ровно на том сайте, где она стоит.
-    // Здесь обещание не может разойтись с кодом — оно из него и берётся.
-    var text = metrika
-        ? "Мы считаем, что вы открываете и куда нажимаете: своя аналитика на нашем " +
-          "сервере в России и Яндекс.Метрика. Метрика записывает действия на " +
-          "странице, включая запись экрана (Вебвизор). Что вы печатаете в формы, " +
-          "в запись не попадает — поля маскируются. "
-        : "Мы считаем, что вы открываете и куда нажимаете, — своей аналитикой " +
-          "на своём сервере в России. Никаких Метрики, Google Analytics и пикселей. " +
-          "Поля ввода в записи не попадают. ";
-
-    // БАННЕР — ТОЛЬКО ПОКА ОТВЕТА НЕТ, и «Не считать» на нём — такая же кнопка,
-    // как «Согласен»: не мельче, не серее, не спрятана в «настройки». Отказ в
-    // один клик, как и согласие, — это и есть разница между выбором и его
-    // имитацией.
-    document.addEventListener("DOMContentLoaded", function () {
-        var box = document.createElement("div");
-        box.className = "consent-bar";
-        box.setAttribute("role", "dialog");
-        box.setAttribute("aria-label", "Аналитика");
-        box.innerHTML =
-            '<div class="consent-text">' + text +
-            '<a href="/policy">Политика</a>.</div>' +
-            '<div class="consent-buttons">' +
-            '<button type="button" class="btn" data-consent="no">Не считать</button>' +
-            '<button type="button" class="btn accent" data-consent="yes">Согласен</button>' +
-            "</div>";
-        document.body.appendChild(box);
-        box.addEventListener("click", function (event) {
-            var answer = event.target.getAttribute && event.target.getAttribute("data-consent");
-            if (!answer) { return; }
-            remember(answer);
-            if (answer === "yes") { boot(); }
-            box.remove();
+    document.addEventListener("click", function (event) {
+        var link = event.target.closest && event.target.closest("a[data-acquisition-goal]");
+        if (!link) { return; }
+        var name = link.getAttribute("data-acquisition-goal");
+        // Non-click goals cannot be manufactured by annotating an arbitrary link.
+        if (["start_cta_click", "enterprise_contact_click", "support_contact_click", "docs_open"].indexOf(name) === -1) { return; }
+        reach(name, {
+            placement: link.getAttribute("data-acquisition-placement"),
+            channel: link.getAttribute("data-acquisition-channel"),
+            doc: link.getAttribute("data-acquisition-doc")
         });
     });
+    document.addEventListener("submit", function (event) {
+        if (!event.target.matches("#signup-form")) { return; }
+        var plan = event.target.querySelector('input[type="radio"][name="plan"]:checked');
+        reach("signup_attempt", { placement: "signup", plan: plan && plan.value });
+    });
+    // Pricing CTAs dispatch a non-bubbling radio change, so capture also covers
+    // that existing path without adding a second plan-specific click handler.
+    document.addEventListener("change", function (event) {
+        if (!event.target.matches('#signup-form input[type="radio"][name="plan"]') || !event.target.checked) { return; }
+        reach("plan_selected", { placement: "signup", plan: event.target.value });
+    }, true);
+    document.addEventListener("pseudex:integration-copy", function (event) {
+        var source = event.target;
+        if (!source.matches || !source.matches('#start [data-copy][data-integration-copy="agent_prompt"]')) { return; }
+        // The source is explicitly public. Event detail is deliberately ignored.
+        reach("integration_copy", { placement: "onboarding", source: "agent_prompt" });
+    });
+
+    var providers = [];
+    if (rybbit) { providers.push("своя аналитика на нашем сервере в России"); }
+    if (metrika) { providers.push("Яндекс.Метрика с записью экрана (Вебвизор)"); }
+    var text = "С вашего согласия мы считаем открытия и нажатия: " + providers.join(" и ") +
+        ". Поля ввода маскируются. Выбор можно изменить кнопкой «Настройки аналитики» внизу страницы. " +
+        "Отказ остановит дальнейшую запись после перезагрузки страницы, но не удалит уже собранные данные. ";
+
+    function closeDialog() {
+        if (dialog) { dialog.remove(); dialog = null; }
+        if (preferenceButton) { preferenceButton.focus({ preventScroll: true }); }
+    }
+    function withdraw() {
+        if (pricingObserver) { pricingObserver.disconnect(); }
+        // Destroy the whole loaded document rather than promising that removing
+        // script tags stops replay. Navigation is GET even after a signup POST;
+        // do not resend a form or carry its query contents into a new page.
+        window.location.replace(window.location.origin + window.location.pathname);
+    }
+    function showDialog() {
+        if (dialog) { return; }
+        dialog = document.createElement("div");
+        dialog.className = "consent-bar";
+        dialog.setAttribute("role", "dialog");
+        dialog.setAttribute("aria-label", "Аналитика");
+        dialog.innerHTML =
+            '<div class="consent-text">' + text + '<a href="/policy">Политика</a>.</div>' +
+            '<div class="consent-buttons">' +
+            '<button type="button" class="btn" data-consent="no">Не считать</button>' +
+            '<button type="button" class="btn" data-consent="yes">Согласен</button>' +
+            '<button type="button" class="btn" data-consent-close>Закрыть</button></div>';
+        document.body.appendChild(dialog);
+        dialog.addEventListener("click", function (event) {
+            var button = event.target.closest("button");
+            if (!button) { return; }
+            if (button.hasAttribute("data-consent-close")) { closeDialog(); return; }
+            var answer = button.getAttribute("data-consent");
+            if (answer !== "yes" && answer !== "no") { return; }
+            if (!remember(answer)) {
+                dialog.querySelector(".consent-text").textContent =
+                    "Не удалось сохранить выбор в браузере. Текущий выбор не изменён. Проверьте настройки хранилища браузера и повторите.";
+                return;
+            }
+            closeDialog();
+            if (answer === "yes") { boot(); }
+            else if (booted) { withdraw(); }
+        });
+        dialog.querySelector('[data-consent="no"]').focus({ preventScroll: true });
+    }
+    function ready() {
+        preferenceButton = document.querySelector("[data-analytics-preferences]");
+        if (preferenceButton) {
+            preferenceButton.hidden = false;
+            preferenceButton.addEventListener("click", showDialog);
+        }
+        observePricing();
+        if (stored() !== "yes" && stored() !== "no") { showDialog(); }
+    }
+    window.addEventListener("storage", function (event) {
+        if ((event.key === CONSENT || event.key === null) && stored() !== "yes" && booted) { withdraw(); }
+    });
+    window.addEventListener("pageshow", function (event) {
+        // A back/forward-cache restore can revive a provider-loaded document
+        // after consent was withdrawn on another public page.
+        if (event.persisted && booted && stored() !== "yes") { withdraw(); }
+    });
+    if (stored() === "yes") { boot(); }
+    if (document.readyState === "loading") { document.addEventListener("DOMContentLoaded", ready, { once: true }); }
+    else { ready(); }
 })();

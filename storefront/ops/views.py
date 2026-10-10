@@ -402,27 +402,14 @@ def analytics(request):
                  else rows.values("organization_id").distinct().count()
                  if code != Funnel.LANDING else rows.count())
         steps.append({"code": code, "title": title, "count": count})
-    # ШАГ С НУЛЁМ, ЗА КОТОРЫМ СТОИТ НЕНУЛЕВОЙ, НЕВОЗМОЖЕН ПО СМЫСЛУ, и это
-    # единственный способ увидеть с экрана, что шаг перестали ЗАПИСЫВАТЬ.
-    # Воронка упорядочена: заплатить, не замаскировав ни одного запроса,
-    # нельзя, как нельзя замаскировать, не подняв контейнера. Поэтому дыра
-    # выглядит не как «клиенты отвалились», а как арифметическая невозможность
-    # — и её надо назвать вслух, иначе ноль читается как отвал и посылает
-    # чинить продукт вместо аналитики. Так и жил `first_mask`: объявлен в
-    # модели, не записан никем, а на экране выглядел провалом конверсии.
     from ops import collect as _collect
     steps = _collect.flag_unwired(steps)
-
-    top = steps[0]["count"] if steps and steps[0]["count"] else 0
-    previous = None
+    # Counts within a time window mix visitors, organisations and sales paths.
+    # Never subtract neighbouring totals and call the difference lost people.
+    # The cohort below observes outcomes of the SAME signup organisations.
+    cohort = _collect.acquisition_cohort(since)
     for row in steps:
-        row["share"] = round(row["count"] / top * 100, 1) if top else 0
-        # Конверсия ИЗ ПРЕДЫДУЩЕГО шага, а не из вершины: именно она называет
-        # место, где отваливаются, а доля от вершины только описывает итог.
-        row["from_previous"] = (round(row["count"] / previous * 100, 1)
-                                if previous else None)
-        row["lost"] = (previous - row["count"]) if previous is not None else 0
-        previous = row["count"] or None
+        row["unit"] = "суточные отпечатки" if row["code"] == Funnel.LANDING else "организации"
 
     # --- почему отказала форма --------------------------------------------
     # Отдельно от воронки: это не шаг, а диагноз. «Отваливаются на форме»
@@ -611,7 +598,7 @@ def analytics(request):
 
     return render(request, "ops/analytics.html", {
         "days": days, "with_bots": with_bots, "today": today,
-        "steps": steps, "refusals": refusals,
+        "steps": steps, "cohort": cohort, "refusals": refusals,
         "money": money, "speed": speed, "channels": channels,
         "quiet": quiet,
         "by_day": by_day, "peak": peak,
