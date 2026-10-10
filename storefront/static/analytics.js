@@ -41,7 +41,7 @@
     // Closed schemas, not arbitrary DOM goal names or spread event.detail.
     // Every transmitted value is a fixed enum; URLs, contact fields, input text,
     // copied commands and query contents never enter a custom goal payload.
-    var PLANS = ["free", "start", "work", "scale", "enterprise"];
+    var PLANS = ["free", "start", "work", "scale", "industrial", "enterprise"];
     var SCHEMAS = {
         start_cta_click: { placement: ["header", "hero", "pricing", "bottom"] },
         pricing_view: { placement: ["pricing"] },

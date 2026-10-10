@@ -60,6 +60,11 @@ def fixtures(directory):
                 }):
         try:
             client = Client(HTTP_HOST='storefront.invalid')
+            # Production retains a public legacy industrial tariff. Exercise
+            # that real model/template path, not a synthetic DOM input rename.
+            from billing.models import Plan
+            require(Plan.objects.filter(code='industrial').update(is_public=True) == 1,
+                    'Legacy industrial plan fixture must exist')
             for name, path in [('landing', '/'), ('architecture', '/architecture')]:
                 response = client.get(path, secure=True)
                 require(response.status_code == 200, f'{path} must render, got {response.status_code}')
@@ -245,6 +250,8 @@ def acquisition_case(browser, pages):
         click(page, 'footer [data-acquisition-channel="email"]')
         choose_plan(page, 'work')
         require(goals(page, 'plan_selected')[-1] == [COUNTER, 'reachGoal', 'plan_selected', {'placement': 'signup', 'plan': 'work'}], 'Actual radio plan not tracked')
+        choose_plan(page, 'industrial')
+        require(goals(page, 'plan_selected')[-1] == [COUNTER, 'reachGoal', 'plan_selected', {'placement': 'signup', 'plan': 'industrial'}], 'Actual legacy public tariff must be tracked')
         click(page, '#pricing [data-plan="free"]')
         require(goals(page, 'plan_selected')[-1][3]['plan'] == 'free', 'Non-bubbling pricing radio change not tracked')
         # Invalid browser-native form is not a submission; a valid submit event is
@@ -255,6 +262,10 @@ def acquisition_case(browser, pages):
         click(page, '#signup-form button[type="submit"]')
         require(goals(page, 'signup_attempt') == [[COUNTER, 'reachGoal', 'signup_attempt', {'placement': 'signup', 'plan': 'free'}]], 'Submit attempt missing/duplicated')
         require(not goals(page, 'signup'), 'Submit attempts cannot convert')
+        choose_plan(page, 'industrial')
+        click(page, '#signup-form button[type="submit"]')
+        require(goals(page, 'signup_attempt')[-1] == [COUNTER, 'reachGoal', 'signup_attempt', {'placement': 'signup', 'plan': 'industrial'}], 'Legacy tariff submit must not disappear from analytics')
+        require(len(goals(page, 'signup_attempt')) == 2 and not goals(page, 'signup'), 'Repeated attempts are not successful signups')
         for doc in ['how', 'architecture', 'knowledge_base', 'knowledge_article']:
             click(page, f'[data-acquisition-doc="{doc}"]')
         require([call[3] for call in goals(page, 'docs_open')] == [{'doc': value} for value in ['how', 'architecture', 'knowledge_base', 'knowledge_article']], 'Docs must send only fixed enum')
@@ -304,8 +315,8 @@ def acquisition_case(browser, pages):
         schemas = {
             'start_cta_click': {'placement': {'header', 'hero', 'pricing', 'bottom'}},
             'pricing_view': {'placement': {'pricing'}},
-            'plan_selected': {'placement': {'signup'}, 'plan': {'free', 'start', 'work', 'scale', 'enterprise'}},
-            'signup_attempt': {'placement': {'signup'}, 'plan': {'free', 'start', 'work', 'scale', 'enterprise'}},
+            'plan_selected': {'placement': {'signup'}, 'plan': {'free', 'start', 'work', 'scale', 'industrial', 'enterprise'}},
+            'signup_attempt': {'placement': {'signup'}, 'plan': {'free', 'start', 'work', 'scale', 'industrial', 'enterprise'}},
             'docs_open': {'doc': {'docs', 'how', 'architecture', 'litellm', 'knowledge_base', 'knowledge_article'}},
             'support_contact_click': {'placement': {'faq', 'floating', 'footer'}, 'channel': {'email', 'telegram', 'feedback'}},
             'enterprise_contact_click': {'placement': {'pricing'}, 'channel': {'email', 'telegram', 'requisites'}},
