@@ -1225,52 +1225,62 @@ margin:0 0 15px;
 }
 .product-suite-card h3{min-height:3.75em;
 }
-.product-suite-overview{display:grid;
-grid-template-columns:.7fr 2fr;
-gap:60px;
-border-top:1px solid var(--line-2);
-margin-top:48px;
-padding-top:35px;
+.product-suite-overview{border-top:1px solid var(--line-2);
+margin-top:40px;
+padding-top:28px;
 }
-.product-suite-overview>h3{font-size:24px;
+.product-suite-overview>h3{font-size:18px;
 font-weight:500;
-letter-spacing:-.03em;
-line-height:1.35;
-margin:0;
+letter-spacing:-.025em;
+line-height:1.4;
+margin:0 0 26px;
+color:var(--text-2);
 }
 .product-suite-definitions{display:grid;
-gap:23px;
+grid-template-columns:repeat(3,minmax(0,1fr));
+gap:18px;
 }
-.product-suite-definitions h4{font-size:13px;
+.product-suite-definitions article{padding:0 28px;
+min-width:0;
+}
+.product-specific-label{display:inline-block;
+font:8px/1.8 var(--mono);
+letter-spacing:.05em;
+color:var(--dim);
+}
+.product-specific-label:hover{color:var(--accent);
+}
+.product-suite-definitions h4{font-size:15px;
 font-weight:500;
-line-height:1.7;
-margin:0 0 7px;
-}
-.product-suite-definitions h4>a{color:var(--text-2);
-}
-.product-suite-definitions h4>a:hover{color:var(--accent);
-}
-.product-suite-definitions h4>span{font:8px var(--mono);
-color:var(--accent);
-margin-left:9px;
+line-height:1.5;
+letter-spacing:-.02em;
+margin:12px 0 10px;
+color:var(--text-2);
 }
 .product-suite-definitions p{font-size:12px;
 line-height:1.85;
 color:var(--dim);
 margin:0;
-max-width:105ch;
+max-width:49ch;
 }
 
 @media(max-width:800px){.product-suite-card h3{min-height:0;
 }
-.product-suite-overview{grid-template-columns:1fr;
-gap:25px;
-margin-top:35px;
-padding-top:28px;
+.product-suite-overview{margin-top:30px;
+padding-top:24px;
 }
-.product-suite-overview>h3{font-size:22px;
+.product-suite-overview>h3{font-size:18px;
+margin-bottom:22px;
 }
-.product-suite-overview>h3 br{display:none;
+.product-suite-definitions{grid-template-columns:1fr;
+gap:24px;
+}
+.product-suite-definitions article{padding:0;
+}
+.product-suite-definitions article+article{border-top:1px solid var(--line);
+padding-top:22px;
+}
+.product-suite-definitions p{max-width:65ch;
 }
 }
 
