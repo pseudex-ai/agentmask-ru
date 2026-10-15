@@ -1420,21 +1420,42 @@ mask-position:center;
 .p-brand-google{mask-image:url('brands/google.png');
 -webkit-mask-image:url('brands/google.png');
 }
-.p-model-providers{display:flex;
-justify-content:center;
-align-items:center;
-gap:28px;
-margin:22px 0 12px;
+/* A compact deck: provider names remain accessible without visible labels. */
+.p-model-providers{position:relative;
+width:174px;
+height:98px;
+margin:23px auto 9px;
+isolation:isolate;
 }
-.p-model-provider{display:flex;
-flex-direction:column;
-align-items:center;
-gap:8px;
-font-size:10px;
+.p-model-provider{position:absolute;
+display:grid;
+place-items:center;
+width:72px;
+height:72px;
+border:1px solid var(--edge);
+border-radius:2px;
+background:var(--panel);
+box-shadow:0 8px 20px #00000016;
 color:var(--text-3);
 }
-.p-model-provider .p-brand-logo{width:25px;
-height:25px;
+.p-model-provider:nth-child(1){left:0;
+top:14px;
+transform:rotate(-10deg);
+z-index:1;
+}
+.p-model-provider:nth-child(2){left:51px;
+top:3px;
+z-index:3;
+border-color:color-mix(in srgb,var(--text-3) 40%,var(--line));
+background:var(--panel-2);
+}
+.p-model-provider:nth-child(3){left:102px;
+top:14px;
+transform:rotate(10deg);
+z-index:2;
+}
+.p-model-provider .p-brand-logo{width:27px;
+height:27px;
 }
 .p-model-caption{text-align:center;
 font-size:10px;
