@@ -53,6 +53,25 @@ def main():
         check(page.locator('#products a[href="/ai-security"]').count() >= 1, 'home links corporate product')
         check(page.locator('#products a[href="/ai-coding"]').count() >= 1, 'home links coding product')
         check('Корпоративная платформа AI-безопасности' in page.locator('#products').inner_text(), 'cards name actual products')
+        # Reproduce the reported HTML/new + stylesheet/old combination: remove
+        # the icon-specific CSS rule. Intrinsic SVG dimensions must still hold.
+        removed = page.evaluate('''() => {
+            let removed = 0;
+            for (const sheet of document.styleSheets) {
+                for (let i = sheet.cssRules.length - 1; i >= 0; i--) {
+                    if ((sheet.cssRules[i].selectorText || '').includes('suite-product-icon')) {
+                        sheet.deleteRule(i); removed++;
+                    }
+                }
+            }
+            return removed;
+        }''')
+        check(removed > 0, 'stale-stylesheet simulation removed the icon size rule')
+        check(page.locator('.suite-product-icon').evaluate_all('''icons => icons.length === 2 && icons.every(icon => {
+            const box = icon.getBoundingClientRect();
+            return box.width === 32 && box.height === 32;
+        })'''), 'icons stay 32px even without their CSS rule')
+        page.reload(wait_until='networkidle')
         # Hide only the sticky header for a tall element capture; CSS attributes
         # are allowed by the real CSP, injected <style> blocks are not.
         page.locator('header.top').evaluate("node => node.style.visibility = 'hidden'")
@@ -63,6 +82,14 @@ def main():
             for path in ('/', '/ai-security', '/ai-coding'):
                 page.goto(base+path,wait_until='networkidle')
                 check(page.evaluate('document.documentElement.scrollWidth <= innerWidth'), f'{path} no horizontal overflow at {width}')
+                if path == '/':
+                    check(page.locator('.suite-product-icon').evaluate_all('''icons => icons.length === 2 && icons.every(icon => {
+                        const box = icon.getBoundingClientRect();
+                        const slot = icon.parentElement.getBoundingClientRect();
+                        const heading = icon.closest('a').querySelector('h3').getBoundingClientRect();
+                        return box.width === 32 && box.height === 32 && box.top >= slot.top
+                            && box.bottom <= slot.bottom && box.bottom <= heading.top;
+                    })'''), f'icons fit their slot and do not overlap text at {width}')
                 if path != '/':
                     check(page.locator('[data-interest-form]').is_visible(), f'{path} usable form at {width}')
                     if width == 390:

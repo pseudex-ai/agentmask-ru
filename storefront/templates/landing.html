@@ -22,7 +22,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
 невозможной как класс. Галочки — ДВЕ ОТДЕЛЬНЫЕ: согласие на обработку ПД по
 156-ФЗ оформляется отдельно от договора.{% endcomment %}
 {% block body_class %}v2{% endblock %}
-{% block head %}<link rel="stylesheet" href="{% static 'landing.css' %}"><link rel="stylesheet" href="{% static 'products.css' %}">
+{% block head %}<link rel="stylesheet" href="{% static 'landing.css' %}"><link rel="stylesheet" href="{% static 'products.css' %}?v=product-icons-2">
 {% comment %}СТРУКТУРИРОВАННЫЕ ДАННЫЕ. Блок `application/ld+json` — это ДАННЫЕ, а
 не исполняемый скрипт, поэтому `script-src 'self'` без `unsafe-inline` его
 пропускает: проверено опытом в Chromium с нашим боевым заголовком CSP, ноль

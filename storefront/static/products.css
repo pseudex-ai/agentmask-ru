@@ -1164,10 +1164,15 @@ height:78px;
 margin:23px 0 6px;
 color:var(--text-3);
 }
-.suite-product-icon{width:32px;
+/* Intrinsic SVG dimensions also pin these marks when a stale stylesheet is
+   cached. Scope the CSS to the visual slot so no generic SVG rule can enlarge it. */
+.product-suite-visual > .suite-product-icon{display:block;
+width:32px;
 height:32px;
+max-width:32px;
+max-height:32px;
 color:var(--text-3);
-flex:none;
+flex:0 0 32px;
 }
 .suite-cli-label{font:9px/1.7 var(--mono);
 letter-spacing:.06em;
