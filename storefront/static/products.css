@@ -1351,8 +1351,8 @@ white-space:nowrap;
 .p-real-screen{max-height:680px;
 overflow:auto;
 scrollbar-width:thin;
-scrollbar-color:var(--edge) #151723;
-background:#151723;
+scrollbar-color:var(--edge) #17171a;
+background:#17171a;
 }
 .p-real-screen img{display:block;
 width:100%;
