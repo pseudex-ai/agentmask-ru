@@ -23,9 +23,6 @@ const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").match
  * контакты. `text` — куски реплики; пара из двух строк это «настоящее» и
  * «подмена» одного значения, одиночная строка — обычный текст.
  * ──────────────────────────────────────────────────────────────────────────── */
-const HERO_STEPS = ["", "КЛИЕНТ", "НАХОДИМ", "ПОДМЕНЯЕМ",
-                    "МОДЕЛЬ", "СИСТЕМА", "ГОТОВО"];
-
 const HERO_CASES = [
   {
     source: "КЛИЕНТ ПИШЕТ",
@@ -76,15 +73,6 @@ function heroToken(real, fake) {
   return token;
 }
 
-function heroBubble(label, tone, body) {
-  const bubble = node("div", `hero-bubble hero-bubble--${tone}`);
-  bubble.append(node("div", "hero-bubble-label", label));
-  const wrap = node("div", "hero-bubble-body");
-  wrap.appendChild(body);
-  bubble.appendChild(wrap);
-  return bubble;
-}
-
 function heroRecord(rows) {
   const card = node("div", "hero-record");
   rows.forEach(([label, value], index) => {
@@ -97,178 +85,8 @@ function heroRecord(rows) {
   return card;
 }
 
-function heroBuild(index) {
-  const example = HERO_CASES[index];
-  const said = node("span", "hero-said");
-  example.text.forEach(([real, fake]) => {
-    said.appendChild(fake ? heroToken(real, fake) : document.createTextNode(real));
-  });
-  const dialog = node("div", "hero-dialog");
-  const bubbles = [
-    heroBubble(example.source, "muted", said),
-    heroBubble("МОДЕЛЬ", "accent", node("span", "hero-prose", example.decision)),
-    heroBubble(example.system, "green", heroRecord(example.record)),
-    heroBubble("ГОТОВО", "green", node("span", "hero-prose hero-prose--dim", example.done)),
-  ];
-  bubbles.forEach((bubble) => dialog.appendChild(bubble));
-  return { dialog, bubbles, tokens: Array.from(dialog.querySelectorAll(".hero-token")) };
-}
-
-/* Фаза — единственное состояние героя, и каждый шаг ставит ровно один класс.
-   Поэтому «перемотать» историю в любую точку можно одним вызовом: это и делает
-   первый кадр, и он же показывает финал, когда движение выключено. */
-function heroApply(parts, phase) {
-  parts.bubbles.forEach((bubble, i) => {
-    const at = [1, 4, 5, 6][i];
-    bubble.classList.toggle("is-shown", phase >= at);
-    bubble.classList.toggle("is-lit", phase >= (i === 0 ? 3 : at));
-  });
-  parts.tokens.forEach((token) => {
-    token.classList.toggle("is-found", phase >= 2);
-    token.classList.toggle("is-swapped", phase >= 3);
-  });
-  parts.dialog.classList.toggle("is-filed", phase >= 5);
-}
-
-/* ВЫДЕРЖКА У КАЖДОГО ШАГА СВОЯ, И ЭТО И ЕСТЬ «КИНО». Ровный интервал читается
-   как слайд-шоу: сообщение, подсветка и подмена пролетают с одной скоростью, и
-   глаз не успевает заметить, ЧТО произошло. Здесь сообщение читается дольше,
-   подмена — самый короткий и резкий кадр, финал держится дольше всех. */
-const HERO_DWELL = { 1: 1650, 2: 1150, 3: 1250, 4: 1750, 5: 1850, 6: 2300, 0: 900 };
-
-function heroStart() {
-  const stage = document.getElementById("hero-dialog");
-  const phaseLabel = document.getElementById("hero-phase");
-  const rail = document.getElementById("hero-rail");
-  const panel = document.getElementById("hero-panel");
-  if (!stage) return;
-
-  let index = 0;
-  let phase = reduceMotion ? 6 : 1;
-  let parts = heroBuild(index);
-  let timer = 0;
-  let idle = 0;
-  let paused = false;
-  stage.replaceChildren(parts.dialog);
-
-  /* ШКАЛА-ТАЙМЛАЙН: шесть сегментов, по одному на шаг. Она отвечает на вопрос
-     «сколько это ещё будет идти» — без неё панель читается как бесконечная
-     карусель, и человек уходит раньше самого интересного кадра. */
-  const segments = rail ? Array.from({ length: 6 }, () => {
-    const seg = node("i");
-    rail.appendChild(seg);
-    return seg;
-  }) : [];
-
-  const paint = () => {
-    if (phaseLabel) {
-      phaseLabel.textContent = phase === 0
-        ? "СЛЕДУЮЩАЯ ЗАЯВКА"
-        : `${phase}/6 · ${HERO_STEPS[phase]}`;
-    }
-    segments.forEach((seg, i) => {
-      seg.classList.toggle("is-on", phase > i + 1);
-      seg.classList.toggle("is-current", phase === i + 1);
-    });
-  };
-
-  /* БЕЗ ДВИЖЕНИЯ — СРАЗУ ФИНАЛ, А НЕ ПУСТАЯ ПАНЕЛЬ. Человек, который попросил
-     систему не двигать картинку, просил об этом, а не о том, чтобы остаться без
-     содержимого. */
-  if (reduceMotion) {
-    heroApply(parts, phase);
-    paint();
-    return;
-  }
-  /* Класс, включающий переход, нельзя ставить в том же тике, где узел только
-     что вставлен в DOM: браузер ещё не отрисовал скрытое начальное состояние
-     (opacity:0) и просто перескочит к финалу без анимации. Два кадра растра
-     дают ему этот кадр. */
-  requestAnimationFrame(() => requestAnimationFrame(() => { heroApply(parts, phase); paint(); }));
-
-  const schedule = (ms) => { clearTimeout(timer); timer = setTimeout(step, ms); };
-
-  function step() {
-    if (paused) return;
-    /* СМЕНА ТЕМЫ ЗАБИРАЕТ СЦЕНУ СЕБЕ. Пока идёт маска, реплики не меняются:
-       две анимации в одном кадре — это и есть та дёрганность, которую видно
-       «через раз». Просто ждём и возвращаемся, ничего не пропуская. */
-    if (document.documentElement.dataset.themeBusy) {
-      schedule(220);
-      return;
-    }
-    phase = (phase + 1) % 7;
-    if (phase === 0) {
-      /* Расходимся: сначала гасим реплики, ждём затухание и только потом меняем
-         пример — иначе узлы исчезают вместе со сменой разметки, минуя переход, и
-         смена заявки выглядит рывком, а не затуханием. */
-      heroApply(parts, phase);
-      paint();
-      setTimeout(() => {
-        index = (index + 1) % HERO_CASES.length;
-        parts = heroBuild(index);
-        stage.replaceChildren(parts.dialog);
-        phase = 1;
-        requestAnimationFrame(() => requestAnimationFrame(() => {
-          heroApply(parts, phase);
-          paint();
-        }));
-        schedule(HERO_DWELL[1]);
-      }, 750);
-      return;
-    }
-    heroApply(parts, phase);
-    paint();
-    schedule(HERO_DWELL[phase] || 1700);
-  }
-
-  /* НАВЕДЕНИЕ ОСТАНАВЛИВАЕТ ПОКАЗ. Панель — не баннер, её читают: тот, кто вёл
-     курсором к строке с подменой, не должен ловить её уже подменённой обратно.
-     Ушли — показ продолжается сам. */
-  if (panel) {
-    panel.addEventListener("mouseenter", () => { paused = true; clearTimeout(timer); });
-    panel.addEventListener("mouseleave", () => { if (paused) { paused = false; schedule(500); } });
-  }
-
-  /* ШАГ НАЗАД И ВПЕРЁД. Показ идёт сам, но панель не телевизор: тот, кто хочет
-     разглядеть кадр — или показать его коллеге, — должен мочь к нему вернуться.
-     Переход через край идёт в соседнюю заявку (назад с первого шага — финал
-     предыдущей), иначе стрелка упиралась бы в невидимую стену. После ручного
-     шага показ сам не возобновляется сразу: шесть секунд панель стоит, чтобы
-     её успели прочитать, и только потом едет дальше. */
-  const controls = Array.from(document.querySelectorAll("[data-hero-step]"));
-  const go = (delta) => {
-    clearTimeout(timer);
-    clearTimeout(idle);
-    paused = true;
-    let next = phase + delta;
-    let rebuilt = false;
-    if (next < 1) {
-      index = (index - 1 + HERO_CASES.length) % HERO_CASES.length;
-      next = 6;
-      rebuilt = true;
-    } else if (next > 6) {
-      index = (index + 1) % HERO_CASES.length;
-      next = 1;
-      rebuilt = true;
-    }
-    phase = next;
-    if (rebuilt) {
-      parts = heroBuild(index);
-      stage.replaceChildren(parts.dialog);
-      requestAnimationFrame(() => requestAnimationFrame(() => { heroApply(parts, phase); paint(); }));
-    } else {
-      heroApply(parts, phase);
-      paint();
-    }
-    idle = setTimeout(() => { paused = false; schedule(HERO_DWELL[phase] || 1700); }, 6000);
-  };
-  controls.forEach((button) => button.addEventListener("click", () => go(Number(button.dataset.heroStep))));
-
-  schedule(HERO_DWELL[phase]);
-}
-
-heroStart();
+/* The six order sheets are controlled by hero-deck.js. The fixture and DOM
+ * helpers above stay shared; the remaining interactive sections are independent. */
 
 
 /* ────────────────────────────────────────────────────────────────────────────
