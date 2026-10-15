@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.3.39](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.38...platform/v0.3.39) (2026-10-15)
+
+
+### Новое
+
+* **storefront:** add corporate AI security and coding beta pages ([1229a81](https://github.com/Isk4R1oT/Obscura/commit/1229a811f0d2d55fda777cafca89e207fa656de2))
+* **storefront:** add restrained spatial homepage motion ([ce88211](https://github.com/Isk4R1oT/Obscura/commit/ce88211378d58e918da246102bf3d39eb02a0ed9))
+* **storefront:** add tactile sheet drag and directional hover ([3f15a83](https://github.com/Isk4R1oT/Obscura/commit/3f15a83223ef6a1121984ada4d5371de2632522e))
+* **storefront:** product beta pages and tactile homepage UI ([eeeeabb](https://github.com/Isk4R1oT/Obscura/commit/eeeeabbd277d4f33565096101d0e18a16a081b29))
+* **storefront:** showcase fullstack coding security and smooth navigation ([b884140](https://github.com/Isk4R1oT/Obscura/commit/b884140ad1cb95947c17b984e25bde289f707283))
+* **storefront:** showcase real must-core console screens and model logos ([10a511d](https://github.com/Isk4R1oT/Obscura/commit/10a511d57d999d301686ed86d967ff44baa7dd59))
+* **storefront:** turn order stages into a deck and polish full landing motion ([978086b](https://github.com/Isk4R1oT/Obscura/commit/978086b2594b520dedfa675248fe4a5aa3fd226a))
+
+
+### Исправления
+
+* **storefront:** align product specifics beneath their cards ([b5eae0c](https://github.com/Isk4R1oT/Obscura/commit/b5eae0ce13635fbbad8cc45ac2160683544f4d64))
+* **storefront:** bound product SVG icons with stale stylesheet fallback ([0ef3d06](https://github.com/Isk4R1oT/Obscura/commit/0ef3d069cf6b2c54b965b4938e6207009043c737))
+* **storefront:** gate product pages and exclude local concepts from release ([17a7bdd](https://github.com/Isk4R1oT/Obscura/commit/17a7bdd6ccd60a051217b1853e5a7d354e542770))
+* **storefront:** refine product messaging and mark desktop integrations soon ([f1910f5](https://github.com/Isk4R1oT/Obscura/commit/f1910f51c09b62b17070c46ac8794cf24f4cfd9e))
+* **storefront:** refresh platform gallery with branded populated demo ([e853232](https://github.com/Isk4R1oT/Obscura/commit/e853232042e3bd245af2a5a67d11d3c14b47381d))
+* **storefront:** show plausible substitutions and value-aware coding boundaries ([a4de895](https://github.com/Isk4R1oT/Obscura/commit/a4de895531a38958a60ada349da6815837c43f55))
+* **storefront:** use soft fades and open every platform view at top ([80bc863](https://github.com/Isk4R1oT/Obscura/commit/80bc86382d5166145ba5d4482e737fc1efde3dad))
+
 ## [0.3.38](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.37...platform/v0.3.38) (2026-10-10)
 
 
