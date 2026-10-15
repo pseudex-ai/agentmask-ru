@@ -108,22 +108,24 @@ def open_page(browser, base, net, **kw):
 
 
 def check_wide(browser, base, net):
-    """1+2: motion-ready, 24 dust nodes, hero vars move, cards track scroll and pointer."""
+    """Approved card motion remains; the owner removed hero particles and glow."""
     ctx, page = open_page(browser, base, net)
     require(page.evaluate(MOTION), "a wide fine-pointer homepage never got body.motion-ready")
-    dust = page.evaluate("document.querySelectorAll('[data-depth-dust] > i').length")
-    require(dust == 24, f"expected 24 decorative dust nodes, found {dust}")
+    require(page.locator('[data-depth-dust],.mx-dust,.mx-light').count() == 0,
+            "removed hero particles or ambient glow returned")
     at = page.evaluate("(() => { const r = document.querySelector('[data-depth-scene]').getBoundingClientRect();"
                        " return {x: r.left + r.width * .22, y: r.top + r.height * .5}; })()")
+    before = page.locator("#hero-panel").bounding_box()
     page.mouse.move(at["x"], at["y"])
-    x = poll(page, PROP, lambda v: v is not None and abs(v) > .05, [SCENE, "--mx-x"])
-    require(abs(x) > .05, f"hero --mx-x did not react to the pointer (got {x})")
+    page.wait_for_timeout(400)
+    require(page.locator("#hero-panel").bounding_box() == before,
+            "entering the hero moved the reading surface before a grab")
     top = float(page.evaluate(SCROLL) or 0)
     scroll_to(page, 420)
     down = poll(page, PROP, lambda v: v is not None and abs(v - top) > .05, [SCENE, "--mx-scroll"])
     require(abs(down - top) > .05, f"hero --mx-scroll did not react to the scroll ({top} -> {down})")
-    require(page.evaluate("getComputedStyle(document.querySelector('#hero-panel')).transform") != "none",
-            "the motion-ready hero panel has no transform, so the vars never reach it")
+    require(page.evaluate("getComputedStyle(document.querySelector('#hero-panel')).transform") == "none",
+            "the draggable hero still has an automatic transform")
     lifts, bottom = [], edge(page)
     for offset in (-1400, -700, -300):  # grid below the fold, entering it, deep inside it
         scroll_to(page, max(0, bottom - 600 + offset))

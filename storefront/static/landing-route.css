@@ -9,7 +9,6 @@
 #how .mx-route-grid>div.is-route-done::before,#how .mx-route-grid>div.is-route-current::before{background:var(--accent);}
 #how .mx-route-grid>div.is-route-current::before{box-shadow:0 0 0 4px var(--accent-bg);}
 #how .mx-route-grid>div.is-route-current{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 48%,var(--line));}
-#how .mx-route-grid>div:hover:not(.reveal-item),#how .mx-route-grid>div.is-in:hover{transform:none;}
 #how a:focus-visible{outline:1px solid var(--accent);outline-offset:4px;}
 @media(max-width:760px){
 #how .mx-route-grid::before,#how .mx-route-grid::after{top:0;bottom:0;right:auto;left:-9px;width:1px;height:auto;}

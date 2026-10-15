@@ -1,0 +1,26 @@
+/* Nearest-cursor-edge highlight. One overlay span per surface (landing-edge.js)
+   draws the 2px line on the side nearest the pointer; the side is chosen by that
+   script, so the surface keeps its own faint border and its -3px hover lift.
+   The span is absolutely positioned, transparent, and never hit-testable, so it
+   cannot move layout, block a click, or take focus from a native field. */
+/* All four widths stay fixed: only colour crossfades, so a new side starts
+   responding in the same frame, with no geometry jump or pointer smoothing. */
+.directional-edge{
+  position:absolute;inset:0;pointer-events:none;box-sizing:border-box;border:2px solid transparent;
+  border-radius:0;opacity:0;transition:border-color .11s linear,opacity .09s linear;
+}
+.directional-edge[data-edge="top"]{border-top-color:var(--accent);}
+.directional-edge[data-edge="right"]{border-right-color:var(--accent);}
+.directional-edge[data-edge="bottom"]{border-bottom-color:var(--accent);}
+.directional-edge[data-edge="left"]{border-left-color:var(--accent);}
+.directional-edge.is-on{opacity:1;}
+/* #coverage hover paints EVERY span inside a cell (landing-interactions.css),
+   which would fill this overlay and erase its side line. Scoped to the overlay
+   only, and only for the two properties that rule sets. */
+body.v2 #coverage .cards>*:hover>.directional-edge{background:transparent!important;box-shadow:none!important;}
+/* Reduced motion keeps the edge — it is state, not decoration — and drops the fade. */
+@media (prefers-reduced-motion:reduce){.directional-edge{transition:none;}}
+
+/* Replace the old fixed-left accent, not the approved lift/tilt or native links. */
+body.v2.edge-ready .cards>:has(>.directional-edge):not(.product-suite-card):hover{box-shadow:0 12px 30px #00000020;}
+body.v2.edge-ready :is(.hv-row,.hv-cell,.kb-list>a):hover{box-shadow:0 12px 30px #00000020;}

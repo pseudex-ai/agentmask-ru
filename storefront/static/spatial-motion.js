@@ -95,7 +95,9 @@
     }, {passive: true});
     item.el.addEventListener('pointerleave', () => { item.tx = item.ty = 0; schedule(); }, {passive: true});
   }
-  [hero, ...deck].forEach(pointer);
+  // Hero sheets are direct-manipulation objects: entering must not move them.
+  // Keep the approved product-card pointer response independent.
+  deck.forEach(pointer);
   if ('IntersectionObserver' in window) {
     const observer = new IntersectionObserver(entries => {
       entries.forEach(entry => {
