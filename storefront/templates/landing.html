@@ -22,7 +22,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
 невозможной как класс. Галочки — ДВЕ ОТДЕЛЬНЫЕ: согласие на обработку ПД по
 156-ФЗ оформляется отдельно от договора.{% endcomment %}
 {% block body_class %}v2{% endblock %}
-{% block head %}<link rel="stylesheet" href="{% static 'landing.css' %}">
+{% block head %}<link rel="stylesheet" href="{% static 'landing.css' %}"><link rel="stylesheet" href="{% static 'products.css' %}">
 {% comment %}СТРУКТУРИРОВАННЫЕ ДАННЫЕ. Блок `application/ld+json` — это ДАННЫЕ, а
 не исполняемый скрипт, поэтому `script-src 'self'` без `unsafe-inline` его
 пропускает: проверено опытом в Chromium с нашим боевым заголовком CSP, ноль
@@ -92,7 +92,7 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
 {% block nav %}
 <nav style="align-items:center;gap:28px;font-family:'JetBrains Mono',monospace;font-size:11.5px;letter-spacing:.14em">
   <a href="#how" style="color:var(--dim)" class="hv-text">КАК РАБОТАЕТ</a>
-  <a href="/how" data-acquisition-goal="docs_open" data-acquisition-doc="how" style="color:var(--dim)" class="hv-text">ПОЧЕМУ ЭТО СЛОЖНЕЕ</a>
+  <a href="#products" style="color:var(--dim)" class="hv-text">ПРОДУКТЫ</a>
   <a href="/detection" style="color:var(--dim)" class="hv-text">ЧТО НАХОДИМ</a>
   <a href="#pricing" style="color:var(--dim)" class="hv-text">ЦЕНЫ</a>
   <a href="/i/" style="color:var(--dim)" class="hv-text">КОМАНДА</a>
@@ -233,6 +233,8 @@ CSP сайта — `style-src 'self'` плюс `style-src-attr 'unsafe-inline'`,
     </div>
   </section>
 
+
+  {% include "products/suite.html" %}
 
   <section id="video" style="padding:120px 36px 0">
     <div data-reveal>

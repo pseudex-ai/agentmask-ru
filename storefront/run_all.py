@@ -111,6 +111,7 @@ STEPS = [
     # было ничего, что гоняет `run_billing_cycle` до конца с таким рядом.
     ("04i2-refused-trial", "test_refused_trial_cycle.py", lambda: True, ""),
     ("04j-seo", "test_seo.py", lambda: True, ""),
+    ("04j2-product-beta-pages", "test_product_pages.py", lambda: True, ""),
     ("04k-yandex-api", "test_yandex_api.py", lambda: True, ""),
     ("05-billing-lifecycle", "test_billing_lifecycle.py", _stand_up,
      "нужен поднятый стенд: bash deploy/local.sh"),

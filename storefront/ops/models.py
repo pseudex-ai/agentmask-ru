@@ -95,3 +95,6 @@ class SeoDay(models.Model):
 from ops.acquisition_consent import AnalyticsGrant  # noqa: E402,F401
 from ops.acquisition_delivery import AcquisitionDelivery  # noqa: E402,F401
 from ops.acquisition_lifecycle import AcquisitionOutcome  # noqa: E402,F401
+
+# Unlike DemandDay, this explicitly consented contact record is NOT analytics.
+from ops.product_interest import ProductInterest  # noqa: E402,F401

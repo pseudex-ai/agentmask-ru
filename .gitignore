@@ -41,6 +41,11 @@ deploy/.local-admin
 # его было бы тем же самым, только навсегда.
 deploy/secrets/
 
+# Local product-page browser evidence and synthetic preview database.
+.preview/
+storefront/product-preview.sqlite3
+storefront/product-preview.sqlite3-*
+
 # Tooling
 .playwright-mcp/
 .thumbnail

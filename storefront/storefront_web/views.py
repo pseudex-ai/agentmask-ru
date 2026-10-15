@@ -488,7 +488,9 @@ def _meta(page: str) -> dict[str, str]:
 # Держит `test_seo.py`: у каждой публичной страницы дата есть, она в формате
 # ISO и не из будущего.
 _PUBLIC_PAGES = (
-    ("landing", 1.0, "weekly", "2026-10-05"),
+    ("landing", 1.0, "weekly", "2026-10-15"),
+    ("ai_security", 0.8, "weekly", "2026-10-15"),
+    ("ai_coding", 0.8, "weekly", "2026-10-15"),
     ("detection", 0.8, "monthly", "2026-10-05"),
     ("types", 0.7, "monthly", "2026-10-05"),
     ("litellm", 0.7, "monthly", "2026-10-05"),
