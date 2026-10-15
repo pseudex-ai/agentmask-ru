@@ -15,3 +15,6 @@ __pycache__/
 test_*.py
 .pytest_cache/
 staticfiles/
+
+# Keep unapproved, standalone design experiments local, outside the release image.
+static/concepts/

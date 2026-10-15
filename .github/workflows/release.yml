@@ -116,6 +116,9 @@ jobs:
       - name: storefront end to end
         working-directory: storefront
         run: .venv/bin/python test_storefront.py
+      - name: product pages and consented beta requests
+        working-directory: storefront
+        run: .venv/bin/python test_product_pages.py
 
   gates:
     name: gates against real containers

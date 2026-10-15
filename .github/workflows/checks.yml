@@ -219,6 +219,8 @@ jobs:
       # чужой выдаче через несколько недель, когда чинить поздно.
       - name: поисковик видит то, что должен, и не видит закрытого
         run: .venv/bin/python test_seo.py
+      - name: product pages and consented beta requests
+        run: .venv/bin/python test_product_pages.py
       - name: база знаний отвечает, а её разметка не разошлась с текстом
         run: .venv/bin/python test_kb.py
       - name: замер поиска — отказ источника не становится нулём

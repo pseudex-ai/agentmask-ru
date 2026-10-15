@@ -129,4 +129,6 @@ python test_seo.py
 
 Browser test разрешает только loopback HTTP и блокирует стороннюю сеть; проверяет responsive layout 320/390/768/1440, две темы, интерактивы, формы, confirmation, JS/CSP errors. Создаёт только синтетические контакты example.test. Изображения проверки в `.preview/` gitignored.
 
+`test_product_pages.py` включён и в push/PR checks, и в release workflow: реальные страницы, migration/DB constraints, CSRF/consent и отсутствие побочных аккаунтов проверяются до публикации. Локальные отклонённые концепты `static/concepts/` исключены из storefront Docker context, хотя остаются доступны локально для сравнения. Выпуск этих изменений — только поток platform по wiki, без engine-тега/образа и без переноса реферального PR.
+
 Официальные марки и их источники — `storefront/static/brands/README.md`. Серые логотипы показывают названия интеграций, не партнёрство и не пройденную приёмку.

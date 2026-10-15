@@ -251,11 +251,12 @@ def main():
         print(f"FAIL base-url: must be loopback, got {base}")
         return 2
     net, failures = {"outside": [], "errors": [], "csp": [], "assets": {}}, []
+    play = sync_playwright().start()
     try:
-        play = sync_playwright().start(); browser = play.chromium.launch()
-    except Exception as exc:  # no browser is a failure, never a skip
-        print(f"FAIL browser: Chromium is unavailable ({type(exc).__name__}: {str(exc).splitlines()[0][:160]})")
-        return 2
+        browser = play.chromium.launch()
+    except Exception:
+        play.stop()
+        raise  # Missing Chromium is fatal, not an aggregated/skippable check.
     try:
         for name, check in CHECKS:
             try:
