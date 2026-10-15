@@ -18,21 +18,23 @@
         <div class="p-session-agent"><span class="p-session-avatar p-session-avatar-agent">AI</span><p data-session-agent>Сначала сопоставлю событие, повторную доставку и запись в балансе. Запрошу детали ошибки через MCP.</p></div>
         <div class="p-session-command"><span data-session-tool>MCP · Sentry</span><code data-session-command>get_issue_details({ issueId: "BILLING-42" })</code></div>
         <div class="p-session-mode"><span>ЧТО ПОПАДАЕТ К МОДЕЛИ</span><div class="p-segmented" role="group" aria-label="Защита coding-сессии"><button type="button" data-session-mode="raw" aria-pressed="false">Без защиты</button><button type="button" data-session-mode="protected" aria-pressed="true">С Pseudex</button></div></div>
+        <div class="p-session-stage" data-session-stage><div class="p-session-view" data-session-view>
         <div class="p-session-panes" data-session-panes>
           <div><div class="p-session-pane-label"><span class="p-dot"></span><span data-session-local-label>Ответ инструмента в вашем контуре</span></div><pre data-session-local>issue: BILLING-42
 error: duplicate ledger credit
 customer: anna@customer.example
 host: billing.atlas.internal
-source: /Users/marina/work/atlas/src/billing.ts
+tenant: atlas-payments
 event: evt_demo_104 · deliveries: 2</pre></div>
-          <div class="p-session-model"><div class="p-session-pane-label"><span class="p-dot p-dot-purple"></span><span data-session-model-label>Контекст модели · после защиты</span></div><pre data-session-model>issue: BILLING-42
+          <div class="p-session-model"><div class="p-session-pane-label"><span class="p-dot p-dot-purple"></span><span data-session-model-label>Контекст модели · правдоподобные подмены</span></div><pre data-session-model>issue: BILLING-42
 error: duplicate ledger credit
-customer: user-17@example.invalid
-host: service-01.internal.invalid
-source: /workspace/project-01/src/billing.ts
+customer: elena.volkova@contact.example
+host: billing.orion.internal
+tenant: orion-payments
 event: evt_demo_104 · deliveries: 2</pre></div>
         </div>
-        <div class="p-session-verdict" role="status" aria-live="polite"><span class="p-session-shield" aria-hidden="true">◇</span><div><strong data-session-title>MCP приносит не только ошибку, но и данные клиента.</strong><p data-session-description>В этом сценарии почта, внутренний адрес и личный путь заменены. Тип ошибки, event ID и повторная доставка остаются понятными модели.</p></div></div>
+        <div class="p-session-verdict" role="status" aria-live="polite"><span class="p-session-shield" aria-hidden="true">◇</span><div><strong data-session-title>Та же форма данных. Другая личность.</strong><p data-session-description>Клиент, хост и tenant получают стабильные правдоподобные подмены. Тип ошибки, event ID и повторная доставка остаются понятными модели.</p></div></div>
+        </div></div>
         <div class="p-session-controls"><button type="button" class="p-link" data-session-reset>С начала ↺</button><span data-session-counter>01 / 07</span><button type="button" class="p-button p-button-small" data-session-next>Следующий шаг →</button></div>
       </div>
     </div>

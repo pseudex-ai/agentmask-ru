@@ -8,23 +8,51 @@ below is invented, and no command, file, API, MCP or model is ever executed. The
 values are restated here on purpose, as the expected result of the mapping the
 fixture applies — so a change to either side of the boundary goes red instead of
 quietly keeping its old meaning.
+
+The substitutes are PLAUSIBLE and FORMAT-PRESERVING — the same vendor prefix, the
+same length and the same digit/upper/lower class at every body position — not
+removal placeholders. None of them is a working credential, and none may ever be
+used as one; `static/coding-session.js` is the authoritative fixture and these
+pairs are copied from its `mappings` array verbatim.
 """
 import argparse
+import re
 from pathlib import Path
 from urllib.parse import urlparse
 
 from playwright.sync_api import sync_playwright
 
-# The synthetic originals the tool returns and the substitutes the model must
-# see instead; the first three are also what makes the first tool result real.
+# The synthetic originals the tool returns and the substitutes the model must see
+# instead, in the fixture's own order.
 SESSION_MAPPINGS = (
-    ('anna@customer.example', 'user-17@example.invalid'),
-    ('billing.atlas.internal', 'service-01.internal.invalid'),
-    ('/Users/marina/work/atlas', '/workspace/project-01'),
-    ('sk_test_DEMO_NOT_A_KEY', '[SECRET REMOVED]'),
-    ('whsec_DEMO_NOT_A_SECRET', '[SECRET REMOVED]'),
-    ('postgresql://demo:demo@db.atlas.internal/billing', '[CONNECTION SECRET REMOVED]'),
+    ('anna@customer.example', 'elena.volkova@contact.example'),
+    ('billing.atlas.internal', 'billing.orion.internal'),
+    ('/Users/marina/work/atlas', '/Users/elena/work/orion'),
+    ('sk_test_51Pn8m4Q7v2K9r6T3x5B0c8D1e4F7g2H', 'sk_test_84Wu1t7X0c5R2y9A6e8I3j1K4l7M0n5O'),
+    ('ghp_A7m9K2p4R8v1T6x3B5n0C9d2F4g7H1j6L8q5', 'ghp_H0t2R5w7Y1c4A9e6I8u3J2k5M7n0O4q9S1x8'),
+    ('postgresql://billing:Q7m4Rv9K@db.atlas.internal/billing',
+     'postgresql://finance:N4t8Lp2R@db.orion.internal/finance'),
+    ('atlas-payments', 'orion-payments'),
 )
+EMAIL, HOST, PATH, KEY, TOKEN, DSN, TENANT = range(len(SESSION_MAPPINGS))
+# Step 1 carries the client, the host and the tenant and no path at all, so a
+# path assertion there would only ever pass vacuously.
+STEP0_PAIRS = (EMAIL, HOST, TENANT)
+
+
+def field_value(text, pattern):
+    match = re.search(pattern, text, re.M)
+    return match.group(1) if match else ''
+
+
+def credential_body(value, prefix):
+    """The body after a vendor prefix, or '' when the prefix is not there."""
+    return value[len(prefix):] if value.startswith(prefix) else ''
+
+
+def body_classes(body):
+    return ''.join('d' if ch.isdigit() else 'u' if ch.isupper()
+                   else 'l' if ch.islower() else ch for ch in body)
 
 
 def main():
@@ -157,15 +185,22 @@ def main():
         check(page.locator('[data-session-counter]').inner_text().strip() == '01 / 07', 'counter names step 1 of 7')
         check(page.locator('[data-session-local]').count() == 1 and page.locator('[data-session-model]').count() == 1,
               'local and model panes are separate elements')
+        check(page.locator('[data-session-stage] [data-session-panes]').count() == 1
+              and page.locator('[data-session-stage] .p-session-verdict').count() == 1,
+              'the stage wraps both panes and the verdict, which is the subtree the crossfade clones')
         # The first tool result carries the three boundary values at once; if an
-        # edit drops one, the sweep below would pass vacuously.
+        # edit drops one, the sweep below would pass vacuously. It carries no
+        # path, so a path assertion here would be exactly that kind of vacuum.
         page.locator('[data-session-step="0"]').click()
         first_local = local_text()
-        for raw, fake in SESSION_MAPPINGS[:3]:
-            check(raw in first_local and fake in model_text(),
+        step0_model = model_text()
+        for index in STEP0_PAIRS:
+            raw, fake = SESSION_MAPPINGS[index]
+            check(raw in first_local and fake in step0_model,
                   f'first tool result carries {raw!r}; the model sees {fake!r}')
         # Sweep every step in the default protected mode. Reduced motion is on
-        # for this context, so none of this depends on the animation running.
+        # for this context, so none of this depends on the animation running —
+        # and a ghost clone surviving under it would be that dependency.
         for step in range(7):
             page.locator(f'[data-session-step="{step}"]').click()
             check(pressed(f'[data-session-step="{step}"]') == 'true'
@@ -173,67 +208,145 @@ def main():
                   f'coding step {step+1} selects exactly itself')
             check(page.locator('[data-session-counter]').inner_text().strip() == f'{step+1:02d} / 07',
                   f'coding step {step+1} counter follows')
+            check(page.locator('.p-session-ghost').count() == 0,
+                  f'coding step {step+1} switches with no ghost clone under reduced motion')
             local, model = local_text(), model_text()
             leaked = [raw for raw, _ in SESSION_MAPPINGS if raw in model]
             check(not leaked, f'coding step {step+1}: synthetic originals stay out of the model pane {leaked}')
             unswapped = [f'{raw!r}->{fake!r}' for raw, fake in SESSION_MAPPINGS if raw in local and fake not in model]
             check(not unswapped, f'coding step {step+1}: every returned value is replaced for the model {unswapped}')
-        # Step 2 of 7: the returned code must survive as code.
+        # Step 2 of 7: the returned code must survive as code, and exactly one
+        # workspace path inside it is rewritten.
         page.locator('[data-session-step="1"]').click()
         local, model = local_text(), model_text()
-        check('/Users/marina/work/atlas' in local and '/workspace/project-01' in model and '/Users/marina' not in model,
+        raw_path, fake_path = SESSION_MAPPINGS[PATH]
+        check(raw_path in local and fake_path in model and '/Users/marina' not in model,
               'grep step: the true workspace is local, the pseudonym is what the model gets')
+        check(model.count('/Users/') == 1
+              and fake_path + '/src/app/api/webhooks/stripe/route.ts:27' in model,
+              'grep step: exactly one workspace path is rewritten and it keeps its tail')
         check('const rawBody = await request.text();' in model
               and 'process.env.STRIPE_WEBHOOK_SECRET' in model
               and 'stripe.webhooks.constructEvent(' in model,
               'grep step: code, line references and the environment-variable name stay readable')
-        # Step 3 of 7: secrets leave the transcript, names of variables stay.
+        check('return <CreditRows items={credits} />;' in model
+              and 'src/components/BillingHistory.tsx:48' in model,
+              'grep step: JSX and the second file reference are preserved, not summarized')
+        raw_tenant, fake_tenant = SESSION_MAPPINGS[TENANT]
+        check(f'const tenant = "{raw_tenant}";' in local and f'const tenant = "{fake_tenant}";' in model
+              and raw_tenant not in model,
+              'grep step: only the tenant string literal is exchanged, inside identical surrounding code')
+        # Step 3 of 7: credentials keep their vendor prefix, their length and the
+        # character class of every body position — plausible, never a placeholder.
         page.locator('[data-session-step="2"]').click()
         local, model = local_text(), model_text()
-        check(all(raw in local for raw, _ in SESSION_MAPPINGS[3:]),
-              'config step carries the three synthetic secrets in the local file')
-        check('sk_test_DEMO_NOT_A_KEY' not in model and 'whsec_DEMO_NOT_A_SECRET' not in model,
-              'config step: key and signing secret never reach the model pane')
-        check(model.count('[SECRET REMOVED]') >= 2 and '[CONNECTION SECRET REMOVED]' in model,
-              'config step: key, signing secret and connection string are removed')
-        check('demo:demo@' not in model, 'config step: the database password does not survive')
-        check('STRIPE_SECRET_KEY' in model and 'STRIPE_WEBHOOK_SECRET' in model and 'DATABASE_URL' in model,
-              'config step: variable names remain so the model still understands the config')
-        # Step 4 of 7: output of a command is a fresh boundary.
+        step2_model = model
+        raw_key, fake_key = SESSION_MAPPINGS[KEY]
+        raw_token, fake_token = SESSION_MAPPINGS[TOKEN]
+        raw_dsn, fake_dsn = SESSION_MAPPINGS[DSN]
+        check(all(raw in local for raw in (raw_key, raw_token, raw_dsn)),
+              'config step carries the three synthetic credentials in the local file')
+        check(raw_key not in model and raw_token not in model and raw_dsn not in model,
+              'config step: key, token and connection string never reach the model pane')
+        check('[SECRET REMOVED]' not in model and '[CONNECTION SECRET REMOVED]' not in model,
+              'config step: the substitutes are plausible values, not removal placeholders')
+        model_key = field_value(model, r'^STRIPE_SECRET_KEY=(\S+)$')
+        model_token = field_value(model, r'^GITHUB_TOKEN=(\S+)$')
+        model_dsn = field_value(model, r'^DATABASE_URL=(\S+)$')
+        check(model_key == fake_key and model_token == fake_token and model_dsn == fake_dsn,
+              'config step: each value is replaced by exactly the fixture substitute')
+        check(model_key.startswith('sk_test_') and model_token.startswith('ghp_')
+              and len(model_key) == len(raw_key) and len(model_token) == len(raw_token),
+              'config step: vendor prefixes and the original lengths are preserved')
+        check(body_classes(credential_body(model_key, 'sk_test_'))
+              == body_classes(credential_body(raw_key, 'sk_test_'))
+              and body_classes(credential_body(model_token, 'ghp_'))
+              == body_classes(credential_body(raw_token, 'ghp_')),
+              'config step: every body position keeps its digit/upper/lower character class')
+        raw_url, fake_url = urlparse(raw_dsn), urlparse(model_dsn)
+        check(fake_url.scheme == raw_url.scheme == 'postgresql' and bool(fake_url.hostname)
+              and fake_url.username != raw_url.username and fake_url.password != raw_url.password
+              and fake_url.hostname != raw_url.hostname and fake_url.path != raw_url.path,
+              'config step: the DSN stays a parseable URI with every role replaced')
+        check('Q7m4Rv9K' not in model and 'db.atlas.internal' not in model,
+              'config step: the database password and the internal host do not survive')
+        check('STRIPE_SECRET_KEY' in model and 'GITHUB_TOKEN' in model and 'DATABASE_URL' in model
+              and 'APP_ORIGIN=http://127.0.0.1:3000' in model,
+              'config step: variable names and the non-secret origin remain so the model still understands the config')
+        # Step 4 of 7: the output of a command is a fresh boundary — protected
+        # again with the same substitutes, while the signed request is not
+        # rewritten in place.
         page.locator('[data-session-step="3"]').click()
-        model = model_text()
-        check('user-17@example.invalid' in model and 'service-01.internal.invalid' in model,
-              'API step: the tool result is protected again before the model')
-        check('evt_demo_104' in model and '"credits"' in model and '4900' in model,
-              'API step: event id, duplicate credits and amounts stay useful')
-        # Step 5 of 7: the allowed patch needs the real path locally only.
+        local, model = local_text(), model_text()
+        check(model.count('POST /api/webhooks/stripe → 200') == 2
+              and '$BILLING_API_TOKEN' in (page.locator('[data-session-command]').text_content() or ''),
+              'API step: the signed request line and its environment-variable credential are not rewritten')
+        check(SESSION_MAPPINGS[EMAIL][1] in model and SESSION_MAPPINGS[TENANT][1] in model
+              and SESSION_MAPPINGS[HOST][1] in model
+              and SESSION_MAPPINGS[EMAIL][0] not in model and SESSION_MAPPINGS[TENANT][0] not in model,
+              'API step: the returned JSON is protected again with the same substitutes')
+        check('"event": "evt_demo_104"' in model and model.count('"amount": 4900') == 2,
+              'API step: event id and both duplicate credit amounts stay useful')
+        check(field_value(step0_model, r'^customer: (\S+)$')
+              == field_value(model, r'^  "email": "([^"]+)"') == SESSION_MAPPINGS[EMAIL][1],
+              'API step: the client keeps the same pseudonym from the MCP result to the API response')
+        # Step 5 of 7: the patch applies to code whose exact literal differs
+        # between the panes, and the file is relative — no workspace path is part
+        # of this step at all.
         page.locator('[data-session-step="4"]').click()
         local, model = local_text(), model_text()
-        check('/Users/marina/work/atlas/src/billing.ts' in local
-              and '/workspace/project-01/src/billing.ts' in model,
-              'patch step: the allowed patch keeps its true local path, the model sees the pseudonym')
-        check('/Users/marina' not in model, 'patch step: the owner name inside the path does not reach the model')
-        check('настоящий путь' in page.locator('[data-session-local-label]').inner_text(),
-              'patch step: the local pane is labelled as the real path')
-        # Step 6 of 7: a passing test still prints the fixture.
+        check('оригинальные литералы' in page.locator('[data-session-local-label]').inner_text(),
+              'patch step: the local pane is captioned as the original literals')
+        check(f'const tenant = "{SESSION_MAPPINGS[TENANT][0]}";' in local
+              and f'const tenant = "{SESSION_MAPPINGS[TENANT][1]}";' in model
+              and SESSION_MAPPINGS[TENANT][0] not in model,
+              'patch step: the exact-code-literal context differs between local and model')
+        check('*** Update File: src/billing.ts' in model
+              and 'await db.$transaction(async tx => {' in model
+              and 'await tx.webhookEvent.create({' in model
+              and 'data: { id: event.id } // UNIQUE' in model
+              and 'await creditBalance(event.data.object, tenant, tx);' in model
+              and '# duplicate-event обрабатывается отдельно' in model,
+              'patch step: the diff keeps its transaction structure and its comments')
+        check('/Users/' not in local and '/Users/' not in model,
+              'patch step: the patch is a relative path; no workspace path is involved')
+        # Step 6 of 7: a passing test still prints the fixture and the token — and
+        # the token is the same plausible substitute the config step showed.
         page.locator('[data-session-step="5"]').click()
         local, model = local_text(), model_text()
-        check('fixture: anna@customer.example' in local and 'fixture: user-17@example.invalid' in model,
-              'test step: the fixture email is replaced for the model')
-        check('artifact: /workspace/project-01/test-results/billing.png' in model and '/Users/marina' not in model,
-              'test step: the artifact path is replaced too')
-        check('sequential retry → one credit' in model, 'test step: test names and assertions survive')
-        # Step 7 of 7: the replayed history must not undo the earlier steps.
+        check(f'fixture={{"email":"{SESSION_MAPPINGS[EMAIL][0]}","tenant":"{SESSION_MAPPINGS[TENANT][0]}"}}' in local,
+              'test step: the local dump still holds the fixture originals')
+        check(f'fixture={{"email":"{SESSION_MAPPINGS[EMAIL][1]}","tenant":"{SESSION_MAPPINGS[TENANT][1]}"}}' in model,
+              'test step: the fixture email and tenant are replaced for the model')
+        check(field_value(model, r'^GITHUB_TOKEN=(\S+)$') == fake_token and raw_token not in model,
+              'test step: the dumped token is the same substitute the config step used, never the original')
+        check('sequential retry → one credit' in model and 'invalid signature → rejected' in model
+              and 'billing UI → one row' in model,
+              'test step: test names and assertions survive')
+        check('test-results' not in model and 'artifact:' not in model,
+              'test step: no artifact path is part of this fixture anymore')
+        # Step 7 of 7: the replayed history must not undo the earlier steps, and
+        # it carries no workspace path of its own.
         page.locator('[data-session-step="6"]').click()
         local, model = local_text(), model_text()
-        check('Исходный код + .env.local' in local and 'sk_test_DEMO_NOT_A_KEY' in local,
-              'history step: the local project still holds the secret')
-        check('История для следующего хода' in model and 'config → [SECRET REMOVED]' in model,
-              'history step: the history handed to the model is protected')
-        check('user-17@example.invalid' in model and '/workspace/project-01/src/billing.ts' in model,
-              'history step: email, host and path stay pseudonymous in the history')
-        check('/Users/marina' not in model and 'anna@customer.example' not in model
-              and 'sk_test_DEMO_NOT_A_KEY' not in model,
+        check(page.locator('[data-session-local-label]').inner_text().strip() == 'Исходные данные в вашем контуре',
+              'history step: the local pane is captioned as the originals in your perimeter')
+        check(all(raw in local for raw in (SESSION_MAPPINGS[EMAIL][0], SESSION_MAPPINGS[HOST][0],
+                                           SESSION_MAPPINGS[TENANT][0], raw_key, raw_token)),
+              'history step: the local history still holds client, host, tenant, key and token')
+        check(f'MCP customer: {SESSION_MAPPINGS[EMAIL][1]}' in model
+              and f'API upstream: {SESSION_MAPPINGS[HOST][1]}' in model
+              and f'code tenant: {SESSION_MAPPINGS[TENANT][1]}' in model
+              and f'config key: {fake_key}' in model and f'test token: {fake_token}' in model,
+              'history step: client, host, tenant, key and token stay substituted in the history')
+        check(field_value(model, r'^config key: (\S+)$') == model_key
+              and field_value(model, r'^test token: (\S+)$') == model_token,
+              'history step: the history reuses the exact substitutes from the config step')
+        check('История для следующего хода' in model and 'MCP → код → конфиг → API → patch → тесты' in model,
+              'history step: the handoff outline is preserved for the next turn')
+        check('/Users/' not in local and '/Users/' not in model,
+              'history step: the replayed history carries no workspace path')
+        check(SESSION_MAPPINGS[EMAIL][0] not in model and raw_key not in model and raw_token not in model,
               'history step: no original returns with the history')
         # Next walks and wraps; the label says which of the two it will do.
         page.locator('[data-session-step="6"]').click()
@@ -255,7 +368,7 @@ def main():
         page.locator('[data-session-mode="raw"]').click()
         check(pressed('[data-session-mode="raw"]') == 'true' and pressed('[data-session-mode="protected"]') == 'false',
               'raw mode selects itself')
-        check('sk_test_DEMO_NOT_A_KEY' in model_text(),
+        check(raw_key in model_text(),
               'raw mode exposes the synthetic original, which is what the warning is about')
         check('Без защиты' in (page.locator('[data-session-title]').text_content() or ''),
               'raw mode warns in the verdict title')
@@ -267,7 +380,7 @@ def main():
               'raw mode is marked on the fixture root for styling')
         page.locator('[data-session-mode="protected"]').click()
         check('p-session-raw' not in (session.get_attribute('class') or '')
-              and 'sk_test_DEMO_NOT_A_KEY' not in model_text(),
+              and raw_key not in model_text(),
               'switching back to protected hides the original again')
         # Reset is the only escape hatch and it returns to step 1, protected.
         page.locator('[data-session-step="4"]').click()
@@ -279,7 +392,9 @@ def main():
         check(pressed('[data-session-mode="protected"]') == 'true' and pressed('[data-session-mode="raw"]') == 'false',
               'reset returns to the protected mode')
         check(page.locator('[data-session-counter]').inner_text().strip() == '01 / 07'
-              and '/Users/marina' not in model_text() and 'user-17@example.invalid' in model_text(),
+              and SESSION_MAPPINGS[TENANT][0] not in model_text()
+              and SESSION_MAPPINGS[TENANT][1] in model_text()
+              and SESSION_MAPPINGS[EMAIL][1] in model_text(),
               'reset renders the protected first step again')
         page.locator('[data-session-step="0"]').click()
         check(page.locator('.p-brand-logo').count() == 2, 'official integration marks rendered')
@@ -336,6 +451,35 @@ def main():
         motion_page.wait_for_function('() => !document.querySelector(".p-real-ghost")')
         check(motion_page.locator('[data-real-panel]:not([hidden])').count() == 1,
               'rapid gallery changes clean up old screens and leave one active panel')
+        # The coding session crossfades the same way: the whole stage (panes plus
+        # verdict) is cloned into an inert ghost, the live view animates in over
+        # 320ms, and a burst of switches still leaves exactly one live view.
+        motion_page.goto(base+'/ai-coding', wait_until='networkidle')
+        motion_stage = motion_page.locator('[data-session-stage]')
+        check(motion_stage.locator('[data-session-panes]').count() == 1
+              and motion_stage.locator('.p-session-verdict').count() == 1,
+              'normal-motion coding stage wraps the panes and the verdict')
+        motion_page.locator('[data-session-step="2"]').click()
+        check(motion_page.locator('[data-session-stage] > .p-session-ghost[aria-hidden="true"]').count() == 1,
+              'normal-motion coding switch keeps an aria-hidden ghost of the previous view')
+        check(motion_page.evaluate('''() => {
+            const ghost = document.querySelector('[data-session-stage] > .p-session-ghost');
+            if (!ghost) return false;
+            const nodes = [ghost, ...ghost.querySelectorAll('*')];
+            const hooks = nodes.flatMap(n => [...n.attributes].map(a => a.name))
+                .filter(name => name.startsWith('data-session-'));
+            return ghost.hasAttribute('inert') && ghost.getAttribute('aria-hidden') === 'true'
+                && ghost.classList.contains('p-session-ghost') && hooks.length === 0;
+        }'''), 'coding ghost is inert and every data-session hook is stripped from the clone')
+        check(motion_page.locator('[data-session-view]').evaluate(
+            '(e) => e.getAnimations().some(a => a.effect.getTiming().duration === 320)'),
+            'normal-motion coding view really animates in over 320ms')
+        for step in ('0','3','5','6'):
+            motion_page.locator(f'[data-session-step="{step}"]').click()
+        motion_page.wait_for_function('() => !document.querySelector(".p-session-ghost")')
+        check(motion_page.locator('[data-session-stage] > .p-session-ghost').count() == 0
+              and motion_page.locator('[data-session-view]').count() == 1,
+              'rapid coding changes clean up the ghost and leave one live view')
         motion_context.close()
 
         for product,path in (('enterprise','/ai-security'),('coding','/ai-coding')):
