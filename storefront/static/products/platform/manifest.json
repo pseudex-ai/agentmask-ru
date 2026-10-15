@@ -1,0 +1,66 @@
+{
+  "source_branch": "feat/must-core",
+  "source_commit": "ac5f3cc6e85e3946f8d9a40389d1e660ee073397",
+  "captured": "2026-10-15",
+  "runtime": "dev_admin.py; real licensed engine + localui; loopback :8000/:8081",
+  "fixtures": "12 invented local requests, 3 service cards; 4 explicit policy rules and 67-type catalogue; no real provider key or model calls",
+  "screenshots": "Actual Chromium renders, unedited. Integration is viewport-only; other screens full-page. Lossless WebP conversion, original dimensions retained.",
+  "screens": [
+    {
+      "screen": "policy",
+      "width": 1600,
+      "height": 1124,
+      "source_png_sha256": "c1c6a3aba725210adc3dd5b06f1ab92cce3e5725b11c0c746263542e6c9f7049",
+      "webp_sha256": "5345ce7e6f157bbe355d371e518f3fef851429ffb11d77963f14870a55996a85",
+      "bytes": 59256
+    },
+    {
+      "screen": "agents",
+      "width": 1600,
+      "height": 1050,
+      "source_png_sha256": "083ef7d9240c99b941c16bf654f57687fe7e8fa1e6931c5daed45ea624b8127a",
+      "webp_sha256": "6979c10bbade058aa3bca22f726eb8d0c44d248c907a54ecf7cc0f72ca90aa1d",
+      "bytes": 36148
+    },
+    {
+      "screen": "access",
+      "width": 1600,
+      "height": 1050,
+      "source_png_sha256": "f12a2f71b15c188d8bc1b6edd05dc0ab674a7bc72235e7ce45549faeea3e7ae7",
+      "webp_sha256": "c8ade0c3a0c9567e549caa4255edb0e9323a88da6b89154cedbc837ad0aa8121",
+      "bytes": 39188
+    },
+    {
+      "screen": "journal",
+      "width": 1600,
+      "height": 1733,
+      "source_png_sha256": "dc590670907376b25d50ebc066aeb560277955662bf93c167a6a6420f70f2829",
+      "webp_sha256": "3d383eae92094be1ea239f2f21eaf4d0c81c3894c6bb8a206ab299263756c38d",
+      "bytes": 50616
+    },
+    {
+      "screen": "integration",
+      "width": 1600,
+      "height": 1050,
+      "source_png_sha256": "6ca0f0dc7d957eaf828bc577334ac77b937083e2a21c26ab57ca412415c42954",
+      "webp_sha256": "24da2bf22021ecd01ae7da13411f1f36cb8c152319ce9ea8f9136624d72965ef",
+      "bytes": 62400
+    },
+    {
+      "screen": "preview",
+      "width": 1600,
+      "height": 1305,
+      "source_png_sha256": "932e947c3749fedcab39baebec70081b6530fbef632a13c6870f7de37e2e909a",
+      "webp_sha256": "46ccc7cce63d6abdef23df2d0e6abb5f154cae748afb71aec5f6832ba5fee106",
+      "bytes": 65828
+    },
+    {
+      "screen": "quality",
+      "width": 1600,
+      "height": 1812,
+      "source_png_sha256": "1da9f788328854ddf60e7694801a170bed871f25fd3b363c57232b28560b9df8",
+      "webp_sha256": "4c814cc4fd3544238d30de0add7d0cd2f43e43a7366462c0d8fff885133fb073",
+      "bytes": 74746
+    }
+  ]
+}

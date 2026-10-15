@@ -15,5 +15,10 @@ Assets are served locally; visiting the page makes no brand/CDN request.
   Discovered on https://code.claude.com/docs/en/overview on 2026-10-15.
   Original symbol geometry retained; colour supplied by CSS mask.
 
-Both marks render in the same neutral grey site token in light and dark themes.
+- `google.png`: official Google G asset from Google's static branding CDN:
+  https://www.gstatic.com/images/branding/product/1x/googleg_48dp.png
+  Fetched 2026-10-15. Geometry unchanged; rendered as an alpha mask in grey.
+  Identifies Google in the Google Gemini model-provider example.
+
+The marks render in the same neutral grey site token in light and dark themes.
 The generic CLI card is not a brand and retains a neutral terminal symbol.

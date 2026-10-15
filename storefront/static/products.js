@@ -2,36 +2,42 @@
    telemetry, credentials or external request is involved in these examples. */
 (function () {
   'use strict';
-  const consoleDemo = document.querySelector('[data-enterprise-demo]');
-  if (consoleDemo) {
-    const samples = {
-      support: ['Помоги клиенту Марине Соколовой.\nПочта: marina@client.example', 'Помоги клиенту Елене Волковой.\nПочта: elena@contact.example'],
-      hr: ['Подготовь ответ кандидату Анне Орловой.\nПочта: anna@candidate.example', 'Подготовь ответ кандидату Ирине Лебедевой.\nПочта: irina@profile.example']
-    };
-    function updatePolicy() {
-      const app = consoleDemo.querySelector('[data-demo-app]').value;
-      const block = consoleDemo.querySelector('[data-demo-policy]').value === 'block';
-      const sample = samples[app] || samples.support;
-      consoleDemo.querySelector('[data-original-text]').textContent = sample[0];
-      consoleDemo.querySelector('[data-protected-text]').textContent = block ? 'Запрос не передан.\nПравило: персональные данные → блокировать.' : sample[1];
-      consoleDemo.querySelector('[data-preview-label]').textContent = block ? 'ПЕРЕДАЧА ОСТАНОВЛЕНА' : 'НА СТОРОНЕ МОДЕЛИ';
-      const outcome = consoleDemo.querySelector('[data-policy-outcome]');
-      outcome.textContent = block ? '× Модель не получила запрос' : '✓ Запрос продолжен с подменами';
-      outcome.classList.toggle('p-cross', block);
+  const realConsole = document.querySelector('[data-real-console]');
+  if (realConsole) {
+    const tabs = Array.from(realConsole.querySelectorAll('[data-real-tab]'));
+    function positionScreen(panel) {
+      const screen = panel.querySelector('.p-real-screen');
+      if (screen) { screen.scrollTop = screen.hasAttribute('data-screen-bottom') ? screen.scrollHeight : 0; }
     }
-    consoleDemo.querySelectorAll('[data-console-tab]').forEach(button => {
-      button.addEventListener('click', () => {
-        const selected = button.dataset.consoleTab;
-        consoleDemo.querySelectorAll('[data-console-tab]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
-        consoleDemo.querySelectorAll('[data-console-panel]').forEach(panel => { panel.hidden = panel.dataset.consolePanel !== selected; });
+    function selectTab(tab, focus) {
+      tabs.forEach(item => {
+        const selected = item === tab;
+        item.setAttribute('aria-selected', String(selected));
+        item.tabIndex = selected ? 0 : -1;
+      });
+      realConsole.querySelectorAll('[data-real-panel]').forEach(panel => {
+        panel.hidden = panel.dataset.realPanel !== tab.dataset.realTab;
+        if (!panel.hidden) { positionScreen(panel); }
+      });
+      if (focus) { tab.focus(); }
+    }
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => selectTab(tab, false));
+      tab.addEventListener('keydown', event => {
+        let next;
+        if (event.key === 'ArrowRight') { next = (index + 1) % tabs.length; }
+        if (event.key === 'ArrowLeft') { next = (index + tabs.length - 1) % tabs.length; }
+        if (event.key === 'Home') { next = 0; }
+        if (event.key === 'End') { next = tabs.length - 1; }
+        if (next !== undefined) { event.preventDefault(); selectTab(tabs[next], true); }
       });
     });
-    consoleDemo.querySelector('[data-demo-app]').addEventListener('change', updatePolicy);
-    consoleDemo.querySelector('[data-demo-policy]').addEventListener('change', updatePolicy);
-    consoleDemo.querySelector('[data-demo-reveal]').addEventListener('click', () => {
-      consoleDemo.querySelector('[data-reveal-result]').textContent = 'Доступ закрыт: необходимо отдельное право reveal. В демо оригинал не раскрывается.';
+    realConsole.querySelectorAll('[data-real-panel] img').forEach(image => {
+      image.addEventListener('load', () => {
+        const panel = image.closest('[data-real-panel]');
+        if (!panel.hidden) { positionScreen(panel); }
+      });
     });
-    updatePolicy();
   }
 
   const coding = document.querySelector('[data-coding-demo]');
