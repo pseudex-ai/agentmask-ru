@@ -894,6 +894,19 @@ border-radius:2px;
 .p-desktop-icon{font-size:30px;
 color:var(--dim);
 }
+.p-desktop-soon{display:inline-block;
+font:8px/1.5 var(--mono);
+letter-spacing:.08em;
+color:var(--accent);
+border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));
+border-radius:2px;
+padding:3px 7px;
+margin-right:10px;
+vertical-align:middle;
+}
+.product-suite-tags .product-suite-soon{color:var(--accent);
+border-color:color-mix(in srgb,var(--accent) 30%,var(--line));
+}
 .p-desktop-next strong{font-size:13px;
 font-weight:500;
 }
@@ -1151,22 +1164,10 @@ height:78px;
 margin:23px 0 6px;
 color:var(--text-3);
 }
-.suite-visual-item{font:10px var(--mono);
-white-space:nowrap;
-}
-.suite-visual-line{height:1px;
-flex:1;
-max-width:35px;
-background:linear-gradient(90deg,var(--line-2),var(--edge));
-}
-.suite-visual-core{font-size:25px;
-width:46px;
-height:46px;
-display:grid;
-place-items:center;
-border:1px solid var(--line-2);
-border-radius:2px;
+.suite-product-icon{width:32px;
+height:32px;
 color:var(--text-3);
+flex:none;
 }
 .suite-cli-label{font:9px/1.7 var(--mono);
 letter-spacing:.06em;
