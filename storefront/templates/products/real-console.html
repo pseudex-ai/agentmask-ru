@@ -12,6 +12,7 @@
       <button id="real-tab-preview" type="button" role="tab" aria-controls="real-panel-preview" aria-selected="false" tabindex="-1" data-real-tab="preview">Проверка на тексте</button>
       <button id="real-tab-quality" type="button" role="tab" aria-controls="real-panel-quality" aria-selected="false" tabindex="-1" data-real-tab="quality">Детекция и проверка</button>
     </div>
+    <div class="p-real-stage" data-real-stage>
     <figure id="real-panel-policy" class="p-real-panel" role="tabpanel" aria-labelledby="real-tab-policy" data-real-panel="policy">
       <figcaption><div><strong>Ваши правила для разных данных и этапов агентского цикла.</strong><p>Каталог типов, действия «маскировать / скрыть / блокировать / пропускать», выбор шва и проверка на тексте. Сохранение политики защищено от перезаписи чужих изменений.</p></div><a href="{% static 'products/platform/policy.webp' %}?v=clean-shell-7" target="_blank" rel="noopener">Открыть снимок ↗</a></figcaption>
       <div class="p-real-screen" tabindex="0" aria-label="Снимок политики — можно прокрутить"><img src="{% static 'products/platform/policy.webp' %}?v=clean-shell-7" width="3200" height="2248" alt="Настоящий экран политики Pseudex: правила по типам, швы агентского цикла, каталог данных и проверка на тексте"></div>
@@ -34,12 +35,13 @@
     </figure>
     <figure id="real-panel-preview" class="p-real-panel" role="tabpanel" aria-labelledby="real-tab-preview" data-real-panel="preview" hidden>
       <figcaption><div><strong>Проверить правило до сохранения.</strong><p>Настоящий результат проверки на движке: исходный текст, то, что увидит модель, и действие для каждого типа. Синтетический пример; проверка политики не меняет рабочее хранилище подмен.</p></div><a href="{% static 'products/platform/preview.webp' %}?v=clean-shell-7" target="_blank" rel="noopener">Открыть снимок ↗</a></figcaption>
-      <div class="p-real-screen" tabindex="0" aria-label="Снимок проверки текста — можно прокрутить" data-screen-bottom><img src="{% static 'products/platform/preview.webp' %}?v=clean-shell-7" width="1600" alt="Результат настоящей проверки на движке: Анна Орлова и email заменены, номер заказа SR-104 сохранён" loading="lazy"></div>
+      <div class="p-real-screen" tabindex="0" aria-label="Снимок проверки текста — можно прокрутить"><img src="{% static 'products/platform/preview.webp' %}?v=clean-shell-7" width="1600" alt="Результат настоящей проверки на движке: Анна Орлова и email заменены, номер заказа SR-104 сохранён" loading="lazy"></div>
     </figure>
     <figure id="real-panel-quality" class="p-real-panel" role="tabpanel" aria-labelledby="real-tab-quality" data-real-panel="quality" hidden>
       <figcaption><div><strong>Посмотреть, что защищается. Проверить свой пример.</strong><p>Статистика по типам и агентам, таблица задержек движка и проверка стабильности подмен. Счётчики на снимке относятся к демоданным, не к клиентам.</p></div><a href="{% static 'products/platform/quality.webp' %}?v=clean-shell-7" target="_blank" rel="noopener">Открыть снимок ↗</a></figcaption>
       <div class="p-real-screen" tabindex="0" aria-label="Снимок детекции и проверки — можно прокрутить"><img src="{% static 'products/platform/quality.webp' %}?v=clean-shell-7" width="1600" alt="Работающий экран статистики и проверки детекции Pseudex: типы данных, стабильность подмен и задержки" loading="lazy"></div>
     </figure>
+    </div>
     <div class="p-real-console-foot"><span>РЕАЛЬНЫЕ ЭКРАНЫ · ДЕМОНСТРАЦИОННЫЕ ДАННЫЕ</span><p>Снимки интерфейса ветки must-core. Прокручивайте длинные экраны или откройте их в полном размере. «Регрессии» и «Библиотека шаблонов» в меню — следующие этапы, не готовые функции.</p></div>
   </div>
 </section>

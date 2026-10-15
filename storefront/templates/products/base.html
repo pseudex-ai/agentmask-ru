@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% load static %}
 {% block body_class %}product-page{% endblock %}
-{% block head %}<link rel="stylesheet" href="{% static 'products.css' %}?v=fullstack-session-7">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'products.css' %}?v=soft-motion-9">{% endblock %}
 {% block nav %}<nav aria-label="Продукты"><a href="/#products">Продукты</a><a href="/ai-security" {% if product == 'enterprise' %}aria-current="page"{% endif %}>Для компании</a><a href="/ai-coding" {% if product == 'coding' %}aria-current="page"{% endif %}>Для кодинга</a></nav>{% endblock %}
 {% block head_cta %}<div class="head-cta">{% include "_theme_toggle.html" %}<a href="#early-access" class="p-button p-button-small" data-product-cta="header">Ранний доступ <span aria-hidden="true">↗</span></a></div>{% endblock %}
 {% block footer %}<footer class="p-footer"><a href="/" class="brand"><b>pseudex</b></a><span>Возможности ИИ. Защита данных.</span><div><a href="/policy">Политика обработки данных</a><a href="/consent">Согласие</a><a href="mailto:{{ support_email|default:'support@pseudex.ru' }}">Связаться</a></div></footer>{% endblock %}
-{% block script %}<script src="{% static 'products.js' %}?v=fullstack-session-7" defer></script>{% endblock %}
+{% block script %}<script src="{% static 'products.js' %}?v=soft-motion-9" defer></script>{% endblock %}

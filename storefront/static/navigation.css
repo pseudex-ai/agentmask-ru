@@ -1,32 +1,8 @@
-/* Native same-origin document transitions: no click interception, no SPA router,
-   no prefetched private pages and no timer before navigation. Unsupported browsers
-   keep normal links/forms/history. The new page is revealed in staggered bands,
-   like replacing protected fragments, rather than a slow full-screen fade.
-   https://developer.mozilla.org/en-US/docs/Web/CSS/@view-transition */
-@view-transition { navigation: auto; }
-::view-transition-group(root) { animation-duration: 180ms; }
-::view-transition-old(root) {
-  animation: ps-page-mask-out 120ms ease-out both;
-  mix-blend-mode: normal;
-}
-::view-transition-new(root) {
-  animation: ps-page-unmask 180ms cubic-bezier(.2,.7,.2,1) both;
-  mix-blend-mode: normal;
-}
-@keyframes ps-page-mask-out {
-  to { opacity: 0; }
-}
-@keyframes ps-page-unmask {
-  from {
-    opacity: .5;
-    clip-path: polygon(0 0, 26% 0, 26% 25%, 8% 25%, 8% 50%, 20% 50%, 20% 75%, 0 75%, 0 100%, 0 100%);
-  }
-  to {
-    opacity: 1;
-    clip-path: polygon(0 0, 100% 0, 100% 25%, 100% 25%, 100% 50%, 100% 50%, 100% 75%, 100% 75%, 100% 100%, 0 100%);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  @view-transition { navigation: none; }
-  ::view-transition-group(root), ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+/* A quiet cross-browser fade only. No masks, strips, sliding surfaces or
+   delayed requests. The ordinary browser still owns navigation and history. */
+.ps-nav-enter .frame{animation:ps-page-enter 280ms ease-out both;}
+.ps-nav-leave .frame{opacity:.4;transition:opacity 140ms ease-out;}
+@keyframes ps-page-enter{from{opacity:.2;}to{opacity:1;}}
+@media(prefers-reduced-motion:reduce){
+.ps-nav-enter .frame,.ps-nav-leave .frame{animation:none;transition:none;opacity:1;}
 }

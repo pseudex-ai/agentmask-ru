@@ -1325,8 +1325,9 @@ background:color-mix(in srgb,var(--accent) 5%,transparent);
 }
 .p-real-panel{margin:0;
 }
-@keyframes ps-screen-reveal{from{opacity:.6;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
-@media(prefers-reduced-motion:no-preference){.p-real-panel:not([hidden]){animation:ps-screen-reveal 150ms ease-out both;}}
+.p-real-stage{position:relative;overflow:hidden;isolation:isolate;}
+.p-real-ghost{position:absolute;inset:0 0 auto;z-index:2;pointer-events:none;background:var(--panel);}
+.p-real-tabs button{transition:color 240ms,background-color 240ms,border-color 240ms;}
 
 .p-real-panel figcaption{display:flex;
 align-items:center;

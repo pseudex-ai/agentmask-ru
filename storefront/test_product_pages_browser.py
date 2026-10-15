@@ -134,6 +134,8 @@ def main():
             page.wait_for_function('selector => { const img=document.querySelector(selector); return img.complete && img.naturalWidth===3200; }', arg=f'[data-real-panel="{name}"] img')
             check(urlparse(panel.locator('img').get_attribute('src')).path.endswith(name+'.webp'), 'actual local screenshot loaded: '+name)
             check(panel.locator('a[target="_blank"]').count() == 1, 'full-size real screen available: '+name)
+            check(panel.locator('.p-real-screen').evaluate('(e) => e.scrollTop') == 0,
+                  'screen opens at the top, including text preview: '+name)
         page.locator('[data-real-tab="policy"]').focus()
         page.keyboard.press('ArrowRight')
         check(page.locator('[data-real-tab="agents"]').get_attribute('aria-selected') == 'true', 'real screen tabs support keyboard navigation')
@@ -285,17 +287,19 @@ def main():
         page.screenshot(path=str(out/'ai-coding-desktop.png'),full_page=True)
 
         # The site's own navigation, through real links: home -> enterprise ->
-        # coding, and back. navigation.css is the native cross-document
-        # transition, so it must be loaded — not merely present on disk.
+        # coding, and back. The cross-browser paint-only veil must be loaded,
+        # not merely present on disk; ordinary browser links remain native.
         page.goto(base + '/', wait_until='networkidle')
         nav_href = page.locator('link[rel="stylesheet"][href*="navigation.css"]').first.get_attribute('href')
         check(nav_href is not None, 'navigation.css is linked from the document head')
         check(bool(page.evaluate("[...document.styleSheets].some(s => (s.href || '').includes('navigation.css'))")),
               'navigation.css is loaded by the browser, not only referenced')
         nav_css = page.request.get(nav_href if nav_href.startswith('http') else base + nav_href).text()
-        check('@view-transition' in nav_css and 'navigation: auto' in nav_css,
-              'navigation.css declares native same-origin view transitions')
-        check('prefers-reduced-motion' in nav_css and 'animation: none' in nav_css,
+        check('ps-page-enter' in nav_css and '280ms' in nav_css,
+              'navigation.css declares only a soft cross-browser fade')
+        check(page.locator('.ps-page-veil').count() == 0,
+              'stylized navigation masks and bands are removed')
+        check('prefers-reduced-motion' in nav_css and 'animation:none' in nav_css,
               'navigation.css turns the transition off under reduced motion')
         with page.expect_navigation(wait_until='networkidle'):
             page.locator('#products a[href="/ai-security"]').first.click()
@@ -309,6 +313,30 @@ def main():
               'coding nav link returns to the product choice on home')
         page.go_back(wait_until='networkidle')
         check(urlparse(page.url).path == '/ai-coding', 'browser back returns to the coding page')
+
+        # Normal-motion evidence: a stylesheet string is NOT proof an effect ran.
+        # Exercise the soft page fade and simultaneous gallery crossfade.
+        motion_context = browser.new_context(viewport={'width':1440,'height':1000}, reduced_motion='no-preference')
+        motion_context.route('**/*', guard)
+        motion_page = motion_context.new_page()
+        motion_page.on('pageerror', lambda e: errors.append(str(e)))
+        motion_page.goto(base+'/', wait_until='networkidle')
+        with motion_page.expect_navigation(wait_until='domcontentloaded'):
+            motion_page.locator('#products a[href="/ai-security"]').first.click()
+        check(motion_page.evaluate('''() => document.documentElement.classList.contains('ps-nav-enter')
+            && getComputedStyle(document.querySelector('.frame')).animationName === 'ps-page-enter'
+            && getComputedStyle(document.querySelector('.frame')).animationDuration === '0.28s' '''),
+              'normal-motion page navigation really runs the soft opacity fade')
+        motion_page.locator('[data-real-tab="journal"]').click()
+        check(motion_page.locator('.p-real-ghost[aria-hidden="true"]').count() == 1
+              and motion_page.locator('[data-real-panel="journal"]').evaluate('(e) => e.getAnimations().some(a => a.effect.getTiming().duration === 360)'),
+              'normal-motion gallery crossfades the old and new screen simultaneously')
+        for name in ('access','policy','quality','journal'):
+            motion_page.locator(f'[data-real-tab="{name}"]').click()
+        motion_page.wait_for_function('() => !document.querySelector(".p-real-ghost")')
+        check(motion_page.locator('[data-real-panel]:not([hidden])').count() == 1,
+              'rapid gallery changes clean up old screens and leave one active panel')
+        motion_context.close()
 
         for product,path in (('enterprise','/ai-security'),('coding','/ai-coding')):
             page.goto(base+path,wait_until='networkidle')
