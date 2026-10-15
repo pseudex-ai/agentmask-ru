@@ -1325,6 +1325,9 @@ background:color-mix(in srgb,var(--accent) 5%,transparent);
 }
 .p-real-panel{margin:0;
 }
+@keyframes ps-screen-reveal{from{opacity:.6;transform:translateY(4px);}to{opacity:1;transform:translateY(0);}}
+@media(prefers-reduced-motion:no-preference){.p-real-panel:not([hidden]){animation:ps-screen-reveal 150ms ease-out both;}}
+
 .p-real-panel figcaption{display:flex;
 align-items:center;
 justify-content:space-between;

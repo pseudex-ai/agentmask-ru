@@ -1,0 +1,17 @@
+<div class="p-agent-hero" aria-label="Пример защищённой coding-сессии">
+  <div class="p-windowbar"><span class="p-windowdots" aria-hidden="true">● ● ●</span><span>checkout-app / agent session</span><span class="p-tag">СЦЕНАРИЙ</span></div>
+  <div class="p-agent-hero-body">
+    <div class="p-agent-prompt"><span>❯</span><p>Исправь повторное зачисление после webhook. Проверь backend и UI.</p></div>
+    <p class="p-agent-thought">Сопоставлю ошибку в Sentry с обработчиком. Затем воспроизведу retry и добавлю тест.</p>
+    <div class="p-agent-tool"><span class="p-agent-tool-kind">MCP</span><code>sentry.get_issue_details("BILLING-42")</code><span class="p-agent-tool-done">✓</span></div>
+    <div class="p-agent-tool"><span class="p-agent-tool-kind">BASH</span><code>rg -n 'event.id|creditBalance' src/</code><span class="p-agent-tool-done">✓</span></div>
+    <div class="p-agent-tool"><span class="p-agent-tool-kind">READ</span><code>.env.local</code><span class="p-agent-tool-guard">защита</span></div>
+    <div class="p-agent-protected"><div><span>В КОНТЕКСТ МОДЕЛИ</span><span class="p-agent-tool-guard">PSEUDEX</span></div><pre>STRIPE_SECRET_KEY=<mark>[SECRET REMOVED]</mark>
+customer.email=<mark>user-17@example.invalid</mark>
+event.id=evt_demo_104
+retry.count=2</pre></div>
+    <div class="p-agent-tool"><span class="p-agent-tool-kind">PATCH</span><code>webhook.ts · атомарная дедупликация</code><span class="p-agent-tool-done">+ / −</span></div>
+    <div class="p-agent-session-end"><span class="p-dot"></span><p>Агент работает с причиной бага.<br><strong>Не с вашим API-ключом.</strong></p><a href="#coding-demo" aria-label="Разобрать пример coding-сессии">↓</a></div>
+  </div>
+  <div class="p-terminal-ribbon"><span>BASH · API · MCP · КОД</span><span>ЗАЩИТА КОНТЕКСТА</span></div>
+</div>

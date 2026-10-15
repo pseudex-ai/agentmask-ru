@@ -1,0 +1,42 @@
+<section class="p-section" id="coding-demo">
+  <div class="p-section-heading"><div><span class="p-eyebrow">ВЫ ДАЛИ ЗАДАЧУ. АГЕНТ СОБРАЛ КОНТЕКСТ.</span><h2>Один вывод команды —<br><em>и секрет уже в сессии.</em></h2></div><p>Файлы, Bash, ответы API и MCP.<br>Защищать нужно не только то, что вы написали в чат.</p></div>
+  <div class="p-session" data-coding-session>
+    <div class="p-windowbar"><span class="p-windowdots" aria-hidden="true">● ● ●</span><span>checkout-app / исправление webhook</span><span class="p-tag">СЦЕНАРИЙ БЕТЫ</span></div>
+    <div class="p-session-task"><span class="p-session-avatar">Вы</span><p>После повторной доставки webhook баланс пополняется дважды. Найди причину по Sentry, воспроизведи локально, исправь backend и проверь UI. Production не меняй.</p></div>
+    <div class="p-session-layout">
+      <nav class="p-session-timeline" aria-label="Шаги coding-сессии">
+        <span class="p-session-track-title">АГЕНТ · FULLSTACK</span>
+        <button type="button" data-session-step="0" aria-pressed="true"><span class="p-session-index">01</span><span><b>Разобрать инцидент</b><small>MCP · Sentry</small></span></button>
+        <button type="button" data-session-step="1" aria-pressed="false"><span class="p-session-index">02</span><span><b>Найти обработчик</b><small>Bash · grep · Read</small></span></button>
+        <button type="button" data-session-step="2" aria-pressed="false"><span class="p-session-index">03</span><span><b>Проверить конфиг</b><small>Read · .env.local</small></span></button>
+        <button type="button" data-session-step="3" aria-pressed="false"><span class="p-session-index">04</span><span><b>Воспроизвести баг</b><small>Bash · локальный API</small></span></button>
+        <button type="button" data-session-step="4" aria-pressed="false"><span class="p-session-index">05</span><span><b>Внести правку</b><small>apply_patch · TypeScript</small></span></button>
+        <button type="button" data-session-step="5" aria-pressed="false"><span class="p-session-index">06</span><span><b>Прогнать тесты</b><small>Bash · Vitest · Playwright</small></span></button>
+        <button type="button" data-session-step="6" aria-pressed="false"><span class="p-session-index">07</span><span><b>Проверить историю</b><small>Итог · контекст следующего хода</small></span></button>
+      </nav>
+      <div class="p-session-inspector">
+        <div class="p-session-agent"><span class="p-session-avatar p-session-avatar-agent">AI</span><p data-session-agent>Сначала сопоставлю событие, повторную доставку и запись в балансе. Запрошу детали ошибки через MCP.</p></div>
+        <div class="p-session-command"><span data-session-tool>MCP · Sentry</span><code data-session-command>get_issue_details({ issueId: "BILLING-42" })</code></div>
+        <div class="p-session-mode"><span>ЧТО ПОПАДАЕТ К МОДЕЛИ</span><div class="p-segmented" role="group" aria-label="Защита coding-сессии"><button type="button" data-session-mode="raw" aria-pressed="false">Без защиты</button><button type="button" data-session-mode="protected" aria-pressed="true">С Pseudex</button></div></div>
+        <div class="p-session-panes" data-session-panes>
+          <div><div class="p-session-pane-label"><span class="p-dot"></span><span data-session-local-label>Ответ инструмента в вашем контуре</span></div><pre data-session-local>issue: BILLING-42
+error: duplicate ledger credit
+customer: anna@customer.example
+host: billing.atlas.internal
+source: /Users/marina/work/atlas/src/billing.ts
+event: evt_demo_104 · deliveries: 2</pre></div>
+          <div class="p-session-model"><div class="p-session-pane-label"><span class="p-dot p-dot-purple"></span><span data-session-model-label>Контекст модели · после защиты</span></div><pre data-session-model>issue: BILLING-42
+error: duplicate ledger credit
+customer: user-17@example.invalid
+host: service-01.internal.invalid
+source: /workspace/project-01/src/billing.ts
+event: evt_demo_104 · deliveries: 2</pre></div>
+        </div>
+        <div class="p-session-verdict" role="status" aria-live="polite"><span class="p-session-shield" aria-hidden="true">◇</span><div><strong data-session-title>MCP приносит не только ошибку, но и данные клиента.</strong><p data-session-description>В этом сценарии почта, внутренний адрес и личный путь заменены. Тип ошибки, event ID и повторная доставка остаются понятными модели.</p></div></div>
+        <div class="p-session-controls"><button type="button" class="p-link" data-session-reset>С начала ↺</button><span data-session-counter>01 / 07</span><button type="button" class="p-button p-button-small" data-session-next>Следующий шаг →</button></div>
+      </div>
+    </div>
+    <div class="p-session-edge"><button type="button" class="p-link" data-session-edge>А если агент подставит секрет в Bash? ↗</button><span data-session-edge-result role="status" aria-live="polite"></span></div>
+    <div class="p-session-foot"><span>ДЕМОНСТРАЦИЯ СЦЕНАРИЯ · НЕ LIVE-СЕССИЯ</span><p>Адаптация рабочих сценариев <a href="https://blog.sentry.io/agents-need-production-context/" target="_blank" rel="noopener noreferrer">Sentry MCP</a>, <a href="https://code.claude.com/docs/en/common-workflows" target="_blank" rel="noopener noreferrer">Claude Code</a> и <a href="https://docs.stripe.com/webhooks#handle-duplicate-events" target="_blank" rel="noopener noreferrer">Stripe webhooks</a>. Данные, команды и результаты иллюстративные; ничего не исполняется. Покрытие каждого инструмента и политики проверяем в пилоте.</p></div>
+  </div>
+</section>

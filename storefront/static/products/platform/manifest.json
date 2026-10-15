@@ -1,66 +1,66 @@
 {
   "source_branch": "feat/must-core",
-  "source_commit": "f0de8b91eb4ce34486a10440d1e65d493f9cf1ca",
+  "source_commit": "b18d352dd846b6f752a8e15268bd617d8ee2cee9",
   "captured": "2026-10-15",
   "runtime": "dev_platform_demo.py; fresh temporary SQLCipher volume; real licensed engine + localui; loopback :8000/:8081; PSEUDEX_PROFILE=1",
   "fixtures": "3 invented service cards with separate keys and named traffic; 5 users including bootstrap, security/integration/observer demo users and explicit grants; 54 mask requests (42 protected, 12 ordinary context unchanged), 6 actual secret-policy refusals, 11 verified restorations; no provider key or model calls",
-  "screenshots": "Unedited Chromium renders; 1600 CSS pixels at deviceScaleFactor=2 (3200 physical pixels). Graphite/violet tokens and icons are in the real app, not an image filter. Actual #demo banner shown. Integration viewport-only, others full-page. Lossless WebP.",
+  "screenshots": "Unedited Chromium renders; 1600 CSS pixels at deviceScaleFactor=2. Real graphite UI, unboxed header, flush first navigation item; no internal demo banner. Synthetic fixtures identified in gallery caption and manifest. Integration viewport-only, others full-page; lossless WebP.",
   "screens": [
     {
       "screen": "policy",
       "width": 3200,
-      "height": 2338,
-      "source_png_sha256": "fd0444d2697141f31e7b7c139074d9bb05a71ca8c369c6f6072361e7a72a212b",
-      "webp_sha256": "cbf1af9a0d5f19502535583c9034477b9febaab48000621e70f8fe2692561617",
-      "bytes": 142102
+      "height": 2248,
+      "source_png_sha256": "d9e815e7d0df92a1ee2c5560f202bfa67164c6b98fec4df49535f9cdf4db9ec2",
+      "webp_sha256": "fa7857e159d1ab433d8c20e6acf658304451ea0ceb8e62613ca5b9e7cec2eaa0",
+      "bytes": 130618
     },
     {
       "screen": "agents",
       "width": 3200,
       "height": 2100,
-      "source_png_sha256": "e2d8443f5387b06c8d5c82e113d9962c14bbea73258084592fd754e651bc2fd5",
-      "webp_sha256": "06b9ae56d256ef206d293507050830ac509910cf17a098ea87d6a6e2d1474051",
-      "bytes": 88266
+      "source_png_sha256": "1ae5f58b04a41a4b95586489de43ed0ec18e50f3b5122038b02bf17f1fa43c11",
+      "webp_sha256": "ccfb886d69416b9f3e2f4579140d2b50b94beec05894df584e90b29c60133814",
+      "bytes": 81148
     },
     {
       "screen": "access",
       "width": 3200,
-      "height": 2270,
-      "source_png_sha256": "2eed0a72fb1b13ab8e171fdfbe9238391d7e871ec8af677ccce057961ac6e28a",
-      "webp_sha256": "548ba076b7a740c95a165c935482729986b6df58786751248f11642294093e80",
-      "bytes": 101514
+      "height": 2178,
+      "source_png_sha256": "bed24f199fc9ca9046edd5f95567a5ebf9c65e24c376a572c69adb3412ea4bce",
+      "webp_sha256": "5cfcbeadbdd56733de23e19d6dc77c9a687ec2a9b49feb1372db8b36c66a12de",
+      "bytes": 94578
     },
     {
       "screen": "journal",
       "width": 3200,
-      "height": 3602,
-      "source_png_sha256": "2dae9f033646fc0cf9d4f73781f9f11779ec3bdf6fc7608845c378f294cc81b2",
-      "webp_sha256": "c24aaaea45d9ecfa12fc3645ac9e2a8b84b50c46cdee96ef8c7dba69122e7505",
-      "bytes": 122672
+      "height": 3510,
+      "source_png_sha256": "60e83392834c26625d499fe790b9a69463a145e3ef11e015b5f15dad21780af0",
+      "webp_sha256": "19c8ea399c75047be38666ea2e241fb3cd2b7c211d69c59cccd0b58a018f2326",
+      "bytes": 113844
     },
     {
       "screen": "integration",
       "width": 3200,
       "height": 2100,
-      "source_png_sha256": "117e7fc9364c1ac6e2f784350ac5b5215b22e8bbe60d5b95fe0440918bd0a78f",
-      "webp_sha256": "d0d62472931ca3737b13978c44085f89591b76059386553116faf30d0f6dc807",
-      "bytes": 138282
+      "source_png_sha256": "92d419c88b3588898fee884a868da1b6cc664de7d1c32f645b19a810f7cd9799",
+      "webp_sha256": "a02fed2162b40984fa3385451f580bd5a18d7adf350a4a016d6f6a7d0f962f15",
+      "bytes": 128830
     },
     {
       "screen": "preview",
       "width": 3200,
-      "height": 2702,
-      "source_png_sha256": "725cf339333330b161ce22b824fda081d8edd6f769afd31a239c5162ffc2c090",
-      "webp_sha256": "68f7b349616d34739a988265c604ee750b600940c8cd399ea31f1b2b8af26e61",
-      "bytes": 148040
+      "height": 2610,
+      "source_png_sha256": "18b095320365a078082d91331d9f57373e6baa51879dac64b4e7a6123685211a",
+      "webp_sha256": "0875185c4637a3ee67f74d2420bb691ffd9f044855c545751a659f960ac1ff1b",
+      "bytes": 141692
     },
     {
       "screen": "quality",
       "width": 3200,
-      "height": 3882,
-      "source_png_sha256": "526733bd58e2fd16364e1fd9f7f6abe53223be3d45e147cefc3ad619efaec53e",
-      "webp_sha256": "c7d537d41abd9ed8d586011395d4c48f5c8a67cf67c36dbb41a6b6c1dd7f56e7",
-      "bytes": 191868
+      "height": 3792,
+      "source_png_sha256": "fe983d985ee09667199c9fa54dbdfbfd5270889359ecc0863847db02fa290f84",
+      "webp_sha256": "b4ba371e828da73de6759b70646ca9bf33994fb7cfb5d4dfac041d540dee0fb8",
+      "bytes": 184458
     }
   ],
   "observed_counters": {
