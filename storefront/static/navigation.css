@@ -1,0 +1,8 @@
+/* A quiet cross-browser fade only. No masks, strips, sliding surfaces or
+   delayed requests. The ordinary browser still owns navigation and history. */
+.ps-nav-enter .frame{animation:ps-page-enter 280ms ease-out both;}
+.ps-nav-leave .frame{opacity:.4;transition:opacity 140ms ease-out;}
+@keyframes ps-page-enter{from{opacity:.2;}to{opacity:1;}}
+@media(prefers-reduced-motion:reduce){
+.ps-nav-enter .frame,.ps-nav-leave .frame{animation:none;transition:none;opacity:1;}
+}

@@ -1,0 +1,47 @@
+{% load static %}
+<section id="console" class="p-section">
+  <div class="p-section-heading"><div><span class="p-eyebrow">НАСТОЯЩИЙ ИНТЕРФЕЙС ПЛАТФОРМЫ</span><h2>Не концепт.<br>Работающая бета в вашем контуре.</h2></div><p>Политики, подключённые сервисы, доступ и детекция.<br>Посмотрите реальные экраны платформы.</p></div>
+  <div class="p-real-console" data-real-console>
+    <div class="p-real-console-bar"><span class="p-dot"></span><span>СНЯТО С РАБОТАЮЩЕГО СТЕНДА</span><span class="p-tag">BETA · FEAT/MUST-CORE</span></div>
+    <div class="p-real-tabs" role="tablist" aria-label="Экраны настоящей платформы">
+      <button id="real-tab-policy" type="button" role="tab" aria-controls="real-panel-policy" aria-selected="true" data-real-tab="policy">Политики</button>
+      <button id="real-tab-agents" type="button" role="tab" aria-controls="real-panel-agents" aria-selected="false" tabindex="-1" data-real-tab="agents">Агенты и сервисы</button>
+      <button id="real-tab-access" type="button" role="tab" aria-controls="real-panel-access" aria-selected="false" tabindex="-1" data-real-tab="access">Доступ</button>
+      <button id="real-tab-journal" type="button" role="tab" aria-controls="real-panel-journal" aria-selected="false" tabindex="-1" data-real-tab="journal">Журнал</button>
+      <button id="real-tab-integration" type="button" role="tab" aria-controls="real-panel-integration" aria-selected="false" tabindex="-1" data-real-tab="integration">Интеграция</button>
+      <button id="real-tab-preview" type="button" role="tab" aria-controls="real-panel-preview" aria-selected="false" tabindex="-1" data-real-tab="preview">Проверка на тексте</button>
+      <button id="real-tab-quality" type="button" role="tab" aria-controls="real-panel-quality" aria-selected="false" tabindex="-1" data-real-tab="quality">Детекция и проверка</button>
+    </div>
+    <div class="p-real-stage" data-real-stage>
+    <figure id="real-panel-policy" class="p-real-panel" role="tabpanel" aria-labelledby="real-tab-policy" data-real-panel="policy">
+      <figcaption><div><strong>Ваши правила для разных данных и этапов агентского цикла.</strong><p>Каталог типов, действия «маскировать / скрыть / блокировать / пропускать», выбор шва и проверка на тексте. Сохранение политики защищено от перезаписи чужих изменений.</p></div><a href="{% static 'products/platform/policy.webp' %}?v=clean-shell-7" target="_blank" rel="noopener">Открыть снимок ↗</a></figcaption>
+      <div class="p-real-screen" tabindex="0" aria-label="Снимок политики — можно прокрутить"><img src="{% static 'products/platform/policy.webp' %}?v=clean-shell-7" width="3200" height="2248" alt="Настоящий экран политики Pseudex: правила по типам, швы агентского цикла, каталог данных и проверка на тексте"></div>
+    </figure>
+    <figure id="real-panel-agents" class="p-real-panel" role="tabpanel" aria-labelledby="real-tab-agents" data-real-panel="agents" hidden>
+      <figcaption><div><strong>Один контур. Несколько агентов и сервисов.</strong><p>Карточки подключений, отдельные ключи, привязка к проекту и отзыв доступа. В списке нет самих ключей — они показываются только при создании.</p></div><a href="{% static 'products/platform/agents.webp' %}?v=clean-shell-7" target="_blank" rel="noopener">Открыть снимок ↗</a></figcaption>
+      <div class="p-real-screen" tabindex="0" aria-label="Снимок агентов и сервисов"><img src="{% static 'products/platform/agents.webp' %}?v=clean-shell-7" width="1600" alt="Настоящие карточки подключений Pseudex: поддержка, HR-ассистент и внутренняя база знаний" loading="lazy"></div>
+    </figure>
+    <figure id="real-panel-access" class="p-real-panel" role="tabpanel" aria-labelledby="real-tab-access" data-real-panel="access" hidden>
+      <figcaption><div><strong>Право управлять — не право видеть все оригиналы.</strong><p>Именованные учётные записи, роли и отдельные разрешения. Раскрытие данных выключено по умолчанию даже у именованного администратора.</p></div><a href="{% static 'products/platform/access.webp' %}?v=clean-shell-7" target="_blank" rel="noopener">Открыть снимок ↗</a></figcaption>
+      <div class="p-real-screen" tabindex="0" aria-label="Снимок управления доступом"><img src="{% static 'products/platform/access.webp' %}?v=clean-shell-7" width="1600" alt="Реальный экран доступа Pseudex: администратор, пользователь и отдельные права" loading="lazy"></div>
+    </figure>
+    <figure id="real-panel-journal" class="p-real-panel" role="tabpanel" aria-labelledby="real-tab-journal" data-real-panel="journal" hidden>
+      <figcaption><div><strong>Разобраться в решении, не раскрывая оригинал.</strong><p>Решения политики, фильтры по типам и агентам, подмены и защищённый предпросмотр исходного значения. На снимке — события синтетического трафика локального стенда.</p></div><a href="{% static 'products/platform/journal.webp' %}?v=clean-shell-7" target="_blank" rel="noopener">Открыть снимок ↗</a></figcaption>
+      <div class="p-real-screen" tabindex="0" aria-label="Снимок журнала — можно прокрутить"><img src="{% static 'products/platform/journal.webp' %}?v=clean-shell-7" width="1600" alt="Настоящий журнал Pseudex с решениями политики и событиями маскирования синтетических данных" loading="lazy"></div>
+    </figure>
+    <figure id="real-panel-integration" class="p-real-panel" role="tabpanel" aria-labelledby="real-tab-integration" data-real-panel="integration" hidden>
+      <figcaption><div><strong>Встроиться в существующую инфраструктуру.</strong><p>Настройка фиксированного upstream, ссылка на секрет вместо самого ключа, адрес sidecar и примеры интеграции. Маршрутизация между моделями остаётся у вашего шлюза.</p></div><a href="{% static 'products/platform/integration.webp' %}?v=clean-shell-7" target="_blank" rel="noopener">Открыть снимок ↗</a></figcaption>
+      <div class="p-real-screen" tabindex="0" aria-label="Снимок интеграции — можно прокрутить"><img src="{% static 'products/platform/integration.webp' %}?v=clean-shell-7" width="1600" alt="Настоящий экран интеграции Pseudex: fixed upstream, ссылка на credential и пример подключения sidecar" loading="lazy"></div>
+    </figure>
+    <figure id="real-panel-preview" class="p-real-panel" role="tabpanel" aria-labelledby="real-tab-preview" data-real-panel="preview" hidden>
+      <figcaption><div><strong>Проверить правило до сохранения.</strong><p>Настоящий результат проверки на движке: исходный текст, то, что увидит модель, и действие для каждого типа. Синтетический пример; проверка политики не меняет рабочее хранилище подмен.</p></div><a href="{% static 'products/platform/preview.webp' %}?v=clean-shell-7" target="_blank" rel="noopener">Открыть снимок ↗</a></figcaption>
+      <div class="p-real-screen" tabindex="0" aria-label="Снимок проверки текста — можно прокрутить"><img src="{% static 'products/platform/preview.webp' %}?v=clean-shell-7" width="1600" alt="Результат настоящей проверки на движке: Анна Орлова и email заменены, номер заказа SR-104 сохранён" loading="lazy"></div>
+    </figure>
+    <figure id="real-panel-quality" class="p-real-panel" role="tabpanel" aria-labelledby="real-tab-quality" data-real-panel="quality" hidden>
+      <figcaption><div><strong>Посмотреть, что защищается. Проверить свой пример.</strong><p>Статистика по типам и агентам, таблица задержек движка и проверка стабильности подмен. Счётчики на снимке относятся к демоданным, не к клиентам.</p></div><a href="{% static 'products/platform/quality.webp' %}?v=clean-shell-7" target="_blank" rel="noopener">Открыть снимок ↗</a></figcaption>
+      <div class="p-real-screen" tabindex="0" aria-label="Снимок детекции и проверки — можно прокрутить"><img src="{% static 'products/platform/quality.webp' %}?v=clean-shell-7" width="1600" alt="Работающий экран статистики и проверки детекции Pseudex: типы данных, стабильность подмен и задержки" loading="lazy"></div>
+    </figure>
+    </div>
+    <div class="p-real-console-foot"><span>РЕАЛЬНЫЕ ЭКРАНЫ · ДЕМОНСТРАЦИОННЫЕ ДАННЫЕ</span><p>Снимки интерфейса ветки must-core. Прокручивайте длинные экраны или откройте их в полном размере. «Регрессии» и «Библиотека шаблонов» в меню — следующие этапы, не готовые функции.</p></div>
+  </div>
+</section>

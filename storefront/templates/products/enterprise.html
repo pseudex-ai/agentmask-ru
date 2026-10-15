@@ -1,0 +1,31 @@
+{% extends "products/base.html" %}
+{% block content %}
+<main data-product="enterprise">
+<section class="p-hero p-hero-enterprise">
+  <div class="p-eyebrow"><span class="p-dot"></span> PSEUDEX AI SECURITY <span class="p-pill">BETA · РАННИЙ ДОСТУП</span></div>
+  <div class="p-hero-grid">
+    <div><h1>Ваша команда<br>уже использует ИИ.<br><em>Раскройте его<br>возможности.</em></h1><p class="p-lead">Используйте передовые модели в реальной работе команды — с защитой клиентских данных, внутренних документов и ключей доступа. Pseudex помогает подключать новые ИИ-сценарии по вашим правилам, в вашем контуре.</p><div class="p-actions"><a class="p-button" href="#early-access" data-product-cta="hero">Обсудить пилот <span aria-hidden="true">↗</span></a><a class="p-link" href="#console">Посмотреть интерфейс <span aria-hidden="true">↓</span></a></div><p class="p-caption">Для ИБ, руководителей ИТ и команд, внедряющих ИИ</p></div>
+    <div class="p-boundary" aria-label="Приложения передают данные в модель через правила Pseudex">
+      <div class="p-boundary-title"><span>ВАШ КОНТУР</span><span class="p-tag">ON-PREMISE</span></div>
+      <div class="p-sources"><div><span class="p-node-icon">↗</span> Внутренний ассистент</div><div><span class="p-node-icon">◫</span> Клиентский сервис</div><div><span class="p-node-icon">⌘</span> ИИ-агенты</div></div>
+      <div class="p-connector-lines" aria-hidden="true"><i></i><i></i><i></i></div>
+      <div class="p-gateway"><svg viewBox="0 0 32 32" width="36" height="36" aria-hidden="true"><rect x="3" y="11" width="18" height="18" rx="5" fill="currentColor"/><rect x="11" y="3" width="18" height="18" rx="5" fill="var(--panel)" stroke="currentColor" stroke-width="2"/></svg><div><strong>pseudex</strong><span>Политики · подмена · контроль</span></div><span class="p-pulse" aria-hidden="true"></span></div>
+      <div class="p-boundary-result"><span class="p-check">✓</span> Найденные ПД → подмена <span class="p-cross">×</span> Секреты → блокировка</div>
+      <div class="p-model-providers" role="img" aria-label="Модели на ваш выбор: Claude, ChatGPT, Google Gemini"><div class="p-model-provider" aria-hidden="true"><span class="p-brand-logo p-brand-claude"></span></div><div class="p-model-provider" aria-hidden="true"><span class="p-brand-logo p-brand-codex"></span></div><div class="p-model-provider" aria-hidden="true"><span class="p-brand-logo p-brand-google"></span></div></div><p class="p-model-caption">Выбранная модель получает только разрешённый контекст</p>
+      <p class="p-micro">Схема целевого контура. Защита применяется к подключённым каналам.</p>
+    </div>
+  </div>
+</section>
+<div class="p-principles"><span><b>01</b> Данные остаются под вашим контролем</span><span><b>02</b> Правила видны, а не спрятаны в коде</span><span><b>03</b> Решения можно объяснить</span></div>
+{% include "products/real-console.html" %}
+<section class="p-section p-value-section" id="capabilities"><div class="p-section-heading"><div><span class="p-eyebrow">ОДИН СЛОЙ. НЕ ЕЩЁ ОДИН НАБОР ФИЛЬТРОВ.</span><h2>ИИ работает.<br>Правила задаёте вы.</h2></div></div><div class="p-value-grid">
+  <article><span class="p-feature-icon">◈</span><h3>Свои правила для каждого сервиса</h3><p>Подменять персональные данные, блокировать секреты, назначать политику подключённому приложению.</p><span class="p-feature-state">ЯДРО БЕТЫ</span></article>
+  <article><span class="p-feature-icon">⌑</span><h3>Доступ без «видеть всё»</h3><p>Раздельные права на управление и раскрытие значений. Настройки сохраняются, действия имеют автора.</p><span class="p-feature-state">ЯДРО БЕТЫ</span></article>
+  <article><span class="p-feature-icon">⇄</span><h3>Агент не теряет реальные данные</h3><p>Модель работает с подменами. Разрешённый инструмент получает настоящие значения — там, где они нужны.</p><span class="p-feature-state">БАЗОВОЕ ЯДРО PSEUDEX</span></article>
+  <article><span class="p-feature-icon">▤</span><h3>Объяснение каждого решения</h3><p>Что обнаружено, какое правило сработало, почему запрос продолжен или остановлен. Без сырых значений в журнале.</p><span class="p-feature-state">ЯДРО БЕТЫ</span></article>
+</div></section>
+<section class="p-section p-deployment"><div><span class="p-eyebrow">ВАШ КОНТУР — ВАШИ ДАННЫЕ</span><h2>Не нужно доверять нам<br>то, что вы защищаете.</h2><p>Движок, хранилище соответствий и консоль размещаются у вас. Облачная модель получает подготовленный контекст, а не доступ к хранилищу подмен.</p><a href="/architecture" class="p-link">Архитектура для безопасника <span aria-hidden="true">↗</span></a></div><div class="p-deployment-map"><div><span>В ВАШЕМ КОНТУРЕ</span><strong>Приложения + Pseudex + Vault</strong><small>Настоящие данные и настройки</small></div><span class="p-map-arrow" aria-hidden="true">↓</span><div class="p-deployment-out"><span>ЗА ГРАНИЦЕЙ КОНТУРА</span><strong>Выбранная вами LLM</strong><small>Разрешённый контекст с подменами</small></div></div></section>
+<section class="p-section p-roadmap"><div><span class="p-eyebrow">БЕТА, КОТОРУЮ МОЖНО ОБСУДИТЬ ПРЕДМЕТНО</span><h2>Начнём с вашего<br>реального сценария.</h2><p>На пилоте согласуем приложения, правила и критерии приёмки. Не обещаем заменить всю систему ИБ одним шлюзом.</p></div><div class="p-roadmap-list"><div><span class="p-status">В ядре беты</span><p>Политики, приложения, права доступа, журнал, хранилище соответствий, песочница проверки.</p></div><div><span class="p-status p-status-next">Следующие этапы</span><p>Согласование действий человеком, документы, корпоративный SSO и интеграции с DLP/SIEM — обсуждаем в рамках пилота, не заявляем готовыми.</p></div></div></section>
+{% include "products/interest.html" %}
+</main>
+{% endblock %}

@@ -1,0 +1,18 @@
+/* Scroll makes the three gateway legs read as one circuit. Nothing is pinned,
+   hidden, timed, submitted or portrayed as live traffic. The full route is the
+   static fallback; JS only adds a bounded, viewport-driven reading emphasis. */
+#how .mx-route-grid{position:relative;--route-progress:1;}
+#how .mx-route-grid::before,#how .mx-route-grid::after{content:"";position:absolute;top:-17px;left:0;right:0;height:1px;background:var(--line);pointer-events:none;}
+#how .mx-route-grid::after{background:var(--accent);transform:scaleX(var(--route-progress));transform-origin:0 50%;}
+#how .mx-route-grid>div{position:relative;transition:opacity .65s,transform .65s,box-shadow .3s;}
+#how .mx-route-grid>div::before{content:"";position:absolute;top:-21px;left:26px;width:7px;height:7px;border:1px solid var(--accent);border-radius:2px;background:var(--bg);pointer-events:none;transition:background .3s,box-shadow .3s;}
+#how .mx-route-grid>div.is-route-done::before,#how .mx-route-grid>div.is-route-current::before{background:var(--accent);}
+#how .mx-route-grid>div.is-route-current::before{box-shadow:0 0 0 4px var(--accent-bg);}
+#how .mx-route-grid>div.is-route-current{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 48%,var(--line));}
+#how a:focus-visible{outline:1px solid var(--accent);outline-offset:4px;}
+@media(max-width:760px){
+#how .mx-route-grid::before,#how .mx-route-grid::after{top:0;bottom:0;right:auto;left:-9px;width:1px;height:auto;}
+#how .mx-route-grid::after{transform:scaleY(var(--route-progress));transform-origin:50% 0;}
+#how .mx-route-grid>div::before{top:28px;left:-13px;}
+}
+@media(prefers-reduced-motion:reduce){#how .mx-route-grid>div,#how .mx-route-grid>div::before{transition:none;}}

@@ -13,7 +13,7 @@ from django.urls import include, path, re_path
 
 from django_otp.admin import OTPAdminSite
 
-from storefront_web import views
+from storefront_web import products, views
 from ops import acquisition_views
 
 # Второй фактор на входе в админку. Меняем КЛАСС уже собранного admin.site, а не
@@ -32,6 +32,10 @@ admin.site.index_title = "Операции"
 urlpatterns = [
     path("", views.landing, name="landing"),
     path("signup", views.signup, name="signup"),
+    # Beta contact requests are not signup, payment, or feature-vote analytics.
+    path("ai-security", products.enterprise, name="ai_security"),
+    path("ai-coding", products.coding, name="ai_coding"),
+    path("products/interest", products.interest, name="product_interest"),
     path("analytics/prepare", acquisition_views.prepare, name="analytics_prepare"),
     path("analytics/grant", acquisition_views.grant, name="analytics_grant"),
     path("analytics/revoke", acquisition_views.revoke, name="analytics_revoke"),
@@ -139,6 +143,11 @@ urlpatterns = [
     # ОПЕРАТОРСКАЯ КОНСОЛЬ — СОСЕД АДМИНКИ, а не отдельный угадываемый путь.
     # Она показывает всех клиентов разом, поэтому обязана наследовать то же
     # свойство: путь настраивается, и на угадывании его не найти.
+    # The console's <org_id>/ would swallow the ops model's admin changelist.
+    # Only this exact model prefix takes precedence, with Django's normal
+    # ModelAdmin wrappers (OTP site gate, CSRF and per-model permissions).
+    path(f"{settings.ADMIN_PATH}/ops/productinterest/",
+         include(admin.site._registry[products.ProductInterest].urls)),
     path(f"{settings.ADMIN_PATH}/ops/", include("ops.urls")),
     path(f"{settings.ADMIN_PATH}/", admin.site.urls),
 ]

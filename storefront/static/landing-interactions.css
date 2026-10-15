@@ -1,0 +1,28 @@
+/* Keep the approved lift. Directional accent edges are owned by landing-edge;
+   do not add a competing permanent left/top hover stripe here. */
+@media(hover:hover) and (pointer:fine) and (prefers-reduced-motion:no-preference){
+body.v2 :is(#top,#demo,#coverage,#pricing,#how,#start) .cards>:hover:not(.cfg-item):is(:not(.reveal-item),.is-in){transform:translateY(-3px);}
+}
+@media(hover:hover) and (pointer:fine){
+#top .metric:hover .metric-label{color:var(--accent);}
+body.v2 #coverage .cards>*:hover span:not(.directional-edge){background:var(--panel-2);box-shadow:inset 0 0 0 1px var(--line-2);}
+#start .planpick:not([open]) summary:hover{border-color:var(--edge);}
+body.v2 #setup [role="tab"]:not([aria-selected="true"]):hover{color:var(--text-2);}
+#znaniya .kb-teaser>a:hover .card-go{transform:translateX(4px);}
+#faq details>summary:hover .faq-mark::after{color:var(--accent);}
+}
+/* Keyboard focus stays visible without moving input or changing selection. */
+#start #signup-form input[type="email"]:focus,#start #signup-form input[type="text"]:focus{box-shadow:inset 0 0 0 1px var(--accent);}
+#start .pp-item:focus-within{box-shadow:inset 0 0 0 1px var(--accent);}
+#faq details>summary:focus-visible{outline:1px solid var(--accent);outline-offset:-2px;}
+#faq details>summary:focus-visible .faq-mark::after{color:var(--accent);}
+/* All pricing CTAs, including the featured working plan, share this response. */
+#pricing :is(.hv-btn,.hv-btn-glow),#start .hv-btn-glow{background-image:linear-gradient(var(--accent-bg),var(--accent-bg));background-repeat:no-repeat;background-size:0% 100%;transition:background-size .28s ease,border-color .22s,color .22s;}
+@media(hover:hover) and (pointer:fine){#pricing :is(.hv-btn,.hv-btn-glow):hover,#start .hv-btn-glow:hover{background-color:transparent;background-size:100% 100%;}}
+#pricing :is(.hv-btn,.hv-btn-glow):focus-visible,#start .hv-btn-glow:focus-visible{background-size:100% 100%;outline:1px solid var(--accent);outline-offset:3px;}
+#znaniya .card-go{transition:transform .24s cubic-bezier(.2,.7,.2,1);}
+#znaniya .kb-teaser>a:focus-visible .card-go{transform:translateX(4px);}
+@media(prefers-reduced-motion:reduce){
+#znaniya .card-go,#pricing :is(.hv-btn,.hv-btn-glow),#start .hv-btn-glow{transition:none;}
+body.v2 #znaniya .kb-teaser>a:hover .card-go,body.v2 #znaniya .kb-teaser>a:focus-visible .card-go{transform:none;}
+}

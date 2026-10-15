@@ -20,7 +20,7 @@
 рекламы и писем, — а поисковик считает такой адрес ОТДЕЛЬНОЙ страницей: наша
 собственная реклама плодила бы дубли главной. Домен берётся из настройки, иначе
 робот со стенда ушёл бы индексировать прод.{% endcomment %}
-<link rel="canonical" href="{{ site_url }}{{ request.path }}">
+<link rel="canonical" href="{{ site_url }}{{ canonical_path|default:request.path }}">
 {% comment %}ЧТО ИНДЕКСИРОВАТЬ, РЕШАЕТСЯ В ОДНОМ МЕСТЕ — рядом с тем же
 решением про аналитику. Кабинет, админка и экраны входа не должны попадать в
 выдачу: там на экране ключи, суммы счетов и чужие названия, а от страницы входа
@@ -55,7 +55,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="pseudex">
 <meta property="og:locale" content="ru_RU">
-<meta property="og:url" content="{{ site_url }}{{ request.path }}">
+<meta property="og:url" content="{{ site_url }}{{ canonical_path|default:request.path }}">
 <meta property="og:title" content="{{ ttl }}">
 <meta property="og:description" content="{{ descr }}">
 <meta property="og:image" content="{{ site_url }}{% static 'og-cover.png' %}">
@@ -87,6 +87,8 @@
    именно из-за него переключатель темы перестают включать.{% endcomment %}
 <script src="{% static 'theme.js' %}"></script>
 <link rel="stylesheet" href="{% static 'site.css' %}">
+<link rel="stylesheet" href="{% static 'navigation.css' %}?v=3">
+<script src="{% static 'navigation.js' %}?v=3"></script>
 {% block head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">

@@ -1,0 +1,53 @@
+/* Persistent paper stack. Real 3D depth sorting, not a z-index visibility cut.
+   Hero copy uses the full left column; no particles, glow or toolbar. */
+#top{user-select:none;-webkit-user-select:none;}
+.mx-hero #hero-panel.hero-stack-shell{border:0!important;background:none!important;box-shadow:none;min-height:0!important;}
+#hero-panel.hero-stack-shell>div:last-child:not(.hero-real-stack){border-top:0!important;padding:4px 18px 12px!important;}
+#hero-dialog.hero-real-stack{position:relative;display:grid;isolation:auto;transform-style:preserve-3d;perspective:1400px;min-width:0;min-height:0;margin-top:64px;padding:0 0 142px!important;}
+.hero-stack-card{grid-area:1/1;align-self:stretch;display:flex;min-width:0;padding:18px;border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line));border-radius:2px;background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 4%,var(--panel)),var(--panel) 70%);box-shadow:0 24px 60px #00000025;transform-origin:50% 45%;backface-visibility:hidden;}
+.hero-stack-card:not(.is-front){pointer-events:none;}
+.hero-stack-card::before{content:"";position:absolute;inset:7px;pointer-events:none;color:var(--accent);opacity:.4;background:linear-gradient(currentColor,currentColor) top left/11px 1px,linear-gradient(currentColor,currentColor) top left/1px 11px,linear-gradient(currentColor,currentColor) top right/11px 1px,linear-gradient(currentColor,currentColor) top right/1px 11px,linear-gradient(currentColor,currentColor) bottom left/11px 1px,linear-gradient(currentColor,currentColor) bottom left/1px 11px,linear-gradient(currentColor,currentColor) bottom right/11px 1px,linear-gradient(currentColor,currentColor) bottom right/1px 11px;background-repeat:no-repeat;}
+.hero-stack-card.is-front{cursor:grab;touch-action:pan-y pinch-zoom;}
+.hero-stack-card.is-grabbed{cursor:grabbing!important;}
+.hero-sheet-tag[data-sheet-grip]{touch-action:none;cursor:grab;}
+.hero-real-stack.is-dragging .hero-sheet-tag{cursor:grabbing;}
+.motion-ready .mx-hero #hero-panel.hero-stack-shell{transform:none;}
+.hero-stack-card.is-front:focus-visible{outline:2px solid var(--accent);outline-offset:4px;}
+.hero-real-stack.is-dealing .hero-stack-card{cursor:default;}
+.hero-stack-help{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;pointer-events:none;}
+.hero-deck-sheet{display:flex;flex-direction:column;gap:17px;min-height:330px;min-width:0;width:100%;}
+.hero-sheet-tag{display:flex;justify-content:space-between;gap:15px;color:var(--dim-2);font:8px/1.6 var(--mono);letter-spacing:.13em;}
+.hero-sheet-tag>span:last-child{color:var(--accent);}
+.hero-sheet-title{font:600 clamp(19px,1.6vw,24px)/1.2 Inter,system-ui,sans-serif;letter-spacing:-.025em;margin:0;max-width:28ch;color:var(--text);}
+.hero-sheet-source{font:8.5px/1.6 var(--mono);letter-spacing:.12em;color:var(--dim-2);}
+.hero-sheet-message{font:13px/1.85 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text-2);}
+.hero-sheet-note{margin:0;margin-top:auto;padding-top:16px;border-top:1px solid var(--line-3);font:11px/1.75 Inter,system-ui,sans-serif;color:var(--dim);}
+.hero-sheet-decision{font:500 19px/1.5 Inter,system-ui,sans-serif;color:var(--text);margin:0;max-width:32ch;}
+.hero-sheet-context{padding:14px;border:1px solid var(--line-3);border-left-color:var(--accent);background:var(--accent-bg);}
+.hero-deck-sheet pre{font:12px/1.9 var(--mono);color:var(--accent-2);margin:8px 0 0;white-space:pre-wrap;overflow-wrap:anywhere;}
+.hero-deck-sheet .hero-record-row{opacity:1;transform:none;transition:none;}
+.hero-deck-sheet .hero-token>span{transition:none;}
+.hero-deck-sheet .hero-record{padding:15px;border:1px solid var(--line-3);border-left-color:var(--green);background:var(--ok-bg);}
+.hero-sheet-compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+.hero-sheet-side{min-width:0;padding:12px;border:1px solid var(--line-3);background:var(--accent-bg);}
+.hero-sheet-side-local{background:var(--ok-bg);}
+.hero-sheet-side-local .hero-sheet-source{color:var(--green);}
+.hero-sheet-side pre{font-size:10.5px;}
+.hero-sheet-side .hero-record{border:0;background:none;padding:8px 0 0;gap:9px;}
+.hero-sheet-side .hero-record-row{grid-template-columns:64px minmax(0,1fr);gap:8px;}
+.hero-sheet-side .hero-record-label{font-size:8px;}
+.hero-sheet-side .hero-record-value{font-size:10.5px;overflow-wrap:anywhere;}
+/* Override only the hero floor, not the approved product-card system. */
+.mx-hero .mx-grid-floor{display:block;inset:auto -10px -46px -15px;height:160px;background-image:linear-gradient(var(--line-2) 1px,transparent 1px),linear-gradient(90deg,var(--line-2) 1px,transparent 1px);background-size:38px 38px;transform:perspective(500px) rotateX(66deg);transform-origin:50% 100%;opacity:.22;mask-image:linear-gradient(transparent,#000 60%,transparent);}
+@media(min-width:1100px){
+body.v2 #top .hero-main-grid{align-items:stretch!important;}
+.hero-copy{display:flex;flex-direction:column;align-items:flex-start;min-width:0;padding-bottom:32px;}
+body.v2 #top .hero-copy h1{font-size:clamp(46px,4.3vw,64px)!important;line-height:1.08!important;}
+body.v2 #top .hero-copy h1>span:last-child{max-width:13ch;word-spacing:.12em;}
+.hero-copy .hero-lead{margin-top:clamp(42px,5vh,68px)!important;max-width:39ch!important;font-size:19px!important;line-height:1.65!important;}
+.hero-copy .hero-actions{margin-top:auto!important;padding-top:36px;}
+.hero-copy .hero-trial{margin-top:18px!important;}
+}
+@media(max-width:899px){.mx-hero .mx-grid-floor{display:none;}}
+@media(max-width:650px){.hero-deck-sheet{min-height:340px;gap:14px;}.hero-sheet-compare{grid-template-columns:1fr;gap:9px;}.hero-sheet-side{padding:10px;}.hero-sheet-side .hero-record-row{grid-template-columns:72px minmax(0,1fr);}.hero-sheet-message{font-size:12px;}.hero-sheet-tag{font-size:7px;}.hero-sheet-title{font-size:22px;}.hero-sheet-note{font-size:10.5px;padding-top:12px;}.hero-sheet-side pre{margin-top:5px;line-height:1.7;}.hero-sheet-side .hero-record{gap:7px;}#hero-dialog.hero-real-stack{margin-top:62px;padding-bottom:140px!important;}.hero-stack-card{padding:15px;}}
+@media(prefers-reduced-motion:reduce){.hero-deck-sheet *{transition:none!important;}}

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>Pseudex — прототип живого шлюза</title>
+<link rel="stylesheet" href="../site.css"><link rel="stylesheet" href="gateway.css?v=3">
+<script src="gateway.js?v=3" defer></script>
+</head>
+<body class="gateway-preview">
+<header class="preview-nav"><a class="preview-brand" href="/"><svg width="24" height="24" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="3" y="11" width="18" height="18" rx="2" fill="currentColor"/><rect x="11" y="3" width="18" height="18" rx="2" fill="var(--bg)" stroke="currentColor" stroke-width="1.8"/></svg>pseudex</a><span>ИССЛЕДОВАНИЕ HERO / 02</span><a href="/">Вернуться на главную ↗</a></header>
+<main>
+<div class="preview-heading"><div><p class="eyebrow">ЛОКАЛЬНЫЙ ШЛЮЗ МЕЖДУ КОНТЕКСТОМ И МОДЕЛЬЮ</p><h1>Модель видит подмену.<br><em>Инструмент — оригинал.</em></h1></div><p class="preview-lead">Один контекст. Два представления.<br>Данные меняются на границе —<br>задача продолжает выполняться.</p></div>
+<section class="gateway-scene" aria-label="Иллюстративный цикл защиты данных">
+<svg class="circuit" aria-hidden="true"><path data-route="forward"></path><path data-route="return"></path></svg>
+<div class="data-node input-node" data-node="input">
+<div class="node-label"><span>01</span> ВАШ КОНТУР <b>ОРИГИНАЛЫ</b></div>
+<div class="node-title">Сообщение клиента</div>
+<div class="data-line"><span>name</span><strong>Анна Орлова</strong></div>
+<div class="data-line"><span>email</span><strong>anna@client.example</strong></div>
+<div class="data-line ordinary"><span>order</span><strong>4471</strong></div>
+<p class="node-note">«Перенесите доставку на завтра»</p>
+</div>
+<button class="gateway-core" type="button" aria-label="Показать защищённый цикл: подмена для модели и возврат оригиналов инструменту">
+<span class="core-face core-face-back" aria-hidden="true"></span>
+<span class="core-face core-face-front" aria-hidden="true"></span>
+<span class="core-word">pseudex</span><span class="core-direction top-direction">ПОДМЕНА →</span>
+<svg class="core-mark" width="52" height="52" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="3" y="11" width="18" height="18" rx="2" fill="currentColor"/><rect x="11" y="3" width="18" height="18" rx="2" fill="var(--panel)" stroke="currentColor" stroke-width="1.7"/></svg>
+<span class="core-direction bottom-direction">← ВОЗВРАТ</span><span class="core-action">ПРОВЕСТИ ЦИКЛ ↗</span>
+</button>
+<div class="data-node model-node" data-node="model">
+<div class="node-label"><span>02</span> КОНТЕКСТ МОДЕЛИ <b>ПОДМЕНЫ</b></div>
+<div class="node-title">Смысл тот же.<br>Личность другая.</div>
+<div class="data-line protected"><span>name</span><strong>Елена Волкова</strong></div>
+<div class="data-line protected"><span>email</span><strong>elena@client.example</strong></div>
+<div class="data-line ordinary"><span>order</span><strong>4471</strong></div>
+<p class="node-note">Формат и связи сохранены</p>
+</div>
+<div class="data-node call-node" data-node="call">
+<div class="node-label"><span>03</span> РЕШЕНИЕ МОДЕЛИ</div>
+<div class="node-title">Перенести доставку</div>
+<pre>reschedule_delivery({
+  customer: <mark>"Елена Волкова"</mark>,
+  email: <mark>"elena@client.example"</mark>,
+  order: 4471, day: "tomorrow"
+})</pre>
+</div>
+<div class="data-node tool-node" data-node="tool">
+<div class="node-label"><span>04</span> ВАШ ИНСТРУМЕНТ <b>ОРИГИНАЛЫ</b></div>
+<div class="node-title">Действие с настоящими данными</div>
+<pre>reschedule_delivery({
+  customer: <mark>"Анна Орлова"</mark>,
+  email: <mark>"anna@client.example"</mark>,
+  order: 4471, day: "tomorrow"
+})</pre>
+</div>
+<div class="data-parcel" aria-hidden="true"><span data-parcel-name>Анна Орлова</span><span data-parcel-email>anna@client.example</span></div>
+<div class="scene-status" role="status" aria-live="polite">Нажмите на шлюз — проследите путь одного запроса.</div>
+</section>
+<footer class="preview-foot"><span>КОНЦЕПТ · НЕ LIVE-ИНТЕГРАЦИЯ</span><p>Вымышленные данные и фиксированные подмены. Ничего не отправляется модели, API или инструменту. Возврат оригиналов показан для разрешённого вызова, не для произвольной команды.</p></footer>
+</main>
+</body></html>
