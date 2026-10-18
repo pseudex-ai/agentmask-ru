@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.40](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.39...platform/v0.3.40) (2026-10-18)
+
+
+### Новое
+
+* **storefront:** typographic hero, product split and counter preview ([#82](https://github.com/Isk4R1oT/Obscura/issues/82)) ([477580b](https://github.com/Isk4R1oT/Obscura/commit/477580b8062fa95b2f536ed6a878f747f11d1c39))
+
 ## [0.3.39](https://github.com/Isk4R1oT/Obscura/compare/platform/v0.3.38...platform/v0.3.39) (2026-10-15)
 
 
