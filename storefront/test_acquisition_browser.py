@@ -65,18 +65,19 @@ def fixtures(directory):
             from billing.models import Plan
             require(Plan.objects.filter(code='industrial').update(is_public=True) == 1,
                     'Legacy industrial plan fixture must exist')
-            for name, path in [('landing', '/'), ('architecture', '/architecture')]:
+            # The acquisition funnel (header CTA, signup form) moved to /ai-service.
+            for name, path in [('landing', '/ai-service'), ('architecture', '/architecture')]:
                 response = client.get(path, secure=True)
                 require(response.status_code == 200, f'{path} must render, got {response.status_code}')
                 pages[name] = (response.content.decode(), response.headers.get('Content-Security-Policy', ''))
             with override_settings(ANALYTICS={**settings.ANALYTICS, 'mode': 'full'}, METRIKA_ID=''):
-                response = client.get('/', secure=True)
+                response = client.get('/ai-service', secure=True)
                 pages['landing-rybbit'] = (response.content.decode(), response.headers.get('Content-Security-Policy', ''))
             with override_settings(SUPPORT_EMAIL='', SUPPORT_BOT='offline_support_bot'):
-                response = client.get('/', secure=True)
+                response = client.get('/ai-service', secure=True)
                 pages['enterprise-telegram'] = (response.content.decode(), response.headers.get('Content-Security-Policy', ''))
             with override_settings(SUPPORT_EMAIL='', SUPPORT_BOT=''):
-                response = client.get('/', secure=True)
+                response = client.get('/ai-service', secure=True)
                 pages['enterprise-requisites'] = (response.content.decode(), response.headers.get('Content-Security-Policy', ''))
         finally:
             connections.close_all()

@@ -302,7 +302,7 @@ header.top nav a:hover::after { width: 100%; }
 .btn.lg { font-size: 13px; letter-spacing: .1em; padding: 16px 24px; }
 .btn.block { display: block; width: 100%; text-align: center; }
 /* «НАЧАТЬ» в шапке — та же кнопка, что в шапке лендинга: фиолетовая рамка,
-   при наведении фон и свечение (как `.hv-btn-glow` в landing.css). Здесь, а не
+   при наведении заливка (как `.hv-btn-fill` в landing.css). Здесь, а не
    в landing.css, потому что шапка base.html есть на каждой странице. */
 .btn.cta { font-size: 11.5px; letter-spacing: .14em; padding: 10px 15px; border-color: var(--accent); color: var(--accent-2); transition: background .25s, border-color .25s; }
 .btn.cta:hover { background: var(--accent-bg); border-color: var(--accent); color: var(--accent-2); }

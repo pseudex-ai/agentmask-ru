@@ -1,0 +1,29 @@
+{% load l10n %}{% localize off %}
+{% comment %}Final presentation: one aggregate, no badges, disclaimers or service
+controls. Until an approved DB loader is configured the source is still the
+synthetic demo; data-mode and the output's accessible label keep that fact, and
+the real reader must be connected before publishing. No customer count/logos or
+invented live statistics.{% endcomment %}
+<section id="protection-counter" class="pc-section" data-protection-counter
+         data-endpoint="{{ protection_counter.endpoint }}"
+         data-mode="{% if protection_counter.demo %}demo{% else %}reported{% endif %}"
+         data-initial="{{ protection_counter.initial|default_if_none:'' }}"
+         aria-labelledby="pc-title">
+  <div class="pc-heading">
+    <span>PSEUDEX / ЗАЩИТА В ЧИСЛАХ</span>
+  </div>
+  <div class="pc-body">
+    <div class="pc-copy">
+      <h2 id="pc-title">Защищённых<br>значений</h2>
+    </div>
+    <div class="pc-number-box">
+      <output class="pc-number" data-pc-number aria-live="off" aria-label="{{ protection_counter.initial_display }} защищённых значений{% if protection_counter.demo %}. Демонстрация{% endif %}">
+        <span data-pc-figures aria-hidden="true">{{ protection_counter.initial_display }}</span>
+      </output>
+      <div class="pc-change" data-pc-change aria-hidden="true" hidden><span data-pc-delta>—</span><span data-pc-change-label>за обновление</span></div>
+    </div>
+  </div>
+  <div class="pc-rule" aria-hidden="true"><span data-pc-sweep></span></div>
+  <p class="pc-sr" role="status" aria-live="polite" data-pc-announcement></p>
+</section>
+{% endlocalize %}

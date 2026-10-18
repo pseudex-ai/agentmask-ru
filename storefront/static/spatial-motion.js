@@ -1,22 +1,27 @@
-/* Homepage-only spatial composition. Pure local decoration, no network/data
- * ingestion, scroll hijack, timers or endless render loop. The RAF runs only
- * while pointer/scroll values settle and stops offscreen or in a hidden tab. */
+/* Local spatial composition. Pure local decoration, no network/data ingestion,
+ * scroll hijack, timers or endless render loop. The RAF runs only while
+ * pointer/scroll values settle and stops offscreen or in a hidden tab.
+ *
+ * TWO FEATURES, DECOUPLED. The hero depth scene (`[data-depth-scene]`, the
+ * draggable customer-service deck) lives on /ai-service; the product cards live
+ * on the landing. One engine drives whichever of them is present on the page, so
+ * moving the deck off the landing must NOT switch off the approved card motion. */
 (function () {
   'use strict';
   const scene = document.querySelector('[data-depth-scene]');
-  if (!scene) return;
   const grid = document.querySelector('.product-suite-grid');
   const cards = Array.from(document.querySelectorAll('.product-suite-card'));
+  if (!scene && !grid) return;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)');
   const wide = matchMedia('(min-width: 900px)');
   const fine = matchMedia('(hover: hover) and (pointer: fine)');
   const body = document.body;
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const smooth = v => v * v * (3 - 2 * v);
-  const hero = { el: scene, x: 0, y: 0, tx: 0, ty: 0, s: 0, visible: true };
-  const deck = cards.map((el, index) => ({el, index, x: 0, y: 0, tx: 0, ty: 0, p: 0}));
-  let deckVisible = true, enabled = false, raf = 0;
-  const dust = scene.querySelector('[data-depth-dust]');
+  const hero = scene ? { el: scene, x: 0, y: 0, tx: 0, ty: 0, s: 0, visible: true } : null;
+  const deck = cards.map((el, index) => ({ el, index, x: 0, y: 0, tx: 0, ty: 0, p: 0 }));
+  let deckVisible = grid !== null, enabled = false, raf = 0;
+  const dust = scene ? scene.querySelector('[data-depth-dust]') : null;
   // Deterministic sparse field. It never pretends to be live protected traffic.
   if (dust) {
     const fragment = document.createDocumentFragment();
@@ -29,15 +34,17 @@
     dust.appendChild(fragment);
   }
   function schedule() {
-    if (enabled && !document.hidden && !raf && (hero.visible || deckVisible)) raf = requestAnimationFrame(paintDepth);
+    if (enabled && !document.hidden && !raf && ((hero && hero.visible) || deckVisible)) raf = requestAnimationFrame(paintDepth);
   }
   function reset() {
     cancelAnimationFrame(raf); raf = 0;
-    [hero, ...deck].forEach(item => {
+    const items = hero ? [hero, ...deck] : deck;
+    items.forEach(item => {
       item.x = item.y = item.tx = item.ty = 0;
-      ['--mx-x','--mx-y','--mx-scroll','--mx-front-x','--mx-front-y','--mx-lift','--mx-roll','--mx-cx','--mx-cy','--mx-spread'].forEach(name => item.el.style.removeProperty(name));
+      ['--mx-x', '--mx-y', '--mx-scroll', '--mx-front-x', '--mx-front-y', '--mx-lift', '--mx-roll', '--mx-cx', '--mx-cy', '--mx-spread'].forEach(name => item.el.style.removeProperty(name));
     });
-    hero.s = 0; deck.forEach(item => { item.p = 0; });
+    if (hero) hero.s = 0;
+    deck.forEach(item => { item.p = 0; });
   }
   function configure() {
     enabled = !reduce.matches && wide.matches;
@@ -55,7 +62,7 @@
     let moving = false;
     // Read the untransformed parent geometry BEFORE writing any CSS variables.
     // Reading transformed child rects creates a scroll/transform feedback loop.
-    const hr = hero.visible ? scene.getBoundingClientRect() : null;
+    const hr = hero && hero.visible ? scene.getBoundingClientRect() : null;
     const gr = grid && deckVisible ? grid.getBoundingClientRect() : null;
     const vh = Math.max(1, innerHeight);
     if (hr) {
@@ -92,8 +99,8 @@
       item.tx = clamp((event.clientX - r.left) / r.width * 2 - 1, -1, 1);
       item.ty = clamp((event.clientY - r.top) / r.height * 2 - 1, -1, 1);
       schedule();
-    }, {passive: true});
-    item.el.addEventListener('pointerleave', () => { item.tx = item.ty = 0; schedule(); }, {passive: true});
+    }, { passive: true });
+    item.el.addEventListener('pointerleave', () => { item.tx = item.ty = 0; schedule(); }, { passive: true });
   }
   // Hero sheets are direct-manipulation objects: entering must not move them.
   // Keep the approved product-card pointer response independent.
@@ -101,15 +108,16 @@
   if ('IntersectionObserver' in window) {
     const observer = new IntersectionObserver(entries => {
       entries.forEach(entry => {
-        if (entry.target === scene) hero.visible = entry.isIntersecting;
-        else if (entry.target === grid) deckVisible = entry.isIntersecting;
+        if (scene && entry.target === scene) hero.visible = entry.isIntersecting;
+        else if (grid && entry.target === grid) deckVisible = entry.isIntersecting;
       });
       schedule();
-    }, {rootMargin: '120px 0px'});
-    observer.observe(scene); if (grid) observer.observe(grid);
+    }, { rootMargin: '120px 0px' });
+    if (scene) observer.observe(scene);
+    if (grid) observer.observe(grid);
   }
-  addEventListener('scroll', schedule, {passive: true});
-  addEventListener('resize', schedule, {passive: true});
+  addEventListener('scroll', schedule, { passive: true });
+  addEventListener('resize', schedule, { passive: true });
   document.addEventListener('visibilitychange', () => { if (document.hidden) { cancelAnimationFrame(raf); raf = 0; } else schedule(); });
   addEventListener('pagehide', () => { cancelAnimationFrame(raf); raf = 0; });
   addEventListener('pageshow', schedule);

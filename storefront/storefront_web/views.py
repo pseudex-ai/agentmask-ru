@@ -32,7 +32,7 @@ from accounts.models import Membership, Organization
 from billing import onboarding, licensing, payments, services, slots
 from accounts.models import User
 from billing.models import Invoice, LicenseKey, Plan, Subscription
-from storefront_web import engine_release
+from storefront_web import engine_release, protection_counter
 from ops.analytics_models import Funnel
 from ops.models import DemandDay
 from storefront_web import detection_types
@@ -230,59 +230,60 @@ def demand(request):
     return response
 
 
-def landing(request):
-    """The public page. The demo on it runs on PREPARED examples and has no
-    free-text input: an input field here would mean accepting other people's
-    personal data onto our servers, which is precisely what we sell not doing."""
-    return render(request, "landing.html", {
+def _gateway_context() -> dict:
+    """Контекст продукта «клиентский сервис» — шлюза обезличивания.
+
+    Раньше это был весь лендинг: цены, регистрация, демо, покрытие по отраслям.
+    Теперь всё это живёт на /ai-service, а главная осталась позиционированием
+    «слой безопасности для всего ИИ». Контекст сохранён целиком, чтобы страница
+    сервиса не потеряла ни одной цифры из движка или базы."""
+    return {
         "plans": Plan.objects.filter(is_public=True),
-        # БЕСПЛАТНЫЙ ТАРИФ — ОТДЕЛЬНОЙ КАРТОЧКОЙ И ПЕРВЫМ В ВЫПАДАШКЕ. Он
-        # непубличный (не товар), но это единственный вход без денег, и пока его
-        # не было на экране, «Старт — 990 ₽/мес» рядом с «14 дней бесплатно»
-        # читалось как «Старт бесплатно две недели» — обещание, которого код не
-        # давал. Один список на выпадашку и на проверку в `signup`.
         "signup_plans": services.signup_plans(),
         "free_plan": services.trial_plan(),
-        # Enterprise намеренно НЕ публичный (его нельзя купить самообслуживанием,
-        # см. seed_plans), поэтому он не в `plans` — иначе попал бы и в выпадашку
-        # регистрации. Отдаётся отдельно ради одной карточки «по договору».
         "enterprise": Plan.objects.filter(code="enterprise").first(),
-        "landing_faq": _landing_faq(),
-        # Число карточек цен считает вьюха: сетка выбирает класс по нему, а
-        # шаблонная арифметика на трёх слагаемых нечитаема.
         "plan_card_count": (Plan.objects.filter(is_public=True).count()
                             + (1 if services.trial_plan() is not None else 0)
                             + (1 if Plan.objects.filter(code="enterprise").exists() else 0)),
-        # Группы конфигуратора — из того же реестра, что и страница /detection.
         "groups": detection_types.groups_for_page(),
-        # Отрасли и ядро — для секции покрытия на лендинге.
         "industries": detection_types.industries_for_page(),
         "core": detection_types.core_rows(),
-        # ЧИСЛО ТИПОВ СЧИТАЕТСЯ, А НЕ ПИШЕТСЯ. «18» стояло литералом в трёх
-        # местах, пока список был разметкой; теперь список — данные, и
-        # следующий добавленный тип сделал бы страницу противоречащей
-        # собственной таблице.
         "found_count": len(detection_types.FOUND),
-        # СЛОВО, А НЕ ЧИСЛО: «61 типов» — то же враньё, что и неверная цифра,
-        # и человек читает его как небрежность ко всему продукту. Склонение
-        # живёт рядом со списком типов, а не в шаблоне: список там же меняется.
         "found_word": detection_types.ru_types(len(detection_types.FOUND)),
-        **_meta("landing"),
         "trial_days": services.trial_days(),
         "due_days": services.INVOICE_DUE_DAYS,
         "grace_days": services.GRACE_DAYS,
         "image": engine_release.current_image(),
         "license_url_env": (f"-e PSEUDEX_LICENSE_URL={settings.LICENSE_URL} "
                             if settings.LICENSE_URL else ""),
-        # The same prompt the welcome page hands out, with the key as a
-        # placeholder. It belongs HERE too: "paste this and it connects itself"
-        # is the strongest thing we can say about setup, and saying it only
-        # after registration means the people deciding whether to register
-        # never hear it.
         "claude_prompt": onboarding.claude_prompt(
             "ps_live_…  (подставится после регистрации)",
             engine_release.current_image(), "8081", settings.LICENSE_URL),
+    }
+
+
+def landing(request):
+    """Позиционирующая страница: слой безопасности для всего ИИ и три продукта.
+
+    Демо, цены и регистрация клиентского сервиса переехали на /ai-service —
+    человек на главной больше не обязан долистывать до продуктов, чтобы понять,
+    что мы продаём."""
+    return render(request, "landing.html", {
+        # Только для структурированных данных: схема цены на главной помогает
+        # поисковику показать тариф в выдаче, хотя сами карточки цен живут на
+        # /ai-service.
+        "plans": Plan.objects.filter(is_public=True),
+        "found_count": len(detection_types.FOUND),
+        "found_word": detection_types.ru_types(len(detection_types.FOUND)),
+        "landing_faq": _landing_faq(),
+        **protection_counter.page_context(request),
+        **_meta("landing"),
     })
+
+
+def service(request):
+    """Страница продукта клиентского сервиса: весь прежний контент главной."""
+    return render(request, "products/service.html", {**_gateway_context(), **_meta("service")})
 
 
 # ЗАГОЛОВКИ И ОПИСАНИЯ ПУБЛИЧНЫХ СТРАНИЦ — ЗДЕСЬ, ОДНОЙ ТАБЛИЦЕЙ.
@@ -379,11 +380,18 @@ def _faq_items() -> list[tuple[str, str]]:
 
 _META = {
     "landing": (
-        "Обезличивание персональных данных для ИИ-агентов — шлюз Pseudex, 152-ФЗ",
-        "Шлюз обезличивания персональных данных перед языковой моделью: модель "
-        "видит подмену, а ваши инструменты получают настоящие значения. "
-        "Контейнер работает в вашем контуре, наружу уходят только счётчики. "
-        "СНИЛС и ИНН — по контрольной сумме. От 990 ₽ в месяц."),
+        "Слой безопасности для ИИ: сервис, компания, разработка — Pseudex",
+        "Один слой между вашими данными и любой моделью: чувствительные данные "
+        "не уходят в модель, инструменты получают настоящие значения. Для "
+        "клиентского сервиса, корпоративных систем и AI-кодинга. Контейнер в "
+        "вашем контуре, наружу уходят только счётчики.",
+    ),
+    "service": (
+        "Защита данных клиентского сервиса: ИИ-агент не видит ПД клиентов — Pseudex",
+        "Шлюз обезличивания персональных данных для ботов и клиентских агентов: "
+        "модель видит подмену, а звонки, заказы и CRM работают с настоящими "
+        "значениями. СНИЛС и ИНН — по контрольной сумме. От 990 ₽ в месяц.",
+    ),
     "litellm": (
         "LiteLLM и персональные данные: что не работает в его маскировании",
         "Реальный прогон LiteLLM 1.104 с Presidio на русском чате: ложное "
@@ -488,7 +496,8 @@ def _meta(page: str) -> dict[str, str]:
 # Держит `test_seo.py`: у каждой публичной страницы дата есть, она в формате
 # ISO и не из будущего.
 _PUBLIC_PAGES = (
-    ("landing", 1.0, "weekly", "2026-10-15"),
+    ("landing", 1.0, "weekly", "2026-10-17"),
+    ("ai_service", 0.9, "weekly", "2026-10-17"),
     ("ai_security", 0.8, "weekly", "2026-10-15"),
     ("ai_coding", 0.8, "weekly", "2026-10-15"),
     ("detection", 0.8, "monthly", "2026-10-05"),

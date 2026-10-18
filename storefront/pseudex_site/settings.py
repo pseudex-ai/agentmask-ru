@@ -356,6 +356,10 @@ DOCKER_IMAGE = _env("PSEUDEX_DOCKER_IMAGE", "")
 # про себя, а не то, что верно где-то ещё.
 LICENSE_URL = _env("PSEUDEX_LICENSE_URL", "")
 
+# Opt-in reader of an approved public DB aggregate. Empty means no real public
+# counter, NOT zero protected values and not permission to expose fleet admin stats.
+PUBLIC_PROTECTION_COUNTER_LOADER = _env("PSEUDEX_PUBLIC_COUNTER_LOADER", "").strip()
+
 # Our back office. Configurable because a fixed /admin/ is the first path every
 # scanner tries; moving it is not security, but it removes the background noise
 # that hides a real attempt in the logs.

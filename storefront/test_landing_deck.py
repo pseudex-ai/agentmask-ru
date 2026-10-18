@@ -37,9 +37,9 @@ def go(page, target):
     raise AssertionError('could not reach the requested phase by clicking cards')
 
 
-def opened(browser, base, net, **options):
+def opened(browser, url, net, **options):
     ctx = browser.new_context(**options)
-    origin = urlsplit(base)
+    origin = urlsplit(url)
     def route(handler):
         req = handler.request
         url = urlsplit(req.url)
@@ -52,8 +52,8 @@ def opened(browser, base, net, **options):
     page = ctx.new_page()
     page.on('pageerror', lambda e: net['errors'].append(str(e)))
     page.on('console', lambda m: net['errors'].append(m.text) if 'Content Security Policy' in m.text else None)
-    response = page.goto(base, wait_until='networkidle')
-    require(response and response.status == 200, 'homepage did not load')
+    response = page.goto(url, wait_until='networkidle')
+    require(response and response.status == 200, 'page did not load: '+url)
     return ctx, page
 
 
@@ -107,7 +107,7 @@ def manual(browser, base, net):
     ctx.close()
     ctx, page = opened(browser, base, net, java_script_enabled=False)
     require(page.locator('#hero-dialog .hero-deck-sheet').is_visible(), 'no-JS fallback missing')
-    require(page.locator('h1').count() == 1 and page.locator('.product-suite-card').count() == 3, 'no-JS content lost')
+    require(page.locator('h1').count() == 1, 'no-JS content lost')
     ctx.close()
 
 
@@ -118,7 +118,6 @@ def layout(browser, base, net):
         require(page.locator('.mx-dust,.mx-light,[data-depth-dust]').count() == 0, 'particles or ambient glow remain')
         require(page.locator('#top').evaluate("e=>getComputedStyle(e).userSelect==='none'"), 'hero text is still selectable')
         require(page.locator('#signup-form input[type=email]').evaluate("e=>getComputedStyle(e).userSelect!=='none'"), 'selection suppression leaked into forms')
-        require(page.locator('.product-suite-card').evaluate_all("es=>es.map(e=>e.getAttribute('href'))") == ['/#start','/ai-security','/ai-coding'], 'approved product links changed')
         if width == 1440:
             h = page.locator('.hero-copy h1').bounding_box(); lead = page.locator('.hero-lead').bounding_box(); actions = page.locator('.hero-actions').bounding_box()
             require(lead['y'] > h['y']+h['height']+35 and actions['y'] > lead['y']+lead['height']+50, 'copy is still crowded at the top')
@@ -157,7 +156,7 @@ def tactile(browser, base, net):
     page.mouse.down();page.mouse.move(x+130,y-50,steps=8);page.keyboard.press('Escape');idle(page);page.mouse.up()
     require(phase(page)==old,'Escape followed by pointer release advanced the sheet')
     require(page.evaluate("__refs.every((e,i)=>e.isConnected&&e===[...document.querySelectorAll('.hero-stack-card')][i])"),'drag replaced persistent sheets')
-    require(urlsplit(page.url).path=='/','throw accidentally activated a CTA underneath')
+    require(urlsplit(page.url).path=='/ai-service','throw accidentally activated a CTA underneath')
     ctx.close()
 
 
@@ -206,18 +205,39 @@ def touch_drag(browser, base, net):
     ctx.close()
 
 
+def products(browser, base, net):
+    """Три продукта — якорь главной: видны и ведут каждый на свою страницу."""
+    ctx, page = opened(browser, base, net, viewport={'width': 1440, 'height': 1100})
+    hrefs = page.locator('.product-suite-card').evaluate_all("es=>es.map(e=>e.getAttribute('href'))")
+    require(hrefs == ['/ai-service', '/ai-security', '/ai-coding'], 'approved product links changed: '+str(hrefs))
+    ctx.close()
+    ctx, page = opened(browser, base, net, java_script_enabled=False)
+    require(page.locator('.product-suite-card').count() == 3 and page.locator('h1').count() == 1, 'no-JS products lost')
+    ctx.close()
+
+
 def main():
     parser = argparse.ArgumentParser(); parser.add_argument('--base-url', default='http://127.0.0.1:18765')
     base = parser.parse_args().base_url.rstrip('/')+'/'
     if urlsplit(base).hostname not in ('127.0.0.1','localhost','::1'): return 2
+    gateway = base + 'ai-service'
     net = {'errors': [], 'forbidden': []}; failed = []
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        for name, check in [('persistent-3d-stack',persistent),('manual-keyboard-nojs',manual),('responsive-clean-layout',layout),('restored-card-lift',lift),('grab-throw-cancel',tactile),('nearest-edge-working-cta',directional),('touch-grip-native-scroll',touch_drag)]:
-            try: check(browser,base,net); print('PASS',name)
-            except Exception as exc: failed.append(name); print('FAIL',name,str(exc))
+        for name, check, url in [
+            ('persistent-3d-stack', persistent, gateway),
+            ('manual-keyboard-nojs', manual, gateway),
+            ('responsive-clean-layout', layout, gateway),
+            ('three-product-links', products, base),
+            ('restored-card-lift', lift, gateway),
+            ('grab-throw-cancel', tactile, gateway),
+            ('nearest-edge-working-cta', directional, gateway),
+            ('touch-grip-native-scroll', touch_drag, gateway),
+        ]:
+            try: check(browser, url, net); print('PASS', name)
+            except Exception as exc: failed.append(name); print('FAIL', name, str(exc))
         browser.close()
-    if net['errors'] or net['forbidden']: failed.append('hygiene'); print('FAIL hygiene',net)
+    if net['errors'] or net['forbidden']: failed.append('hygiene'); print('FAIL hygiene', net)
     else: print('PASS local-only-console-hygiene')
     print(str(8-len(failed))+'/8 groups passed')
     return int(bool(failed))

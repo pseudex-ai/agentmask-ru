@@ -608,8 +608,10 @@ def main() -> int:  # noqa: C901 — линейный сценарий из пр
         # тарифа переехал, и разметка стала другой. Первый пункт списка — то же,
         # что отправил бы браузер без единого клика, и сервер умолчания не
         # подставляет, поэтому без тарифа регистрация не проходит вовсе.
+        # The sign-up form lives on /ai-service with the service funnel.
+        form_body = client.get("/ai-service").content.decode()
         plan_match = _re.search(r'<input[^>]*name="plan"[^>]*value="([^"]+)"',
-                                landing_body)
+                                form_body)
         payload = {"email": "goal-probe@example.test", "consent": "1", "terms": "1"}
         if plan_match:
             payload["plan"] = plan_match.group(1)

@@ -77,6 +77,7 @@ Not in root `docs/`: `storefront/docs/tz-site.md` and `storefront/docs/tz-site-s
 `storefront/docs/analytics-full-funnel.md` — acquisition consent, event semantics,
 delivery uncertainty, Direct reporting, retention and rollout verification; implementation runbook,
 not proof of production-paid attribution or legal certification.
+`storefront/docs/protection-counter.md` — homepage public-counter demonstration (synthetic until a real reader is configured), full-snapshot API/DB-loader contract, actual independent 120s usage reporting vs 5s page polling, values/request semantics and unresolved production-aggregation prerequisites; demo + integration runbook, not real fleet statistics.
 
 ---
 

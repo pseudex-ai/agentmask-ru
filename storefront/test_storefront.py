@@ -238,6 +238,8 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
 
     landing = client.get("/")
     body = landing.content.decode()
+    # The sign-up form itself moved to /ai-service with the service funnel.
+    signup_body = client.get("/ai-service").content.decode()
     # ОДНОРАЗОВЫЙ ЯЩИК НЕ ПОЛУЧАЕТ КЛЮЧА. Единственный реальный путь
     # злоупотребления пробным периодом: образ без ключа не стартует вовсе, а
     # ключ выпускается только по ссылке из письма.
@@ -273,8 +275,8 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
     check("без акцепта оферты аккаунт не создаётся",
           Organization.objects.count() == before, f"код={no_terms.status_code}")
     check("согласие и оферта — две разные галочки на форме",
-          'name="consent"' in body and 'name="terms"' in body
-          and "и принимаю" not in body.split('name="consent"')[1].split("</label>")[0],
+          'name="consent"' in signup_body and 'name="terms"' in signup_body
+          and "и принимаю" not in signup_body.split('name="consent"')[1].split("</label>")[0],
           "одна галочка на согласие и договор — совмещённое согласие")
 
     from billing.services import is_disposable
@@ -430,8 +432,9 @@ def run_checks(client, admin_url: str, public_url: str) -> None:
           orphan_signup.status_code in (301, 302),
           f"status={orphan_signup.status_code}")
 
-    check("the landing shows the Claude Code prompt before registration",
-          "claude-prompt" in landing_body and "PSEUDEX_ROLE=proxy" in landing_body)
+    check("the service page shows the Claude Code prompt before registration",
+          "claude-prompt" in client.get("/ai-service").content.decode()
+          and "PSEUDEX_ROLE=proxy" in client.get("/ai-service").content.decode())
 
     # A FRESH client. The shared one followed the activation link above and is
     # legitimately signed in from that point on — checking anonymity with it

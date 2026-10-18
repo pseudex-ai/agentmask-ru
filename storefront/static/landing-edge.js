@@ -21,7 +21,7 @@
     '#top .metric', '#demo .cards>div', '#coverage .cards>div', '#how .cards>div',
     '#pricing .cards>div', '#setup .cards>div', '.swap-card', '.product-suite-card',
     '#znaniya .kb-teaser>a', '#faq details>summary', '.planpick>summary', '.pp-item',
-    '.hv-btn, .hv-btn-glow, .hv-btn-ghost', '.hv-row, .hv-cell, .kb-list>a', '.hero-stack-card'
+    '.hv-btn, .hv-btn-fill, .hv-btn-ghost', '.hv-row, .hv-cell, .kb-list>a', '.hero-stack-card'
   ].join(',');
 
   const surfaces = new Set();   /* registered targets */

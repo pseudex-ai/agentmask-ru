@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Playwright smoke proof of the homepage spatial-motion layer (read-only).
+"""Playwright smoke proof of the spatial-motion layer (read-only).
 
-Contract: static/spatial-motion.{css,js} + templates/products/home-depth.html as
-loaded from templates/landing.html.
+Contract: static/spatial-motion.{css,js}. Two decoupled features live on two
+pages now: the hero depth scene (`[data-depth-scene]`, the draggable
+customer-service deck) on /ai-service, and the product-card choreography on the
+landing. One engine drives whichever is present — moving the deck off the landing
+must not switch off the approved card motion.
 
     python test_home_spatial_motion.py --base-url http://127.0.0.1:18765
 
@@ -20,7 +23,7 @@ from playwright.sync_api import sync_playwright
 sys.dont_write_bytecode = True
 
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
-CARDS = ["/#start", "/ai-security", "/ai-coding"]
+CARDS = ["/ai-service", "/ai-security", "/ai-coding"]
 SCENE, GRID = "[data-depth-scene]", ".product-suite-grid"
 WIDE = {"width": 1440, "height": 950}
 MOTION = "document.body.classList.contains('motion-ready')"
@@ -80,16 +83,20 @@ def edge(page):  # bottom of the product grid, in document coordinates
     return page.evaluate(f"document.querySelector('{GRID}').getBoundingClientRect().bottom + scrollY")
 
 
+def scene_bottom(page):
+    return page.evaluate(f"document.querySelector('{SCENE}').getBoundingClientRect().bottom + scrollY")
+
+
 def scroll_to(page, y): page.evaluate("y => scrollTo(0, y)", y); page.wait_for_timeout(350)
 
 
-def open_page(browser, base, net, **kw):
+def open_page(browser, url, net, **kw):
     """One context + page: loopback route guard, rAF counter, error/CSP/asset collectors."""
     kw.setdefault("viewport", dict(WIDE))
     ctx = browser.new_context(**kw)
 
     def route(handler, request):
-        if (urlsplit(request.url).scheme, urlsplit(request.url).netloc) == (urlsplit(base).scheme, urlsplit(base).netloc): handler.continue_()
+        if (urlsplit(request.url).scheme, urlsplit(request.url).netloc) == (urlsplit(url).scheme, urlsplit(url).netloc): handler.continue_()
         else:
             net["outside"].append(request.url)
             handler.abort()
@@ -101,23 +108,20 @@ def open_page(browser, base, net, **kw):
     page.on("console", lambda m: net["csp"].append(m.text) if "Content Security Policy" in m.text else None)
     page.on("response", lambda r: net["assets"].__setitem__(urlsplit(r.url).path.rsplit("/", 1)[-1], r.status)
             if "spatial-motion" in r.url else None)
-    response = page.goto(base, wait_until="load")
+    response = page.goto(url, wait_until="load")
     require(response is not None and response.status == 200,
-            f"homepage did not return 200 (got {response and response.status})")
+            f"page did not return 200 (got {response and response.status})")
     return ctx, page
 
 
-def check_wide(browser, base, net):
-    """Approved card motion remains; the owner removed hero particles and glow."""
-    ctx, page = open_page(browser, base, net)
-    require(page.evaluate(MOTION), "a wide fine-pointer homepage never got body.motion-ready")
+def check_hero(browser, gateway, net):
+    """The deck depth scene reacts to scroll but the reading surface stays still."""
+    ctx, page = open_page(browser, gateway, net)
+    require(page.evaluate(MOTION), "a wide fine-pointer hero never got body.motion-ready")
     require(page.locator('[data-depth-dust],.mx-dust,.mx-light').count() == 0,
             "removed hero particles or ambient glow returned")
-    at = page.evaluate("(() => { const r = document.querySelector('[data-depth-scene]').getBoundingClientRect();"
-                       " return {x: r.left + r.width * .22, y: r.top + r.height * .5}; })()")
     before = page.locator("#hero-panel").bounding_box()
-    page.mouse.move(at["x"], at["y"])
-    page.wait_for_timeout(400)
+    page.mouse.move(900, 300); page.wait_for_timeout(400)
     require(page.locator("#hero-panel").bounding_box() == before,
             "entering the hero moved the reading surface before a grab")
     top = float(page.evaluate(SCROLL) or 0)
@@ -126,8 +130,33 @@ def check_wide(browser, base, net):
     require(abs(down - top) > .05, f"hero --mx-scroll did not react to the scroll ({top} -> {down})")
     require(page.evaluate("getComputedStyle(document.querySelector('#hero-panel')).transform") == "none",
             "the draggable hero still has an automatic transform")
+    ctx.close()
+
+
+def check_hero_idle(browser, gateway, net):
+    """The loop is demand-driven — it stops when idle and stays stopped offscreen."""
+    ctx, page = open_page(browser, gateway, net)
+    settle(page)
+    offscreen = scene_bottom(page) + 200
+    scroll_to(page, offscreen)
+    idle = settle(page)
+    scroll_to(page, offscreen + 60)
+    page.wait_for_timeout(900)
+    require(page.evaluate("window.__mxRaf.count") == idle,
+            "an offscreen scroll restarted paintDepth, so the engine is not viewport-gated")
+    page.evaluate("scrollTo(0, 0)")
+    grew = poll(page, "window.__mxRaf.count", lambda v: v is not None and v > idle, None, 5000)
+    require(grew and grew > idle, "paintDepth never restarted when the hero scrolled back into view")
+    settle(page)
+    ctx.close()
+
+
+def check_cards(browser, base, net):
+    """Approved card motion remains on the landing, independent of the moved hero."""
+    ctx, page = open_page(browser, base, net)
+    require(page.evaluate(MOTION), "a wide fine-pointer landing never got body.motion-ready")
     lifts, bottom = [], edge(page)
-    for offset in (-1400, -700, -300):  # grid below the fold, entering it, deep inside it
+    for offset in (-1400, -700, -300):
         scroll_to(page, max(0, bottom - 600 + offset))
         lifts += page.evaluate(LIFTS)
     require(max(lifts, key=abs) > 1, f"cards never lifted from the scrolling parent grid: {lifts}")
@@ -161,7 +190,7 @@ def check_responsive(browser, base, net):
         ready = page.evaluate(MOTION)
         require(ready == (width >= 900), f"{width}px: motion-ready={ready}, expected {width >= 900}")
         require(len(page.locator("h1").first.inner_text().strip()) > 10, f"{width}px: h1 has no readable text")
-        show(page.locator('a[href="#start"]').first, f"{width}px hero CTA")
+        show(page.locator('a[href="#products"]').first, f"{width}px hero CTA")
         links = page.locator(".product-suite-card")
         require(links.count() == 3, f"{width}px: rendered {links.count()} product cards")
         for i in range(3):
@@ -183,9 +212,8 @@ def check_reduced(browser, base, net):
     for y in (0, max(0, edge(page) - 1000), edge(page) + 200):
         scroll_to(page, y)
     require(page.evaluate("window.__mxRaf.count") == 0, "reduced motion still scheduled paintDepth")
-    require(page.evaluate("document.querySelector('[data-depth-scene]').style.getPropertyValue('--mx-scroll')") == ""
-            and page.evaluate("[...document.querySelectorAll('.product-suite-card')]"
-                              ".every(c => c.style.getPropertyValue('--mx-lift') === '')"),
+    require(page.evaluate("[...document.querySelectorAll('.product-suite-card')]"
+                          ".every(c => c.style.getPropertyValue('--mx-lift') === '')"),
             "reduced motion wrote spatial scroll vars anyway")
     ctx.close()
     ctx, page = open_page(browser, base, net)
@@ -193,7 +221,6 @@ def check_reduced(browser, base, net):
     page.emulate_media(reduced_motion="reduce")
     require(poll(page, MOTION, lambda v: v is False, None, 4000) is False,
             "switching to prefers-reduced-motion did not clear body.motion-ready")
-    require(page.evaluate(SCROLL) == "", "the toggle left --mx-scroll behind instead of resetting it")
     idle = settle(page)
     scroll_to(page, edge(page) + 200)
     page.wait_for_timeout(900)
@@ -209,47 +236,30 @@ def check_no_js(browser, base, net):
     ctx, page = open_page(browser, base, net, java_script_enabled=False)
     heading, links = page.locator("h1").first, page.locator(".product-suite-card")
     require(heading.is_visible() and len(heading.inner_text().strip()) > 10,
-            "the no-JS homepage h1 is not visible text")
+            "the no-JS landing h1 is not visible text")
     require(links.count() == 3 and [links.nth(i).get_attribute("href") for i in range(3)] == CARDS,
-            "the no-JS homepage lost product cards or their link targets")
+            "the no-JS landing lost product cards or their link targets")
     for i in range(3):
         links.nth(i).scroll_into_view_if_needed()
         show(links.nth(i), f"no-JS product link {i}")
-    show(page.locator('a[href="#start"]').first, "no-JS hero CTA")
+    show(page.locator('a[href="#products"]').first, "no-JS hero CTA")
     ctx.close()
 
 
-def check_idle(browser, base, net):
-    """7: the loop is demand-driven — it stops when idle and stays stopped offscreen."""
-    ctx, page = open_page(browser, base, net)
-    settle(page)
-    offscreen = max(edge(page), page.evaluate("document.querySelector('[data-depth-scene]')"
-                                              ".getBoundingClientRect().bottom + scrollY")) + 200
-    scroll_to(page, offscreen)
-    idle = settle(page)
-    scroll_to(page, offscreen + 60)
-    page.wait_for_timeout(900)
-    require(page.evaluate("window.__mxRaf.count") == idle,
-            "an offscreen scroll restarted paintDepth, so the engine is not viewport-gated")
-    page.evaluate("scrollTo(0, 0)")
-    grew = poll(page, "window.__mxRaf.count", lambda v: v is not None and v > idle, None, 5000)
-    require(grew and grew > idle, "paintDepth never restarted when the hero scrolled back into view")
-    settle(page)
-    ctx.close()
-
-
-CHECKS = (("wide-homepage-motion", check_wide), ("responsive-layout", check_responsive),
-          ("reduced-motion", check_reduced), ("no-js-content", check_no_js),
-          ("engine-idle-offscreen", check_idle))
+CHECKS = (("hero-depth-motion", check_hero), ("hero-engine-idle", check_hero_idle),
+          ("product-card-motion", check_cards), ("responsive-layout", check_responsive),
+          ("reduced-motion", check_reduced), ("no-js-content", check_no_js))
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Homepage spatial-motion smoke test")
+    ap = argparse.ArgumentParser(description="Spatial-motion smoke test")
     ap.add_argument("--base-url", default="http://127.0.0.1:18765")
     base = ap.parse_args().base_url.rstrip("/") + "/"
     if urlsplit(base).hostname not in LOOPBACK:
         print(f"FAIL base-url: must be loopback, got {base}")
         return 2
+    gateway = base + "ai-service"
+    targets = {"check_hero": gateway, "check_hero_idle": gateway}
     net, failures = {"outside": [], "errors": [], "csp": [], "assets": {}}, []
     play = sync_playwright().start()
     try:
@@ -259,8 +269,9 @@ def main():
         raise  # Missing Chromium is fatal, not an aggregated/skippable check.
     try:
         for name, check in CHECKS:
+            url = targets.get(check.__name__, base)
             try:
-                check(browser, base, net); print(f"PASS {name}")
+                check(browser, url, net); print(f"PASS {name}")
             except Exception as exc:
                 failures.append(name); print(f"FAIL {name}: {exc}")
         try:

@@ -51,9 +51,9 @@ def main() -> int:
         print(f"  {'PASS' if cond else 'FAIL'}  {name}" + (f"  — {detail}" if detail and not cond else ""))
         ok = ok and cond
 
-    page = Client().get("/").content.decode()
+    page = Client().get("/ai-service").content.decode()
     forms = re.findall(r"<form[^>]*action=\"/signup\"[^>]*>(.*?)</form>", page, re.S)
-    check(len(forms) >= 1, f"форма регистрации на лендинге есть: {len(forms)}",
+    check(len(forms) >= 1, f"форма регистрации на странице сервиса есть: {len(forms)}",
           "без неё зарегистрироваться нельзя вовсе")
 
     # --- разметка: две ОТДЕЛЬНЫЕ галочки в КАЖДОЙ форме ---------------------

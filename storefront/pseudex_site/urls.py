@@ -13,7 +13,7 @@ from django.urls import include, path, re_path
 
 from django_otp.admin import OTPAdminSite
 
-from storefront_web import products, views
+from storefront_web import products, protection_counter, views
 from ops import acquisition_views
 
 # Второй фактор на входе в админку. Меняем КЛАСС уже собранного admin.site, а не
@@ -31,10 +31,12 @@ admin.site.index_title = "Операции"
 
 urlpatterns = [
     path("", views.landing, name="landing"),
+    path("api/public/protection-counter", protection_counter.snapshot, name="public_protection_counter"),
     path("signup", views.signup, name="signup"),
     # Beta contact requests are not signup, payment, or feature-vote analytics.
     path("ai-security", products.enterprise, name="ai_security"),
     path("ai-coding", products.coding, name="ai_coding"),
+    path("ai-service", views.service, name="ai_service"),
     path("products/interest", products.interest, name="product_interest"),
     path("analytics/prepare", acquisition_views.prepare, name="analytics_prepare"),
     path("analytics/grant", acquisition_views.grant, name="analytics_grant"),

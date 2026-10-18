@@ -60,13 +60,17 @@
 .hv-tint:hover      { background: var(--panel); }
 .hv-btn:hover       { background: var(--accent-bg); }
 .hv-btn-ghost:hover { color: var(--text); border-color: var(--edge); }
-.hv-btn-glow:hover  { background: var(--accent-bg); }
+.hv-btn-fill:hover  { background: var(--accent-bg); }
 /* У <button> свой серый фон, поэтому прозрачный задаётся здесь, а не в style="":
    инлайновый фон перебивает любой :hover выше, и кнопка не подсвечивалась. */
 button.hv-btn,
-button.hv-btn-glow  { background: transparent; }
-.hv-row:hover       { background: var(--panel); box-shadow: inset 2px 0 0 var(--accent); }
-.hv-cell:hover      { background: var(--panel); box-shadow: inset 2px 0 0 var(--accent), 1px 0 0 var(--line-3), 0 1px 0 var(--line-3); }
+button.hv-btn-fill  { background: transparent; }
+/* КРОМКА НАВЕДЕНИЯ ЗДЕСЬ БОЛЬШЕ НЕ РИСУЕТСЯ. Её рисует `landing-edge.js` — и
+   рисует лучше: подсвечивает ту сторону, с которой пришёл курсор, а не всегда
+   левую. Постоянная полоска слева спорила с ней и читалась как украшение.
+   Хайрлайны у `hv-cell` остаются: это сетка, а не акцент. */
+.hv-row:hover       { background: var(--panel); }
+.hv-cell:hover      { background: var(--panel); box-shadow: 1px 0 0 var(--line-3), 0 1px 0 var(--line-3); }
 .fc-accent:focus    { border-color: var(--accent); }
 
 /* Клавиатурный фокус виден ВЕЗДЕ. Инлайновые стили макета гасят рамку у кнопок
@@ -187,7 +191,7 @@ body.v2 .cfg-mark.no  { color: var(--amber); }
   body.v2 header.top { height: auto; min-height: 0; padding: 8px 18px 0;
                        flex-wrap: wrap; position: static; row-gap: 6px; }
   body.v2 header.top nav { flex: 1 1 100%; width: 100%; }
-  /* КНОПКИ ВИТРИНЫ — КРУПНЫЕ, И ЭТО ЛОМАЛО ШАПКУ. `hv-btn-glow`/`hv-btn-ghost`
+  /* КНОПКИ ВИТРИНЫ — КРУПНЫЕ, И ЭТО ЛОМАЛО ШАПКУ. `hv-btn-fill`/`hv-btn-ghost`
      несут паддинг 14×24 px: втроём со знаком они не влезали в 354 px и
      переносились на СВОЮ строку — знак, кнопки и ссылки занимали три ряда и
      152 px, пятая часть экрана. С паддингом 9×11 они делят строку со знаком,
@@ -408,13 +412,13 @@ body.v2 .cfg-mark.no  { color: var(--amber); }
   transition: transform .28s cubic-bezier(.2,.7,.2,1), background .28s ease;
 }
 .cards > *:not(.cfg-item):hover { transform: translateY(-3px); }
-.hv-btn, .hv-btn-glow, .hv-btn-ghost { transition: background .25s ease, color .25s ease, border-color .25s ease, box-shadow .25s ease, transform .1s ease; }
-.hv-btn:active, .hv-btn-glow:active, .hv-btn-ghost:active { transform: translateY(1px); }
+.hv-btn, .hv-btn-fill, .hv-btn-ghost { transition: background .25s ease, color .25s ease, border-color .25s ease, box-shadow .25s ease, transform .1s ease; }
+.hv-btn:active, .hv-btn-fill:active, .hv-btn-ghost:active { transform: translateY(1px); }
 
 @media (prefers-reduced-motion: reduce) {
-  .cards > *:not(.cfg-item), .hv-btn, .hv-btn-glow, .hv-btn-ghost { transition: none; }
+  .cards > *:not(.cfg-item), .hv-btn, .hv-btn-fill, .hv-btn-ghost { transition: none; }
   .cards > *:not(.cfg-item):hover { transform: none; }
-  .hv-btn:active, .hv-btn-glow:active, .hv-btn-ghost:active { transform: none; }
+  .hv-btn:active, .hv-btn-fill:active, .hv-btn-ghost:active { transform: none; }
 }
 
 /* ── своп-знак: тот же мотив, что у логотипа ─────────────────────────────── */
@@ -526,22 +530,18 @@ body.v2 .cfg-mark.no  { color: var(--amber); }
    ПОДЪЁМ ПРИ НАВЕДЕНИИ БЫЛ У ВСЕХ ДВАДЦАТИ ОДНОГО БЛОКА, А ВЕЛИ КУДА-ТО ШЕСТЬ.
    Значит подъём говорил «нажми меня» там, где нажимать нечего, и молчал о том,
    что кликнуть можно: внутри карточки ссылкой была одна строка, а не карточка.
-   Теперь кликабельное отличается тремя признаками сразу — курсор, акцентная
-   кромка слева (тот же язык, что у `hv-row`) и уехавшая стрелка, — а ведёт себя
+   Теперь кликабельное отличается курсором, подсвеченной кромкой со стороны
+   курсора (`landing-edge.js`) и уехавшей стрелкой, — а ведёт себя
    как ссылка ВСЯ карточка: `::after` растягивает её на весь блок — ссылка в этих карточках лежит внутри текста, поэтому берём потомка, а не прямого ребёнка. Карточки без
    ссылок сохраняют подъём, но курсор над ними остаётся обычным: движение — это
    «я живая», курсор — это «я нажимаемая», и путать их нельзя.
-   `:has()` без поддержки ничего не ломает: там просто не будет кромки. */
+   `:has()` без поддержки ничего не ломает: там просто не будет растянутой ссылки. */
 .cards > *:has(a[href]):not(:has(button)) { cursor: pointer; position: relative; }
 .cards > *:has(a[href]):not(:has(button)) a[href]::after { content: ""; position: absolute; inset: 0; }
-.cards > *:has(a[href]):not(:has(button)):hover {
-  box-shadow: inset 2px 0 0 var(--accent);
-}
 .cards > *:has(a[href]) a[href$="→"], .cards > *:has(a[href]) .card-go { transition: transform .24s cubic-bezier(.2,.7,.2,1); }
 .cards > *:has(a[href]):hover a[href$="→"], .cards > *:has(a[href]):hover .card-go { transform: translateX(4px); }
 .kb-list > a { cursor: pointer; position: relative; }
 .kb-list > a::after { content: ""; position: absolute; inset: 0; }
-.kb-list > a:hover { box-shadow: inset 2px 0 0 var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .cards > *:has(a[href]) a[href$="→"], .cards > *:has(a[href]) .card-go { transition: none; }
 }
@@ -674,7 +674,7 @@ body.v2 .cfg-mark.no  { color: var(--amber); }
      ряда и оставляет шапке ~120 px. */
   header.top nav a { padding: 12px 0; }
   header.top .brand { min-height: 44px; }
-  /* ВИТРИНА ЗОВЁТ СВОИ КНОПКИ ИНАЧЕ (`hv-btn-glow`, `hv-btn-ghost`), поэтому
+  /* ВИТРИНА ЗОВЁТ СВОИ КНОПКИ ИНАЧЕ (`hv-btn-fill`, `hv-btn-ghost`), поэтому
      селектор по `.btn` их не ловил и пол по цели касания не срабатывал. Берём
      все ссылки и кнопки шапки: у остальных страниц это `.btn`, у витрины —
      свои классы, и правило обязано покрывать оба случая. */
@@ -844,7 +844,7 @@ body.v2 .cfg-mark.no  { color: var(--amber); }
 }
 .vis { display: grid; gap: 1px; background: var(--line-3); border: 1px solid var(--line-3); }
 .vis-r { display: grid; grid-template-columns: 190px minmax(0, 1fr) 200px; gap: 20px; padding: 20px; background: var(--card-bg); align-items: start; }
-.vis-r.vis-us { background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
+.vis-r.vis-us { background: var(--panel); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 48%, var(--line)); }
 .vis-k { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: .14em; color: var(--dim-3); line-height: 1.7; }
 .vis-k span { color: var(--dim-2); letter-spacing: .04em; }
 .vis-v { text-align: right; }
@@ -859,7 +859,12 @@ body.v2 .cfg-mark.no  { color: var(--amber); }
 .flow-i { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 16px; padding: 16px 18px; border: 1px solid var(--line-3); border-bottom: 0; background: var(--card-bg); }
 .flow-i:last-child { border-bottom: 1px solid var(--line-3); }
 .flow-i.flow-bad { background: var(--warn-bg-deep); border-color: var(--amber-bg); }
-.flow-i.flow-us { box-shadow: inset 3px 0 0 var(--accent); }
+/* СТРОКИ «НАШ ПУТЬ» В СТОПКЕ. Полоски слева здесь больше нет: строки идут
+   вплотную, у каждой свои рамки, и вертикальная черта читалась украшением, а не
+   смыслом. Смысл несут уже окрашенный номер и подпись шага (`flow-n.us`,
+   `flow-k.us`); фон лишь отличает наши строки от чужой. Кольцо тут не годится —
+   четыре подряд идущие строки дали бы частокол двойных рамок. */
+.flow-i.flow-us { background: color-mix(in srgb, var(--accent) 4%, var(--card-bg)); }
 .flow-n { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--line-2); font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--dim-2); }
 .flow-n.bad { border-color: var(--amber-bg); color: var(--amber); }
 .flow-n.us { border-color: var(--accent); color: var(--accent); }

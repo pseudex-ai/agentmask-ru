@@ -103,11 +103,11 @@
     </a>
     {% block nav %}
     <nav>
-      <a href="/#how">КАК РАБОТАЕТ</a>
+      <a href="/ai-service#how">КАК РАБОТАЕТ</a>
       <a href="/how" data-acquisition-goal="docs_open" data-acquisition-doc="how">ПОЧЕМУ ЭТО СЛОЖНЕЕ</a>
       <a href="/detection">ЧТО НАХОДИМ</a>
       <a href="/architecture" data-acquisition-goal="docs_open" data-acquisition-doc="architecture" class="nav-secondary">152-ФЗ</a>
-      <a href="/#pricing">ЦЕНЫ</a>
+      <a href="/ai-service#pricing">ЦЕНЫ</a>
       <a href="/faq" class="nav-secondary">FAQ</a>
     </nav>
     {% endblock %}
@@ -126,7 +126,7 @@
         </form>
       {% else %}
         <a class="btn" href="{% url 'account_request_login_code' %}">ВОЙТИ</a>
-        <a class="btn cta" href="/#start" data-acquisition-goal="start_cta_click" data-acquisition-placement="header">НАЧАТЬ</a>
+        <a class="btn cta" href="/ai-service#start" data-acquisition-goal="start_cta_click" data-acquisition-placement="header">НАЧАТЬ</a>
       {% endif %}
     </div>
     {% endblock %}
