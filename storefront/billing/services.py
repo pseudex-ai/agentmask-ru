@@ -1340,7 +1340,15 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
     base_prepaid = (subscription.base_paid_through is not None
                     and timezone.now() < subscription.base_paid_through)
     subscription_amount = Decimal("0") if base_prepaid else terms["monthly_price"]
-    metered_requests = max(0, billable - billable_watermark)
+    # ОДНА АРИФМЕТИКА С ЗОНОЙ И С КАБИНЕТОМ. `period_billable` берёт БОЛЬШЕЕ из
+    # двух подписанных счётчиков — подтверждённую ёмкость и аудит запросов, —
+    # каждый со своей ватермаркой. Счёт читал только ёмкость, и у клиента, чей
+    # движок подтверждает ноль (`acked = 0`: лиза без блока `capacity`), счёт
+    # выходил 0 ₽ при растущем `requests`. Комментарий выше объясняет, почему
+    # счёт строится на ёмкости; он остаётся верным для движка, который ёмкость
+    # покупает, и перестаёт быть верным для того, кто её не покупает вовсе —
+    # там единственное подписанное свидетельство расхода и есть `requests`.
+    metered_requests = period_billable(organization, reported)
     # Порог применяется к ПРЕВЫШЕНИЮ, не к объёму: включённое клиент уже
     # оплатил абонплатой, и мерить надо ровно ту часть, за которую выставляется
     # отдельная строка.
@@ -1403,7 +1411,7 @@ def build_invoice(organization: Organization, period_start, period_end) -> Invoi
         metered_amount=metered_amount,
         total=total,
         due_at=(timezone.now() + timedelta(days=INVOICE_DUE_DAYS)).date(),
-        requests_billable_in_period=max(0, billable - billable_watermark),
+        requests_billable_in_period=metered_requests,
         requests_billable_at_period_end=max(billable_watermark, billable),
         values_at_period_end=max(watermark, values),
         requests_at_period_end=requests,
