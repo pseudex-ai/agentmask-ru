@@ -1,0 +1,5 @@
+# Local-only original client evidence. Never archive this directory with source.
+.pilot-state/
+.test-state/
+__pycache__/
+*.pyc

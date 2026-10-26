@@ -1,0 +1,10 @@
+{
+    admin off
+    auto_https off
+}
+:18864 {
+    reverse_proxy user_baked:7800
+}
+:18865 {
+    reverse_proxy graph_baked:2024
+}

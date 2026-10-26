@@ -14,6 +14,8 @@ from pseudex import (agent_form, cvc, morph_names, morph_places, notation,
                      ru_pii_v6, spoken, structured, translit)
 from pseudex.assets import ASSETS
 from pseudex.normalize import normalize
+from pseudex.inspection import Edit
+from pseudex.restoration import RestorationField
 from pseudex.profiling import stage
 from pseudex.vault import (LOC_TOKEN_PATTERN, REDACTION_MARKER, token_re, Vault, name_key,
                            place_key, _date_canonical, canonicalize, fold_key,
@@ -71,7 +73,9 @@ def _splice(text: str, spans: list[tuple[int, int, str]]) -> str:
     return result
 
 
-def mask_text(text: str, vault: Vault, spans: list[Span]) -> str:
+def mask_text(text: str, vault: Vault, spans: list[Span],
+              capture: list[Edit] | None = None,
+              base_tokens: list[str] | None = None) -> str:
     """Replace detected PII with consistent tokens. Pure w.r.t. text; mutates vault.
 
     A span whose value is ALREADY a token we issued is left untouched. This is
@@ -92,7 +96,7 @@ def mask_text(text: str, vault: Vault, spans: list[Span]) -> str:
     be passed through unmasked. That needs a fake-name pool far larger than the
     current seed list (see names.py) — the same production swap already planned."""
     replacements: list[tuple[int, int, str]] = []
-    for span in spans:
+    for index, span in enumerate(spans):
         if is_own_substitute(span, vault):
             continue
         shown = _token_for_text(span, vault)
@@ -108,6 +112,14 @@ def mask_text(text: str, vault: Vault, spans: list[Span]) -> str:
         if _shown_mirrors(shown, literal, span.entity_type):
             vault.remember_shown(shown, literal, span.entity_type)
         replacements.append((span.start, span.end, shown))
+        if capture is not None and shown != literal:
+            # The audit loop already obtained the base token. Inspection must
+            # never mint another one, or try to rediscover the shown form later.
+            redaction = REDACTION_MARKER.fullmatch(shown) is not None
+            base = base_tokens[index] if base_tokens is not None else None
+            capture.append(Edit(span.start, span.end, shown, span.entity_type,
+                                None if redaction else base,
+                                "redaction" if redaction else "pseudonym"))
     return _splice(text, replacements)
 
 
@@ -912,7 +924,8 @@ def _argument_view(texts: tuple[str, ...], vault: Vault) -> Vault:
 
 
 def unmask_text(text: str, vault: Vault, inflect: bool = True,
-                for_tool: bool = False, target: str = "") -> str:
+                for_tool: bool = False, target: str = "",
+                restoration: RestorationField | None = None) -> str:
     """Replace tokens with their real values, then catch numeric tokens the model
     REFORMATTED via a digit-signature match.
 
@@ -927,10 +940,12 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True,
     """
     literals = _literals_of(vault)
     restored = _unmask(text, _call_view(_call_texts(text), vault), literals,
-                       inflect, for_tool, target=target)
+                       inflect, for_tool, target=target, restoration=restoration)
     if not for_tool:
-        joined = _join_addresses_in_json_value(restored, text, vault, literals)
+        joined = _join_addresses_in_json_value(restored, text, vault, literals, restoration)
         if joined is not None:
+            if restoration is not None:
+                restoration.json(text, joined, include_splices=True)
             return joined
     return restored
 
@@ -944,7 +959,8 @@ def unmask_text(text: str, vault: Vault, inflect: bool = True,
 # НЕразрешённым (`restored == original` — ровно то условие, по которому соединение
 # и переписывает лист). Всё остальное уходит прежней дорогой, без пересборки JSON.
 def _join_addresses_in_json_value(restored: str, original: str, vault: Vault,
-                                  literals: _Literals) -> str | None:
+                                  literals: _Literals,
+                                  restoration: RestorationField | None = None) -> str | None:
     stripped = original.strip()
     if not (stripped.startswith("{") and stripped.endswith("}")):
         return None
@@ -961,7 +977,7 @@ def _join_addresses_in_json_value(restored: str, original: str, vault: Vault,
     if not any(roles.get(key) and restored_obj.get(key) == value
                for key, value in original_obj.items() if isinstance(value, str)):
         return None
-    joined = _join_addresses_deep(restored_obj, original_obj, vault, literals)
+    joined = _join_addresses_deep(restored_obj, original_obj, vault, literals, restoration)
     if joined == restored_obj:
         return None
     return json.dumps(joined, ensure_ascii=False)
@@ -1025,7 +1041,8 @@ def _conflicting_place_spans(text: str, vault: Vault,
 
 
 def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
-            for_tool: bool, field_key: str = "", target: str = "") -> str:
+            for_tool: bool, field_key: str = "", target: str = "",
+            restoration: RestorationField | None = None) -> str:
     with stage("unmask.total"):
         # EVERY PASS READS THE SAME MASKED TEXT, AND THE EXACT TOKENS WIN. The
         # passes used to run one after another on the text the previous pass
@@ -1125,10 +1142,19 @@ def _unmask(text: str, vault: Vault, literals: _Literals, inflect: bool,
         # skipping it earlier would let smaller parts restore another owner.
         # A larger unambiguous whole retains its normal precedence. Both OUT
         # consumers share this boundary, and no pass reads the restored output.
-        return _splice(text, [(start, end,
-                               text[start:end] if _conflicts_with(text[start:end], literals.conflicts)
-                               else _as_written(value, _spellings_for(value, literals.as_written)))
-                              for start, end, value in taken])
+        rendered = [(start, end,
+                     text[start:end] if _conflicts_with(text[start:end], literals.conflicts)
+                     else _as_written(value, _spellings_for(value, literals.as_written)))
+                    for start, end, value in taken]
+        if restoration is not None:
+            shift = 0
+            for start, end, value in sorted(rendered):
+                # Veto ranges reserve precedence but change nothing. Record only
+                # the final rendered accepted splice, without another lookup.
+                if value != text[start:end]:
+                    restoration.splice(start, end, start + shift, start + shift + len(value))
+                shift += len(value) - (end - start)
+        return _splice(text, rendered)
 
 
 # A SHORT NUMBER IN PROSE IS A QUANTITY — unless the word before it says what
@@ -3542,7 +3568,8 @@ def _bare_address_leaf(key: str, value: object) -> bool:
 
 
 def unmask_arguments(raw: str, vault: Vault,
-                     leaf_notation: dict[str, str] | None = None) -> str:
+                     leaf_notation: dict[str, str] | None = None,
+                     restoration: RestorationField | None = None) -> str:
     """Detokenise a tool call's `arguments` AS JSON, not as flat text.
 
     THE ARGUMENTS ARE JSON AND THE REAL VALUE IS ARBITRARY TEXT. Substituting
@@ -3580,19 +3607,22 @@ def unmask_arguments(raw: str, vault: Vault,
     try:
         parsed = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        return _unmask(raw, call, literals, False, True)
+        return _unmask(raw, call, literals, False, True, restoration=restoration)
 
     notations = leaf_notation or {}
 
-    def walk(node: object, key: str = "") -> object:
+    def walk(node: object, key: str = "", path: tuple[str | int, ...] = ()) -> object:
         if isinstance(node, str):
             # VERBATIM, NOT AGREED. A tool executes on the value; grammar is a
             # property of prose. See `_in_case_of`. The leaf's schema-declared
             # notation rides as `target` and is applied only when declared.
-            return _unmask(node, call, literals, False, True, field_key=key,
-                           target=notations.get(key, ""))
+            value = _unmask(node, call, literals, False, True, field_key=key,
+                            target=notations.get(key, ""))
+            if restoration is not None:
+                restoration.write(path, node, value)
+            return value
         if isinstance(node, list):
-            return [walk(item, key) for item in node]
+            return [walk(item, key, (*path, index)) for index, item in enumerate(node)]
         # A NUMBER IS A LEAF TOO, AND THE TEMPORARY-SECRET CLASS NEEDS IT.
         # `{"cvc": 314}` is an unquoted numeric field — how a customer's own
         # system serialises a short code — and this walker returned every
@@ -3606,7 +3636,10 @@ def unmask_arguments(raw: str, vault: Vault,
         # type's numeric leaf changes behaviour.
         if isinstance(node, int):
             restored = cvc.restore_number_leaf(key, node, call, for_tool=True)
-            return node if restored is None else restored
+            value = node if restored is None else restored
+            if restoration is not None:
+                restoration.write(path, node, value)
+            return value
         if isinstance(node, dict):
             # Keys are the tool's own schema, not customer text — but a token
             # can only ever appear in a value, so rewriting keys would be a way
@@ -3617,35 +3650,45 @@ def unmask_arguments(raw: str, vault: Vault,
             # digits by the cross-type fragment owner and came back as the
             # customer's phone fragment «230» — a flat that is nobody's, with
             # a 200 (fresh-seed v4: 3 of 300 two-address draws).
-            return {key: (value if _bare_address_leaf(key, value) else walk(value, str(key)))
+            return {key: (value if _bare_address_leaf(key, value)
+                          else walk(value, str(key), (*path, key)))
                     for key, value in node.items()}
         return node
 
-    return json.dumps(_join_initials_deep(
+    result = json.dumps(_join_initials_deep(
         _join_documents_deep(
-            _join_addresses_deep(walk(parsed), parsed, call, literals), parsed, call),
-        parsed), ensure_ascii=False)
+            _join_addresses_deep(walk(parsed), parsed, call, literals, restoration),
+            parsed, call, restoration),
+        parsed, restoration), ensure_ascii=False)
+    if restoration is not None:
+        restoration.json(raw, result)
+    return result
 
 
 _COMPOSITE_KEY_RE = re.compile(r"[\s\-_.]")
 
 
-def _join_documents_deep(restored: object, original: object, vault: Vault) -> object:
+def _join_documents_deep(restored: object, original: object, vault: Vault,
+                         restoration: RestorationField | None = None,
+                         path: tuple[str | int, ...] = ()) -> object:
     """`_join_document_fields` at EVERY level of the object, as the address join."""
     if isinstance(restored, dict) and isinstance(original, dict):
-        joined = _join_document_fields(restored, original, vault)
+        joined = _join_document_fields(restored, original, vault, restoration, path)
         if not isinstance(joined, dict):
             return joined
-        return {key: _join_documents_deep(value, original.get(key), vault)
+        return {key: _join_documents_deep(value, original.get(key), vault,
+                                          restoration, (*path, key))
                 for key, value in joined.items()}
     if isinstance(restored, list) and isinstance(original, list):
         return [_join_documents_deep(value, original[index] if index < len(original) else None,
-                                     vault)
+                                     vault, restoration, (*path, index))
                 for index, value in enumerate(restored)]
     return restored
 
 
-def _join_document_fields(restored: dict, original: dict, vault: Vault) -> dict:
+def _join_document_fields(restored: dict, original: dict, vault: Vault,
+                          restoration: RestorationField | None = None,
+                          path: tuple[str | int, ...] = ()) -> dict:
     """СОБРАТЬ ДОКУМЕНТ, РАЗЛОЖЕННЫЙ СХЕМОЙ ПО ПОЛЯМ, И РАЗЛОЖИТЬ ЕГО ОБРАТНО.
 
     `{"passport": {"series": "0012", "number": "345678"}}` — две подмены-листа и
@@ -3694,7 +3737,10 @@ def _join_document_fields(restored: dict, original: dict, vault: Vault) -> dict:
             part = real_digits[offset:offset + size]
             offset += size
             if out.get(key) == original[key]:
-                out[key] = _digits_like(original[key], part)
+                value = _digits_like(original[key], part)
+                if restoration is not None:
+                    restoration.write((*path, key), out[key], value)
+                out[key] = value
         return out
     return restored
 
@@ -3703,18 +3749,24 @@ _INITIALS_LEAF = re.compile(r"^\s*([А-ЯЁ])\.?(?:\s?([А-ЯЁ])\.?)?\s*$")
 _NAME_LEAF = re.compile(r"^[А-ЯЁа-яё][А-ЯЁа-яё\- ]{1,60}$")
 
 
-def _join_initials_deep(restored: object, original: object) -> object:
+def _join_initials_deep(restored: object, original: object,
+                        restoration: RestorationField | None = None,
+                        path: tuple[str | int, ...] = ()) -> object:
     """`_join_initials` at every level of the object; see there."""
     if isinstance(restored, dict) and isinstance(original, dict):
-        joined = _join_initials(restored, original)
-        return {key: _join_initials_deep(value, original.get(key)) for key, value in joined.items()}
+        joined = _join_initials(restored, original, restoration, path)
+        return {key: _join_initials_deep(value, original.get(key), restoration, (*path, key))
+                for key, value in joined.items()}
     if isinstance(restored, list) and isinstance(original, list):
-        return [_join_initials_deep(value, original[index] if index < len(original) else None)
+        return [_join_initials_deep(value, original[index] if index < len(original) else None,
+                                    restoration, (*path, index))
                 for index, value in enumerate(restored)]
     return restored
 
 
-def _join_initials(restored: dict, original: dict) -> dict:
+def _join_initials(restored: dict, original: dict,
+                   restoration: RestorationField | None = None,
+                   path: tuple[str | int, ...] = ()) -> dict:
     """AN INITIAL IN A TOOL CALL ABBREVIATES THE NAME WRITTEN BESIDE IT.
 
     A CRM schema asks for `first_name`, `middle_name` AND `initials`; the model
@@ -3789,12 +3841,15 @@ def _join_initials(restored: dict, original: dict) -> dict:
         if second is not None:
             head = text.index(first) + 1
             text = text[:head] + text[head:].replace(found.group(2), second, 1)
+        if restoration is not None:
+            restoration.write((*path, key), out[key], text)
         out[key] = text
     return out
 
 
 def _join_addresses_deep(restored: object, original: object, vault: Vault,
-                         literals: _Literals) -> object:
+                         literals: _Literals, restoration: RestorationField | None = None,
+                         path: tuple[str | int, ...] = ()) -> object:
     """`_join_address_fields` at EVERY level of the object, not only the top.
 
     The first schema this was written against was flat — `dispatch_car` asked
@@ -3806,14 +3861,15 @@ def _join_addresses_deep(restored: object, original: object, vault: Vault,
     dict on the way down; a list is walked for the dicts inside it.
     """
     if isinstance(restored, dict) and isinstance(original, dict):
-        joined = _join_address_fields(restored, original, vault, literals)
+        joined = _join_address_fields(restored, original, vault, literals, restoration, path)
         if not isinstance(joined, dict):
             return joined
-        return {key: _join_addresses_deep(value, original.get(key), vault, literals)
+        return {key: _join_addresses_deep(value, original.get(key), vault, literals,
+                                         restoration, (*path, key))
                 for key, value in joined.items()}
     if isinstance(restored, list) and isinstance(original, list):
         return [_join_addresses_deep(value, original[index] if index < len(original) else None,
-                                    vault, literals)
+                                    vault, literals, restoration, (*path, index))
                 for index, value in enumerate(restored)]
     return restored
 
@@ -3825,7 +3881,8 @@ _role_of_field = morph_places.role_of_field
 
 
 def _join_address_fields(restored: object, original: object, vault: Vault,
-                         literals: _Literals) -> object:
+                         literals: _Literals, restoration: RestorationField | None = None,
+                         path: tuple[str | int, ...] = ()) -> object:
     """Собрать адрес, который модель разложила по ПОЛЯМ схемы, и разложить обратно.
 
     ПОЧЕМУ ЭТО НЕЛЬЗЯ СДЕЛАТЬ ПОЛИСТНО. Подмена адреса — одна фраза, а
@@ -3878,7 +3935,7 @@ def _join_address_fields(restored: object, original: object, vault: Vault,
     out = dict(restored)
     for group in groups.values():
         out = _join_one_address(out, {key: value for key, value in group.items() if key in fragments},
-                                group, vault, literals)
+                                group, vault, literals, restoration, path)
     return out
 
 
@@ -3961,7 +4018,8 @@ def _role_owners(roles: dict[str, str], vault: Vault) -> set[str]:
 
 def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
                       evidence: dict[str, str], vault: Vault,
-                      literals: _Literals) -> dict[str, object]:
+                      literals: _Literals, restoration: RestorationField | None = None,
+                      path: tuple[str | int, ...] = ()) -> dict[str, object]:
     """Одна группа полей — один адрес. `evidence` — все адресные листья группы
     как их написала модель, `fragments` — те из них, что ещё не разрешились."""
     if not fragments:
@@ -4070,7 +4128,10 @@ def _join_one_address(restored: dict[str, object], fragments: dict[str, str],
             # one that IS this address — a field on its own carries neither its
             # neighbours' words nor its own house number, and could never
             # recognise itself.
-            out[key] = _as_written(agent_form.cased_like(laid, fragments[key]), spellings)
+            value = _as_written(agent_form.cased_like(laid, fragments[key]), spellings)
+            if restoration is not None:
+                restoration.write((*path, key), out[key], value)
+            out[key] = value
     return out
 
 

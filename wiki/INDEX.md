@@ -23,6 +23,10 @@ Status: `spec` (describes shipped behaviour) · `ТЗ` (a specification;
 
 | file | answers | status |
 |---|---|---|
+| `docs/BUILD-BRIEF-2h.md` | binding local pilot tracks T1–T6: platform policy API/UI, September+ source qualification, actual dialogue/tools, ten-agent isolation and adversarial acceptance | implementation contract; not a sign-off |
+| `docs/SIGNOFF-policy-integration.md` | prior policy integration summary; superseded by actual-source testing that found JSON seam failures and incomplete input resources | has-open-items; stale/overoptimistic, NOT release acceptance |
+| `research/2026-10-24-false-positive-masking.md` | historical over-masking investigation and local policy evidence; not a complete live-dialogue or current precision certification | evidence; has-open-items |
+| `docs/integration-doubleup-local.md` | current local runbook: four-hop provenance, persistent marks vs60s private details and accessible email links;21 full sensitive original dialogues/read-only viewing, retained failed P run and exact budget; current three-track scope above historical checkpoints | local spec/runbook · D-091/D-092/D-093 |
 | `docs/decisions-product-control-plane.md` | owner-led methodological decision log: accepted topology/roles/policy/HITL/documents/secrets/coding choices, chronological supersedes (incl. Jev and semantic R&D cancelled), plus a consolidated scope summary and open owner questions | design (decision log; scope proposed, not implemented) |
 | `docs/tz-ai-coding-track.md` | owner-requested final T12 of the same sprint: F23/K10, W28–W35 (Claude slice) then W45 (Codex), AC01–AC13; exact-byte coding mappings, controlled Bash subset/read-search/literal patch, local executor, scoped credential operations, SP07 harness compatibility, Linux/macOS/WSL; release boundary C5 = OPEN-C01 | design (coding scope requested; architecture proposed, not implemented) |
 | `docs/tz-hitl-and-documents.md` | accepted F24 HITL (queue/UI/API, encrypted pending, no-auto-expiry card, live-only first release, reveal off by default, H01–H10, W36–W39) and F25 documents-on-context-boundary (tool_result masking, file-attachment block/extract/route, no OCR/native rewrite, document benchmark, DOCG01–DOCG10, W40–W44); closed owner decisions OPEN-C/H/DOC-ARCH | design (scope accepted; protocol/benchmark details still SP08) |
@@ -47,7 +51,7 @@ Status: `spec` (describes shipped behaviour) · `ТЗ` (a specification;
 | [`docs/tz-license-slots-and-epochs.md`](../docs/tz-license-slots-and-epochs.md) | `superseded by tz-license-volume-quota.md` | прежний заход: слоты/поколения/эпохи/фенсинг вместо счёта живых процессов. Удалён из кода 24.09.2026 — инстанс-счёт не мерит продаваемое (весь трафик через один прокси) и FLP-невозможен; лимит перенесён на объём. Хранится для истории |
 | `docs/tz-license-packaging.md` | the licensing layer and packaging: the threat model §3.4, the two images, gates L1–L22 / P1–P11 — the definition of done | ТЗ-done · STATE D-001 |
 | `docs/tz-tuning-in-lease.md` | why the tuning rides in the lease, not a compiled blob — closing A2 (extract-once-run-forever) | ТЗ-done · STATE D-039, D-045 |
-| `docs/tz-offline-license.md` | the term-licence SKU that works with no call home; the O1–O15 gates | ТЗ-design (O1–O15 not built) · STATE D-004 |
+| `docs/tz-offline-license.md` | owner-approved perpetual/unlimited/reseller offline SKU; replaces historic term-license wording; O1–O19 real-container acceptance | implementation contract; NOT built · historic D-004 narrowed by spec §0 |
 | `docs/tz-vault-encryption.md` | vault encryption at rest: SQLCipher, the key resolver, migration | ТЗ-done (29.08.2026) · STATE D-012–D-017 |
 | `docs/tz-name-gender-canonical.md` | the surname-gender-in-the-canonical-key problem and its fix | ТЗ-done (kept for the road to the solution) · STATE D-032 |
 | `docs/tz-local-ui.md` | the operator's local web interface: auth, the engine-proxy allowlist, why a separate process | ТЗ-done |
@@ -87,6 +91,10 @@ not proof of production-paid attribution or legal certification.
 
 | file | answers | status |
 |---|---|---|
+| `research/2026-10-24-doubleup-four-hops-and-dialogues.md` | chronological four-hop/source-chat implementation; latest three-track UI/source/diagnosis state overrides older dry/live-running checkpoints; retains failed P run and no quality verdict | evidence/has-open-items · D-092/D-093 |
+| `research/2026-10-24-real-sensitive-dialogues.md` | human catalog of21 complete real source chats/183 user turns,15 with contacts in tools and12 user-to-tool contact overlaps; direct private local original views/source Langfuse links, intake exclusions and no-gold limitations | source evidence/catalog · D-093 |
+| `research/2026-10-24-uuid-residual-research.md` | independently reproduced pre-existing UUID/NAME ownership false residual, exact engine-vs-adapter mechanism, config facts and future fix layer; earlier experimental guard is not an accepted fix | diagnosis-only evidence · D-093 |
+| `research/2026-10-23-doubleup-local-pilot.md` | PREVIOUS local source/compiled/baked/browser/web checkpoint, gateway-project fragments/reconciliation and single-generation DeepSeek smoke; retained as history, NOT current full-chat corpus/four-hop/full-suite acceptance; current status in 24 October report | previous local evidence, not production acceptance · D-091 |
 | `research/agent-integrity-repair/SCOPE.md` | Complete repair scope, acceptance requirements, frozen source separation, baseline and pending semantic decisions | has-open-items |
 | `research/agent-integrity-repair/run_battery.py` | Reproducible per-script before/after regression logs without paid model calls; generated results live beside the runner | evidence tooling |
 | `research/agent-integrity-repair/REVIEW-AND-MEASUREMENT.md` | Independent-review corrections, preliminary paired measurements and honest outstanding test failures; not live acceptance | has-open-items |

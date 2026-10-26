@@ -2,10 +2,18 @@
 LiteLLM callback). We do NOT call the provider; the host does. We only transform
 text + keep the per-org vault + audit. Runs in the customer's contour.
 
-  POST /mask          {org_id, messages, tools, conversation_id?, pseudonym_scope?}
-                                                   -> {messages, tools}  (audited)
-  POST /unmask        {org_id, response, conversation_id?, pseudonym_scope?}     -> {response}
-  POST /unmask_arguments {org_id, arguments[], conversation_id?, pseudonym_scope?} -> {arguments[]}   (streamed tool calls)
+  POST /mask          {org_id, messages, tools, conversation_id?, pseudonym_scope?,
+                       inspection?: true, request_id?: string}
+                       -> {messages, tools, inspection?}  (audited)
+                       Inspection is inline only: exact shown replacements, JSON
+                       Pointer paths, raw/final codepoint offsets, effective scope;
+                       no raw values or reconstructed history. No flag: old shape.
+  POST /unmask        {org_id, response, conversation_id?, pseudonym_scope?, inspection?} -> {response, inspection?}
+  POST /unmask_arguments {org_id, arguments[], conversation_id?, pseudonym_scope?, inspection?} -> {arguments[], inspection?}
+                       Opt-in OUT v2 captures semantic restoration operations,
+                       positions only (no restored literals); JSON whole-leaf
+                       granularity, explicit lexical/semantic completeness.
+                       Buffered arguments only: no streaming receipt support.
   POST /unmask_chunk  {org_id, delta, carry, flush, conversation_id?, pseudonym_scope?} -> {text, carry}  (SSE leg)
   POST /spans         {org_id, texts}              -> offsets for highlighting
   GET  /usage?org_id=...                           -> counts + recent (for UI)
@@ -50,6 +58,7 @@ lease expires — `pseudex/license.py` has the reasoning. Only the DETECTION
 endpoints go to 503 for that; see `_license_block`.
 """
 
+from dataclasses import replace
 import hmac
 import logging
 import os
@@ -79,6 +88,8 @@ from pseudex.license import (
     ENGINE_VERSION, STATE_LEASED, LicenseClient, LicenseError, explain)
 from pseudex import metering
 from pseudex.maskcache import MaskCache
+from pseudex.inspection import Inspection, requested as requested_inspection
+from pseudex.restoration import RestorationInspection
 from pseudex.operator import build_router
 from pseudex.profiling import snapshot as profiling_snapshot
 from pseudex.redact import surviving_substitutes, unmask_arguments, unmask_stream_chunk
@@ -456,6 +467,7 @@ def _mask_request(
     skip_template: bool,
     pseudonym_scope: str = "",
     own_values: tuple[str, ...] = (),
+    inspection: Inspection | None = None,
 ) -> tuple[list[dict[str, object]], object]:
     """One unit of CPU-heavy work, so messages and tools share a single hop onto
     the worker thread instead of paying the offload twice.
@@ -467,7 +479,8 @@ def _mask_request(
     `time.sleep` on the loop, stalling /health and every other in-flight request
     in this worker. That is the exact failure the threadpool offload exists to
     prevent."""
-    context = _context(org_id, agent_id, conversation_id, pseudonym_scope, own_values)
+    context = replace(_context(org_id, agent_id, conversation_id, pseudonym_scope, own_values),
+                      inspection=inspection)
     result = (
         mask_messages(messages, context, skip_template),
         mask_tools(tools, context, skip_template),
@@ -664,6 +677,11 @@ async def mask(request: Request) -> JSONResponse:
     # Пусто по умолчанию, и тогда поведение движка не меняется ни в одном байте.
     own_values = tuple(str(one).strip() for one in body.get("own_values", ())
                        if str(one).strip()) or _OWN_VALUES
+    try:
+        inspect, request_id = requested_inspection(body)
+    except ValueError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    inspection = Inspection(request_id) if inspect else None
     tools = body.get("tools")
     # CPU-heavy morphology runs in a worker thread (NOT the event loop), so
     # /health and other requests stay responsive while a large /mask is in
@@ -673,12 +691,14 @@ async def mask(request: Request) -> JSONResponse:
     # to a 5xx, which the caller treats as a block (it never sees raw PII).
     masked_messages, masked_tools = await anyio.to_thread.run_sync(
         _mask_request, messages, tools, org_id, agent_id, conversation_id,
-        skip_template, pseudonym_scope, own_values,
+        skip_template, pseudonym_scope, own_values, inspection,
         limiter=_MASK_LIMITER,
     )
     payload: dict[str, object] = {"messages": masked_messages}
     if tools is not None:
         payload["tools"] = masked_tools
+    if inspection is not None:
+        payload["inspection"] = inspection.payload(conversation_id, pseudonym_scope)
     return JSONResponse(payload)
 
 
@@ -711,8 +731,13 @@ async def unmask(request: Request) -> JSONResponse:
     refused = _bad_scope(pseudonym_scope)
     if refused:
         return refused
+    try:
+        inspect, request_id = requested_inspection(body)
+    except ValueError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    inspection = RestorationInspection(request_id) if inspect else None
     result = await anyio.to_thread.run_sync(
-        _unmask_for, response, org_id, conversation_id, pseudonym_scope,
+        _unmask_for, response, org_id, conversation_id, pseudonym_scope, inspection,
         limiter=_MASK_LIMITER
     )
     # WHAT DID NOT COME BACK. Detokenization is best-effort by construction: a
@@ -730,6 +755,8 @@ async def unmask(request: Request) -> JSONResponse:
         pseudonym_scope
     )
     payload: dict[str, object] = {"response": result}
+    if inspection is not None:
+        payload["inspection"] = inspection.payload(conversation_id, pseudonym_scope)
     if residual:
         payload["residual_tokens"] = residual
     return JSONResponse(payload, headers=({"X-Pseudex-Residual": str(len(residual))}
@@ -791,9 +818,15 @@ async def unmask_arguments_endpoint(request: Request) -> JSONResponse:
     refused = _bad_scope(pseudonym_scope)
     if refused:
         return refused
+    try:
+        inspect, request_id = requested_inspection(body)
+    except ValueError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    inspection = RestorationInspection(request_id) if inspect else None
+    conversation_id = str(body.get("conversation_id", ""))
     restored, residual, disclosed = await anyio.to_thread.run_sync(
-        _unmask_arguments_for, arguments, org_id, str(body.get("conversation_id", "")),
-        pseudonym_scope, leaf_notation, limiter=_MASK_LIMITER
+        _unmask_arguments_for, arguments, org_id, conversation_id,
+        pseudonym_scope, leaf_notation, inspection, limiter=_MASK_LIMITER
     )
     await anyio.to_thread.run_sync(
         AUDIT.record_detok, org_id, _detok_actor(body), disclosed, len(residual)
@@ -803,6 +836,8 @@ async def unmask_arguments_endpoint(request: Request) -> JSONResponse:
     # is the one outcome this product exists to prevent. The caller cannot see it
     # any other way — the JSON is well-formed and the status is 200.
     payload: dict[str, object] = {"arguments": restored}
+    if inspection is not None:
+        payload["inspection"] = inspection.payload(conversation_id, pseudonym_scope)
     if residual:
         payload["residual_tokens"] = residual
     return JSONResponse(payload, headers=({"X-Pseudex-Residual": str(len(residual))}
@@ -911,7 +946,8 @@ def _bad_scope(scope: str) -> JSONResponse | None:
 
 def _unmask_arguments_for(arguments: list[str], org_id: str, conversation_id: str = "",
                           pseudonym_scope: str = "",
-                          leaf_notation: dict[str, str] | None = None) -> tuple[list[str], list[str], int]:
+                          leaf_notation: dict[str, str] | None = None,
+                          inspection: RestorationInspection | None = None) -> tuple[list[str], list[str], int]:
     """Vault resolved inside the worker thread — see _mask_request. Returns the
     restored arguments, the residual (substitutes that failed to resolve — a fake
     reaching the tool), and the count of real values DISCLOSED (minted tokens in the
@@ -922,7 +958,10 @@ def _unmask_arguments_for(arguments: list[str], org_id: str, conversation_id: st
     Ж — «snils», «e164», «gost»); a leaf absent from the map is «not declared» and
     keeps the sender's own form. The gateway computes it from the tool schema."""
     vault = _scoped(org_id, conversation_id, pseudonym_scope)
-    restored = [unmask_arguments(raw, vault, leaf_notation=leaf_notation) for raw in arguments]
+    restored = [unmask_arguments(raw, vault, leaf_notation=leaf_notation,
+                                restoration=inspection.field(f"/arguments/{index}")
+                                if inspection is not None else None)
+                for index, raw in enumerate(arguments)]
     residual: list[str] = []
     for raw, text in zip(arguments, restored):
         residual.extend(surviving_substitutes(raw, text, vault, True))
@@ -932,9 +971,11 @@ def _unmask_arguments_for(arguments: list[str], org_id: str, conversation_id: st
 
 
 def _unmask_for(response: dict[str, object], org_id: str, conversation_id: str = "",
-                pseudonym_scope: str = "") -> dict[str, object]:
+                pseudonym_scope: str = "",
+                inspection: RestorationInspection | None = None) -> dict[str, object]:
     """Vault resolved inside the worker thread — see _mask_request."""
-    return unmask_response(response, _scoped(org_id, conversation_id, pseudonym_scope))
+    return unmask_response(response, _scoped(org_id, conversation_id, pseudonym_scope),
+                           inspection=inspection)
 
 
 def _residual_for(written: dict[str, object], restored: dict[str, object],

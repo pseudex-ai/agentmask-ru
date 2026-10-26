@@ -80,3 +80,82 @@ def string_leaves(text: str) -> tuple[StringLeaf, ...]:
         # falls back to prose for the whole input if structure cannot be read.
         return ()
     return tuple(leaves) if index == len(tokens) else ()
+
+
+def scalar_map(text: str) -> tuple[dict[tuple[str | int, ...], tuple[int, int]], str]:
+    """Full scalar lexemes (including string quotes), indexed structurally.
+
+    Unlike string_leaves this accepts root scalars and numbers. No decoded-to-
+    lexical interpolation: a changed leaf owns its WHOLE lexeme. Duplicate keys
+    make JSON Pointers ambiguous, including duplicate container keys whose child
+    names differ, so no partial authoritative map is returned in that case.
+    """
+    decoder = json.JSONDecoder()
+    leaves: dict[tuple[str | int, ...], tuple[int, int]] = {}
+    duplicate = False
+    at = 0
+
+    def whitespace() -> None:
+        nonlocal at
+        while at < len(text) and text[at] in " \t\r\n":
+            at += 1
+
+    def value(path: tuple[str | int, ...]) -> None:
+        nonlocal at, duplicate
+        whitespace()
+        start = at
+        if text[at] == "{":
+            at += 1
+            whitespace()
+            seen = set()
+            if text[at] == "}":
+                at += 1
+                return
+            while True:
+                key, at = decoder.raw_decode(text, at)
+                if not isinstance(key, str):
+                    raise ValueError("non-string object key")
+                duplicate = duplicate or key in seen
+                seen.add(key)
+                whitespace()
+                if text[at] != ":":
+                    raise ValueError("missing colon")
+                at += 1
+                value((*path, key))
+                whitespace()
+                delimiter = text[at]
+                at += 1
+                if delimiter == "}":
+                    return
+                if delimiter != ",":
+                    raise ValueError("missing comma")
+                whitespace()
+        elif text[at] == "[":
+            at += 1
+            whitespace()
+            if text[at] == "]":
+                at += 1
+                return
+            index = 0
+            while True:
+                value((*path, index))
+                index += 1
+                whitespace()
+                delimiter = text[at]
+                at += 1
+                if delimiter == "]":
+                    return
+                if delimiter != ",":
+                    raise ValueError("missing comma")
+        else:
+            _decoded, at = decoder.raw_decode(text, at)
+            leaves[path] = (start, at)
+
+    try:
+        value(())
+        whitespace()
+        if at != len(text):
+            raise ValueError("trailing content")
+    except (ValueError, IndexError, TypeError, RecursionError):
+        return {}, "json_lexical_map_unavailable"
+    return ({}, "duplicate_json_keys") if duplicate else (leaves, "")

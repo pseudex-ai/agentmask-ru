@@ -1,0 +1,169 @@
+name: obscura-doubleup-pilot
+
+x-backend: &backend
+  image: 2up-aiplatform-backend-user_api:latest
+  working_dir: /app
+  env_file: .state/backend.env
+  volumes:
+    - ${PILOT_BACKEND_DIR:?backend worktree required}:/app
+    - backend-data:/app/data
+    - backend-logs:/app/logs
+    - ./.state/runtime:/run/pilot:ro
+    - ./seed.py:/opt/pilot/seed.py:ro
+  networks: [data]
+  restart: "no"
+  logging:
+    driver: json-file
+    options: {max-size: 10m, max-file: "2"}
+
+services:
+  # Only this fixed-upstream front door can reach the host-published network.
+  # Internal containers cannot use corporate defaults or contact customer tools.
+  frontdoor:
+    image: caddy:2-alpine
+    volumes: ["./Caddyfile:/etc/caddy/Caddyfile:ro"]
+    networks: [data, control]
+    ports:
+      - "127.0.0.1:18943:18943"
+      - "127.0.0.1:18862:18862"
+      - "127.0.0.1:18881:18881"
+      - "127.0.0.1:18850:18850"
+      - "127.0.0.1:18860:18860"
+      - "127.0.0.1:18861:18861"
+    restart: "no"
+
+  license:
+    image: obscura-doubleup-license:local
+    build:
+      context: .state/baseline/prototype
+      dockerfile: licensing/Dockerfile
+    env_file: .state/license.env
+    volumes:
+      - license-data:/data
+      - ./.state/certs:/certs:ro
+    networks: [data]
+    restart: "no"
+
+  sidecar:
+    image: obscura-doubleup-engine:local
+    build:
+      context: ${PILOT_ENGINE_CONTEXT:-.state/baseline/prototype}
+      dockerfile: Dockerfile
+      args:
+        PSEUDEX_LICENSE_PUBKEY: ${PSEUDEX_LICENSE_PUBKEY:?public verification key required}
+    env_file: .state/sidecar.env
+    volumes:
+      - sidecar-data:/data
+      - ./.state/certs:/certs:ro
+    ulimits: {memlock: -1}
+    networks: [data]
+    depends_on: [license]
+    restart: "no"
+
+  sidecar_compiled:
+    image: obscura-doubleup-engine:compiled-local
+    profiles: [compiled]
+    env_file: .state/sidecar.env
+    environment:
+      PSEUDEX_INSTANCE_ID: doubleup-compiled-container-gate
+      PSEUDEX_UI: "0"
+    volumes:
+      - compiled-data:/data
+      - ./.state/certs:/certs:ro
+    ulimits: {memlock: -1}
+    networks: [data]
+    depends_on: [license]
+    restart: "no"
+
+  compiled_frontdoor:
+    image: caddy:2-alpine
+    profiles: [compiled]
+    volumes: ["./compiled.Caddyfile:/etc/caddy/Caddyfile:ro"]
+    networks: [data, control]
+    ports: ["127.0.0.1:18863:18863"]
+    restart: "no"
+
+  mongodb:
+    image: mongo:8.2.7
+    volumes: ["mongo-data:/data/db"]
+    networks: [data]
+    healthcheck:
+      test: [CMD, mongosh, --quiet, --eval, "quit(db.adminCommand('ping').ok ? 0 : 1)"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: "no"
+
+  redis:
+    image: redis:7.2-alpine
+    networks: [data]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: "no"
+
+  qdrant:
+    image: qdrant/qdrant:v1.17.0
+    volumes: ["qdrant-data:/qdrant/storage"]
+    networks: [data]
+    restart: "no"
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address :9001
+    env_file: .state/minio.env
+    volumes: ["minio-data:/data"]
+    networks: [data]
+    restart: "no"
+
+  gateway:
+    image: 2up-aiplatform-backend-user_api:latest
+    working_dir: /pilot
+    command: [python, -m, uvicorn, gateway:app, --host, 0.0.0.0, --port, "4000", --no-access-log]
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PILOT_GATEWAY_MODE: ${PILOT_GATEWAY_MODE:-fixture}
+      PILOT_UPSTREAM_BASE: ${PILOT_UPSTREAM_BASE:-https://litellm.inf.2up.dev}
+      PILOT_UPSTREAM_DIRECT: ${PILOT_UPSTREAM_DIRECT:-0}
+    volumes:
+      - ./gateway.py:/pilot/gateway.py:ro
+      - ./budget.py:/pilot/budget.py:ro
+      - ./.state/pricing.json:/pilot-pricing.json:ro
+      - ./.state/gateway-config.json:/run/live-gateway.json:ro
+      - ./.state/ledger:/pilot-ledger
+    networks: [data]
+    restart: "no"
+
+  graph_server:
+    <<: *backend
+    command: [python, graph_server_with_subscription.py]
+    depends_on:
+      mongodb: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      sidecar: {condition: service_started}
+      gateway: {condition: service_started}
+
+  user_api:
+    <<: *backend
+    command: [python, user_api_with_remote_graphs.py]
+    depends_on:
+      mongodb: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      graph_server: {condition: service_started}
+
+networks:
+  data:
+    internal: true
+  control: {}
+
+volumes:
+  license-data:
+  sidecar-data:
+  compiled-data:
+  mongo-data:
+  backend-data:
+  backend-logs:
+  qdrant-data:
+  minio-data:

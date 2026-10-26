@@ -71,12 +71,19 @@ def _collect(trees: dict[Path, ast.AST]) -> set[str]:
     def_counts: dict[str, int] = {}
     strings: set[str] = set()
     public_methods: set[str] = set()
+    runtime_fields: set[str] = set()
     contract_public: set[str] = set()
     for path, tree in trees.items():
         in_contract = path.stem in _CONTRACT_MODULES
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef):
                 for item in node.body:
+                    # A function elsewhere can share a dataclass/Pydantic field's
+                    # spelling. visit_Name rewrites annotation targets too, but
+                    # generated __init__ and arbitrary receiver.field use the public
+                    # spelling. Such a name is not globally safe to rename at all.
+                    if isinstance(item, ast.AnnAssign) and isinstance(item.target, ast.Name):
+                        runtime_fields.add(item.target.id)
                     if (isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
                             and not item.name.startswith("_")):
                         public_methods.add(item.name)
@@ -90,7 +97,7 @@ def _collect(trees: dict[Path, ast.AST]) -> set[str]:
     out: set[str] = set()
     for name, count in def_counts.items():
         if (count != 1 or name in strings or name in _EXCLUDE
-                or name in contract_public):
+                or name in contract_public or name in runtime_fields):
             continue
         if name.startswith("_") or name not in public_methods:
             out.add(name)

@@ -1,0 +1,7 @@
+{
+    admin off
+    auto_https off
+}
+:18863 {
+    reverse_proxy sidecar_compiled:8000
+}

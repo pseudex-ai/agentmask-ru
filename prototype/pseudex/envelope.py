@@ -22,11 +22,13 @@ from pseudex.audit import AuditLog
 from pseudex.detect import Span
 from pseudex.detect_all import Detector
 from pseudex.maskcache import MaskCache, content_key
+from pseudex.inspection import Edit, Inspection, MaskedText, Trace, pointer, snapshot
+from pseudex.restoration import RestorationInspection
 from pseudex.profiling import stage
 from pseudex.redact import (_atomic_in_form_of, _digits_in_form_of,
                             is_own_substitute, mask_text, tokenize_span,
                             unmask_arguments, unmask_text)
-from pseudex.vault import Vault, canonicalize, fold_key, _settlement_of
+from pseudex.vault import REDACTION_MARKER, Vault, canonicalize, fold_key, _settlement_of
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,7 @@ class MaskContext:
     # Part of the cache key and the vault view — see `content_key` and
     # `Vault.for_conversation` for why a link decided here must not escape it.
     conversation_id: str
+    inspection: Inspection | None = None
 
 
 @dataclass(frozen=True)
@@ -1162,7 +1165,8 @@ def _free_marker_nonce(text: str, count: int) -> int:
 def _reserve_echoes(text: str,
                     echoes: tuple[tuple[_InjectedValue, str | None], ...],
                     renderings: tuple[str, ...],
-                    covered: tuple[tuple[int, int], ...] = ()) -> tuple[str, tuple[str, ...], int]:
+                    covered: tuple[tuple[int, int], ...] = (),
+                    capture: list[Edit] | None = None) -> tuple[str, tuple[str, ...], int]:
     """Lift a bound call's own echoes OFF the text before detection runs.
 
     THIS IS THE E01 PRECEDENCE, STATED AS AN ORDER OF OPERATIONS. `_mask_content`
@@ -1195,6 +1199,7 @@ def _reserve_echoes(text: str,
         return not any(start < cend and cbegin < end for cbegin, cend in covered)
 
     claims: list[tuple[int, int, str]] = []
+    types: dict[tuple[int, int, str], str] = {}
     for value, digits in echoes:
         as_is = value.substitute in renderings
         for start, end in _typed_echo_spans(text, value, digits):
@@ -1211,7 +1216,9 @@ def _reserve_echoes(text: str,
                     and _free(start - 1, end):
                 start -= 1
                 fragment = "+" + fragment
-            claims.append((start, end, _project_echo(value, fragment, as_is)))
+            claim = (start, end, _project_echo(value, fragment, as_is))
+            claims.append(claim)
+            types.setdefault(claim, value.entity_type)
     chosen = _choose_spans(claims)
     if not chosen:
         return text, (), 0
@@ -1223,13 +1230,18 @@ def _reserve_echoes(text: str,
         out.append(text[cursor:start])
         out.append(_echo_marker(nonce, len(replacements)))
         replacements.append(replacement)
+        if capture is not None:
+            entity_type = types[(start, end, replacement)] if replacement != text[start:end] else ""
+            kind = "redaction" if REDACTION_MARKER.fullmatch(replacement) else "pseudonym"
+            capture.append(Edit(start, end, replacement, entity_type, None, kind))
         cursor = end
     out.append(text[cursor:])
     return "".join(out), tuple(replacements), nonce
 
 
 def _splice_reserved(text: str, replacements: tuple[str, ...],
-                     nonce: int) -> tuple[str, tuple[tuple[int, int], ...]]:
+                     nonce: int, trace: Trace | None = None,
+                     reservations: list[Edit] | None = None) -> tuple[str, tuple[tuple[int, int], ...]]:
     """Put the call-backed renderings where their markers survived.
 
     The marker is this pass's own (`_echo_marker`), chosen absent from the raw
@@ -1251,6 +1263,11 @@ def _splice_reserved(text: str, replacements: tuple[str, ...],
         if at < 0:
             continue
         text = text[:at] + replacement + text[at + len(marker):]
+        if trace is not None:
+            reservation = reservations[index]
+            trace.apply(text, [Edit(at, at + len(marker), replacement,
+                                    reservation.entity_type, reservation.base_token,
+                                    reservation.kind)])
         spans.append((at, at + len(replacement)))
     return text, tuple(spans)
 
@@ -1293,7 +1310,8 @@ def _replace_echoes(text: str,
                     recorded: tuple[tuple[_InjectedValue, str | None], ...],
                     renderings: tuple[str, ...],
                     covered: tuple[tuple[int, int], ...] = (),
-                    claimed: tuple[tuple[int, int], ...] = ()) -> str:
+                    claimed: tuple[tuple[int, int], ...] = (),
+                    capture: list[Edit] | None = None) -> str:
     """Replace echoes of values THIS call carried, after detection has run.
 
     Deliberately after: the substitute is a fresh value nobody has detected yet,
@@ -1366,18 +1384,30 @@ def _replace_echoes(text: str,
         # half-redacted string and split production from the scorer.
         return not any(start < cend and cbegin < end for cbegin, cend in covered)
 
+    metadata: dict[tuple[int, int, str], Edit] = {}
+
+    def _claim(value: _InjectedValue, start: int, end: int, replacement: str,
+               kind: Literal["pseudonym", "redaction"]) -> tuple[int, int, str]:
+        claim = (start, end, replacement)
+        if REDACTION_MARKER.fullmatch(replacement):
+            kind = "redaction"
+        metadata.setdefault(claim, Edit(start, end, replacement, value.entity_type,
+                                        None, kind))
+        return claim
+
     # The SAME form rule as the reserve pass (`_project_echo`), so the fallback
     # leg and the reserve leg cannot disagree: a re-cased/re-notated atomic echo
     # answers in the surface's own form, a PHONE keeps its re-notation, a NAME
     # cut keeps the positional projection.
-    specific = [(start, end, _project_echo(value, text[start:end],
-                                           value.substitute in renderings))
+    specific = [_claim(value, start, end, _project_echo(value, text[start:end],
+                                           value.substitute in renderings), "pseudonym")
                 for value, digits in echoes
                 for start, end in _typed_echo_spans(text, value, digits)
                 if _free(start, end)]
     chosen = _choose_spans(specific)
     if recorded:
-        neutral = [(start, end, _neutral_redaction(value.entity_type, value.real))
+        neutral = [_claim(value, start, end, _neutral_redaction(value.entity_type, value.real),
+                          "redaction")
                    for value, digits in recorded
                    for start, end in _typed_echo_spans(text, value, digits)
                    if _free(start, end)
@@ -1404,11 +1434,14 @@ def _replace_echoes(text: str,
                         continue
                     if not _free(start, end):
                         continue
-                    parts.append((start, end,
-                                  _neutral_redaction(value.entity_type, value.real)))
+                    parts.append(_claim(value, start, end,
+                                  _neutral_redaction(value.entity_type, value.real), "redaction"))
         for span in _choose_spans(parts):
             if not any(span[0] < claim[1] and claim[0] < span[1] for claim in chosen):
                 chosen.append(span)
+    if capture is not None:
+        capture.extend(metadata[claim] for claim in chosen
+                       if claim[2] != text[claim[0]:claim[1]])
     return text if not chosen else _splice_chosen(text, chosen)
 
 
@@ -1521,7 +1554,24 @@ def _own_evidence_key(relevant: frozenset[str]) -> str:
     return f"\x00own\x00{len(relevant):d}\x00{hash(relevant) & 0xFFFFFFFFFFFFFFFF:016x}"
 
 
-def _mask_one(text: str, context: MaskContext, own_renderings: frozenset[str]) -> str:
+def _mask_policy_key(vault: Vault) -> str:
+    """A cache entry cannot outlive the policy that decided its replacements.
+
+    The host can change own-values or pseudonym scope per request. Without this
+    discriminator an earlier cached replacement defeats the own-value exemption
+    (and a receipt would faithfully report the wrong policy). Hashes only; no
+    host literals become cache keys. The ordinary default keeps its old key.
+    """
+    scope = getattr(vault, "_pseudonym_scope", "conversation")
+    own = getattr(vault, "_own_keys", frozenset())
+    if scope == "conversation" and not own:
+        return ""
+    policy = json.dumps([scope, sorted(own)], ensure_ascii=False).encode("utf-8")
+    return "\x00policy\x00" + hashlib.sha256(policy).hexdigest()
+
+
+def _mask_snapshot(text: str, context: MaskContext,
+                   own_renderings: frozenset[str]) -> MaskedText:
     """Mask one text, with the caller's own-rendering evidence made explicit.
 
     A content-keyed cache makes re-masking the SAME raw text (the O(n^2)
@@ -1540,7 +1590,7 @@ def _mask_one(text: str, context: MaskContext, own_renderings: frozenset[str]) -
     repeated-work cost, so detection is never skipped."""
     relevant = _relevant_own_renderings(text, own_renderings)
 
-    def _compute() -> str:
+    def _compute() -> MaskedText:
         # Spans whose value is one of OUR OWN tokens are dropped BEFORE anything
         # is minted or recorded. `mask_text` already refuses to replace them, but
         # this loop ran first and did not: an echoed token got a vault row of its
@@ -1574,30 +1624,42 @@ def _mask_one(text: str, context: MaskContext, own_renderings: frozenset[str]) -
             ]
             context.audit.record_many(context.org_id, context.agent_id, events)
         with stage("mask.splice"):
-            return mask_text(text, context.vault, spans)
+            edits: list[Edit] = []
+            masked = mask_text(text, context.vault, spans, edits,
+                               [token for _type, token, _value in events])
+            return snapshot(masked, edits)
 
     with stage("mask.one"):
         masked, _hit = context.cache.get_or_compute(
             content_key(context.org_id, context.conversation_id, text)
-            + _own_evidence_key(relevant),
+            + _own_evidence_key(relevant) + _mask_policy_key(context.vault),
             _compute,
         )
     return masked
 
 
-def mask_one(text: str, context: MaskContext) -> str:
+def _mask_one(text: str, context: MaskContext, own_renderings: frozenset[str],
+              path: str | None = None) -> str:
+    masked = _mask_snapshot(text, context, own_renderings)
+    if context.inspection is not None:
+        context.inspection.record(path, masked)
+    return masked.text
+
+
+def mask_one(text: str, context: MaskContext, path: str | None = None) -> str:
     """Mask one text with NO own-rendering evidence.
 
     The public entry: prose, system prompts and tool-schema descriptions are
     masked on detection alone, exactly as before. The tool-call/result traversal
     calls `_mask_one` with the conversation's frozen rendering set, because only
     there is the evidence both available and load-bearing."""
-    return _mask_one(text, context, frozenset())
+    return _mask_one(text, context, frozenset(), path)
 
 
 def _mask_content(content: object, provenance: _Provenance,
                   result_call: ToolCallContext | None,
-                  recorded: tuple[tuple[_InjectedValue, str | None], ...]) -> object:
+                  recorded: tuple[tuple[_InjectedValue, str | None], ...],
+                  path: str | None = None) -> object:
     """Mask a message's `content`, which is either a plain string or a list of
     content blocks (vision / multi-part). Non-text blocks (image_url,
     input_audio, …) pass through untouched; without the list branch, PII sitting
@@ -1639,7 +1701,7 @@ def _mask_content(content: object, provenance: _Provenance,
     own = provenance.own_renderings()
     renderings = provenance.renderings()
 
-    def _mask_text_leg(text: str) -> str:
+    def _mask_text_leg(text: str, field_path: str | None) -> str:
         """One text of a result, with the call's evidence applied FIRST.
 
         See `_reserve_echoes` for why the order is the fix rather than a
@@ -1660,28 +1722,50 @@ def _mask_content(content: object, provenance: _Provenance,
                 (span.start, span.end)
                 for span in provenance.context.detector.detect(text)
                 if span.entity_type == "LOC")
+        inspection = provenance.context.inspection
+        trace = Trace(text) if inspection is not None else None
+
+        def _finish(masked: str, targets: tuple,
+                    claimed: tuple[tuple[int, int], ...] = ()) -> str:
+            edits: list[Edit] | None = [] if trace is not None else None
+            if targets or recorded:
+                masked = _replace_echoes(masked, targets, recorded, renderings,
+                                         covered, claimed, edits)
+            if trace is not None:
+                trace.apply(masked, edits or [])
+                inspection.record(field_path, trace.freeze())
+            return masked
+
         if echoes:
+            reservations: list[Edit] | None = [] if trace is not None else None
             reserved, replacements, nonce = _reserve_echoes(
-                text, echoes, renderings, covered)
+                text, echoes, renderings, covered, reservations)
             if replacements:
-                masked, claimed = _splice_reserved(
-                    _mask_one(reserved, provenance.context, own), replacements, nonce)
-                return (_replace_echoes(masked, (), recorded, renderings, covered,
-                                        claimed)
-                        if recorded else masked)
-        masked = _mask_one(text, provenance.context, own)
-        return masked if not echoes and not recorded else _replace_echoes(
-            masked, echoes, recorded, renderings, covered)
+                if trace is not None:
+                    trace.apply(reserved, [Edit(one.start, one.end, _echo_marker(nonce, index),
+                                               one.entity_type)
+                                           for index, one in enumerate(reservations)])
+                direct = _mask_snapshot(reserved, provenance.context, own)
+                if trace is not None:
+                    trace.apply_snapshot(direct)
+                masked, claimed = _splice_reserved(direct.text, replacements, nonce,
+                                                    trace, reservations)
+                return _finish(masked, (), claimed)
+        direct = _mask_snapshot(text, provenance.context, own)
+        if trace is not None:
+            trace.apply_snapshot(direct)
+        return _finish(direct.text, echoes)
 
     if isinstance(content, str):
-        return _mask_text_leg(content)
+        return _mask_text_leg(content, path)
     if not isinstance(content, list):
         return content
     blocks: list[object] = []
-    for block in content:
+    for index, block in enumerate(content):
         if isinstance(block, dict) and isinstance(block.get("text"), str):
             masked_block = dict(block)
-            masked_block["text"] = _mask_text_leg(block["text"])
+            field_path = pointer(pointer(path, index), "text") if path is not None else None
+            masked_block["text"] = _mask_text_leg(block["text"], field_path)
             blocks.append(masked_block)
         else:
             blocks.append(block)
@@ -1715,12 +1799,12 @@ def _model_visible_call(call: ToolCallContext, context: MaskContext,
 
 
 def _mask_tool_calls(tool_calls: object, context: MaskContext,
-                     own_renderings: frozenset[str]) -> object:
+                     own_renderings: frozenset[str], path: str | None = None) -> object:
     """Mask the arguments of assistant tool calls replayed in the transcript."""
     if not isinstance(tool_calls, list):
         return tool_calls
     masked: list[object] = []
-    for call in tool_calls:
+    for index, call in enumerate(tool_calls):
         if not isinstance(call, dict):
             masked.append(call)
             continue
@@ -1729,8 +1813,10 @@ def _mask_tool_calls(tool_calls: object, context: MaskContext,
         if isinstance(function, dict):
             new_function = dict(function)
             if isinstance(new_function.get("arguments"), str):
+                field_path = (pointer(pointer(pointer(path, index), "function"), "arguments")
+                              if path is not None else None)
                 new_function["arguments"] = _mask_one(new_function["arguments"], context,
-                                                      own_renderings)
+                                                      own_renderings, field_path)
             new_call["function"] = new_function
         masked.append(new_call)
     return masked
@@ -1803,10 +1889,11 @@ def mask_messages(
         message_recorded = recorded if message.get("role") == "tool" else ()
         if "content" in new_message:
             new_message["content"] = _mask_content(new_message["content"], provenance,
-                                                   result_call, message_recorded)
+                                                   result_call, message_recorded,
+                                                   f"/messages/{index}/content")
         if "tool_calls" in new_message:
             new_message["tool_calls"] = _mask_tool_calls(
-                new_message["tool_calls"], context, own_renderings
+                new_message["tool_calls"], context, own_renderings, f"/messages/{index}/tool_calls"
             )
         masked.append(new_message)
     return masked
@@ -1824,7 +1911,7 @@ _SCHEMA_LISTS: tuple[str, ...] = ("anyOf", "oneOf", "allOf", "prefixItems")
 _SCHEMA_KEYS: tuple[str, ...] = ("parameters", "inputSchema", "input_schema")
 
 
-def _mask_schema(node: object, context: MaskContext) -> object:
+def _mask_schema(node: object, context: MaskContext, path: str = "/tools") -> object:
     """Схема JSON, у которой замаскированы все `description`, НА ЛЮБОЙ ГЛУБИНЕ.
 
     ОБХОД БЫЛ РОВНО ДВА УРОВНЯ, и этого мало для настоящей схемы. Пример с
@@ -1840,23 +1927,26 @@ def _mask_schema(node: object, context: MaskContext) -> object:
     оно не изменилось от того, что обход стал глубже.
     """
     if isinstance(node, list):
-        return [_mask_schema(one, context) for one in node]
+        return [_mask_schema(one, context, pointer(path, index))
+                for index, one in enumerate(node)]
     if not isinstance(node, dict):
         return node
     out = dict(node)
     if isinstance(out.get("description"), str):
-        out["description"] = mask_one(out["description"], context)
+        out["description"] = mask_one(out["description"], context, pointer(path, "description"))
     if isinstance(out.get("title"), str):
-        out["title"] = mask_one(out["title"], context)
+        out["title"] = mask_one(out["title"], context, pointer(path, "title"))
     for key in _SCHEMA_BRANCHES:
         if isinstance(out.get(key), dict):
-            out[key] = {name: _mask_schema(one, context) for name, one in out[key].items()}
+            out[key] = {name: _mask_schema(one, context, pointer(pointer(path, key), name))
+                        for name, one in out[key].items()}
     for key in _SCHEMA_NODES:
         if isinstance(out.get(key), (dict, list)):
-            out[key] = _mask_schema(out[key], context)
+            out[key] = _mask_schema(out[key], context, pointer(path, key))
     for key in _SCHEMA_LISTS:
         if isinstance(out.get(key), list):
-            out[key] = [_mask_schema(one, context) for one in out[key]]
+            out[key] = [_mask_schema(one, context, pointer(pointer(path, key), index))
+                        for index, one in enumerate(out[key])]
     return out
 
 
@@ -1887,32 +1977,35 @@ def mask_tools(
     if skip_template or not isinstance(tools, list):
         return tools
     masked: list[object] = []
-    for tool in tools:
+    for index, tool in enumerate(tools):
         if not isinstance(tool, dict):
             masked.append(tool)
             continue
         new_tool = dict(tool)
         if isinstance(new_tool.get("function"), dict):
-            new_tool["function"] = _mask_tool_body(new_tool["function"], context)
+            new_tool["function"] = _mask_tool_body(new_tool["function"], context,
+                                                    f"/tools/{index}/function")
         else:
-            new_tool = _mask_tool_body(new_tool, context)
+            new_tool = _mask_tool_body(new_tool, context, f"/tools/{index}")
         masked.append(new_tool)
     return masked
 
 
-def _mask_tool_body(body: dict[str, object], context: MaskContext) -> dict[str, object]:
+def _mask_tool_body(body: dict[str, object], context: MaskContext,
+                    path: str = "/tools") -> dict[str, object]:
     """Описание инструмента и его схема, в какой бы из трёх форм они ни лежали."""
     out = dict(body)
     if isinstance(out.get("description"), str):
-        out["description"] = mask_one(out["description"], context)
+        out["description"] = mask_one(out["description"], context, pointer(path, "description"))
     for key in _SCHEMA_KEYS:
         if isinstance(out.get(key), dict):
-            out[key] = _mask_schema(out[key], context)
+            out[key] = _mask_schema(out[key], context, pointer(path, key))
     return out
 
 
 def unmask_response(response: dict[str, object], vault: Vault,
-                    leaf_notation: dict[str, str] | None = None) -> dict[str, object]:
+                    leaf_notation: dict[str, str] | None = None,
+                    inspection: RestorationInspection | None = None) -> dict[str, object]:
     """Detokenize a non-streamed completion: assistant content + tool-call
     arguments. Rebuilt rather than mutated so the caller's object is untouched.
 
@@ -1924,7 +2017,7 @@ def unmask_response(response: dict[str, object], vault: Vault,
     if not isinstance(choices, list):
         return result
     new_choices: list[object] = []
-    for choice in choices:
+    for choice_index, choice in enumerate(choices):
         if not isinstance(choice, dict):
             new_choices.append(choice)
             continue
@@ -1932,12 +2025,15 @@ def unmask_response(response: dict[str, object], vault: Vault,
         message = new_choice.get("message")
         if isinstance(message, dict):
             new_message = dict(message)
+            message_path = f"/response/choices/{choice_index}/message"
             if isinstance(new_message.get("content"), str):
-                new_message["content"] = unmask_text(new_message["content"], vault)
+                field = inspection.field(message_path + "/content") if inspection is not None else None
+                new_message["content"] = unmask_text(new_message["content"], vault,
+                                                      restoration=field)
             tool_calls = new_message.get("tool_calls")
             if isinstance(tool_calls, list):
                 restored: list[object] = []
-                for call in tool_calls:
+                for call_index, call in enumerate(tool_calls):
                     if not isinstance(call, dict):
                         restored.append(call)
                         continue
@@ -1946,9 +2042,12 @@ def unmask_response(response: dict[str, object], vault: Vault,
                     if isinstance(function, dict):
                         new_function = dict(function)
                         if isinstance(new_function.get("arguments"), str):
+                            field = inspection.field(
+                                message_path + f"/tool_calls/{call_index}/function/arguments"
+                            ) if inspection is not None else None
                             new_function["arguments"] = unmask_arguments(
                                 new_function["arguments"], vault,
-                                leaf_notation=leaf_notation
+                                leaf_notation=leaf_notation, restoration=field
                             )
                         new_call["function"] = new_function
                     restored.append(new_call)

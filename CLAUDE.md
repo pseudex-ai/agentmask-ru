@@ -763,7 +763,7 @@ Generated, ignored, never committed: `prototype/*.json` datasets (`make_*.py`),
 
 ## 1. `prototype/pseudex/` — the engine
 
-46 modules, ~22 500 lines. Paths in this section are relative to `prototype/`.
+49 modules. Paths in this section are relative to `prototype/`.
 `Uses` / `Used by` are the real import edges inside the package (lazy imports
 included). `Tests` lists scripts that import the module directly, then `via` —
 the modules through which the rest of the suite reaches it. Every test script
@@ -832,9 +832,11 @@ check (`KEY_TYPE`), or only licenses a shape (`CTX_TYPES`). A KV-typed span skip
 Source-offset string-value boundaries and structural paths for valid JSON payloads.
 No PII policy: callers attribute evidence within a value or its typed ancestry,
 never by proximity to another field. Invalid JSON falls back to ordinary detection.
-- **API:** `StringLeaf`, `string_leaves`
-- **Uses:** — · **Used by:** context, structured
-- **Tests:** test_hop_integrity
+`scalar_map` separately maps whole lexical scalar spans INCLUDING string quotes
+for OUT receipts; duplicate keys refuse an authoritative map.
+- **API:** `StringLeaf`, `string_leaves`, `scalar_map`
+- **Uses:** — · **Used by:** context, restoration, structured
+- **Tests:** test_hop_integrity, test_restoration_inspection
 - **Docs:** `research/agent-integrity-repair/SCOPE.md` · rules: INVARIANTS.md#structured-kv
 
 #### `pseudex/cvc.py` — 362 lines · `live`
@@ -1017,16 +1019,18 @@ ring.
 
 ### 1.2 Swap and vault
 
-#### `pseudex/redact.py` — 1 666 lines · `live`
+#### `pseudex/redact.py` — `live`
 The swap layer: tokenize spans on the way to the model (substitute inflected to
 the original's case), detokenize on the way back — prose in agreement, tool
 arguments verbatim in the agent's form; PHONE notation follows the current
 sender on both legs. Streaming detokenizer with one carry per
 `choice.index`; `unmask_arguments` for buffered tool calls; `residual_tokens`
 (two arguments, the shape the benchmark's own gateway calls) and the leg-aware
-`surviving_substitutes` for substitutes that failed to resolve.
+`surviving_substitutes` for substitutes that failed to resolve. Optional OUT
+receipts capture accepted changed splices and actual JSON leaf writes, not a
+post-hoc search for restored values; no provider-streaming receipt path.
 - **API:** `mask_text`, `is_own_substitute`, `vault_value`, `tokenize_span`, `unmask_text`, `unmask_stream_chunk`, `unmask_arguments`, `residual_tokens`, `surviving_substitutes`, `StreamDetokenizer`
-- **Uses:** address, agent_form, assets, cvc, detect, morph_names, morph_places, normalize, notation, profiling, ru_pii_v6, spoken, structured, translit, vault · **Used by:** envelope, notation, proxy, service
+- **Uses:** address, agent_form, assets, cvc, detect, inspection, morph_names, morph_places, normalize, notation, profiling, restoration, ru_pii_v6, spoken, structured, translit, vault · **Used by:** envelope, notation, proxy, service
 - **Tests:** test_class_g_leaks, test_argument_form, test_collisions, test_derived_forms, test_digit_truncation, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_phone_hop_form, test_error_echo_privacy, test_product, test_prose_fragments, bench_masking, profile_latency; `bench/agentpii{2,3,4}`, `bench/agentrun/roundtrip.py`
 - **Docs:** `docs/how-it-works.md`, `docs/known-issues.md` (§0, §1, Б8, Б11, Б12) · rules: INVARIANTS.md#swap, INVARIANTS.md#streaming
 
@@ -1048,7 +1052,7 @@ without ever resolving it.
 - **Tests:** test_class_g_leaks, vault_test, test_argument_form, test_collisions, test_credentials, test_derived_forms, test_digit_truncation, test_hard_cases, test_loop, test_names_morphology, test_notation_symmetry, test_persona_defects, test_product, test_prose_fragments, test_unload_scrub; `bench/eval_vault_precision.py`, `bench/fuzz_registers.py`
 - **Docs:** `docs/tz-vault-encryption.md`, `docs/tz-name-gender-canonical.md`, `docs/how-it-works.md`, `research/2026-09-03-checksum-valid-substitutes.md` · rules: INVARIANTS.md#vault, INVARIANTS.md#collisions, INVARIANTS.md#conversation-scope
 
-#### `pseudex/envelope.py` — 326 lines · `live`
+#### `pseudex/envelope.py` — `live`
 Transformations over the OpenAI chat wire envelope, shared by BOTH surfaces:
 `mask_messages` (multi-part content, `skip_system`, the mask cache),
 `mask_tools`, `unmask_response`, `conversation_key` (derived from the first two
@@ -1056,18 +1060,42 @@ messages when the caller names none).
 - `tool_result_contexts` binds exact preceding IDs for contextual echo protection;
   an unbound result can neutral-redact a typed echo recorded in this conversation.
 - **API:** `MaskContext`, `ToolCallContext`, `ToolResultContext`, `tool_result_contexts`, `conversation_key`, `mask_one`, `mask_messages`, `mask_tools`, `unmask_response`
-- **Uses:** audit, detect, detect_all, maskcache, morph_places, profiling, redact, vault · **Used by:** proxy, service
+- **Uses:** audit, detect, detect_all, inspection, maskcache, morph_places, profiling, redact, restoration, vault · **Used by:** proxy, service
 - **Tests:** test_collisions, test_persona_defects, test_product, test_tool_result_context, profile_deep; `bench/agentpii*/`
 - **Docs:** `docs/how-it-works.md` · rules: INVARIANTS.md#conversation-scope, INVARIANTS.md#cache
 
-#### `pseudex/maskcache.py` — 109 lines · `live`
+#### `pseudex/maskcache.py` — `live`
 Content-keyed cache of MASKED output, per worker — the O(n²) killer on a growing
 transcript. Keys on RAW content (masked output is never re-fed); the key carries
-the conversation.
+the conversation. Envelope values are immutable masked snapshots plus exact local
+replacement coordinates, never raw literals or request identity; ordinary warm
+calls retain receipts for later opt-in without reminting.
 - **API:** `content_key`, `MaskCache`
-- **Uses:** — · **Used by:** envelope, proxy, service
+- **Uses:** inspection · **Used by:** envelope, proxy, service
 - **Tests:** test_perf_masking, test_collisions, test_persona_defects, test_product, bench_masking
 - **Docs:** — · rules: INVARIANTS.md#cache
+
+#### `pseudex/inspection.py` — `live`
+Inline, occurrence-level receipts captured at the actual splice. A request-local
+coordinate tape composes reserve/direct/splice/echo edits; nonlinear overlaps are
+explicitly incomplete, never guessed. Cache snapshots contain only shown forms
+and coordinates. JSON Pointer and opaque receipt/occurrence identity attach per
+request; no durable history store or schema migration is introduced.
+- **API:** `Edit`, `Replacement`, `MaskedText`, `snapshot`, `Trace`, `pointer`, `Inspection`, `requested`
+- **Uses:** — · **Used by:** envelope, maskcache, proxy, redact, restoration, service
+- **Tests:** test_inspection
+- **Docs:** `docs/integration-doubleup-local.md` · rules: INVARIANTS.md#inspection-receipts
+
+#### `pseudex/restoration.py` — `live`
+Opt-in v2 OUT receipt: request-local coordinates for actual semantic restoration
+operations, with independent semantic/lexical completeness. JSON writes bind to
+whole scalar lexemes; serialization-only changes are not restoration operations.
+Duplicate keys and untracked changed leaves are explicitly incomplete. No raw or
+restored literals, shown/base tokens, cache, audit or history store here.
+- **API:** `RestorationField`, `RestorationInspection`
+- **Uses:** inspection, json_fields · **Used by:** envelope, proxy, redact, service
+- **Tests:** test_restoration_inspection
+- **Docs:** `docs/integration-doubleup-local.md`, `research/2026-10-24-doubleup-four-hops-and-dialogues.md` · rules: INVARIANTS.md#inspection-receipts
 
 #### `pseudex/audit.py` — 549 lines · `live`
 What was caught and what replaced it: type + token + masked preview only, never
@@ -1133,17 +1161,17 @@ ONE point where a request is counted and capacity is charged for it.
 
 ### 1.4 Surfaces
 
-#### `pseudex/service.py` — 1 015 lines · `live`
+#### `pseudex/service.py` — `live`
 The sidecar behind a host gateway: `/mask`, `/unmask`, `/unmask_chunk`,
 `/unmask_arguments`, `/spans`, `/health` (gateway token) + the operator router
 (admin token). `org_id` and `conversation_id` in the body; detection offloaded
 via `anyio.to_thread` under a `CapacityLimiter`.
 - **API:** `profile`, `health`, `license_status`, `mask`, `unmask`, `unmask_arguments_endpoint`, `unmask_chunk`, `spans`, `usage`, `reveal`
-- **Uses:** assets, audit, detect_all, envelope, license, maskcache, metering, operator, profiling, redact, sqlite_setup, vault · **Used by:** serve_main
+- **Uses:** assets, audit, detect_all, envelope, inspection, license, maskcache, metering, operator, profiling, redact, restoration, sqlite_setup, vault · **Used by:** serve_main
 - **Tests:** test_detok_security, test_localui, test_perf_masking, test_persona_defects; `e2e/gates.py`
 - **Docs:** `docs/integration.md`, `docs/integration-diva-litellm.md`, `docs/integration-diva-backend-api.md`, `docs/how-it-works.md` · rules: INVARIANTS.md#surfaces, INVARIANTS.md#streaming
 
-#### `pseudex/proxy.py` — 911 lines · `live` (formerly `drifted`)
+#### `pseudex/proxy.py` — `live` (formerly `drifted`)
 The OpenAI-compatible reverse proxy: `sk-ps-…` key → `Tenants` → upstream URL +
 key; `POST /v1/chat/completions` with streaming (`StreamDetokenizer`; tool-call
 requests buffered), `GET /usage`. Shares `envelope.mask_messages`, `MaskCache`,
@@ -1151,8 +1179,10 @@ the thread offload and the limiter with the sidecar. The one remaining
 difference: no `skip_system` (the proxy always masks the system prompt).
 `CLAUDE.md`'s "duplicated on purpose but have drifted" paragraph predates the
 shared envelope. `docs/known-issues.md` §3 lists what else lagged and what is closed.
-- **API:** `health`, `license_status`, `profile`, `usage`, `chat_completions`, `spans`, `mask`, `reveal`
-- **Uses:** assets, audit, detect_all, envelope, license, maskcache, metering, operator, profiling, redact, sqlite_setup, tenants, vault · **Used by:** serve_main
+Manual sandbox `/unmask` and `/unmask_arguments` use the gateway token and
+support v2 receipts; OpenAI-compatible `/v1/chat/completions` JSON is unchanged.
+- **API:** `health`, `license_status`, `profile`, `usage`, `chat_completions`, `spans`, `mask`, `unmask`, `unmask_arguments_endpoint`, `reveal`
+- **Uses:** assets, audit, detect_all, envelope, inspection, license, maskcache, metering, operator, profiling, redact, restoration, sqlite_setup, tenants, vault · **Used by:** serve_main
 - **Tests:** test_persona_defects · via redact → test_product (streaming detok); live: `agent_demo.py`, `response_test.py`, `live_eval.py` (live)
 - **Docs:** `docs/integration.md`, `docs/known-issues.md` §3 · rules: INVARIANTS.md#surfaces
 
@@ -1335,7 +1365,7 @@ active. There is NO pytest; each script has a `main()`.
 | `Dockerfile` | `live` | `pseudex:source` — the engine from `.py`; writes `pseudex/_release.py`; fails on `import sqlite3` in `pseudex/` |
 | `Dockerfile.nuitka` | `live` | `pseudex:compiled` — same Debian release, engine compiled to a native binary; the three `build_*.py` steps (§3.2) run first |
 | `build_strip_docstrings.py` | `live` | removes docstrings BEFORE Nuitka (`--python-flag=no_docstrings` leaves the literals in the constants blob) |
-| `build_mangle_names.py` | `live` | renames PRIVATE crown symbols to opaque names before compilation (WS-1); `_release` is on its keep-list |
+| `build_mangle_names.py` | `live` | renames safe crown function/class symbols before compilation (WS-1); `_release` stays; names colliding with annotated class fields are never candidates because generated runtime constructors keep those fields |
 | `build_harden_strings.py` | `live` | hides the beacon strings of the licensing path from the compiled image |
 | `deploy/tripwire/` | `live` | the tripwire's own container files |
 | `THIRD-PARTY-NOTICES.md` | `live` | licences of what ships |
@@ -1350,6 +1380,10 @@ Run from `prototype/`; each loads the dev bundle itself.
 | `test_product.py` | tenancy, audit, streaming detok, the product layer offline |
 | `vault_test.py` | canonicalization (`+7`/`8`/bare → one token) and persistence across restart |
 | `test_perf_masking.py` | mask cache, audit dedup on cache miss, leak regression, loop responsiveness under load, the `/unmask_chunk` vs `/unmask_arguments` contract from both sides, the `requests` counter — against the real FastAPI app |
+| `test_inspection.py` | exact opt-in HTTP receipts on both shapes; Unicode/pointer coordinates, no-flag cache warm, own-value/template exemptions, reserve/echo composition, explicit incomplete, no remint/audit/billing drift and thread isolation |
+| `test_restoration_inspection.py` | actual accepted OUT splices/JSON writes; whole scalar lexemes including quotes, numeric/join branches, duplicate-key/untracked-change incompleteness, semantic versus lexical coverage, both manual HTTP shapes/default compatibility/auth, and metadata privacy |
+| `test_restore_code_residual.py` | CAN-FAIL synthetic UUID/alphanumeric NAME ownership regression; isolated unfixed HEAD versus experimental local grammar, six genuine guard groups; no release acceptance |
+| `test_build_mangle_fields.py` | a unique module function must not rename a class annotation with the same spelling; the dataclass retains its runtime field and generated constructor through release preprocessing |
 | `test_localui.py` | the operator surface: closed by default, reveals audited with `actor`, requests billed apart from entities, self-check excluded from billing |
 | `test_localui_renders.py` | the interface in a REAL browser (playwright + chromium): a 200 and a CSP header are not evidence it executed |
 | `test_persona_defects.py` | the five defects the 18.08.2026 persona run found and no corpus of ours did |
@@ -1441,6 +1475,49 @@ engine could FAIL on it; read `CLAUDE.md` § "Eval discipline" before changing
 any of them. External corpora live in `~/.cache/pseudex-bench/`.
 
 ### 4.1 Benchmarks we built
+
+`bench/doubleup/` — private full multi-turn chats: authoritative Mongo ROOT
+history plus the APPLICATION Langfuse project, not the earlier gateway-project
+trace fragments and not a public score. Six retained ROOT exports have ordered
+stable IDs, earliest empty/no-parent checkpoints and no observed compactions;
+this proves visible retained history, not all-time non-deletion or a transaction.
+Four exact cross-source user projections match, two remain unresolved (including
+image/text additions); neither a projection difference nor ROOT tool count zero
+proves missing history/tool activity. All six application sessions are now joined:
+274 traces / 3,201 observations / 512 ID-linked source calls/result variants.
+This is a selected qualitative corpus, not six independent statistical cases or
+a complete production environment. No manual PII labels or quality metrics.
+
+| path (relative to prototype/) | role / actual boundary |
+|---|---|
+| `bench/doubleup/__init__.py`, `bench/doubleup/__main__.py` | package/legacy read-only intake CLI: probe, inventory, export, reconcile, recorded, verify; no provider calls |
+| `bench/doubleup/langfuse.py` | exact-host GET-only reader, explicit attribution and bounded pagination; a credential profile does not prove the intended application project |
+| `bench/doubleup/storage.py` | encrypted immutable RunStore + authenticated manifests; originals never enter stdout/docs, key stays outside run archives |
+| `bench/doubleup/corpus.py` | historical gateway trace normalization/reconciliation; not current full-chat corpus acceptance |
+| `bench/doubleup/dialogue_intake.py` | full-session evidence extraction/completeness and explicit unsupported variants, not synthetic continuation |
+| `bench/doubleup/mongo_intake.py` | approved source Mongo find/aggregate-only intake; no source saver constructor/index creation; canonical EJSON preserved encrypted |
+| `bench/doubleup/mongo_dialogues.py` | offline ROOT msgpack/JSON normalization with static message constructor allowlist, application-session join, distinct source projections and count-only summaries; no arbitrary imports/pickle fallback |
+| `bench/doubleup/extend_dialogues.py` | completes pending application sessions, reuses three ready joins; 469 additional GETs, zero remote mutations/provider calls |
+| `bench/doubleup/source_resources.py` | narrowly selected graphs/contracts via read-only source Mongo; credentials on stdin, no logging/DDL; frozen resources for THREE ready cases only |
+| `bench/doubleup/replay_tools.py` | query-dependent frozen web/read/memory/project mirrors, exact contracts, independent per-arm state; unavailable/partial resources explicitly unsupported; never seed source-generated answers/files |
+| `bench/doubleup/replay_executor.py` | actual local Docker Python executor, RAM-only bounded workspace/artifact snapshots and verified own-container cleanup; no network/host mounts/socket/secret environment; NOT a production hostile-code sandbox |
+| `bench/doubleup/test_intake.py`, `bench/doubleup/test_reconcile.py` | synthetic read-only intake, storage integrity, identity reconciliation/quarantine |
+| `bench/doubleup/test_dialogue_intake.py`, `bench/doubleup/test_mongo_dialogues.py` | full-chat normalization, safe constructors, ROOT/order/projection/completeness and application source linkage |
+| `bench/doubleup/test_replay_tools.py` | query/schema-dependent causal resource mirrors, unsupported cases, isolation and no historical generated-output seed |
+| `bench/doubleup/test_replay_executor.py` | genuine synthetic Docker execution/resource/network/artifact/cleanup checks; explicit --build for dedicated image |
+| `bench/doubleup/sensitive_inventory.py` | read-only source-user contact selection:300 multi-turn candidates,111 contacts,96 application sessions,30 stratified full-export candidates; source connection keys never archived |
+| `bench/doubleup/sensitive_corpus.py` | independent encrypted per-case ROOT + complete application trace/observation joins;21 qualified cases, excluded/failed retained separately, no model calls |
+| `bench/doubleup/qualify_dialogues.py`, `bench/doubleup/test_source_contacts.py` | exact source-pointer/codepoint contact evidence, reserved-example rejection, valid phone identity matching; not person verification or manual PII gold labels |
+| `bench/doubleup/restore_failure_analysis.py` | read-only encrypted failure/scope analysis, isolated HEAD Vault+redact comparison, capture parity; no source-data literals in output |
+| `bench/doubleup/uuid_flash_review.py` | independent DeepSeek Flash synthetic diagnosis-only UUID/NAME ownership reproduction and genuine residual controls; does not implement engine fixes |
+
+Actual DoubleUp backend/frontend modules live in sibling client worktrees; source
+aliases and tests are in `docs/integration-doubleup-local.md`, NOT engine import
+edges here. Live first-case none/builtin processed8 user turns; P stopped inside its
+first turn. Corpus originals are NOT new replay output; neither joins nor safe
+mirrors establish business-task success. Current evidence and limits:
+`research/2026-10-24-doubleup-four-hops-and-dialogues.md`. Previous evidence remains
+`research/2026-10-23-doubleup-local-pilot.md`.
 
 The additive v5 hop audit uses `bench/agentpii5/cohort.py` (complete-only C/C2/I
 composition with input hashes and excluded spend), `bench/agentpii5/actual_hops.py`
@@ -1826,6 +1903,7 @@ Docs: `docs/sprint-cabinet-and-pricing.md`, `docs/billing-integrity.md`,
 | `deploy/compose.yml` (also the board, the identity portal and the storefront's SSO — behind the `board` profile, so a half-configured portal cannot roll the site back) | OUR side: licensing server, storefront, their database, the billing-cycle service, observability. `$VAR` in `command:` is interpolated by compose — escape as `$$VAR` |
 | `deploy/compose.local.yml` | the whole product on one machine (the stand the gates and `deploy/local.sh` use); builds `pseudex:local` |
 | `deploy/local.sh` | brings the stand up and PROVES it is up (a 401 from the admin port is proof of life) before printing the walkthrough |
+| `deploy/doubleup-pilot/` | isolated LOCAL DoubleUp integration, not production deploy: real license/source/compiled engines, fixture/live budget connector, encrypted original-case preparation and count-only collection, catalog/browser/web/baked-image gates; own Compose project, volumes and loopback ports; keys/raw evidence/build contexts stay in ignored private state |
 | `deploy/bootstrap.sh` | clean Ubuntu 24.04 → production host, one idempotent command |
 | `deploy/agent.sh` + `deploy/systemd/pseudex-agent.service`, `.timer` | the deploy the host performs ITSELF on a timer |
 | `deploy/releases.json` | the versions registry (D-054): `cycles[]` newest→oldest with `state`, `eoas`, `eol`, `eol_announced`, `latest{version,date,digest}`, `aliases`; `notices[]`. Written by `.github/workflows/release.yml` (`record`), edited by hand only for `eol`/`eol_announced`/`notices` through a PR; validated by `.github/workflows/checks.yml`; read by the licence server and the storefront through the copy the agent syncs (stage 3) |
@@ -1854,6 +1932,46 @@ Docs: `docs/sprint-cabinet-and-pricing.md`, `docs/billing-integrity.md`,
 
 Docs: `docs/operations.md` (the operational spec), `research/2026-09-14-devops-audit.md`,
 `research/2026-08-15-hosting-domain.md`.
+
+### 7.1bis `deploy/doubleup-pilot/` — local only, work in progress
+
+Paths below are repository-root-relative. Ignored private state contains
+keys, ciphertext, source snapshots and synthetic gate reports; never ship/archive
+state with credentials. Source aliases for client repositories belong in the
+runbook, not this engine import graph. Current evidence is the 24 October report;
+older baked/full-suite results are PREVIOUS, not renewed by a focused four-hop gate.
+
+| file | purpose / boundary |
+|---|---|
+| `deploy/doubleup-pilot/stand.py`, `deploy/doubleup-pilot/compose.yml`, `deploy/doubleup-pilot/Caddyfile` | isolated loopback Compose operator/frontdoor, snapshot/build/start/seed/fixture; no production deploy |
+| `deploy/doubleup-pilot/compose.live.yml`, `deploy/doubleup-pilot/gateway.py` | bounded model connector, owner-controlled temporary egress then fixture; provider streaming unsupported; restart gateway to load changed Ledger BEFORE paid go |
+| `deploy/doubleup-pilot/budget.py`, `deploy/doubleup-pilot/test_budget.py`, `deploy/doubleup-pilot/test_dialogue_pricing.py` | persistent owner-approved $20 reserve/settle/unknown ledger; exact-model verified 1M pricing proof, max(metadata positive tiers, official peak) ×2 safety; immutable idempotent additive correction, not an invoice/new spend |
+| `deploy/doubleup-pilot/refresh_dialogue_pricing.py` | authenticated read-only metadata GET, numeric whitelist/privacy cache ≤24h; no model call; optional additive local holds, unrelated model permissions not refreshed |
+| `deploy/doubleup-pilot/seed.py`, `deploy/doubleup-pilot/seed_four_hop.py` | deterministic local synthetic org/thread fixtures; demo never uses original client data |
+| `deploy/doubleup-pilot/boundary_fixture.py` | scripted provider with local safe tool boundary; mechanism evidence, not task quality |
+| `deploy/doubleup-pilot/http_inspection_gate.py`, `deploy/doubleup-pilot/compiled.Caddyfile` | actual source :18862 AND compiled :18863 HTTP: all four hops, OUT v2, default shapes and separate auth |
+| `deploy/doubleup-pilot/four_hop_web_gate.py` | authenticated User API query → real ToolExecutor → SSE stable IDs → all four marks; fixture, $0 |
+| `deploy/doubleup-pilot/browser_four_hop_gate.py` | real send/hover/focus/tool menu, human request ordinal, mobile taps;60s clears private peers but retains marks, toggle erase; synthetic only |
+| `deploy/doubleup-pilot/browser_gate.py`, `deploy/doubleup-pilot/web_query_gate.py` | previous panel/reveal/browser and authenticated web RPC checks; not current full-rebuild acceptance |
+| `deploy/doubleup-pilot/catalog_gate.py`, `deploy/doubleup-pilot/test_catalog_contract.py` | platform tool schema-contract probe; not execution of external integrations |
+| `deploy/doubleup-pilot/backend_image.py`, `deploy/doubleup-pilot/baked_gate.py`, `deploy/doubleup-pilot/compose.baked.yml`, `deploy/doubleup-pilot/baked.Caddyfile` | backend code baked without app bind mount, reused dependency image; four-hop baked HTTP/tool gate passed, source-original409 guard later verified on actual source API; not full agent/environment equivalence |
+| `deploy/doubleup-pilot/prepare_live.py`, `deploy/doubleup-pilot/prepare_live_v2.py`, `deploy/doubleup-pilot/live_runner.py`, `deploy/doubleup-pilot/collect_live.py` | PREVIOUS single-generation original-request smoke and encrypted count-only collection; not full-dialogue replay |
+| `deploy/doubleup-pilot/prepare_dialogue_replay.py` | sealed THREE text-only original user sequences (6/8/8 turns), exact earliest native-tool executor system prompt and ten frozen source contracts/resources; explicit orchestrator adaptation, no image stripping/history shortening |
+| `deploy/doubleup-pilot/dialogue_bridge.py`, `deploy/doubleup-pilot/dialogue_runner.py` | actual ExecutionStage + frozen executor prompt, independent state and only new replies; known-prefix recovery requires owner approval, zero partial tool effects and identical input hash; P live stopped, not a completed quality verdict |
+| `deploy/doubleup-pilot/run_dialogue_live.py`, `deploy/doubleup-pilot/test_dialogue_runner.py` | owner-approved enable/finally-disable, unknown reserve retained, completed prefix never re-paid; synthetic recovery/negative safety tests |
+| `deploy/doubleup-pilot/collect_dialogue_replay.py` | count-only completed/partial model/tool/status/artifact review index; protocol completion is not task success |
+| `deploy/doubleup-pilot/import_source_corpus.py` | actual qualified original ROOT histories copied to private LOCAL read-only source org; generic catalog and source Langfuse links, no inference/new tool execution |
+| `deploy/doubleup-pilot/Dockerfile.replay-executor` | dedicated stdlib + numpy/pandas/openpyxl/matplotlib Linux image for local untrusted Python; no customer-generated artifacts baked in |
+| `deploy/doubleup-pilot/qualify_september_replay.py`, `deploy/doubleup-pilot/test_september_qualification.py`, `deploy/doubleup-pilot/prepare_september_case26.py` | authenticated September+ source screening and sealed exact user sequences; adapter compatibility is NOT proof original input files exist or a task can complete |
+| `deploy/doubleup-pilot/real_source_policy_probe.py` | paired real HTTP mask inputs with/without scoped ignore on unchanged archived user sequences; no model/tool completion claimed |
+| `deploy/doubleup-pilot/configure_september_policy.py` | actual platform JWT API policy create/bind/preview; never an engine admin token in the browser |
+| `deploy/doubleup-pilot/prepare_grounded_pii_control.py`, `deploy/doubleup-pilot/verify_grounded_pii_control.py` | explicitly NEW controlled three-turn dialogue using independent PII values from an authenticated original; actual Python receives/restores/prints values, labels are synthetic negative controls; not relabelled historical replay |
+| `deploy/doubleup-pilot/collect_september_evidence.py` | private encrypted export of actual completed/failed backend attempts; fixed-code diagnostic, no provider call; protocol completion distinct from task success |
+| `deploy/doubleup-pilot/september_policy_browser_gate.py`, `deploy/doubleup-pilot/september_chat_browser_gate.py` | Playwright on REAL local platform/API, no mocked routes; policy CRUD/binding persistence/preview and real chat/tool snapshots; source screenshots encrypted |
+| `deploy/doubleup-pilot/verify_encoded_pii_runtime.py`, `deploy/doubleup-pilot/test_grounded_boundary_verifier.py` | replay six captured inputs to an actual fixed container without provider; check recursively decoded JSON, exact receipt reconstruction, genuine source positives and unchanged negative labels; an encoded original is a leak |
+
+Docs: `docs/integration-doubleup-local.md`,
+`research/2026-10-24-doubleup-four-hops-and-dialogues.md` (ongoing).
 
 ### 7.2 `.github/workflows/`
 

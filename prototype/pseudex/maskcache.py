@@ -36,7 +36,11 @@ Vault token map is unaffected (tokens are deterministic regardless of audit).
 import hashlib
 import threading
 from collections import OrderedDict
-from typing import Callable
+from typing import Callable, TypeVar
+
+from pseudex.inspection import MaskedText
+
+_Cached = TypeVar("_Cached", str, MaskedText)
 
 
 def content_key(org_id: str, conversation_id: str, content: str) -> str:
@@ -70,17 +74,18 @@ class MaskCache:
 
     Bounded so a long-lived process can't grow without limit. Thread-safe because
     masking now runs in a threadpool (multiple worker threads may hit the cache
-    concurrently). The cache stores only masked OUTPUT (already PII-free tokens),
-    never raw PII, so it is not a new exposure surface."""
+    concurrently). The cache stores masked OUTPUT and immutable splice receipts
+    (shown surfaces and coordinates only). No raw values, JSON Pointers or request
+    identity are retained. Text and metadata are one atomic first-writer snapshot."""
 
     def __init__(self, capacity: int) -> None:
         if capacity < 1:
             raise ValueError("MaskCache capacity must be >= 1")
         self._capacity = capacity
         self._lock = threading.Lock()
-        self._store: "OrderedDict[str, str]" = OrderedDict()
+        self._store: "OrderedDict[str, str | MaskedText]" = OrderedDict()
 
-    def get_or_compute(self, key: str, compute: Callable[[], str]) -> tuple[str, bool]:
+    def get_or_compute(self, key: str, compute: Callable[[], _Cached]) -> tuple[_Cached, bool]:
         """Return (masked_content, was_hit). On a miss, `compute()` is called
         (which masks + records audit) and the result is stored. `compute` runs
         OUTSIDE the lock so a slow morphology pass never serializes other orgs'

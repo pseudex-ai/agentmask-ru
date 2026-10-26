@@ -1141,8 +1141,9 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   `skip_system`. When masking semantics change, decide explicitly whether both
   legs need it. Pins: `test_perf_masking`, `test_persona_defects`.
 - **Gateway and operator surfaces are gated by DIFFERENT tokens.**
-  `PSEUDEX_GATEWAY_TOKEN` is a cheap credential the customer's gateway holds and
-  cannot reveal values; `PSEUDEX_ADMIN_TOKEN` can. Test harnesses read the token
+  `PSEUDEX_GATEWAY_TOKEN` cannot call human/operator `/reveal`, but DOES return
+  plaintext through execution `/unmask*`; neither credential belongs in a browser.
+  `PSEUDEX_ADMIN_TOKEN` grants the operator surface. Test harnesses read the token
   off `pseudex.service`, never restate it (`test_perf_masking` failing with 401
   is what that drift looks like). Pins: `test_localui`, `test_perf_masking`.
 - **`PSEUDEX_ADMIN_TOKEN` (and the gateway token) are set by `entrypoint.sh`
@@ -1151,6 +1152,86 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   `test_preflight` (the shell contract), `e2e/gates.py`.
 - **A bound container (`PSEUDEX_ORG`) refuses any other `org_id`** (pentest B2).
   Pins: `test_detok_security`.
+
+## Inspection receipts
+
+- **A receipt records the ACTUAL transformation, never a re-detection or token
+  lookup guessed after the request.** IN v1 `shown` and source/output codepoint offsets
+  are captured at the splice, and JSON Pointers/IDs attach per occurrence. Echo
+  composition that cannot prove exact source coordinates is explicitly incomplete.
+  Pins: `test_inspection`.
+- **Inspection does not mint, bill twice, or retain raw literals in cache.**
+  Ordinary no-flag calls warm immutable masked snapshots too; a later opt-in HIT
+  reuses their exact metadata without detector/tokenizer/audit re-entry. Endpoint
+  responses without opt-in retain their prior shape. Pins: `test_inspection`,
+  `test_perf_masking`.
+- **Runtime FIELD spellings are not obfuscation candidates.** A module function
+  named like an annotated dataclass/Pydantic field does not make that field safe
+  to rename: generated constructors and arbitrary receivers retain the public
+  spelling. Syntax alone cannot prove this; the compiled HTTP path must work.
+  Pins: `test_build_mangle_fields`, `test_inspection`.
+- **Trace count is not independent dialogue count, and schema occurrences are
+  not unique tools.** Reconcile full-detail identity, quarantine unknown groups,
+  refuse crossing splits and duplicated dialogue groups; do not turn absent calls
+  into successful comparisons. Pins: `bench/doubleup/test_reconcile.py`,
+  `bench/doubleup/test_intake.py`.
+
+- **OUT v2 is semantic-operation evidence, not a lexical diff or literal store.**
+  Only accepted changed splices/actual changed-leaf writes create restoration
+  occurrences. JSON ranges own whole scalar lexemes INCLUDING quotes; unchanged
+  escaping/whitespace is not an operation. Duplicate keys/untracked changed leaves
+  cannot claim semantic completeness; lexical completeness is independent. Metadata
+  contains no raw/restored literals, shown/base_token and enters no cache/entity
+  audit. IN v1 stays unchanged. Pins: `test_restoration_inspection`.
+- **Receipt paths describe the actual endpoint wrapper.** Manual /unmask uses
+  /response/choices/{ARRAY POSITION}/message/…, not choice.index; standalone
+  /unmask_arguments uses /arguments/{i}. Proxy manual routes are gateway-auth, not
+  OpenAI sk-ps auth; /v1 response JSON remains unchanged. No provider-streaming
+  receipts are certified. Pins: `test_restoration_inspection`.
+- **Text equality alone does not identify a displayed message or a forwarded tool
+  result.** Server ID + exact whole text/hash/role must survive both converters;
+  provenance attributes are not serialized model keys. Root request IDs do not
+  replace attempt IDs. Prepared raw/trimmed tool snapshots are distinct, and only
+  the next actual ModelRequest proves forwarding. Old history is never guessed or
+  backfilled by text/time. UNPINNED by engine units — client link/four-hop tests
+  and actual local web gate are indexed in `docs/integration-doubleup-local.md`.
+- **Highlight evidence is bounded/authorized independently of delivery and effects.**
+  Owner/superadmin checks precede decrypt; no-store on errors too. At most 100
+  attempts/400 messages/400 tools, 128 KiB per entry/512 KiB total entry budget:
+  omit, never truncate an exact snapshot. verified/no_op/incomplete/not_recorded
+  does not mean provider delivery or successful tool execution. UNPINNED by engine
+  units — actual client API/four-hop tests and runtime gates in the runbook.
+- **Inline peer values require a renderer-owned capability, not attacker-controlled
+  HTML attributes.** Exact codepoint→UTF-16 mapping, WeakMap HAST identity and a
+  final rehype factory gate the actual peer snapshot. Unsupported code/math/links,
+  cross-node/transformed text stay plain; they are not zero-PII evidence. Canonical
+  reveal remains explicit/audited, session lifetime absolute 60s with hide/pagehide/
+  context clear and request abort, no PII storage. UNPINNED by engine units —
+  frontend tests/runtime browser gate are separate; new multiline test and mobile/
+  TTL E2E are not yet green acceptance.
+- **A full retained ROOT transcript and a cross-source projection are different
+  claims.** Source Mongo uses find/aggregate only (no index-creating MongoSaver),
+  static safe message revival and encrypted raw EJSON; application Langfuse must
+  be verified separately from the gateway project. Projection differences do not
+  prove deletion/truncation; zero ROOT tools does not prove no internal tools.
+  No all-time-retention/transactional snapshot or independent-case claim follows
+  from six selected chats. Pins: `bench/doubleup/test_mongo_dialogues.py`,
+  `bench/doubleup/test_dialogue_intake.py`.
+- **Causal local tools depend on NEW arguments and each arm's own state.** Frozen
+  web/read/memory/project mirrors are not constant historical answers; missing or
+  partial resources remain unsupported. Never seed historical assistant answers
+  or source-generated artifacts. Docker Python has no network/host mount/socket/
+  secret environment, bounded RAM/workspace/output/time and verified own kill;
+  this is NOT a production hostile-code sandbox. Pins:
+  `bench/doubleup/test_replay_tools.py`, `bench/doubleup/test_replay_executor.py`.
+- **Budget corrections add immutable reserves; they do not rewrite spent calls or
+  authorize retries.** Exact approved model ID stays unchanged; only verified flat
+  1M context/pricing proof permits long input (input+output≤1M). Use max(positive
+  gateway base/all tiers, official peak) ×2 safety, fresh metadata ≤24h. Other
+  unpriced >120k contexts refuse, never shorten history/strip images silently.
+  usage_unknown is not delivery_unknown and never auto-repaid. UNPINNED by engine
+  units — `deploy/doubleup-pilot/test_budget.py` and
+  `deploy/doubleup-pilot/test_dialogue_pricing.py` pin the separate local ledger.
 
 ## Local UI
 
@@ -1313,6 +1394,16 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
 
 ## Instruments
 
+- **JSON ESCAPING IS NOT PII PROTECTION.** A Cyrillic original absent literally
+  from a tool-result wire string but present after JSON decoding has reached the
+  model. The boundary verifier must inspect both forms, require actual executed
+  tools on restored originals, and keep role-word negatives. Protocol completion
+  with missing files is not task completion; a new controlled conversation is
+  not a historical source replay. UNPINNED in the flat engine suite; actual
+  client-pilot checks (separate runner):
+  `deploy/doubleup-pilot/test_grounded_boundary_verifier.py`,
+  `deploy/doubleup-pilot/test_september_qualification.py`.
+
 - **AN INSTRUMENT THAT CANNOT FAIL IS NOT AN INSTRUMENT.** v4 could not fail in
   four places at once: a triple with nothing to compare passed all five levels
   (`not any([])`), `FieldSpec.required` was read by no scorer, there was no level
@@ -1441,6 +1532,24 @@ Anchors (`#address`, `#vault`, …) are referenced from [MAP.md](MAP.md).
   UNPINNED.
 - **Both images are pinned to the same Debian release** — a Nuitka binary links
   against the build stage's glibc. Pins: `e2e/pack_gates.py`.
+
+## Inspection receipts
+
+- **Receipts describe accepted transformations, not a second detector or a second mint.**
+  Unicode codepoint half-open offsets refer to exact source/output snapshots;
+  incomplete/ambiguous coverage stays explicit. No raw/restored literals enter
+  receipt/cache/audit metadata. Pins: `test_inspection`, `test_restoration_inspection`.
+- **OUT semantic operations are not formatting-only lexical diffs.** JSON leaf
+  spans cover the whole serialized scalar including quotes; duplicate keys and
+  untracked changes refuse complete provenance. Pins: `test_restoration_inspection`.
+- **No receipt is not zero PII, and a completed tool invocation is not business success.**
+  Original histories, synthetic UI fixtures and new causal model runs stay distinct;
+  partial/capped source histories are not complete cases. Pins:
+  `bench/doubleup/test_dialogue_intake.py`, `bench/doubleup/test_mongo_dialogues.py`.
+- **Mandatory sensitive source selection uses original evidence, not example domains.**
+  Contact values and exact source pointers stay encrypted; binary media are not
+  text contact evidence, and contact shape does not verify a real person. Pins:
+  `bench/doubleup/test_source_contacts.py`.
 
 ## False reds
 

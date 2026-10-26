@@ -18,6 +18,7 @@ import secrets
 import threading
 import urllib.parse
 from contextlib import asynccontextmanager
+from dataclasses import replace
 
 import anyio
 import httpx
@@ -39,9 +40,11 @@ from pseudex.license import (
     ENGINE_VERSION, STATE_LEASED, LicenseClient, LicenseError, explain)
 from pseudex import metering
 from pseudex.maskcache import MaskCache
+from pseudex.inspection import Inspection, requested as requested_inspection
+from pseudex.restoration import RestorationInspection
 from pseudex.operator import build_router
 from pseudex.profiling import snapshot as profiling_snapshot, stage
-from pseudex.redact import StreamDetokenizer, surviving_substitutes
+from pseudex.redact import StreamDetokenizer, surviving_substitutes, unmask_arguments
 from pseudex.tenants import Tenant, Tenants
 from pseudex.vault import PSEUDONYM_SCOPES, Vault, count_values_since
 
@@ -385,6 +388,7 @@ def _mask_request(
     tools: object,
     customer_id: str,
     agent_id: str,
+    inspection: Inspection | None = None,
 ) -> tuple[list[dict[str, object]], object]:
     """The PUBLIC leg never skips the template: here the customer writes the
     system prompt and the tool schemas, so PII in either MUST be masked or it
@@ -396,7 +400,8 @@ def _mask_request(
     sidecar leg."""
     # OpenAI's chat API carries no conversation id, so this leg always derives
     # one from the transcript — there is no caller field to prefer over it.
-    context = _context(customer_id, agent_id, conversation_key(messages))
+    context = replace(_context(customer_id, agent_id, conversation_key(messages)),
+                      inspection=inspection)
     # Billing is NOT done here. This helper is shared by the real request leg
     # (`/v1/chat/completions`) and the SANDBOX `/mask`, and the sandbox is «the
     # only way a security officer can verify masking works WITHOUT sending real
@@ -931,15 +936,106 @@ async def mask(request: Request) -> JSONResponse:
     messages = body.get("messages")
     if not isinstance(messages, list):
         return JSONResponse({"error": "messages must be a list"}, status_code=400)
+    try:
+        inspect, request_id = requested_inspection(body)
+    except ValueError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    inspection = Inspection(request_id) if inspect else None
     tools = body.get("tools")
     masked_messages, masked_tools = await anyio.to_thread.run_sync(
-        _mask_request, messages, tools, org_id, agent_id,
+        _mask_request, messages, tools, org_id, agent_id, inspection,
         limiter=_MASK_LIMITER,
     )
     payload: dict[str, object] = {"messages": masked_messages}
     if tools is not None:
         payload["tools"] = masked_tools
+    if inspection is not None:
+        # Report the scope this leg actually used, not an ignored sidecar field.
+        payload["inspection"] = inspection.payload(conversation_key(messages), _PSEUDONYM_SCOPE)
     return JSONResponse(payload)
+
+
+def _manual_restore_options(body: dict) -> tuple[str, str, dict, RestorationInspection | None]:
+    scope = str(body.get("pseudonym_scope", "")).strip() or _PSEUDONYM_SCOPE
+    if scope not in PSEUDONYM_SCOPES:
+        raise ValueError(f"pseudonym_scope must be one of {list(PSEUDONYM_SCOPES)}")
+    notations = body.get("leaf_notation") or {}
+    if not isinstance(notations, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in notations.items()):
+        raise ValueError("leaf_notation must be an object of string->string")
+    enabled, request_id = requested_inspection(body)
+    return (str(body.get("conversation_id", "")), scope, notations,
+            RestorationInspection(request_id) if enabled else None)
+
+
+def _manual_restore(response: dict, org_id: str, conversation_id: str, scope: str,
+                    notations: dict, inspection: RestorationInspection | None) -> tuple[dict, list[str]]:
+    vault = _get_vault(org_id).for_conversation(conversation_id).with_pseudonym_scope(scope)
+    restored = unmask_response(response, vault, notations, inspection)
+    return restored, _residual_in(response, restored, vault)
+
+
+@app.post("/unmask", dependencies=[Depends(_require_gateway)])
+async def unmask(request: Request) -> JSONResponse:
+    """Manual gateway execution surface, not admin reveal or provider streaming.
+
+    Mirrors the sidecar's opt-in OUT receipt; /v1/chat/completions stays OpenAI
+    shaped and never receives an inspection builder. Like manual /mask, this
+    sandbox path introduces no billing unit or separate reveal/audit operation.
+    """
+    body = await request.json()
+    response = body.get("response")
+    if not isinstance(response, dict):
+        return JSONResponse({"error": "response must be an object"}, status_code=400)
+    try:
+        conversation_id, scope, notations, inspection = _manual_restore_options(body)
+    except ValueError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    result, residual = await anyio.to_thread.run_sync(
+        _manual_restore, response, str(body.get("org_id", "")) or "default",
+        conversation_id, scope, notations, inspection, limiter=_MASK_LIMITER)
+    payload = {"response": result}
+    if inspection is not None:
+        payload["inspection"] = inspection.payload(conversation_id, scope)
+    if residual:
+        payload["residual_tokens"] = residual
+    return JSONResponse(payload, headers={"X-Pseudex-Residual": str(len(residual))}
+                        if residual else None)
+
+
+def _manual_restore_arguments(arguments: list[str], org_id: str, conversation_id: str,
+                              scope: str, notations: dict,
+                              inspection: RestorationInspection | None) -> tuple[list[str], list[str]]:
+    vault = _get_vault(org_id).for_conversation(conversation_id).with_pseudonym_scope(scope)
+    restored = [unmask_arguments(raw, vault, notations,
+                                inspection.field(f"/arguments/{index}") if inspection is not None else None)
+                for index, raw in enumerate(arguments)]
+    residual = sorted({one for raw, text in zip(arguments, restored)
+                       for one in surviving_substitutes(raw, text, vault, True)})
+    return restored, residual
+
+
+@app.post("/unmask_arguments", dependencies=[Depends(_require_gateway)])
+async def unmask_arguments_endpoint(request: Request) -> JSONResponse:
+    """Buffered complete arguments only; this is not a provider streaming receipt."""
+    body = await request.json()
+    arguments = body.get("arguments")
+    if not isinstance(arguments, list) or not all(isinstance(one, str) for one in arguments):
+        return JSONResponse({"error": "arguments must be a list of strings"}, status_code=400)
+    try:
+        conversation_id, scope, notations, inspection = _manual_restore_options(body)
+    except ValueError as error:
+        return JSONResponse({"error": str(error)}, status_code=400)
+    result, residual = await anyio.to_thread.run_sync(
+        _manual_restore_arguments, arguments, str(body.get("org_id", "")) or "default",
+        conversation_id, scope, notations, inspection, limiter=_MASK_LIMITER)
+    payload = {"arguments": result}
+    if inspection is not None:
+        payload["inspection"] = inspection.payload(conversation_id, scope)
+    if residual:
+        payload["residual_tokens"] = residual
+    return JSONResponse(payload, headers={"X-Pseudex-Residual": str(len(residual))}
+                        if residual else None)
 
 
 @app.post("/reveal", dependencies=[Depends(_require_operator)])

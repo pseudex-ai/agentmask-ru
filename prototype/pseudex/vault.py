@@ -5606,6 +5606,13 @@ class Vault:
             owners: list[set[str]] = []
             for word in words:
                 if word.isascii():
+                    # A NAME rendering cannot contain digits. Folding an opaque
+                    # identifier such as a UUID fragment would discard every
+                    # digit and falsely match a minted person's single initial.
+                    # Exact typed tokens and numeric residuals have their own
+                    # ownership checks; this branch asks ONLY about NAME words.
+                    if any(character.isdigit() for character in word):
+                        return None
                     # A LATIN WORD IS LOOKED UP FOLDED, never by its letters:
                     # the index holds one canonical spelling per fake word and
                     # the model may have chosen any rendering of it. Morphology

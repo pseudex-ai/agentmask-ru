@@ -47,7 +47,7 @@ system prompt. Each of those was a measured regression, see INVARIANTS.md#pipeli
 ## 2. `/mask` on the sidecar (`pseudex/service.py`)
 
 ```
-POST /mask  {org_id, agent_id?, conversation_id?, skip_system?, pseudonym_scope?, messages, tools?}
+POST /mask  {org_id, agent_id?, conversation_id?, skip_system?, pseudonym_scope?, messages, tools?, inspection?, request_id?}
  │  Authorization: Bearer $PSEUDEX_GATEWAY_TOKEN
  │
  ├─ license state?          EXPIRED → 503 (assets are UNLOADED, there is nothing to detect with)
@@ -66,15 +66,15 @@ POST /mask  {org_id, agent_id?, conversation_id?, skip_system?, pseudonym_scope?
  │          cache.get_or_compute(key, _compute):
  │            spans  = detector.detect(text)                         (§1)
  │            events = audit.record_many(org_id, agent_id, …)         type + token + masked preview — on MISS only
- │            return redact.mask_text(text, vault, spans)
+ │            return masked text + exact local edits as one immutable snapshot
  │                     └─ per span: redact.tokenize_span → Vault.tokenize / tokenize_person → _tokenize
  │                        mint or reuse; _token_for_text inflects the substitute to the original's case
- │    envelope.mask_tools(tools, context)                            schemas: descriptions, enums, defaults
+ │    envelope.mask_tools(tools, context)                            schema descriptions/titles; enum/default/const remain data
  │
  ├─ metering.bill(audit, license_client, org_id, agent_id)           AFTER success, never before:
  │     audit.record_request + license_client.consume                 a request is ONE billing unit
  │
- └─ 200 {messages, tools}      any exception → 5xx. NEVER pass-through.
+ └─ 200 {messages, tools?, inspection?}      any exception → 5xx. NEVER pass-through.
 ```
 
 Any error in masking propagates to a 5xx — the caller treats an error as a
@@ -82,12 +82,20 @@ block, and that is the whole safety story. The proxy shape (`pseudex/proxy.py`,
 `POST /v1/chat/completions`) runs the same `mask_messages` / `mask_tools`, then
 forwards upstream itself, then runs §3 on the answer before returning it.
 
+With `inspection: true`, a request-local `Inspection` attaches JSON Pointers and
+opaque occurrence IDs to actual replacement snapshots. `Trace` composes
+reserve/direct/splice/echo coordinates; a partial nonlinear overlap is explicitly
+incomplete. Warm cache hits reuse immutable text/coordinates without reminting or
+re-detecting. There is no new engine history database. The host records the
+outbound attempt and delivery status; a receipt alone is not proof of model
+receipt, ground truth, or a prior request reconstructed via `/spans`.
+
 ---
 
 ## 3. The way back: `/unmask`, `/unmask_chunk`, `/unmask_arguments`
 
 ```
-POST /unmask  {org_id, response}                          a whole chat completion
+POST /unmask  {org_id, response, inspection?, request_id?} a whole chat completion
  ├─ _detok_rate_ok(org_id)  → 429                         per-org rate limit (pentest B1)
  ├─ envelope.unmask_response(response, vault)
  │    message.content            → redact.unmask_text(text, vault)
@@ -111,6 +119,27 @@ POST /unmask_arguments   {org_id, arguments}                          accumulate
 
 `/unmask*` stays reachable on an EXPIRED lease by design (the customer's own
 vault; `/mask` being down already stops the agent).
+
+With opt-in, `restoration.RestorationInspection` records OUT v2 at the accepted
+operation, not by finding tokens again. `redact.unmask_text` records changed
+splices; `redact.unmask_arguments` records actual changed-leaf writes.
+`RestorationField.json()` binds these writes through `json_fields.scalar_map` on
+both exact serialized strings: JSON scalar ranges include quotes. Unchanged
+whitespace/escape normalization is lexical drift, not a semantic restoration.
+Duplicate keys or an untracked changed leaf invalidate semantic completeness;
+serialization-only changes can leave semantic_complete true and lexical_complete
+false. The receipt contains offsets/paths/opaque IDs, type RESTORATION, kind
+restoration, granularity span|json_leaf and optional leaf_path — NO raw/restored
+literals, shown or base_token, and nothing enters cache/entity audit.
+
+`envelope.unmask_response` uses /response/choices/{ARRAY POSITION}/message/…;
+the array position is NOT choice.index. Standalone /unmask_arguments uses
+/arguments/{i}. These are actual request-wrapper paths. The host keeps the
+original receipt and strips ONLY the known /response prefix when reading provider
+snapshots rooted at choices. Sidecar and manual proxy routes require gateway
+auth; neither admin/sk-ps surface replaces it. Without opt-in response shapes
+stay unchanged; proxy OpenAI /v1 JSON is unchanged. Provider-streaming receipts
+are unsupported, even though the chat's own SSE events work.
 
 ---
 
@@ -267,3 +296,72 @@ landing → signup (email code, storefront/accounts) → cabinet → key
 The rate ladder, the 300 000-request metering floor and every number printed
 to the customer come from code (`storefront/pseudex_site/context.py`) and are
 pinned by `storefront/test_billing_lifecycle.py` and `test_published_claims.py`.
+
+---
+
+## 9. DoubleUp local four-hop provenance and full dialogues (ongoing)
+
+Client sources are external sibling worktrees, linked in
+`docs/integration-doubleup-local.md`; they are NOT engine import edges.
+
+1. Authenticated host input conversion stamps server-owned user IDs. SSE start
+   carries pseudex_input_messages [{input_index,message_id}]; final output keeps
+   its actual AIMessage ID. Both wire converters attach only nonserialized
+   _WireMessage attributes whose whole text/role/ID/hash still agree. Attachments,
+   compaction or transformed text without a proven exact projection stay unlinked.
+2. Each actual HTTP attempt stores source/model request and raw/restored response
+   encrypted; root request correlation is separate from attempt identity. IN v1
+   and OUT v2 receipts describe operations, not provider delivery. All attempts
+   survive; old records are not backfilled by similar text/time.
+3. Before a tool actually runs, dispatch/call/execution IDs bind its arguments to
+   that attempt. Raw tool return and trimmed forwarded ToolMessage are different
+   snapshots. A prepared result is not called forwarded until a subsequent actual
+   ModelRequest links its exact message ID/text/hash and original execution.
+4. The highlights BFF checks current thread owner/superadmin and per-attempt
+   metadata BEFORE decrypting. It projects at most 100 attempts, 400 messages,
+   400 tools, 128 KiB per entry, 512 KiB entry budget: oversized entries are omitted,
+   never truncated. Evidence status verified/no_op/incomplete/not_recorded stays
+   separate from delivery status and tool execution outcome; every response is
+   no-store. A fixed root-prefix mapping does not rewrite the engine receipt.
+5. The actual chat consumes IDs from API/SSE. Yellow mask/teal restore marks use
+   exact codepoint→UTF-16 ranges and actual peer snapshots, never canonical vault
+   lookup. A WeakMap capability on HAST nodes (factory last in rehype) prevents
+   forged HTML attributes from authorizing peer-value display. Exact link labels
+   (including GFM email) have noninteractive marks; the existing anchor retains its
+   href/navigation/tab stop. Code/math/destinations/cross-node/transformed ranges
+   remain plain. Exact soft-line positions are preserved before remarkBreaks/raw.
+6. Session state separates marker metadata from private peer/tool payload. Markers
+   stay in the authorized loaded chat; details expire after absolute60s/hide and
+   reload only on explicit hover/focus/tap via no-store GET. Render-time identity
+   guard suppresses previous scope before passive cleanup; auth denial, context,
+   pagehide and toggle-off erase both. Browser TTL/mobile/link proof is recorded.
+   Canonical reveal remains separately explicit/audited; no new storage/analytics.
+7. Source intake is approved Mongo find/aggregate-only, never MongoSaver (its
+   constructor creates indexes), plus GET-only APPLICATION Langfuse with actual
+   thread UUID sessions. Safe static message msgpack/JSON revival retains raw EJSON;
+   no arbitrary imports/pickle fallback. Six retained ROOT histories and all six LF
+   joins are evidence, not independent quality cases; two user projections differ.
+8. Source resources/contracts exist for THREE ready text-only chats only. The sealed
+   6/8/8-user-turn bundle keeps original multi-text blocks and source executor system
+   prompt. Future replay is an EXPLICIT adaptation: real DoubleUp ExecutionStage
+   tool loop + frozen executor prompt, not the original multi-agent orchestrator.
+   Only NEW model/tool returns would feed each arm's own mirrored resources/workspace;
+   historical assistant/generated answers/files are never seeded. The Docker Python
+   executor has genuine isolation checks, but is not a production hostile-code sandbox.
+9. Prior live first case processed8 user turns for none/builtin; P stopped inside
+   turn1 after8 tool steps on false UUID residual. Owner-approved known-prefix
+   retry kept unknown reserve and matched exact original input before paid socket;
+   no completed prefix was repaid. Ledger now accounts/reserves$2.7971142; egress
+   is closed. New owner scope is UI fixes, UUID diagnosis-only, real source corpus.
+10. Source-contact inventory scans original user messages, intersects application
+    sessions and stratifies30 candidates. Full ROOT/trace/independent observation
+    joins yield21 complete sensitive histories;15 have source tool contacts and12
+    repeat user contact values in tool arguments/results. Private local copies are
+    original read-only histories, never new replay; source Langfuse links expose
+    actual historical tool spans. No original data/model outcomes are fabricated.
+
+Current source/compiled HTTP and authenticated web/browser four-hop gates prove
+contained synthetic mechanics only ($0). Previous full/backend/baked results are
+not a current all-suite/full-dialogue verdict. No task-quality/equivalence,
+precision/recall, agent superiority, release or objective-completed claim follows.
+Evidence: `research/2026-10-24-doubleup-four-hops-and-dialogues.md`.

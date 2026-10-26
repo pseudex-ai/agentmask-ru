@@ -1,0 +1,9 @@
+# Only the fixed-route budgeted model connector gets outbound network access.
+# Backend, vault, databases and tool executors remain on the internal network.
+services:
+  gateway:
+    networks: [data, model_egress]
+
+networks:
+  model_egress:
+    internal: false

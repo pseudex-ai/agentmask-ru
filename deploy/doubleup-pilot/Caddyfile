@@ -1,0 +1,23 @@
+{
+    admin off
+    auto_https off
+}
+
+:18943 {
+    reverse_proxy license:9443
+}
+:18862 {
+    reverse_proxy sidecar:8000
+}
+:18881 {
+    reverse_proxy sidecar:8081
+}
+:18850 {
+    reverse_proxy gateway:4000
+}
+:18860 {
+    reverse_proxy user_api:7800
+}
+:18861 {
+    reverse_proxy graph_server:2024
+}

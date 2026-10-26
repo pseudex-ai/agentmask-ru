@@ -1,0 +1,36 @@
+# Verification artifact: application source is baked, never bind-mounted.
+x-baked: &baked
+  image: obscura-doubleup-backend:local
+  working_dir: /app
+  profiles: [baked]
+  env_file: .state/backend.env
+  environment:
+    GRAPH_SERVER_URL: http://graph_baked:2024
+  volumes:
+    - backend-data:/app/data
+    - backend-logs:/app/logs
+    - ./.state/runtime:/run/pilot:ro
+  networks: [data]
+  restart: "no"
+
+services:
+  graph_baked:
+    <<: *baked
+    command: [python, graph_server_with_subscription.py]
+    depends_on:
+      mongodb: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      sidecar: {condition: service_started}
+      gateway: {condition: service_started}
+  user_baked:
+    <<: *baked
+    command: [python, user_api_with_remote_graphs.py]
+    depends_on:
+      graph_baked: {condition: service_started}
+  baked_frontdoor:
+    image: caddy:2-alpine
+    profiles: [baked]
+    volumes: ["./baked.Caddyfile:/etc/caddy/Caddyfile:ro"]
+    networks: [data, control]
+    ports: ["127.0.0.1:18864:18864", "127.0.0.1:18865:18865"]
+    restart: "no"
