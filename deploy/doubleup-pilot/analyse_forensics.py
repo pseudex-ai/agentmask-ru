@@ -107,6 +107,21 @@ def addr_parts(value: str) -> tuple[str, str, str] | None:
             continue
         if _street_like_word(low):
             continue
+        # A TOWN BEFORE THE STREET'S TYPE WORD IS THE TOWN. «Кинешма, ул.
+        # Родниковая 39» — the first capitalized word is a SETTLEMENT, and any
+        # list of cities is finite (Кинешма was not on it): the town stem became
+        # the address key and two records of one address were reported as a
+        # collision. A word immediately before «ул./улица/…» is the town, not
+        # the street.
+        if (not street and position + 2 < len(tokens)
+                and tokens[position + 1].isalpha()
+                and _street_like_word(fold(tokens[position + 1]))
+                and tokens[position + 2].isalpha()
+                and not _street_like_word(fold(tokens[position + 2]))):
+            # …and only in the town-then-type order (X, «ул.», Name): in the
+            # reverse order «Вязовая улица» there is no name after the type word,
+            # and skipping its first word would make the fake's own key empty.
+            continue
         # A TOWN IN ANY CASE IS NOT THE STREET. «Москвы, улицы Каштановой» —
         # «москвы» was not in the list of Moscow's forms, so the city stem became
         # the address key and one address split into two. Compare the first five
