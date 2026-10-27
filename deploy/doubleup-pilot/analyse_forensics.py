@@ -364,6 +364,21 @@ def analyse(document: dict) -> tuple[dict, list, dict]:
                         "shown": row.get("shown"),
                         "why": "the echo/reserve leg answered with a substitute this "
                                "run already carries; nothing was minted"})
+                elif (row.get("type") in ("LOC", "ADDR", "NAME")
+                      and not any(ch.isdigit() for ch in row["real"])
+                      and len(row["real"].split()) <= 2):
+                    # A NEUTRAL ECHO REDACTION IS BY DESIGN. The echo leg knows
+                    # the dialogue restored this value but cannot bind it to a
+                    # person, so it writes REDACTED… with NO identity (envelope
+                    # `_neutral_redaction`, deliberately absent from the vault's
+                    # token index). The same shape is the vault's fallback marker,
+                    # but a live /mask probe leaves these very prose fragments
+                    # unchanged — so they are counted apart, never as unresolved.
+                    defects["F_by_design"].append({
+                        "tester": tester, "attempt": number, "path": row.get("path"),
+                        "type": row.get("type"), "real": row["real"],
+                        "shown": row.get("shown"),
+                        "why": "neutral echo redaction: no identity, by design"})
                 else:
                     defects["F_unresolved"].append({
                         "tester": tester, "attempt": number, "path": row.get("path"),
@@ -384,11 +399,30 @@ def analyse(document: dict) -> tuple[dict, list, dict]:
                         "shown": row.get("shown"),
                         "why": "numeric field with a non-shaped value: masked as OPAQUE"})
                     continue
+                if (row.get("type") in ("LOC", "ADDR", "NAME")
+                        and not any(ch.isdigit() for ch in row["real"])
+                        and len(row["real"].split()) <= 2):
+                    # A NEUTRAL ECHO REDACTION IS BY DESIGN. The echo leg knows
+                    # the dialogue restored this value but cannot bind it to a
+                    # person, so it writes REDACTED… with NO identity (envelope.
+                    # `_neutral_redaction`, deliberately absent from the vault's
+                    # token index). The same shape is the vault's fallback marker,
+                    # but a live /mask probe leaves these very prose fragments
+                    # unchanged — so they are counted apart, never as unresolved.
+                    defects["F_by_design"].append({
+                        "tester": tester, "attempt": number, "path": row.get("path"),
+                        "type": row.get("type"), "real": row["real"],
+                        "shown": row.get("shown"),
+                        "why": "neutral echo redaction: no identity, by design"})
+                    continue
                 defects["F_unresolved"].append({
                     "tester": tester, "attempt": number, "path": row.get("path"),
                     "type": row.get("type"), "real": row["real"], "shown": row.get("shown"),
                     "reason": "placeholder instead of a substitute"})
-            reason = over_mask_reason(row)
+            if not PLACEHOLDER.search(row.get("shown") or ""):
+                reason = over_mask_reason(row)
+            else:
+                reason = None
             if reason:
                 defects["D_overmask"].append({
                     "tester": tester, "attempt": number, "path": row.get("path"),
