@@ -327,6 +327,18 @@ def analyse(document: dict) -> tuple[dict, list, dict]:
                         "reason": "base_token null and the substitute is not one "
                                   "this run already showed"})
             if PLACEHOLDER.search(row.get("shown") or ""):
+                if row.get("type") == "OPAQUE":
+                    # AN OPAQUE VALUE IS MASKED BY DESIGN: the customer put a
+                    # non-shaped value under a field that names a numbered
+                    # document, and the policy is «never in the clear», rendered
+                    # as a REDACTED marker instead of a fake number. It is not
+                    # an unresolved substitute.
+                    defects["F_by_design"].append({
+                        "tester": tester, "attempt": number, "path": row.get("path"),
+                        "type": row.get("type"), "real": row["real"],
+                        "shown": row.get("shown"),
+                        "why": "numeric field with a non-shaped value: masked as OPAQUE"})
+                    continue
                 defects["F_unresolved"].append({
                     "tester": tester, "attempt": number, "path": row.get("path"),
                     "type": row.get("type"), "real": row["real"], "shown": row.get("shown"),
