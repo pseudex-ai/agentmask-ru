@@ -115,7 +115,12 @@ def entity_of(row: dict) -> tuple[str, str]:
         return ("EMAIL", re.sub(r"[^a-z0-9@.]", "", fold(real)))
     if kind == "NAME":
         words = [word for word in re.findall(r"[А-Яа-яЁёA-Za-z\-]+", real) if not is_initials(word)]
-        return ("NAME", "|".join(stems(words)))
+        # THREE LETTERS PER PART, BECAUSE CASE LIVES IN THE ENDING. Five-letter
+        # stems split «Анна/Анне/Анну/Анны» into four entities — one person's
+        # declensions counted as an identity split, and the substitute they SHARE
+        # reported as a collision. Three letters survive the ending of a Russian
+        # given name and are still specific enough for an instrument.
+        return ("NAME", "|".join(sorted({fold(word)[:3] for word in words if len(word) > 2})))
     if kind in ("ADDR", "LOC"):
         parts = addr_parts(real)
         if parts:
@@ -169,6 +174,12 @@ def substitute_of(row: dict) -> tuple[str, str]:
     return (kind, fold(shown).strip())
 
 
+STREET_TYPE = re.compile(
+    r"(?i)(?<![а-яё])(?:ул|улиц\w*|переул\w*|проспект\w*|пр-т|проезд\w*|бульвар\w*|"
+    r"площад\w*|набережн\w*|шоссе|тупик\w*|алле\w*|дорог\w*|тракт\w*|линия|микрорайон\w*)"
+    r"(?![а-яё])")
+
+
 def over_mask_reason(row: dict) -> str | None:
     """Why this masked span does not look like personal data. A WIDE net: the
     report puts candidates in front of a human, it never asserts from a heuristic
@@ -199,7 +210,20 @@ def over_mask_reason(row: dict) -> str | None:
             return "ordinal/quantity phrase accepted as a street"
         return None
     if kind == "LOC":
-        return "place span masked to a settlement (check whether it is a place reference, not an address)"
+        # A MASKED ADDRESS IS NOT OVER-MASKING. The old line flagged every LOC
+        # row, and 88 of them in one run were the customer's own address
+        # («улице Ленина 14, квартира 5»): the reason text said «check whether it
+        # is a place reference», which is the REPORT's job, not the flag's.
+        if not any(char.isdigit() for char in real) and len(real.split()) <= 2:
+            # A STREET IS NOT A BARE SETTLEMENT. «улица Ленина», «улицей
+            # Ленина», «улицы Абрикосовая» were flagged as settlements and the
+            # flag fired on the engine's own streets — 22 false over-mask
+            # records in one run. A street-type word (or a known street form)
+            # makes the span an address, which is what the engine masks.
+            if STREET_TYPE.search(real):
+                return None
+            return "a bare settlement was masked"
+        return None
     return "masked with no personal-data shape"
 
 
@@ -243,7 +267,7 @@ def _surname_only_ambiguity(entry: dict, signatures: dict) -> bool:
 def analyse(document: dict) -> tuple[dict, list, dict]:
     tester = document.get("tester")
     ledger: dict[str, dict] = {}
-    collisions: dict[str, list] = defaultdict(list)
+    collisions: dict[str, set] = defaultdict(set)
     defects: dict[str, list] = defaultdict(list)
 
     # Every substitute this run ever showed or named. The echo/reserve leg
@@ -393,8 +417,14 @@ def analyse(document: dict) -> tuple[dict, list, dict]:
                         "tester": tester, "attempt": number, "shown": signature,
                         "arguments": arguments[:500],
                         "why": "a substitute reached the tool arguments"})
-        for key in shown_signatures:
-            collisions[key].append((tester, number))
+        # ONE SUBSTITUTE, SEVERAL ENTITIES — entities, not attempts. Every
+        # attempt of one dialogue shows the same substitute for the same person;
+        # counting attempts reported the stable identity as a collision (64
+        # «collisions» that were one entity seen eight times).
+        for key, rows in shown_signatures.items():
+            for row in rows:
+                cls, entity = entity_of(row)
+                collisions[key].add((tester, f"{cls}:{entity}"))
 
     for key, entry in ledger.items():
         entry["real_forms"] = sorted(entry["real_forms"])
@@ -432,7 +462,7 @@ def analyse(document: dict) -> tuple[dict, list, dict]:
 
     for key, owners in collisions.items():
         if len(owners) > 1:
-            defects["C_collision"].append({"key": key, "owners": owners})
+            defects["C_collision"].append({"key": key, "owners": sorted(owners)})
 
     return ({"tester": tester, "entities": len(ledger),
              "attempts": len(document.get("attempts") or [])}, list(ledger.values()),
