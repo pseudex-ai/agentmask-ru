@@ -203,11 +203,60 @@ def over_mask_reason(row: dict) -> str | None:
     return "masked with no personal-data shape"
 
 
+LETTER_SPACED = re.compile(r"^[А-ЯЁA-Z](?:-[а-яёa-z])+$")
+
+
+def _name_words(text: str) -> list[str]:
+    return [word for word in re.findall(r"[А-Яа-яЁёA-Za-z\-]+", text)
+            if not is_initials(word)]
+
+
+def _surname_only_ambiguity(entry: dict, signatures: dict) -> bool:
+    """True when the ONLY evidence linking these forms is a shared surname.
+
+    The engine links a lone surname to a full name when the conversation holds
+    exactly one person with it; it refuses when the data cannot decide, and that
+    refusal shows up here as several substitutes. Only that refusal is excused:
+    if any named form's substitute surname equals the lone form's, the family is
+    the same and the split is the engine's, not the data's.
+    """
+    named_families: set[str] = set()
+    lone_families: set[str] = set()
+    for hops in signatures.values():
+        for hop in hops:
+            shown_words = re.findall(r"[А-Яа-яЁёA-Za-z\-]+", hop.get("shown") or "")
+            family = shown_words[0].casefold()[:4] if shown_words else ""
+            # A NAMED FORM is anything wider than the surname: a second word or
+            # an initial. «Кузнецова Д. А.» counts as named even though the
+            # initials are not full words.
+            wide = (len(_name_words(hop["real"])) >= 2
+                    or len(re.findall(r"[А-Яа-яЁёA-Za-z\-]+", hop["real"])) >= 2)
+            if wide:
+                named_families.add(family)
+            else:
+                lone_families.add(family)
+    if not lone_families or not named_families:
+        return False
+    return not (named_families & lone_families)
+
+
 def analyse(document: dict) -> tuple[dict, list, dict]:
     tester = document.get("tester")
     ledger: dict[str, dict] = {}
     collisions: dict[str, list] = defaultdict(list)
     defects: dict[str, list] = defaultdict(list)
+
+    # Every substitute this run ever showed or named. The echo/reserve leg
+    # answers with a substitute the transcript already carries and mints
+    # nothing — `base_token: null` there means «nothing was created», not
+    # «unresolved», and counting it as a defect hides the real ones.
+    known_fakes: set[str] = set()
+    for attempt in document.get("attempts") or []:
+        for row in attempt.get("replacements") or []:
+            for field in ("shown", "base_token"):
+                value = (row.get(field) or "").strip()
+                if len(value) >= 4:
+                    known_fakes.add(value)
 
     for number, attempt in enumerate(document.get("attempts") or []):
         model_request = as_text(attempt.get("model_request"))
@@ -215,6 +264,13 @@ def analyse(document: dict) -> tuple[dict, list, dict]:
         shown_signatures = {}
         for row in attempt.get("replacements") or []:
             if not row.get("real") or row.get("shown") is None:
+                continue
+            if LETTER_SPACED.match((row.get("real") or "").strip()) or LETTER_SPACED.match(
+                    (row.get("shown") or "").strip()):
+                # THE MODEL SPELLED A SUBSTITUTE OUT LETTER BY LETTER («Л-у-г-а»)
+                # or the probe wrote one that way: neither is a person writing a
+                # name, and counting it as an identity split blames the engine
+                # for the model's formatting.
                 continue
             cls, key = entity_of(row)
             sub_cls, sub_key = substitute_of(row)
@@ -229,10 +285,20 @@ def analyse(document: dict) -> tuple[dict, list, dict]:
             shown_signatures.setdefault(f"{sub_cls}:{sub_key}", []).append(row)
 
             if row.get("base_token") is None and row.get("shown") != row.get("real"):
-                defects["F_unresolved"].append({
-                    "tester": tester, "attempt": number, "path": row.get("path"),
-                    "type": row.get("type"), "real": row["real"], "shown": row.get("shown"),
-                    "reason": "base_token null (the row does not name the value it stands for)"})
+                if (row.get("shown") or "").strip() in known_fakes:
+                    defects["F_echo"].append({
+                        "tester": tester, "attempt": number, "path": row.get("path"),
+                        "type": row.get("type"), "real": row["real"],
+                        "shown": row.get("shown"),
+                        "why": "the echo/reserve leg answered with a substitute this "
+                               "run already carries; nothing was minted"})
+                else:
+                    defects["F_unresolved"].append({
+                        "tester": tester, "attempt": number, "path": row.get("path"),
+                        "type": row.get("type"), "real": row["real"],
+                        "shown": row.get("shown"),
+                        "reason": "base_token null and the substitute is not one "
+                                  "this run already showed"})
             if PLACEHOLDER.search(row.get("shown") or ""):
                 defects["F_unresolved"].append({
                     "tester": tester, "attempt": number, "path": row.get("path"),
@@ -283,6 +349,13 @@ def analyse(document: dict) -> tuple[dict, list, dict]:
             real = (row.get("real") or "").strip()
             if row.get("type") not in PII_TYPES or len(real) < 5:
                 continue
+            if row.get("type") == "LOC" and not any(ch.isdigit() for ch in real) \
+                    and len(real.split()) <= 2:
+                # A BARE SETTLEMENT IS REAL BY DESIGN (D-081/W8): a courier
+                # cannot deliver to a fake town, so the town stays and only the
+                # street and the house are substituted. Counting the town as
+                # leaked personal data would report the rule as a defect.
+                continue
             if real in model_request:
                 defects["E_leak"].append({
                     "tester": tester, "attempt": number, "path": row.get("path"),
@@ -331,6 +404,21 @@ def analyse(document: dict) -> tuple[dict, list, dict]:
             signatures.setdefault(_substitute_signature(entry["type"], sub), []).append(hop)
         if len(signatures) > 1:
             cls = entry["class"]
+            if cls == "NAME" and _surname_only_ambiguity(entry, signatures):
+                # A LONE SURNAME DOES NOT NAME A PERSON. «Кузнецова» and
+                # «Кузнецова Д. А.» may be one woman or two people sharing a
+                # surname, and the engine's single-candidate rule refuses to
+                # guess — minting a fresh substitute is the honest answer, not a
+                # defect. Reported separately so it cannot hide a real split:
+                # when the substitutes' surnames MATCH, the family is the same
+                # and the split is real.
+                defects["S_surname_ambiguous"].append({
+                    "tester": tester, "key": entry["key"],
+                    "real_forms": entry["real_forms"],
+                    "substitutes": sorted(signatures),
+                    "why": "lone surname and named forms with different substitute "
+                           "surnames: identity cannot be decided from the data"})
+                continue
             defects["A_two_substitutes"].append({
                 "tester": tester, "class": cls, "key": entry["key"],
                 "type": entry["type"], "real_forms": entry["real_forms"],
