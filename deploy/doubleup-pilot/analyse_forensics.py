@@ -43,9 +43,22 @@ PII_TYPES = {"PHONE", "EMAIL", "NAME", "SNILS", "INN", "CARD", "PASSPORT", "ADDR
              "DOB", "DATE", "BIRTH_CERT", "MILITARY_ID", "VEHICLE_DOC", "OGRN", "OGRNIP",
              "ACCOUNT", "IBAN", "VIN", "OMS", "UIN", "LOYALTY", "IMEI", "ICCID", "EPTS",
              "CARD_VERIFICATION_CODE", "ISSUER_OTP"}
-GENERIC = {"ул", "улица", "улице", "улицей", "улицу", "д", "дом", "кв", "квартира",
-           "квартиру", "г", "город", "городе", "пр", "проспект", "пер", "переулок",
-           "наб", "набережная", "оф", "офис", "эт", "этаж", "район", "обл", "область"}
+GENERIC = {"ул", "улица", "улице", "улицей", "улицу", "улицы", "улицами", "улицам",
+           "улицах", "д", "дом", "дому", "домом", "кв", "квартира", "квартиру",
+           "квартиры", "квартирой", "г", "город", "городе", "города", "пр", "проспект",
+           "пер", "переулок", "наб", "набережная", "оф", "офис", "эт", "этаж",
+           "район", "обл", "область", "пункт", "пункта", "пункте", "посёлок",
+           "поселок", "деревня", "село", "станица", "аул", "корпус", "корп", "стр",
+           "строение", "литера", "лит", "шоссе", "проезд", "бульвар", "площадь",
+           "тупик", "аллея", "микрорайон", "мкр", "тракт", "дорога", "линия"}
+
+
+def _street_like_word(low: str) -> bool:
+    """A street-type word in ANY case form is not a street NAME."""
+    return low in GENERIC or low.startswith(("улиц", "переул", "просп", "проезд",
+                                              "бульвар", "площад", "набереж",
+                                              "шоссе", "тупик", "алле", "микрорайон",
+                                              "тракт", "дорог", "лини"))
 CITIES = {"москва", "москве", "москву", "москвой", "питер", "спб", "санкт",
           "петербург", "петербурге", "новосибирск", "екатеринбург", "казань"}
 
@@ -92,7 +105,7 @@ def addr_parts(value: str) -> tuple[str, str, str] | None:
             elif flat is not None and street and house and not flat:
                 flat = token
             continue
-        if low in GENERIC:
+        if _street_like_word(low):
             continue
         # A TOWN IN ANY CASE IS NOT THE STREET. «Москвы, улицы Каштановой» —
         # «москвы» was not in the list of Moscow's forms, so the city stem became
