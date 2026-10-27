@@ -126,6 +126,30 @@ def entity_of(row: dict) -> tuple[str, str]:
     return (kind, fold(real).strip())
 
 
+def _substitute_signature(entity_type: str, words: list[str]) -> str:
+    """The substitute as a NAME OR A PLACE, not as a string.
+
+    The engine inflects the substitute to the case of the mention («Раису» for
+    «Екатерину», «Раисы» for «Екатерины»): that is the same person, and a
+    raw-string signature counted it as a second substitute — the one false
+    positive the first analysis left in the person class. A street is compared
+    by its stem and its numbers, so a case ending or punctuation cannot pretend
+    to be another address.
+    """
+    if entity_type == "NAME":
+        return "|".join(word.casefold()[:4] for word in words)
+    if entity_type in ("LOC", "ADDR"):
+        parts = []
+        for word in words:
+            digits = re.sub(r"\D+", "", word)
+            if digits:
+                parts.append(digits)
+            else:
+                parts.append(word.casefold()[:5])
+        return "|".join(parts)
+    return "|".join(words)
+
+
 def substitute_of(row: dict) -> tuple[str, str]:
     """The substitute's signature in the same space as the entity key."""
     shown = row.get("shown") or ""
@@ -304,7 +328,7 @@ def analyse(document: dict) -> tuple[dict, list, dict]:
         signatures = {}
         for hop in entry["hop"]:
             sub = substitute_of({"type": hop["type"], "shown": hop["shown"]})
-            signatures.setdefault("|".join(sub), []).append(hop)
+            signatures.setdefault(_substitute_signature(entry["type"], sub), []).append(hop)
         if len(signatures) > 1:
             cls = entry["class"]
             defects["A_two_substitutes"].append({
