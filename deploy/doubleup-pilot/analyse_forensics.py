@@ -142,7 +142,10 @@ def _substitute_signature(entity_type: str, words: list[str]) -> str:
     to be another address.
     """
     if entity_type == "NAME":
-        return "|".join(word.casefold()[:4] for word in words)
+        # THREE LETTERS: the case ending is the fourth and fifth character, and
+        # «Майя»/«Майи» are one substitute of one person. Four kept them apart
+        # and reported a stable identity as two.
+        return "|".join(word.casefold()[:3] for word in words)
     if entity_type in ("LOC", "ADDR"):
         parts = []
         for word in words:
