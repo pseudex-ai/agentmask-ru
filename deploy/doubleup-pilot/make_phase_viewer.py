@@ -130,6 +130,16 @@ a{color:#8ab4ff}
     parts.append("<p>Сырые сэмплы: <code>" + html.escape(str(LATENCY / 'latency.json')) +
                  "</code> · модель-метрики из <code>turn_metrics</code>.</p></section>")
 
+    parts.append("<section><h2>Фаза 4 — кейс UI-аннотации и отчёт</h2>")
+    parts.append("<p>Восстановленный email в ответе агента не подсвечен — это дефект "
+                 "UI-аннотации, а не утечка: model_response содержал фейк, restored_response — "
+                 "настоящее значение, фейка в нём нет; marks=10 при reveals=5, и плашка "
+                 "«Граница данных» говорит, что не все фрагменты удалось отметить.</p>")
+    parts.append("<p>Полный отчёт фаз: <code>.state/qa/REPORT.md</code> · "
+                 "админка: <code>.state/qa/admin/</code> · тестеры: "
+                 "<code>.state/qa/testers/</code> · латентность: "
+                 "<code>.state/qa/latency/</code></p></section>")
+
     parts.append("""<div id='qa-lb'><div id='bar'><span id='counter'></span><span id='cap'></span>
 <button id='close' type='button'>Закрыть ✕</button></div><div id='stage'>
 <button id='prev' class='arrow' type='button'>‹</button><img id='img' alt=''>
