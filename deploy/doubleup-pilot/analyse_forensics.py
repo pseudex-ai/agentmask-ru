@@ -237,6 +237,13 @@ def over_mask_reason(row: dict) -> str | None:
         return None
     if kind == "NAME":
         if not any(word[:1].isupper() for word in real.split()):
+            # A LOWER-CASE NAME IS A NAME. The customer typed «иванова» or «поля»
+            # in a chat register; masking it as a person is the fail-closed side
+            # of the trade, not over-masking. Only a MULTI-WORD lower-case value
+            # with a sentence shape is the tail case this reason was written for.
+            words = [word for word in real.split() if word.isalpha()]
+            if len(words) <= 1 or all(word.islower() for word in words):
+                return None
             return "masked as NAME but carries no capitalised person shape"
         return None
     if kind in ("DATE", "DOB"):
