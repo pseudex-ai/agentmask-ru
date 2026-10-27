@@ -64,6 +64,16 @@ TESTERS = {
             "её телефон +7 916 123-45-67.",
             "И отметь, что она просила прислать счёт на anna.ivanova@example.ru.",
         ]),
+        # B4: the patterns the real corpus showed to be where re-masking breaks.
+        # (a) the tool RETURNS a contact, so the result leg must mask it too;
+        # (b) the same phone is said twice, so the substitute must be stable;
+        # (c) an address appears after the contact, so the address leg runs.
+        ("контакт в результате инструмента", [
+            "Найди в CRM контакт человека с телефоном +7 916 123-45-67 и продиктуй, "
+            "что у него записано в карточке: имя и email.",
+            "Спасибо. А теперь напомни мне, пожалуйста, этот же телефон — я его потерял.",
+            "И запиши, что он живёт в Москве, на улице Ленина 14, квартира 5.",
+        ]),
     ],
     3: [
         ("личные данные в общем вопросе", [
