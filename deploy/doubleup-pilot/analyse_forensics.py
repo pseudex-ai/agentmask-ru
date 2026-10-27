@@ -92,10 +92,18 @@ def addr_parts(value: str) -> tuple[str, str, str] | None:
             elif flat is not None and street and house and not flat:
                 flat = token
             continue
-        if low in GENERIC or low in CITIES:
+        if low in GENERIC:
             continue
-        if token[:1].isupper() and not street and len(token) > 2:
-            street = low[:6]
+        # A TOWN IN ANY CASE IS NOT THE STREET. «Москвы, улицы Каштановой» —
+        # «москвы» was not in the list of Moscow's forms, so the city stem became
+        # the address key and one address split into two. Compare the first five
+        # letters of the known forms, and take the street NAME from any case (a
+        # street written in the genitive is lower-case after its type word).
+        if low in CITIES or any(len(city) >= 5 and low.startswith(city[:5])
+                                for city in CITIES):
+            continue
+        if not street and len(token) > 2:
+            street = low[:4]
     # a flat follows «кв»/«квартира» explicitly; prefer that reading
     match = re.search(r"(?:кв|квартир\w*)\.?\s*(\d+)", text, re.IGNORECASE)
     if match:
@@ -142,10 +150,12 @@ def _substitute_signature(entity_type: str, words: list[str]) -> str:
     to be another address.
     """
     if entity_type == "NAME":
-        # THREE LETTERS: the case ending is the fourth and fifth character, and
-        # «Майя»/«Майи» are one substitute of one person. Four kept them apart
-        # and reported a stable identity as two.
-        return "|".join(word.casefold()[:3] for word in words)
+        # ONE PERSON IS ONE SURNAME, AND A SURNAME IS THREE LETTERS. The fake
+        # given name and patronymic are re-drawn per writing («Наумов Лев
+        # Павлович» / «Наумова Льва Павловича»), but the surname is what makes
+        # the model see one family — and the case ending («Лев»/«Льва», «Майя»/
+        # «Майи») was the fourth character that split a stable identity in two.
+        return words[0].casefold()[:3] if words else ""
     if entity_type in ("LOC", "ADDR"):
         parts = []
         for word in words:
