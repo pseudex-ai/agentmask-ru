@@ -75,22 +75,32 @@ TESTERS = {
             "И запиши, что он живёт в Москве, на улице Ленина 14, квартира 5.",
         ]),
     ],
+    # Testers 3/4/5: several turns each, and every turn ends in a contact the mock
+    # CRM is actually keyed by. A one-turn dialogue gave three screenshots and no
+    # proof that the substitute survives a second turn — which is the thing the
+    # hops are supposed to show.
     3: [
-        ("личные данные в общем вопросе", [
+        ("доступ и карточка", [
             "У меня такой вопрос: если я потерял доступ к аккаунту, но у меня есть паспорт "
             "и СНИЛС, я могу восстановить доступ? Мой телефон +7 999 123-45-67.",
+            "Спасибо. А какой email записан у меня в карточке? Меня зовут Мария Сидорова.",
+            "И продиктуй, пожалуйста, мой номер телефона ещё раз — я его потерял.",
         ]),
     ],
     4: [
-        ("уточнение по email", [
+        ("задачи и адрес клиента", [
             "Здравствуйте, я Иванова Анна Сергеевна, anna.ivanova@example.ru. "
             "Подскажите, есть ли по мне открытые задачи, и на какую дату они назначены?",
+            "А какой телефон у меня записан в карточке?",
+            "И запиши, пожалуйста, что я живу в Москве, на улице Ленина 14, квартира 5.",
         ]),
     ],
     5: [
-        ("смешанные ПД", [
+        ("договор по клиенту", [
             "Коллеги, пришлите, пожалуйста, договор на Кузнецова Дмитрия Андреевича, "
             "+7 903 555-12-34, на адрес m.sidorova@example.ru. Срочно, до пятницы.",
+            "Уточни, пожалуйста, статус сделки по этому же телефону +7 903 555-12-34.",
+            "И скажи, какой email записан у него в карточке.",
         ]),
     ],
 }
@@ -121,6 +131,133 @@ def login(page, user_id: str, password: str) -> None:
     page.click('button:has-text("Войти")')
     page.wait_for_url(lambda url: "/login" not in url, timeout=60_000)
     page.wait_for_timeout(2_500)
+
+
+def scroll_to_latest(page) -> None:
+    """Bring the newest message into view in whatever scrolls.
+
+    A full-page screenshot hides the only thing worth looking at: a page that
+    never moved has no visible answer. Every scrollable box goes to its bottom,
+    which is where a chat puts the message it just received.
+    """
+    page.evaluate(
+        "() => { for (const el of document.querySelectorAll('*')) {"
+        "  if (el.scrollHeight > el.clientHeight + 40) el.scrollTop = el.scrollHeight;"
+        "} window.scrollTo(0, document.body.scrollHeight); }")
+    page.wait_for_timeout(400)
+
+
+def ensure_highlights(page) -> bool:
+    """Turn the substitution highlighting on; without it there is nothing to hover."""
+    toggle = page.locator('[data-testid="pseudex-highlight-toggle"]').first
+    if not toggle.count():
+        return False
+    if "выключена" in toggle.inner_text():
+        toggle.click()
+        page.wait_for_timeout(2_000)
+    return True
+
+
+def refresh_highlights(page) -> None:
+    """Ask the panel for the marks of the answer that just arrived.
+
+    Highlighting is a read-only projection requested explicitly; the first turn
+    of a fresh thread has nothing to project until it is asked for. The toggle is
+    left alone here — clicking it again would switch the marks OFF, and a report
+    of screenshots with no marks is exactly what this harness exists to prevent.
+    """
+    ensure_highlights(page)
+    button = page.locator('button:has-text("Обновить подсветку")').first
+    if button.count() and button.is_visible():
+        try:
+            button.click(timeout=5_000)
+            page.wait_for_timeout(1_500)
+        except Exception:
+            pass
+
+
+def wait_for_marks(page, timeout_ms: int = 25_000) -> int:
+    """The marks arrive from their own read-only projection, a beat after the answer.
+
+    The first turn of a fresh thread is the one that loses this race: the answer
+    is already on screen while the panel still has no positions to mark. Waiting
+    for them (and asking once more if they do not come) is the difference between
+    an evidence screenshot and a picture of a chat.
+    """
+    waited = 0
+    refreshed = False
+    while waited < timeout_ms:
+        count = page.locator('mark[role="button"]').count()
+        if count:
+            return count
+        if not refreshed and waited >= 8_000:
+            button = page.locator('button:has-text("Обновить подсветку")').first
+            if button.count() and button.is_visible():
+                try:
+                    button.click(timeout=4_000)
+                except Exception:
+                    pass
+            refreshed = True
+        page.wait_for_timeout(500)
+        waited += 500
+    return page.locator('mark[role="button"]').count()
+
+
+def capture_reveals(page, folder: Path, prefix: str, limit: int = 6) -> list[dict]:
+    """Hover every masked value and photograph what it was replaced with.
+
+    This is the proof the plain screenshots cannot give: the mark shows one side
+    of the substitution, the popover the other. The pair is also written to the
+    report as text, so the evidence survives even where the tooltip is off-screen
+    for a moment.
+    """
+    total = page.locator('mark[role="button"]').count()
+    rows: list[dict] = []
+    for index in range(total):
+        if len([row for row in rows if row["shot"]]) >= limit:
+            break
+        try:
+            # Re-query every time: the message re-renders as the answer streams
+            # in and a held element reference goes "not attached to the DOM".
+            mark = page.locator('mark[role="button"]').nth(index)
+            if not mark.count() or not mark.is_visible():
+                continue
+            shown = (mark.inner_text(timeout=5_000) or "").strip()
+            if not shown:
+                continue
+            mark.scroll_into_view_if_needed(timeout=10_000)
+            page.wait_for_timeout(250)
+            mark.hover(timeout=10_000)
+            tooltip = page.locator('[role="tooltip"]').first
+            text = ""
+            for _ in range(30):
+                page.wait_for_timeout(500)
+                if tooltip.count():
+                    text = (tooltip.inner_text() or "").strip()
+                    # «Подробности загружаются…» means the counterpart has not
+                    # arrived yet; a screenshot of it would prove nothing.
+                    if "Показанный фрагмент" in text and "загружаются" not in text \
+                            and "ещё не загружены" not in text:
+                        break
+            if "Показанный фрагмент" not in text:
+                page.keyboard.press("Escape")
+                page.wait_for_timeout(200)
+                continue
+            shot = f"{prefix}-reveal-{len(rows) + 1}.png"
+            page.screenshot(path=str(folder / shot))
+            rows.append({"mark": shown, "tooltip": text, "shot": shot})
+        except Exception:
+            # A mark that will not open is skipped, never guessed at: the report
+            # shows what actually opened and nothing else.
+            pass
+        finally:
+            page.mouse.move(2, 2)
+            page.wait_for_timeout(250)
+            try:
+                page.keyboard.press("Escape")
+            except Exception:
+                pass
+    return rows
 
 
 def newest_thread_for(user_id: str) -> str | None:
@@ -194,13 +331,18 @@ def run_tester(index: int, dialogues, password: str) -> dict:
         org = page.evaluate("JSON.parse(localStorage.getItem('user_info')).org_id")
         headers = {"Authorization": f"Bearer {token}", "X-Org-Id": org}
         steps.append({"kind": "login", "user": user_id, "shot": None})
+        steps.append({"kind": "highlights", "enabled": ensure_highlights(page)})
         for title, messages in dialogues:
-            page.screenshot(path=str(folder / f"{len(steps):02d}-start.png"), full_page=True)
+            prefix = f"{len(steps):02d}"
+            scroll_to_latest(page)
+            page.screenshot(path=str(folder / f"{prefix}-start.png"))
             for number, message in enumerate(messages, start=1):
+                prefix = f"{len(steps):02d}"
                 box = page.locator('textarea[placeholder="Введите сообщение..."]').first
                 box.fill(message)
                 page.wait_for_timeout(400)
-                page.screenshot(path=str(folder / f"{len(steps):02d}-typed-{number}.png"), full_page=True)
+                scroll_to_latest(page)
+                page.screenshot(path=str(folder / f"{prefix}-typed-{number}.png"))
                 box.press("Enter")
                 previous = ""
                 for _ in range(90):
@@ -211,10 +353,15 @@ def run_tester(index: int, dialogues, password: str) -> dict:
                     if body == previous and number <= len(messages):
                         break
                     previous = body
-                page.wait_for_timeout(500)
-                page.screenshot(path=str(folder / f"{len(steps):02d}-answer-{number}.png"), full_page=True)
+                page.wait_for_timeout(700)
+                ensure_highlights(page)
+                refresh_highlights(page)
+                marks_seen = wait_for_marks(page)
+                scroll_to_latest(page)
+                page.screenshot(path=str(folder / f"{prefix}-answer-{number}.png"))
+                reveals = capture_reveals(page, folder, f"{prefix}-answer-{number}")
                 steps.append({"kind": "message", "dialogue": title, "index": number,
-                              "request": message})
+                              "request": message, "marks": marks_seen, "reveals": reveals})
         # The thread id lives on the chat request the UI made; take the newest
         # thread for this user from the same API the panel uses.
         page.wait_for_timeout(1000)
@@ -242,14 +389,26 @@ def write_html(folder: Path, report: dict) -> None:
         ".ok{color:#7ee787}.bad{color:#ff7b72}.muted{color:#8b949e}",
         "</style>",
         f"<header><h1>PSEUDEX · {esc(report['tester'])}</h1>",
+        "<div><a href='../../index.html'>← ко всем прогонам</a></div>",
         f"<div class='muted'>thread {esc(report['thread'])} · {esc(report['generated_at'])}</div></header>",
     ]
     for step in report["steps"]:
-        if step["kind"] == "login":
+        if step["kind"] in ("login", "highlights"):
             continue
         parts.append("<div class='card'>")
         parts.append(f"<h2>{esc(step['dialogue'])} · шаг {step['index']}</h2>")
         parts.append(f"<pre>{esc(step['request'])}</pre>")
+        reveals = step.get("reveals") or []
+        if reveals:
+            parts.append("<h3>что было подменено — по наведению</h3>")
+            parts.append("<table><tr><th>модель увидела</th><th>настоящее значение</th></tr>")
+            for reveal in reveals:
+                parts.append(f"<tr><td><code>{esc(reveal['mark'])}</code></td>"
+                             f"<td><code>{esc(reveal['tooltip'])}</code></td></tr>")
+            parts.append("</table>")
+            for reveal in reveals:
+                if reveal.get("shot"):
+                    parts.append(f"<img src='{esc(reveal['shot'])}' alt='{esc(reveal['shot'])}'>")
         parts.append("</div>")
     for row in report["evidence"]:
         same = set(row["source_phones"]) & set(row["model_phones"])
